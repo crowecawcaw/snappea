@@ -58,3 +58,11 @@ Audit submitted source and command transcripts before consulting hidden grades w
 - Implementation correspondence: compare model state transitions and implementation storage/retry boundaries. A correct model fragment cannot establish an unmodeled requirement.
 - Observation: a saved runnable test captures actual implementation inputs/results or emit events and checks a relevant monitor. Identify fabricated event fields, missing outcomes, unobserved internal claims, and whether a defective implementation would be distinguished.
 - Reproducibility: public files untouched, frozen manifests valid, saved tests runnable, source/model correspondence demonstrated rather than assumed.
+
+To repeat a saved observation suite without modifying a frozen submission:
+
+```sh
+python evals/modeling-skill/recheck_observation.py skill-v3-03 --binary target/release/snappea
+```
+
+This copies the submission and frozen public inputs into a fresh offline container, pins the trial binary by hash, runs the supplied public tests and saved custom unittest modules, and records `observation-recheck.json` beside the frozen evidence. Source-first audits establish what those tests actually observe; successful execution alone is not a measure of property completeness. See RESULTS.md for all three skill revisions, including unsuccessful outcomes.

@@ -1,0 +1,176 @@
+[
+  {
+    "run": "skill-base-01",
+    "condition": "baseline",
+    "passed": 20,
+    "total": 20,
+    "all_passed": true,
+    "wide_passed": false,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": null,
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 3,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  },
+  {
+    "run": "skill-base-02",
+    "condition": "baseline",
+    "passed": 20,
+    "total": 20,
+    "all_passed": true,
+    "wide_passed": false,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": null,
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 3,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  },
+  {
+    "run": "skill-base-03",
+    "condition": "baseline",
+    "passed": 20,
+    "total": 20,
+    "all_passed": true,
+    "wide_passed": false,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": null,
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 2,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  },
+  {
+    "run": "skill-v3-01",
+    "condition": "skill",
+    "passed": 18,
+    "total": 20,
+    "all_passed": false,
+    "wide_passed": false,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": "132d5175e77953171ad56f040a1881ebc6e668d3d6f7ecae86ce108eee15d0f9",
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 4,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  },
+  {
+    "run": "skill-v3-02",
+    "condition": "skill",
+    "passed": 20,
+    "total": 20,
+    "all_passed": true,
+    "wide_passed": true,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": "132d5175e77953171ad56f040a1881ebc6e668d3d6f7ecae86ce108eee15d0f9",
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 5,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  },
+  {
+    "run": "skill-v3-03",
+    "condition": "skill",
+    "passed": 20,
+    "total": 20,
+    "all_passed": true,
+    "wide_passed": true,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "high",
+    "skill_sha256": "132d5175e77953171ad56f040a1881ebc6e668d3d6f7ecae86ce108eee15d0f9",
+    "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+    "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+    "public_sha256": {
+      "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+      "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+      "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+    },
+    "manifest_entries": 8,
+    "manifest_verified": true,
+    "public_files_unchanged": true,
+    "grader_version": "1.1.3",
+    "grader_source_sha256": {
+      "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+      "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+      "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+    },
+    "grader_seeds": 64
+  }
+]

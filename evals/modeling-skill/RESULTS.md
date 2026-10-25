@@ -43,3 +43,36 @@ The durable-retry example is extended with original bounded positive and negativ
 Fresh treatment runs `skill-v2-01..03` used snapshot `c5f21f5684423da10d43627b6ab40aacc209f6a61da25eb83bf12b9cdc80bed3` (content commit `d25396a`) and the same environment. The original three baseline runs are reused for context; these are not new paired controls. Primary correctness again reached 59/60 cases (2/3 full passes). One implementation repeated the same old-effect replay defect. See pilot-v2.json and audit-v2.md for evidence.
 
 The source-first audit found that all three wrote Python implementation before their P model, despite the design-first framing. None saved an observation-based implementation regression test. Two read implementation guidance before coding, so access alone did not address the omission. They did produce checked bounded models, and two ran useful inline crash/growth probes. The final revision shortens the entry point and states the implementation handoff explicitly near the top: keep a saved runnable observation test, explain why it protects future changes, and distinguish emitted events from wrapper-captured real inputs/results.
+
+The second cohort passed the supplemental wide-input probe in all three submissions. This repeats the first pilot's representation result but is still adaptive evidence on the same task.
+
+## Final entry revision: explicit implementation handoff
+
+Fresh runs `skill-v3-01..03` used snapshot `132d5175e77953171ad56f040a1881ebc6e668d3d6f7ecae86ce108eee15d0f9`, committed in `11c8f2f`. The task prompt was unchanged. The entry was shortened and the saved implementation observation test was moved near the top, with an explanation of its maintenance value and explicit event-provenance limits. The durable-retry README also received a portability-only command fix. This revision was reviewed before the trials.
+
+| Outcome | Original P baseline (reused) | P + final skill |
+|---|---:|---:|
+| All 20 primary hidden cases passed | 3/3 | 2/3 |
+| Primary cases passed | 60/60 | 58/60 |
+| Separate wide-input probe passed | 0/3 | 2/3 |
+| Saved implementation-to-monitor tests, independently rerun successfully | 0/3 | 3/3 |
+
+All three retained observation tests that call the actual Service and feed real results or emitted events to a monitor. They were independently rerun in fresh offline containers with the exact trial binary and public inputs: run 01 passed five tests, run 02 five, and run 03 eight (each count includes four supplied public tests). See `recheck_observation.py` for the reproduction path and audit-v3.md for the properties and limitations. These are genuine wrapper-based observations, not proof of internal commits or every possible history.
+
+Run 01 fails two primary cases involving replaying the original submit response after crash/revision, and its record layout still exceeds the storage limit for a wide valid update. Its saved observer focuses on publication and does not cover submit-response identity. Runs 02 and 03 pass all primary cases and the wide probe. Thus saved observation tests improve reproducibility and validation coverage, but can still miss requirements that they never observe or assert.
+
+## What the evidence supports
+
+The skill is runnable, self-contained, reviewed, and backed by original positive/negative examples. In these pilots, it steered agents toward substantive bounded models and representation-aware implementations; the final entry also steered all three agents to retain real implementation observation tests. The baseline had no such saved checks, and all baseline submissions failed the supplemental storage-size probe.
+
+The trials do **not** establish an overall correctness win: controls passed all primary cases, while every treatment cohort had one imperfect implementation. Model/implementation correspondence remains incomplete, many mutants survive, and a saved observer only checks the properties and histories it actually sees. The task has a primary-score ceiling for the three controls, and cohorts of three are too small for reliable effect estimates. Revisions were tuned on this task; the final cohort is an adaptive pilot, not a held-out confirmation. New tasks and larger prespecified cohorts are needed before claiming general robustness gains.
+
+No product CLI changes or runtime instrumentation semantics changed. The skill stays primarily a design aid, with implementation checking as the second stage; its limitations are explicit rather than hidden behind coverage counts.
+
+## Validation and evidence
+
+All skill links and correct/broken example cases passed `skills/p-modeling/validate.py`; the reservation example's saved Python tests include a deliberately defective implementation. Snapshot/prompt parity and tamper-detection tests passed. Workspace build, tests, formatting, Clippy, and emit-only build passed. Frozen submission hashes and public inputs were verified for all three cohorts, each with the same checker binary, P image, public-file hashes, grader version, and 64-seed setting.
+
+Ignored `evals/certified-bundles/runs/` retains exact prompts, tool transcripts, submissions/manifests, content-addressed skill snapshots, grading and wide-probe results, and final observation reruns. The downloadable evidence archive contains the twelve actual solver trials and the three skill snapshots used by those trials; setup-only snapshots and scripted protocol smoke are not counted as agent results.
+
+The final source-first audit also confirmed that all three v3 agents still wrote implementation before the P model. The next focused revision adds one explicit design-first sentence at the top of the skill, with its reason: resolving counterexamples before committing to code. Two fresh exploratory trials test this ordering issue and retention of the observation bridge; they are reported separately from the three-run cohorts.

@@ -5,6 +5,8 @@ description: Use P/Snappea to challenge stateful system designs before implement
 
 # Design with P, validate with Snappea
 
+**Before writing the implementation, write and check a P model of the risky design decision.** The check should exercise the property, not just accept the syntax. Resolving counterexamples while the algorithm is still open is the main reason to use P during design. Then implement the design and retain an observation test.
+
 P is primarily a **design aid**. A small executable model lets Snappea explore competing actions, retries, and failure histories while the design is still cheap to change. It is secondarily an **implementation validation tool**: the same monitor can check actual behavior during tests. P checks your model, not automatically the code you ship; its value depends on how faithfully the two correspond.
 
 Use it when correctness depends on concurrency, shared state, multi-step updates, stale information, or recovery. Straightforward deterministic transformations usually need ordinary unit/property tests instead.
