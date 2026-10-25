@@ -37,3 +37,9 @@ The next revision preserves why-oriented guidance while making these omissions c
 - Explain representative model capacities versus actual encoded-limit implementation tests.
 
 The durable-retry example is extended with original bounded positive and negative replay scenarios. Revised skill results must use fresh agents and a new immutable snapshot; they are not pooled with this pilot. Subsequent results are adaptive exploratory evidence, not a held-out confirmation.
+
+## Second exploratory cohort
+
+Fresh treatment runs `skill-v2-01..03` used snapshot `c5f21f5684423da10d43627b6ab40aacc209f6a61da25eb83bf12b9cdc80bed3` (content commit `d25396a`) and the same environment. The original three baseline runs are reused for context; these are not new paired controls. Primary correctness again reached 59/60 cases (2/3 full passes). One implementation repeated the same old-effect replay defect. See pilot-v2.json and audit-v2.md for evidence.
+
+The source-first audit found that all three wrote Python implementation before their P model, despite the design-first framing. None saved an observation-based implementation regression test. Two read implementation guidance before coding, so access alone did not address the omission. They did produce checked bounded models, and two ran useful inline crash/growth probes. The final revision shortens the entry point and states the implementation handoff explicitly near the top: keep a saved runnable observation test, explain why it protects future changes, and distinguish emitted events from wrapper-captured real inputs/results.

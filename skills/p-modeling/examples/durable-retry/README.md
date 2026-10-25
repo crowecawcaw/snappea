@@ -17,14 +17,7 @@ snappea check tcSplitCommitRetry
 
 The last two commands are deliberately expected to exit with status 1. `tcReappliedReplay` should report `one request caused more than one effect`: its service applies ID `7` again after ID `8` changed the current total. `tcSplitCommitRetry` should report the same assertion because its durable effect and volatile outcome memo are split across transitions. These are deliberate property failures. A combined `snappea check` with no test name includes both broken variants and should fail for these reasons.
 
-If you are running from this repository without installing the CLI, use the built binary directly:
-
-```sh
-/workspace/snappea-skill/target/release/snappea check tcCompletedReplay
-/workspace/snappea-skill/target/release/snappea check tcDurableRetry tcCompletedReplay
-/workspace/snappea-skill/target/release/snappea check tcReappliedReplay
-/workspace/snappea-skill/target/release/snappea check tcSplitCommitRetry
-```
+If building from source, run `cargo build --release -p snappea` from the repository root and add its `target/release` directory to `PATH`.
 
 ## What the model preserves
 
