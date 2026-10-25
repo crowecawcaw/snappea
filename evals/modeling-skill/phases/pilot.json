@@ -1,0 +1,853 @@
+{
+  "trials": [
+    {
+      "run_id": "phase-model-v1-01",
+      "phase": "modeling",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ad3c0542227d7e0ecdb7a52369344494352b66647ebd16806e58639c5f570af3",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "e68b797b85cd4139b5d0391ffa9eabbd7e3a8128a3cc1f6a15bc4332187e176f",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8"
+      },
+      "grader_sha256": {
+        "cases.py": "183c527138c6e2d865f42e214596d6fb4ca8e467c7ef3c0c242a7128df24d947"
+      },
+      "status": "agent_finished",
+      "seconds": 349.1474015712738,
+      "calls": 33,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_test_count": 4,
+        "all_search_complete": true,
+        "schedules": 4522,
+        "valid_accepted": 2,
+        "valid_total": 5,
+        "invalid_rejected": 13,
+        "invalid_total": 13
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-model-v1-02",
+      "phase": "modeling",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ad3c0542227d7e0ecdb7a52369344494352b66647ebd16806e58639c5f570af3",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "e68b797b85cd4139b5d0391ffa9eabbd7e3a8128a3cc1f6a15bc4332187e176f",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8"
+      },
+      "grader_sha256": {
+        "cases.py": "183c527138c6e2d865f42e214596d6fb4ca8e467c7ef3c0c242a7128df24d947"
+      },
+      "status": "agent_finished",
+      "seconds": 144.67427277565002,
+      "calls": 24,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_test_count": 1,
+        "all_search_complete": true,
+        "schedules": 226,
+        "valid_accepted": 2,
+        "valid_total": 5,
+        "invalid_rejected": 13,
+        "invalid_total": 13
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-model-v2-01",
+      "phase": "modeling",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ae5bff58b1efa97e74ec5d99f3696ffda446c6d784f3eb12815770ff521e426d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "d6b25dfd59a8e7a8f174b3711a7bfd663cebf8dcaae927899c4878a127e3593a",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8"
+      },
+      "grader_sha256": {
+        "cases.py": "183c527138c6e2d865f42e214596d6fb4ca8e467c7ef3c0c242a7128df24d947"
+      },
+      "status": "agent_finished",
+      "seconds": 458.6167109012604,
+      "calls": 28,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_test_count": 3,
+        "all_search_complete": true,
+        "schedules": 270,
+        "valid_accepted": 5,
+        "valid_total": 5,
+        "invalid_rejected": 13,
+        "invalid_total": 13
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-model-v2-02",
+      "phase": "modeling",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ae5bff58b1efa97e74ec5d99f3696ffda446c6d784f3eb12815770ff521e426d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "d6b25dfd59a8e7a8f174b3711a7bfd663cebf8dcaae927899c4878a127e3593a",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8"
+      },
+      "grader_sha256": {
+        "cases.py": "183c527138c6e2d865f42e214596d6fb4ca8e467c7ef3c0c242a7128df24d947"
+      },
+      "status": "agent_finished",
+      "seconds": 408.459983587265,
+      "calls": 30,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_test_count": 2,
+        "all_search_complete": true,
+        "schedules": 268,
+        "valid_accepted": 5,
+        "valid_total": 5,
+        "invalid_rejected": 13,
+        "invalid_total": 13
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v1-01",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ad3c0542227d7e0ecdb7a52369344494352b66647ebd16806e58639c5f570af3",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "92fc8feb0c2e6306eca20ba358d5ebb4a13f5d6d4e498fbd6d5e9a6273c5e8dc",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "f024d0e3d1279a51494364c643aa3fbf59f25a9bd6c5cd68842e6326172b5da4",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "9ae7e488b9177c3be0ca51fa11be01d263f57d071ecbc1e70fe0ca3c6528d56a",
+        "grade.py": "1be098aa3556f0deba05f7f749e2dd7107b40f2821e8ec2582de55b6d93b411a"
+      },
+      "status": "agent_finished",
+      "seconds": 55.278310775756836,
+      "calls": 10,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "mutations_rejected": 6,
+        "mutations_total": 6,
+        "mutation_detection_rate": 1.0,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "supplemental_v2": {
+        "version": "lease-testing-v2",
+        "result": {
+          "reference_passed": true,
+          "valid_variants_passed": 1,
+          "valid_variants_total": 2,
+          "mutations_rejected": 8,
+          "mutations_total": 9,
+          "mutation_detection_rate": 0.8888888888888888,
+          "infrastructure_errors": 0,
+          "timeouts": 0,
+          "valid": false
+        },
+        "provenance": {
+          "reason": "Supplement original six-fault grader with valid allocation variation and nine faults; original outcomes retained.",
+          "posthoc": true,
+          "original_grade_retained": true,
+          "grader_sha256": {
+            "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+            "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+            "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+          },
+          "public_sha256": {
+            "TASK.md": "92fc8feb0c2e6306eca20ba358d5ebb4a13f5d6d4e498fbd6d5e9a6273c5e8dc",
+            "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+            "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+            "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+          },
+          "submission_manifest_sha256": "cf78e8fe0ba3ac06d3bbc42aeaf0114a60b5a5ce0cf9d44cc2592327f3af6926",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431"
+        }
+      },
+      "archived_grader": false
+    },
+    {
+      "run_id": "phase-test-v1-02",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ad3c0542227d7e0ecdb7a52369344494352b66647ebd16806e58639c5f570af3",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "92fc8feb0c2e6306eca20ba358d5ebb4a13f5d6d4e498fbd6d5e9a6273c5e8dc",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "f024d0e3d1279a51494364c643aa3fbf59f25a9bd6c5cd68842e6326172b5da4",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "9ae7e488b9177c3be0ca51fa11be01d263f57d071ecbc1e70fe0ca3c6528d56a",
+        "grade.py": "1be098aa3556f0deba05f7f749e2dd7107b40f2821e8ec2582de55b6d93b411a"
+      },
+      "status": "agent_finished",
+      "seconds": 50.64105010032654,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "mutations_rejected": 6,
+        "mutations_total": 6,
+        "mutation_detection_rate": 1.0,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "supplemental_v2": {
+        "version": "lease-testing-v2",
+        "result": {
+          "reference_passed": true,
+          "valid_variants_passed": 1,
+          "valid_variants_total": 2,
+          "mutations_rejected": 7,
+          "mutations_total": 9,
+          "mutation_detection_rate": 0.7777777777777778,
+          "infrastructure_errors": 0,
+          "timeouts": 0,
+          "valid": false
+        },
+        "provenance": {
+          "reason": "Supplement original six-fault grader with valid allocation variation and nine faults; original outcomes retained.",
+          "posthoc": true,
+          "original_grade_retained": true,
+          "grader_sha256": {
+            "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+            "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+            "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+          },
+          "public_sha256": {
+            "TASK.md": "92fc8feb0c2e6306eca20ba358d5ebb4a13f5d6d4e498fbd6d5e9a6273c5e8dc",
+            "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+            "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+            "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+          },
+          "submission_manifest_sha256": "206b757e3e220b19f6f385a0a6fec643f1d0c90c1e577a1f6ca7e9ba7016497a",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431"
+        }
+      },
+      "archived_grader": false
+    },
+    {
+      "run_id": "phase-test-v2-01",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ae5bff58b1efa97e74ec5d99f3696ffda446c6d784f3eb12815770ff521e426d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 48.73199248313904,
+      "calls": 9,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 8,
+        "mutations_total": 9,
+        "mutation_detection_rate": 0.8888888888888888,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v2-02",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "ae5bff58b1efa97e74ec5d99f3696ffda446c6d784f3eb12815770ff521e426d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 44.29448938369751,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 8,
+        "mutations_total": 9,
+        "mutation_detection_rate": 0.8888888888888888,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v3-01",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "d13dcda717f451d0757eb6dbf169610bd6d7d63a0366510484f79e697298a8c9",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 59.32034921646118,
+      "calls": 11,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 8,
+        "mutations_total": 9,
+        "mutation_detection_rate": 0.8888888888888888,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v3-02",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "d13dcda717f451d0757eb6dbf169610bd6d7d63a0366510484f79e697298a8c9",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 54.504183530807495,
+      "calls": 7,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 8,
+        "mutations_total": 9,
+        "mutation_detection_rate": 0.8888888888888888,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v4-01",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "e650be2f777419e5da55df551d1a120128985e3984326a734ad20e1892d0a472",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 64.52317094802856,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 9,
+        "mutations_total": 9,
+        "mutation_detection_rate": 1.0,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v4-02",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "e650be2f777419e5da55df551d1a120128985e3984326a734ad20e1892d0a472",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 60.302058935165405,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 8,
+        "mutations_total": 9,
+        "mutation_detection_rate": 0.8888888888888888,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v5-01",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 65.9735472202301,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 9,
+        "mutations_total": 9,
+        "mutation_detection_rate": 1.0,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-test-v5-02",
+      "phase": "testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "bedd09981140c53fe6ece44fce3f6d95c064b6e0f0dc31f7040057ddd5a279fe",
+        "events.p": "a2c70b277763f4f07a461cebac4f7499354666e2c4de0dddfbb7317d528dd2b8",
+        "lease.py": "f9c434d0de5d9c1cc22090a7a365d2f871447af07a475bd5214d77f80daee89e",
+        "lease_contract.p": "f276c44c5e9e1e3aa600029b63dccba9a65fbecb011cb3877ee16f5b85637e7d"
+      },
+      "grader_sha256": {
+        "calibration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/calibrate.py": "7fd06073a5bc4ba2f2f6f421bbd6da2cafe2b649511b1e740e2572f7d8fcdc2d",
+        "calibration/reference_tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "calibration/reference_tests/test_lease.py": "3d9aec2dffd201c2f5921abb83eac501281d1a2912f5c6a6ced07d901983c0ff",
+        "grade.py": "81e5cc687e3888771a752d437015ea7984e5724252ab55ac622ef92c52508bd1"
+      },
+      "status": "agent_finished",
+      "seconds": 61.968499183654785,
+      "calls": 7,
+      "public_unchanged": true,
+      "result": {
+        "reference_passed": true,
+        "valid_variants_passed": 2,
+        "valid_variants_total": 2,
+        "mutations_rejected": 9,
+        "mutations_total": 9,
+        "mutation_detection_rate": 1.0,
+        "infrastructure_errors": 0,
+        "timeouts": 0,
+        "valid": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-flow-base-01",
+      "phase": "flow",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "5ce212298675fddb22e627659e02a641201b89acff6d608c99bb389d785c6562",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "status": "agent_finished",
+      "seconds": 620.0074634552002,
+      "calls": 80,
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "model_check_passed": true,
+        "model_search_complete": true,
+        "model_selected_tests": 1,
+        "monitor_valid_accepted": 4,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 3,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": false,
+        "observation_reference_passed": false,
+        "observation_mutations_rejected": 3,
+        "observation_mutations_total": 3,
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "valid": false
+      },
+      "supplemental_v2": {
+        "version": "queue-flow-v2",
+        "result": {
+          "implementation_passed": true,
+          "submitted_tests_passed": true,
+          "model_check_passed": true,
+          "model_search_complete": true,
+          "model_selected_tests": 1,
+          "monitor_valid_accepted": 4,
+          "monitor_valid_total": 4,
+          "monitor_invalid_rejected": 3,
+          "monitor_invalid_total": 4,
+          "monitor_traces_passed": false,
+          "portable_probe_valid": false,
+          "portable_probe_reference_status": "tests_rejected",
+          "timeouts": 0,
+          "missing_deliverables": [],
+          "valid": false
+        },
+        "provenance": {
+          "reason": "Correct own-implementation test validation; cross-implementation instrumentation/extra-contract behavior makes swapped-reference probes diagnostic only.",
+          "posthoc": true,
+          "original_grade_retained": true,
+          "grader_sha256": {
+            "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+            "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+            "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+            "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+            "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+            "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+            "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+          },
+          "public_sha256": {
+            "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+            "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+            "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+          },
+          "submission_manifest_sha256": "e5e1820a369b95628d5f991e3ec7be044d4b31fe12ba861513ec6362cd3f4c5f",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431"
+        }
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-flow-skill-01",
+      "phase": "flow",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "5ce212298675fddb22e627659e02a641201b89acff6d608c99bb389d785c6562",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "status": "agent_finished",
+      "seconds": 344.29416131973267,
+      "calls": 41,
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "model_check_passed": false,
+        "model_search_complete": true,
+        "model_selected_tests": 1,
+        "monitor_valid_accepted": 3,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 4,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": false,
+        "observation_reference_passed": false,
+        "observation_mutations_rejected": 3,
+        "observation_mutations_total": 3,
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "valid": false
+      },
+      "supplemental_v2": {
+        "version": "queue-flow-v2",
+        "result": {
+          "implementation_passed": true,
+          "submitted_tests_passed": true,
+          "model_check_passed": false,
+          "model_search_complete": false,
+          "model_selected_tests": 1,
+          "monitor_valid_accepted": 3,
+          "monitor_valid_total": 4,
+          "monitor_invalid_rejected": 4,
+          "monitor_invalid_total": 4,
+          "monitor_traces_passed": false,
+          "portable_probe_valid": false,
+          "portable_probe_reference_status": "tests_rejected",
+          "timeouts": 0,
+          "missing_deliverables": [],
+          "valid": false
+        },
+        "provenance": {
+          "reason": "Correct own-implementation test validation; cross-implementation instrumentation/extra-contract behavior makes swapped-reference probes diagnostic only.",
+          "posthoc": true,
+          "original_grade_retained": true,
+          "grader_sha256": {
+            "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+            "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+            "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+            "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+            "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+            "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+            "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+          },
+          "public_sha256": {
+            "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+            "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+            "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+          },
+          "submission_manifest_sha256": "bd98e2885435f6143b3365b227ccc4fb7ba7a03afe4dc0312df4cdf1f88360d1",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431"
+        }
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "phase-flow-skill-02",
+      "phase": "flow",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "5ce212298675fddb22e627659e02a641201b89acff6d608c99bb389d785c6562",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "status": "agent_finished",
+      "seconds": 254.14992380142212,
+      "calls": 33,
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "model_check_passed": true,
+        "model_search_complete": true,
+        "model_selected_tests": 2,
+        "monitor_valid_accepted": 3,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 3,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": false,
+        "observation_reference_passed": false,
+        "observation_mutations_rejected": 2,
+        "observation_mutations_total": 3,
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "valid": false
+      },
+      "supplemental_v2": {
+        "version": "queue-flow-v2",
+        "result": {
+          "implementation_passed": true,
+          "submitted_tests_passed": true,
+          "model_check_passed": true,
+          "model_search_complete": true,
+          "model_selected_tests": 2,
+          "monitor_valid_accepted": 3,
+          "monitor_valid_total": 4,
+          "monitor_invalid_rejected": 3,
+          "monitor_invalid_total": 4,
+          "monitor_traces_passed": false,
+          "portable_probe_valid": false,
+          "portable_probe_reference_status": "infrastructure_error",
+          "timeouts": 0,
+          "missing_deliverables": [],
+          "valid": false
+        },
+        "provenance": {
+          "reason": "Correct own-implementation test validation; cross-implementation instrumentation/extra-contract behavior makes swapped-reference probes diagnostic only.",
+          "posthoc": true,
+          "original_grade_retained": true,
+          "grader_sha256": {
+            "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+            "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+            "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+            "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+            "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+            "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+            "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+          },
+          "public_sha256": {
+            "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+            "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+            "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+          },
+          "submission_manifest_sha256": "e2a0a55dfe87a864adcf3d4ddad2d063ef64186b43f2c542a48a8834687ab8ac",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431"
+        }
+      },
+      "archived_grader": true
+    }
+  ],
+  "limits": "Adaptive small development pilots. Keep revisions separate; no causal or population-level claims."
+}

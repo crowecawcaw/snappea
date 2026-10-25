@@ -1,46 +1,37 @@
 ---
 name: p-modeling
-description: Design stateful systems with P/Snappea, then check implementation behavior against the model's monitors.
+description: Model stateful designs with P/Snappea; validate implementation histories with the same monitors.
 ---
 
-# Design with P
+# P modeling
 
-- **Model and check the risky design before implementing it.** Resolve counterexamples while the algorithm is cheap to change.
-- Use P for concurrency, shared state, stale information, multi-step updates, retries, and recovery. Use ordinary tests for deterministic transformations.
-- P primarily challenges designs; secondarily, its monitors validate observed implementation behavior. Its value depends on the implementation matching the model.
+- **Design first:** model/check the risky algorithm before implementing it; counterexamples are cheaper to fix then.
+- Use for concurrency, shared state, stale evidence, retries, and recovery. Deterministic transformations usually need ordinary tests.
+- P checks the model. Implementation validation depends on matching its boundaries and observing actual behavior.
 
 ## Design
 
-- State the contract, atomic primitives, bounds, assumptions, and omissions. A focused model validates only its stated scope.
-- Preserve failure opportunities: separate reads from later writes unless a real transaction, lock, or CAS makes them atomic. Local assignments do not yield; communication operations can.
-- Keep relevant identities, versions, and durable/volatile distinctions. Prepared state is not committed state.
-- Make actors compete for the **same resource**. For retry safety: complete A, let B advance that resource, then retry A; preserve B's state and return A's original result if promised.
-- Derive monitor expectations from requests and history, not implementation-supplied validity flags. Check useful success as well as rejection where required.
-- Use uncovered code and scenarios to guide testing. Inspect surviving mutations; neither full coverage nor mutation detection proves an omitted requirement.
-- Record whether search completed. Finite exploration covers represented bounds; progress requires explicit scheduling/recovery assumptions.
+- State contract, atomic primitives, bounds, assumptions, omissions.
+- Preserve interference: separate reads/later writes unless a real transaction, lock, or CAS makes them atomic. Local assignments do not yield; communication can.
+- Preserve relevant IDs, versions, durable/volatile state, and prepared/committed distinctions.
+- Make competitors share a resource. Retry A after B advances that resource; check A's original result and B's retained state where promised.
+- Model the algorithm, not just atomic API behavior: include reads, failed conditional writes, and retries when those are the design risk.
+- Assert contract obligations, not incidental implementation choices.
+- Derive monitor expectations independently from contract/history. Check useful success. Read public state immediately after rejected operations, before later work can hide side effects.
+- Name each scenario's plausible defect. Test **every acceptance precondition** independently, including lifecycle boundaries; other failing guards can mask missing enforcement. Test stale operations against newer live state.
+- Use coverage and mutation feedback to find gaps. Neither finds omitted requirements; report bounds and incomplete search. Progress needs recovery/scheduling assumptions.
 
 ## Implement and maintain
 
-- Compare implementation reads, writes, retries, version checks, and crash state with modeled boundaries.
-- **Save and run an implementation observation test.** Use helpers to capture real emitted events, then check a relevant monitor. A wrapper may record actual inputs, results, and public reads; hand-authored traces only test the monitor.
-- Python: install `pysnappea`, import `snappea`. Use `check_spec(..., strict=True)` around emitting application calls; use `check_events` for captured events.
-- Preserve relevant values and identities in adapters. Missing events, wrong partitions, or reordered emission limit evidence.
-- Keep ordinary boundary, concurrency, and crash tests. Use observed coverage to find missing application tests; revisit the model when code or requirements change.
-- Runtime emission is best-effort and must not break application code. Explicit test validation should fail on invalid or insufficient evidence.
-- Deliver the checked model, assumptions/limits, unresolved findings, and saved observation tests when implementing.
+- Compare code's reads, writes, retries, and persistence with model boundaries.
+- **Save/run observation tests:** capture real calls/events with Python helpers; check a relevant monitor. Hand-authored traces test only the monitor.
+- Install `pysnappea`; import `snappea`. See [implementation](guides/implementation.md) for capture, strictness, ordering, and partitioning.
+- Preserve IDs/values in adapters. Keep ordinary boundary/concurrency/crash tests; use observed coverage to guide additions.
+- Retain counterexamples as regression tests; revisit models as code/contracts change.
+- Runtime emission: best-effort, never break application code. Explicit validation: fail invalid/insufficient evidence.
+- Deliver model, assumptions/limits, findings, and saved tests when implementing.
 
-## Read as needed
+## References
 
-- [Modeling](guides/modeling.md): abstraction and scheduling boundaries.
-- [Scenarios and oracles](guides/scenarios-and-oracles.md): independent expectations, coverage, mutations, progress.
-- [Recovery](guides/recovery.md): durability, ambiguous commits, replay.
-- [Implementation](guides/implementation.md): Python helpers and trustworthy observation.
-- [P patterns](reference/p-patterns.md): syntax and commands.
-
-## Original examples
-
-Read the closest README and compare its correct/broken variants:
-
-- [Reservation](examples/reservation/README.md): contention, conditional storage, independent oracle, saved Python tests.
-- [Durable retry](examples/durable-retry/README.md): lost response, restart, old result versus current state.
-- [Versioned publication](examples/versioned-publication/README.md): recompute and revalidate after CAS conflict.
+- Guides: [modeling](guides/modeling.md), [scenarios/oracles](guides/scenarios-and-oracles.md), [recovery](guides/recovery.md), [P syntax/commands](reference/p-patterns.md).
+- Original correct/broken examples: [reservation + Python tests](examples/reservation/README.md), [durable retry](examples/durable-retry/README.md), [versioned publication](examples/versioned-publication/README.md).

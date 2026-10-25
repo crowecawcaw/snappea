@@ -9,6 +9,8 @@
 
 ## Preserve interference
 
+- An atomic API specification describes allowed behavior; it does not validate the algorithm implementing it. Include the actual read/CAS/retry protocol when assessing that design.
+
 - Snappea schedules at operations such as `send`, `receive`, and machine creation. Ordinary assignments do not yield.
 - A non-yielding group may represent **one real atomic primitive**: a transaction, lock-protected update, or CAS. A whole handler is not automatically atomic.
 - Split read → decide → write across messages/phases when another actor can intervene. Otherwise the model assumes away the race.

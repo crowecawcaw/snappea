@@ -15,6 +15,10 @@ python -m unittest discover -s evals/certified-bundles/tools -p test_skill_snaps
 
 The content validator checks local links, correct P models, documented negative controls, and Python observation against actual implementation calls. It uses temporary copies so checks do not modify an installed skill.
 
+## Focused phases
+
+Use the [phased evals](phases/README.md) for model construction and implementation-test quality before combined flows. These isolate failures that the original large task conflated.
+
 ## Pilot comparison
 
 Use the certified-bundles harness (see its README) with fresh Luna/high collaboration agents, `fork_turns=none`, and no host/private access. Conditions share the P checker, Python package/image, ordinary docs, public task, 900-second/80-call budget, and 120-second command cap.
