@@ -27,8 +27,9 @@ def validate(binary):
     checks = [
         ('reservation', ['check', 'Atomic.pproj', '--timeout', '5s'], None),
         ('reservation', ['check', 'StaleWrite.pproj', '--timeout', '5s'], 'reservations exceed available capacity'),
-        ('durable-retry', ['check', 'tcDurableRetry'], None),
+        ('durable-retry', ['check', 'tcDurableRetry', 'tcCompletedReplay'], None),
         ('durable-retry', ['check', 'tcSplitCommitRetry'], 'one request caused more than one effect'),
+        ('durable-retry', ['check', 'tcReappliedReplay'], 'one request caused more than one effect'),
         ('versioned-publication', ['check', 'Revalidated.p'], None),
         ('versioned-publication', ['check', 'StaleRetry.p'], 'was validated for version'),
     ]

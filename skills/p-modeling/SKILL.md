@@ -9,6 +9,8 @@ P is primarily a **design aid**: make a small executable model while deciding ho
 
 Use this skill for competing operations, shared state, multi-step updates, stale information, retries, recovery, or progress after failures. Pure transformations and straightforward deterministic logic usually benefit more from ordinary unit/property tests. A large model of everything is rarely the best first model.
 
+The useful result is a challenged design and evidence you can rerun: a checked model with its limits, then a saved implementation test that applies the monitor to actual behavior. Without the second link, the design checks stop protecting you when the code diverges. The [reservation example](examples/reservation/README.md) demonstrates both.
+
 ## During design
 
 Start with a concrete question: **what invalid execution could make this design wrong?** Identify the actors, state, real atomic primitives, and points where another operation or failure can intervene. Build a small model around that question, using a separate driver to generate competing actions and a monitor to check the requirement independently. Check it while the design is still easy to change, before translating its algorithm into implementation.
@@ -21,7 +23,7 @@ A focused model can answer one question without covering the whole contract. Kee
 
 A monitor should derive expected behavior from requests and history, not accept the implementation's claim that an operation is valid. Scenarios should challenge the guarantee: two clients need to compete for the **same** resource, and a retry needs to reuse the **same** identity after the relevant failure.
 
-Use uncovered statements, outcomes, handlers, and named scenarios to choose the next test. Investigate surviving mutations: they can expose checks that never distinguish correct behavior from a nearby defect. Full coverage and mutation scores do not establish that omitted requirements were modeled. A timeout is incomplete exploration, not evidence of impossibility. Progress also needs explicit assumptions about failures stopping and scheduling.
+Use uncovered statements, outcomes, handlers, and named scenarios to choose the next test. When the contract promises an idempotent retry, repeating a completed operation after other work is especially revealing: returning its original response must not replay its old state changes over newer state. Investigate surviving mutations: they can expose checks that never distinguish correct behavior from a nearby defect. Full coverage and mutation scores do not establish that omitted requirements were modeled. A timeout is incomplete exploration, not evidence of impossibility. Progress also needs explicit assumptions about failures stopping and scheduling.
 
 Read [Scenarios and independent checks](guides/scenarios-and-oracles.md) for evidence quality; [Recovery and retries](guides/recovery.md) for durable state and lost responses. Fix the model or design when the evidence exposes a flaw; retain a regression scenario that reveals it. Suppress only a justified intentional exception, with its reason.
 
@@ -29,7 +31,7 @@ Read [Scenarios and independent checks](guides/scenarios-and-oracles.md) for evi
 
 P checks the model, **not automatically the code you ship**. Its benefit depends on their correspondence. Compare the implementation's storage calls, atomic boundaries, version checks, retry decisions, and recovery state with the model. A new boundary or cache assumption is a design change worth revisiting.
 
-Use Snappea's language helpers and `observe` to check the same monitor against actual implementation events during tests. The Python distribution is `pysnappea`; the import is `snappea`. Prefer recording events emitted by the implementation; wrappers can record actual inputs/returned results when their limits are explicit. Hand-authored traces test the monitor, not the application. Missing or fabricated evidence cannot validate the implementation.
+When implementing the design and its relevant behavior is observable, keep a runnable regression test alongside the code that uses Snappea's language helpers and `observe` to check the same monitor against actual implementation events. Read the [implementation guide](guides/implementation.md) when moving from the checked design to code; a successful inline experiment is useful, but saving it lets later changes rerun the check. The Python distribution is `pysnappea`; the import is `snappea`. Prefer recording events emitted by the implementation; wrappers can record actual inputs/returned results when their limits are explicit. Hand-authored traces test the monitor, not the application. Missing or fabricated evidence cannot validate the implementation.
 
 Keep ordinary interface, boundary, crash, and concurrency tests too. Use observed monitor coverage to find missing test behavior. At maintenance time, update the model and regression tests when requirements or assumptions change; replay production evidence where useful. Runtime instrumentation must remain best-effort and must not break application code; explicit test validation should fail on invalid or insufficient evidence. See [Implementation correspondence and observation](guides/implementation.md).
 

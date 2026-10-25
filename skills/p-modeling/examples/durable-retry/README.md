@@ -1,36 +1,47 @@
 # Durable retry after a lost response
 
-This small P project checks one recovery history for one operation. A client sends request ID `7`; the service commits the effect, but the client receives no response before the process restarts. The client retries ID `7`. The contract requires one effect and one successful final outcome. The internal `eCommitted` message only tells the test driver where to inject the restart; it is not a client response.
+This small P project checks what a retry means after commit. It keeps the saved result for each completed request separate from the service's current effect state. That difference matters when another operation changes the current state before an older request is replayed.
 
 ## Run it
 
 From this directory, with `snappea` installed and on `PATH`, run:
 
 ```sh
-snappea check tcDurableRetry
+snappea check tcCompletedReplay
+snappea check tcDurableRetry tcCompletedReplay
+snappea check tcReappliedReplay
 snappea check tcSplitCommitRetry
 ```
 
-The first command passes. It runs lint, explores the complete bounded schedule space, and runs the default mutation checks. With the current checker it explores 84 schedules, covers all 30 statements, all 4 branches, and all 8 handlers, and detects all 10 mutants.
+`tcCompletedReplay` passes lint, complete bounded schedule exploration, required coverage, and default mutation checks on its own. The current checker explores 164 schedules, covers all 47 statements, all 8 branches, and all 11 handlers, and detects all 13 mutants. The second command checks the original crash-and-retry case together with the replay case; the pair passes full required coverage and mutation checks, exploring 86 and 165 schedules respectively.
 
-The second command is deliberately expected to exit with status 1. The report should identify `one request caused more than one effect` in `RetryContract`. This is the property failure the example is meant to expose. Do not treat the combined `snappea check` with no test name as a clean run: it includes this deliberately broken case and should fail for that reason.
+The last two commands are deliberately expected to exit with status 1. `tcReappliedReplay` should report `one request caused more than one effect`: its service applies ID `7` again after ID `8` changed the current total. `tcSplitCommitRetry` should report the same assertion because its durable effect and volatile outcome memo are split across transitions. These are deliberate property failures. A combined `snappea check` with no test name includes both broken variants and should fail for these reasons.
 
-If building from source, run `cargo build --release -p snappea` from the repository root and add `target/release` to `PATH`.
+If you are running from this repository without installing the CLI, use the built binary directly:
+
+```sh
+/workspace/snappea-skill/target/release/snappea check tcCompletedReplay
+/workspace/snappea-skill/target/release/snappea check tcDurableRetry tcCompletedReplay
+/workspace/snappea-skill/target/release/snappea check tcReappliedReplay
+/workspace/snappea-skill/target/release/snappea check tcSplitCommitRetry
+```
 
 ## What the model preserves
 
-`RetryDriver` is separate from the service model. It announces a request, receives the internal commit notification, then crashes and restarts the service without receiving a client reply. That boundary represents an ambiguous commit: the durable operation succeeded, while the client cannot know its outcome. The driver then retries the same ID, representing the same logical operation rather than a new one.
+The drivers are separate from the service models. In the original `RetryDriver` history, ID `7` commits, its client reply is withheld, the process restarts, and the client retries ID `7`. The internal `eCommitted` message only tells the test driver where to inject the restart; it is not a client response. This represents an ambiguous commit: the durable operation succeeded, while the client cannot know its outcome.
 
-`DurableService` keeps `durableTotal` and `durableOutcomes` across restart. On a first request, adjacent local assignments increment the effect and record the replayable result before the next communication scheduling point. That non-yielding update region stands for one real atomic storage primitive, such as a database transaction or a compare-and-swap that updates one durable record containing both values. P handlers can yield at communication operations such as `send`, `receive`, or `create`; this example does not treat an entire handler as atomic. The implementation must provide the same co-commit boundary for the model to apply.
+`CompletedReplayDriver` makes the related state distinction explicit. It completes ID `7` with result `1`, commits distinct ID `8` but loses that reply, restarts and retries ID `8`, then restarts and retries old ID `7`. The fixed service returns ID `7`'s original result `1` while the current total remains `2`. The saved response describes the earlier operation; it is not a copy of current service state.
 
-`SplitCommitService` is the broken design. It increments the durable effect, then relies on a separate `eRemember` transition to populate `volatileMemo`. The driver crashes after the first commit, before that later transition, so restart clears the memo. The retry increments the effect again. The monitor catches the second `eCommit` for ID `7` before the driver can report an outcome.
+`DurableService` keeps `durableTotal` and `durableOutcomes` across restart. A new request increments the effect and stores that request's result in adjacent local assignments before the next communication scheduling point. That non-yielding update region stands for one actual atomic storage primitive, such as a transaction or a compare-and-swap on one durable record containing both values. P handlers can yield at communication operations such as `send`, `receive`, or `create`; the whole handler is not modeled as atomic. The implementation must provide the same co-commit boundary for this abstraction to apply. A retry reads its saved result and reports the separately maintained current total without applying the effect again.
 
-`RetryContract` is independent of the service's state. It counts distinct request IDs from `eRequest`, checks each `eCommit` against that expected work, rejects a second commit for an ID, and checks the final reported total against the number of unique requests. Its hot `AwaitingOutcome` state also checks that the modeled driver eventually receives a result in this finite scenario.
+`RetryContract` does not inspect service variables. It derives expected operation count from distinct `eRequest` IDs, records each ID's first committed result, rejects a second `eCommit` for that ID, and checks each reported response against the saved result for that ID. Separately, it checks the reported current total against the number of distinct requested operations. Thus a correct replay can return an old result while current state includes later work. Its hot state also requires each finite scenario to report outcomes for all distinct requested IDs before it announces completion.
+
+`ReapplyReplayService` deliberately returns the old saved response while incrementing and committing the effect again on replay. The monitor catches the repeated commit. `SplitCommitService` demonstrates the earlier failure: it commits the effect, but keeps the replay memo in volatile state and writes it in a later transition. The process crashes before that transition; retry applies the effect again.
 
 ## Boundaries and assumptions
 
-The model includes one service, one client, one request ID, one incrementing effect, one lost-response point, one restart, and one retry. For the passing case, the checker explores all schedules for these bounded machines. The run assumes enabled messages are eventually handled so the finite history can reach quiescence; the hot-state check is evidence about that modeled history, not a fairness guarantee for an operating system or a production service.
+The replay case has one service, one client, two request IDs, incrementing effects, one lost response, two restarts, and retries of IDs `8` and `7`. The checker explores all schedules for these bounded machines. Enabled messages are assumed eventually to be handled so the finite history can reach quiescence; the hot-state check is evidence about these modeled histories, not a fairness guarantee for an operating system or production service.
 
-It omits concurrent clients, multiple IDs, conflicting payloads under one ID, memo expiration, storage or restart failures, network duplication and reordering, and all crash points except the one after commit and before the response. It also omits implementation-specific transaction isolation, persistence configuration, and the storage engine itself. The result demonstrates that the represented split design duplicates the effect and that the represented atomic design handles this one retry history. It does not prove a generic crash-proof implementation or unbounded correctness.
+The model omits concurrent clients, more IDs, conflicting payloads under one ID, memo expiration, storage or restart failures, arbitrary network duplication or reordering, and crash points beyond those shown. It also omits implementation-specific transaction isolation, persistence configuration, and the storage engine. Passing checks show that the represented atomic design preserves each saved result and the represented current total in these bounded histories. They do not prove a generic crash-proof implementation or unbounded correctness.
 
-The P model's key implementation mapping is the storage boundary: the fixed variant's adjacent local updates are valid only when the actual storage primitive co-commits effect and durable outcome. If an implementation writes them separately, its model should expose that gap, as `SplitCommitService` does.
+The key implementation mapping is the storage boundary: the fixed variant's adjacent local updates are valid only when one actual primitive co-commits the effect and durable outcome. If an implementation writes them separately, expose that gap in the model, as `SplitCommitService` does.
