@@ -16,6 +16,7 @@ IMAGE = os.environ.get('SNAPPEA_EVAL_IMAGE', 'python:3.12-slim@sha256:cb33f7f771
 P_IMAGE = os.environ.get('SNAPPEA_EVAL_P_IMAGE', IMAGE)
 PUBLIC = ['TASK.md','contract.py','runtime.py','test_public.py']
 from prompts import COMMON, P, CONTROL, VERSION as PROMPT_VERSION, task_prompt, prompt_version, prompt_variant
+from skill_snapshot import verify_snapshot
 
 
 def tool_paths():
@@ -36,19 +37,19 @@ def command(argv, **kwargs):
     return subprocess.run(argv,capture_output=True,text=True,**kwargs)
 
 
-def prepare(run_id, arm):
+def prepare(run_id, arm, condition='legacy'):
     run = ROOT/'runs'/run_id
     work = run/'work'
     if work.exists(): raise SystemExit(f'Run already exists: {run_id}')
     work.mkdir(parents=True)
     for name in PUBLIC: shutil.copy2(ROOT/'public'/name,work/name)
     (work/'solution.py').write_text('from contract import Service\n')
-    prompt = task_prompt(arm)
+    prompt = task_prompt(arm, condition)
     (run/'prompt.txt').write_text(prompt)
     return run,work,prompt
 
 
-def container_args(name,work,arm):
+def container_args(name,work,arm,condition='legacy',skill_snapshot=None):
     args = ['docker','run','-d','--name',name,'--network','none','--cap-drop','ALL',
         '--security-opt','no-new-privileges','--user',f'{os.getuid()}:{os.getgid()}','--memory','768m','--cpus','1',
         '--pids-limit','128','--read-only','--tmpfs','/tmp:rw,size=128m',
@@ -61,6 +62,11 @@ def container_args(name,work,arm):
                  '--mount',f'type=bind,src={binary},dst=/opt/snappea,readonly',
                  '--mount',f'type=bind,src={docs},dst=/opt/pdocs,readonly',
                  '--mount',f'type=bind,src={inventory},dst=/opt/inventory,readonly']
+        if condition == 'skill':
+            if not skill_snapshot:
+                raise ValueError('skill condition requires --skill-snapshot')
+            verify_snapshot(skill_snapshot)
+            args += ['--mount',f'type=bind,src={Path(skill_snapshot).resolve()},dst=/opt/p-modeling,readonly']
     return args + [image_for_arm(arm),'sleep','infinity']
 
 

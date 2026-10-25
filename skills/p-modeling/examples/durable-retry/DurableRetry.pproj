@@ -1,0 +1,8 @@
+<Project>
+  <ProjectName>DurableRetry</ProjectName>
+  <InputFiles>
+    <PFile>./PSpec/</PFile>
+    <PFile>./PSrc/</PFile>
+    <PFile>./PTst/</PFile>
+  </InputFiles>
+</Project>

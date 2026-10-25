@@ -26,7 +26,9 @@ with (run/'bridge.lock').open('a') as lock:
     state_path.write_text(json.dumps(state,indent=2))
     start=time.time()
     try:
-        result=runner.shell('snappea-eval-'+a.run_id,cmd,timeout=min(40,max(1,int(900-elapsed))))
+        metadata=json.loads((run/'metadata.json').read_text())
+        per_command=metadata.get('command_timeout_seconds',40)
+        result=runner.shell('snappea-eval-'+a.run_id,cmd,timeout=min(per_command,max(1,int(900-elapsed))))
     except Exception as exc:
         result={'exit_code':124,'stdout':'','stderr':f'{type(exc).__name__}: {exc}'}
         state['closed']=True

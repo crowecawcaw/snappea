@@ -2,9 +2,9 @@
 from pathlib import Path
 from prompts import task_prompt
 
-def prompt(run_id, arm):
+def prompt(run_id, arm, condition='legacy'):
     bridge = Path(__file__).resolve().parent / 'solver_shell.py'
-    return task_prompt(arm) + f"""
+    return task_prompt(arm, condition) + f"""
 Run ID: {run_id}. Work independently; do not spawn or contact other agents.
 Use only this shell bridge for commands and file access; do not inspect host files,
 other runs, or the bridge itself. Commands run in your isolated /work container:

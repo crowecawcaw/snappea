@@ -1,6 +1,6 @@
 """Short design-first task prompts for new cohorts; historical prompts stay frozen."""
 import os
-VERSION = 7
+VERSION = 8
 COMMON = "Read TASK.md and contract.py.\n\n"
 CONTROL = "Write a design. Then implement it in Python.\nAdd Python tests.\n"
 VARIANTS = {
@@ -11,21 +11,32 @@ VARIANTS = {
 }
 DEFAULT_VARIANT = 'implementation_events'
 P = VARIANTS[DEFAULT_VARIANT] + "\n\nP/Snappea: /opt/snappea; docs: /opt/pdocs/; example: /opt/inventory/.\n"
+BASELINE_MINIMAL = "Use P/Snappea to model the design, then implement it in Python.\n"
+SKILL_MINIMAL = BASELINE_MINIMAL + "Use the P modeling skill at /opt/p-modeling/SKILL.md.\n"
 
 def prompt_version():
     return VERSION
 
-def prompt_variant(arm):
+def prompt_variant(arm, condition='legacy'):
+    if condition in ('baseline', 'skill'):
+        return condition
     return os.environ.get('SNAPPEA_EVAL_PROMPT_VARIANT') or (DEFAULT_VARIANT if arm == 'p' else None)
 
-def task_prompt(arm):
+def task_prompt(arm, condition='legacy'):
     if arm not in ('p', 'python'):
         raise ValueError(f'Unknown arm: {arm}')
-    variant = os.environ.get('SNAPPEA_EVAL_PROMPT_VARIANT')
-    if variant:
-        if arm != 'p' or variant not in VARIANTS:
-            raise ValueError(f'Unknown P prompt variant: {variant}')
-        body = VARIANTS[variant] + "\n\nP/Snappea: /opt/snappea; docs: /opt/pdocs/; example: /opt/inventory/.\n"
+    if condition == 'baseline':
+        body = BASELINE_MINIMAL
+    elif condition == 'skill':
+        body = SKILL_MINIMAL
+    elif condition == 'legacy':
+        variant = os.environ.get('SNAPPEA_EVAL_PROMPT_VARIANT')
+        if variant:
+            if arm != 'p' or variant not in VARIANTS:
+                raise ValueError(f'Unknown P prompt variant: {variant}')
+            body = VARIANTS[variant] + "\n\nP/Snappea: /opt/snappea; docs: /opt/pdocs/; example: /opt/inventory/.\n"
+        else:
+            body = P if arm == 'p' else CONTROL
     else:
-        body = P if arm == 'p' else CONTROL
+        raise ValueError(f'Unknown condition: {condition}')
     return COMMON + body + "\nDeliver solution.py and DESIGN.md.\n"

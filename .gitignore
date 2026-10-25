@@ -33,3 +33,6 @@ examples/model/PCheckerOutput/
 
 # Checker binaries staged for the Java natives profile
 java/natives/
+
+# Generated output from bundled skill examples
+skills/**/PCheckerOutput/

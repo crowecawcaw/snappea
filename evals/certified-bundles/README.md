@@ -3,7 +3,8 @@
 A runnable Python implementation benchmark comparing agents with and without
 P/Snappea. The task is a protected multi-repository VCS service: revision-bound
 approvals/CI, atomic publication, overlapping requests, durable request outcomes,
-and crash recovery. No skill is included.
+and crash recovery. The baseline cohorts receive no modeling skill; the optional
+skill comparison is described below.
 
 This directory contains the eval setup. Run outputs, submissions, transcripts,
 checker output, and generated reports stay local and are ignored by Git.
@@ -24,6 +25,8 @@ Run commands below from `evals/certified-bundles/`.
 - `tools/test_harness.py`: storage, oracle, and report self-checks.
 - `tools/collaboration_run.py`: provision, freeze, and grade isolated solver trials.
 - `tools/prompts.py`, `tools/delegation.py`: shared task prompts and solver instructions.
+- `tools/snapshot_skill.py`, `tools/skill_snapshot.py`: content-addressed skill snapshots;
+  the focused snapshot and paired-prompt checks are in `tools/test_skill_snapshot.py`.
 - `tools/solver_shell.py`: budgeted, logged bridge into network-disabled containers.
 - `tools/run_sonnet.py`: optional Anthropic API runner.
 - `tools/regrade.py`, `tools/stress_all.py`, `tools/summarize.py`: grade and summarize
@@ -130,6 +133,53 @@ limits, and no network. Agent instructions restrict commands to the bridge, but
 do not revoke broader host-tool access. This is research isolation, not a
 hostile-code security boundary. The grader assumes compliance with public store
 and I/O restrictions.
+
+## Compare the modeling skill
+
+The current skill comparison uses the same P/Snappea task in both conditions.
+The baseline prompt says: “Use P/Snappea to model the design, then implement it
+in Python.” The treatment adds only: “Use the P modeling skill at
+`/opt/p-modeling/SKILL.md`.” Both arms receive the same task, deliverables,
+checker, docs, example, Python package, image, and bridge limits. The treatment
+mounts the skill snapshot read-only at `/opt/p-modeling`.
+
+Build the current checkout's release checker, stage its docs/example, and build
+the pinned offline images before provisioning runs:
+
+```sh
+cargo build --release -p snappea
+python tools/bootstrap.py --binary ../../target/release/snappea --source ../..
+python -m pip download --only-binary=:all: --dest vendor/wheels pytest==8.4.2 pluggy==1.7.0 iniconfig==2.3.1 packaging==26.3 pygments==2.21.0
+python tools/build_eval_images.py --wheelhouse vendor/wheels
+export SNAPPEA_EVAL_IMAGE="$(docker image inspect snappea-eval:py312-pytest842-base --format '{{.Id}}')"
+export SNAPPEA_EVAL_P_IMAGE="$(docker image inspect snappea-eval:py312-pytest842-pysnappea-source-0.1.0 --format '{{.Id}}')"
+python tools/smoke_eval_image.py --checker ../../target/release/snappea
+```
+
+Freeze the authored skill and its examples before launching the cohort. The
+snapshot is content-addressed, recorded with every treatment run, and mounted
+read-only. Its source tree must contain `SKILL.md` and at least one file under
+`examples/`:
+
+```sh
+python tools/snapshot_skill.py --source /path/to/p-modeling
+```
+
+Use the printed snapshot path for three baseline and three skill runs. Keep the
+run IDs unique; alternate launch order and use fresh Luna high agents with
+`fork_turns="none"` and each generated `runs/<run-id>/delegation.txt`:
+
+```sh
+python tools/collaboration_run.py start --run-id skill-base-01 --arm p --condition baseline
+python tools/collaboration_run.py start --run-id skill-treatment-01 --arm p --condition skill --skill-snapshot /path/printed/above
+```
+
+The new conditions retain the existing 900-second and 80-call limits and use a
+120-second per-command cap. The runner checks the installed checker, Python
+package, pytest, and (for treatment) the read-only skill mount before the
+delegation is ready. Finish each solver with the usual `finish --run-id ...`
+command and summarize the two cohorts separately. Existing prompt variants and
+saved historical run records remain intact.
 
 ## Interpret measurements
 

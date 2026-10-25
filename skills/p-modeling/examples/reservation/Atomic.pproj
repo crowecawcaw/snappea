@@ -1,0 +1,8 @@
+<Project>
+  <ProjectName>AtomicReservation</ProjectName>
+  <InputFiles>
+    <PFile>./capacity.p</PFile>
+    <PFile>./atomic.p</PFile>
+    <PFile>./atomic-tests.p</PFile>
+  </InputFiles>
+</Project>

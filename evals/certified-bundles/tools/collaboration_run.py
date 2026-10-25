@@ -8,29 +8,48 @@ from pathlib import Path
 import time
 import run_sonnet as r
 from delegation import prompt as delegation_prompt
-from prompts import VERSION as PROMPT_VERSION
+from prompts import VERSION as PROMPT_VERSION, prompt_variant
+from skill_snapshot import verify_snapshot
 ROOT=Path(__file__).resolve().parents[1]
 
-def start(run_id,arm):
-    run,work,prompt=r.prepare(run_id,arm)
-    delegation=delegation_prompt(run_id,arm)
+def start(run_id,arm,condition='legacy',skill_snapshot=None):
+    if condition in ('baseline','skill') and arm != 'p':
+        raise ValueError('baseline and skill conditions require --arm p')
+    if condition == 'skill':
+        if not skill_snapshot:
+            raise ValueError('skill condition requires --skill-snapshot')
+        skill_manifest=verify_snapshot(skill_snapshot)
+    else:
+        skill_manifest=None
+    run,work,prompt=r.prepare(run_id,arm,condition)
+    delegation=delegation_prompt(run_id,arm,condition)
     (run/'delegation.txt').write_text(delegation)
-    result=r.command(r.container_args('snappea-eval-'+run_id,work,arm))
+    result=r.command(r.container_args('snappea-eval-'+run_id,work,arm,condition,skill_snapshot))
     if result.returncode: raise RuntimeError(result.stderr)
     preflight=None
     if arm=='p':
         check=r.command(['docker','exec','snappea-eval-'+run_id,'bash','-c',
-            'command -v snappea && snappea version && python -c "import snappea; from importlib.metadata import version; print(version(\'pysnappea\'))"'])
+            'command -v snappea && snappea version && python -m pytest --version && python -c "import snappea; from importlib.metadata import version; print(version(\'pysnappea\'))"'])
         preflight={'exit_code':check.returncode,'stdout':check.stdout,'stderr':check.stderr}
+        if condition == 'skill' and check.returncode == 0:
+            skill_check=r.command(['docker','exec','snappea-eval-'+run_id,'bash','-c',
+                'test -r /opt/p-modeling/SKILL.md && find /opt/p-modeling/examples -type f -print -quit | grep -q .'])
+            preflight['skill_mount']={'exit_code':skill_check.returncode,'stdout':skill_check.stdout,'stderr':skill_check.stderr}
+            if skill_check.returncode:
+                r.command(['docker','rm','-f','snappea-eval-'+run_id])
+                raise RuntimeError('P modeling skill mount preflight failed: '+skill_check.stderr)
         if check.returncode:
             r.command(['docker','rm','-f','snappea-eval-'+run_id])
             raise RuntimeError('Snappea preflight failed: '+check.stderr)
-    meta={'run_id':run_id,'arm':arm,'prompt_version':r.prompt_version(),'prompt_variant':r.prompt_variant(arm),'model':'gpt-6-luna','reasoning_effort':'high',
+    meta={'run_id':run_id,'arm':arm,'condition':condition,'prompt_version':r.prompt_version(),'prompt_variant':prompt_variant(arm,condition),'model':'gpt-6-luna','reasoning_effort':'high',
         'backend':'collaboration','tool_preflight':preflight,'environment_revision':'pysnappea-tests','snappea_on_path':arm=='p','tool_bridge_version':2,'delegation_prompt_sha256':hashlib.sha256(delegation.encode()).hexdigest(),'image':r.image_for_arm(arm),'limits':{'seconds':900,'tool_calls':80,'generated_tokens':None},
+        'command_timeout_seconds':120 if condition in ('baseline','skill') else 40,
         'public_sha256':{n:hashlib.sha256((ROOT/'public'/n).read_bytes()).hexdigest() for n in r.PUBLIC},
         'prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest(),'smoke':False,
         'status':'running','seconds':None,'generated_tokens':None,'input_tokens':None,'tool_calls':0,
         'provisioned_unix':time.time()}
+    if skill_manifest:
+        meta['skill_snapshot']={'tree_sha256':skill_manifest['tree_sha256'],'files':skill_manifest['files']}
     if arm=='p':
         binary, source = r.tool_paths()
         revision = r.command(['git','-C',str(source),'rev-parse','HEAD'])
@@ -61,8 +80,10 @@ if __name__=='__main__':
     p.add_argument('action',choices=['start','finish'])
     p.add_argument('--run-id',required=True)
     p.add_argument('--arm',choices=['p','python'])
+    p.add_argument('--condition',choices=['legacy','baseline','skill'],default='legacy')
+    p.add_argument('--skill-snapshot',help='content-addressed snapshot from tools/snapshot_skill.py')
     p.add_argument('--status',default='agent_finished')
     p.add_argument('--seeds',type=int,default=64)
     a=p.parse_args()
-    if a.action=='start': start(a.run_id,a.arm)
+    if a.action=='start': start(a.run_id,a.arm,a.condition,a.skill_snapshot)
     else: finish(a.run_id,a.status,a.seeds)
