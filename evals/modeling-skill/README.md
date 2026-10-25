@@ -44,3 +44,17 @@ Primary outcome: frozen submission's existing 20 hidden contract cases (64 sched
 A Luna/high reviewer assessed PLAN.md before guide/example authoring. Feedback incorporated: novice first-session path, justified atomic boundaries, bounded-model limits, explicit progress assumptions, event provenance and observation limitations, portable exact commands, and contemporaneous controls.
 
 During content review, source inspection corrected a mistaken reviewer suggestion that all P handlers are atomic. Snappea yields at scheduling operations including send, receive and machine creation; local non-yielding updates can represent a real atomic primitive. The publication example was strengthened to recompute candidate data after conflict, rather than merely updating an evidence-version label. Local links and Python source-provenance checks were made portable.
+
+## Artifact audit rubric
+
+Audit submitted source and command transcripts before consulting hidden grades where possible. Record evidence and limits for each field; do not sum these into a design-success score.
+
+- Skill access: entry point, guides, and original examples actually read.
+- Model substance: executable state-owning implementation machines produce outcomes; distinguish fixed event traces or only a monitor.
+- Fidelity: individual storage calls permit interference, and modeled guarantees correspond to actual primitives. Identify explicit omissions in crash/retry/version/representation behavior.
+- Oracle independence: expected results derive from contract/history; do not equate two fields authored from the same expression or accept an asserted validity flag.
+- Scenarios: meaningful shared identities/resources, stale values, conflict/retry and crash positions, with progress assumptions recorded.
+- Feedback: a useful model check exercises the asserted behavior; note coverage gaps, mutation survivors, suppressions, and whether feedback causes a substantive change.
+- Implementation correspondence: compare model state transitions and implementation storage/retry boundaries. A correct model fragment cannot establish an unmodeled requirement.
+- Observation: a saved runnable test captures actual implementation inputs/results or emit events and checks a relevant monitor. Identify fabricated event fields, missing outcomes, unobserved internal claims, and whether a defective implementation would be distinguished.
+- Reproducibility: public files untouched, frozen manifests valid, saved tests runnable, source/model correspondence demonstrated rather than assumed.
