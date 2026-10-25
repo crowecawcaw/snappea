@@ -1,15 +1,40 @@
-# Make expectations independent of the behavior under test
+# Scenarios and independent oracles
 
-A model can execute many schedules and still miss a defect if its monitor repeats the implementation’s mistake. Write the expectation from the external contract: what must never happen, what must eventually happen under stated assumptions, and how you know a scenario exercised the condition. For a reservation, the monitor should derive available stock from successful reservation events and reject a negative balance; it should not trust the service’s “success” flag as proof that stock remained. The [reservation example](../examples/reservation/README.md) keeps that monitor separate from the model’s decision logic.
+## Expectations
 
-Use a small scenario that forces the relationships likely to reveal the issue. Two actors that both read before either writes can expose a check-then-write race. A retry after a commit but before its response arrives can expose duplicate processing. Scenario inputs should represent meaningful alternatives, not just generate lots of schedules. Keep nondeterministic choices bounded: if a quantity or identifier does not affect the claim, use one representative value.
+- Derive expected state from the external contract, inputs, and history; do not trust an implementation's `valid` flag.
+- Example: subtract committed reservations from initial stock; reject negative capacity independently of storage's decision logic. See [reservation](../examples/reservation/README.md).
+- Check later public reads when an announcement alone cannot establish that state changed.
+- A broken variant validates the oracle only if it fails for the intended property, not a syntax error or unrelated assertion.
 
-Safety and progress answer different questions. A safety assertion says an invalid state is never reached, such as “one request is not applied twice.” A progress claim says useful work eventually finishes, such as “every accepted reservation eventually ships.” “Every request eventually gets a response” alone permits a service that always rejects; if the contract requires success when capacity exists, state that useful-success requirement too. Progress needs assumptions about the environment: if the network can delay forever or a worker can be ignored forever, no implementation can guarantee completion. State the assumptions about recovery, delivery, and scheduling, and make them plausible for the system. P’s hot states can check that an execution did not stop while work remained outstanding when liveness checking is enabled. They do not by themselves make an unfair scheduler fair. A repeated hot state is not a liveness proof; see the [checking guide](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md).
+## Scenarios
 
-Scenarios and coverage help answer whether the model exercised intended behavior. They do not establish that the behavior matters to the property. Coverage reports statements, branches, event handlers, and other explored features; full coverage still cannot expose a requirement omitted from the monitor. A scenario monitor can mark that a sequence such as write-then-read occurred, but that only confirms the sequence happened. It does not validate the result unless an independent assertion checks it.
+- Contention: both clients read the same resource before either writes.
+- Ambiguous commit: effect commits, response is lost, restart, retry the same ID.
+- Old replay: complete A, let B change the same resource, retry A; distinguish A's saved result from current state.
+- Include stale/rejected operations and useful success. Always rejecting can satisfy safety while violating the contract.
+- Use bounded choices that preserve these relationships; schedule count alone says little.
 
-Mutation feedback asks a sharper question: if a statement or condition changed, would any passing test or monitor notice? A surviving mutant is a prompt to inspect the contract, scenario, and assertion. The mutation may be irrelevant, equivalent under the chosen bounds, or evidence that the check never depends on the changed behavior. Search may also have been incomplete, so read the report’s completion and budget information before drawing a conclusion. Mutation detection is evidence that a check is sensitive to a particular small change, not proof that all defects are detectable.
+## Choose discriminating tests
 
-When a check passes, explain the scope of that result: which scenarios ran, which assumptions were active, whether search completed, and which parts of the contract were asserted. When it fails, preserve the counterexample and reduce it to the smallest sequence that still violates the contract. A deliberately broken variant is useful only when it fails for the intended reason; if it fails from a type error or an unrelated assertion, it has not validated the oracle.
+- For each important test, name a plausible defect and the observation that would expose it. Prefer a scenario where the proposed design and a plausible broken alternative behave differently.
+- Check resulting public state as well as returned outcomes; use independent expected values, not the same helper as the implementation.
+- Where practical, confirm a known-bad variant fails for the intended reason. Keep this as a negative control, not a requirement for every test.
+- Turn counterexamples into saved regression tests. Exercise real failure boundaries and relevant relationships, not just more random inputs.
 
-An informative survivor may be a missing state read: if removing a state update does not change any observed result, the monitor may only check the event announcing the update. Add a later read through the public behavior and compare its actual result with independently tracked expectations. Record whether a survivor is irrelevant under a stated abstraction, equivalent under the bounds, or an unresolved contract risk. Do not silently turn an unresolved risk into an exception just to obtain a passing command.
+## Feedback and limits
+
+- Uncovered statements, branches, handlers, and scenarios identify behavior not exercised.
+- An exercised assertion need not meaningfully constrain behavior. Full coverage cannot identify omitted requirements.
+- Named scenario coverage establishes occurrence, not correctness; add independent assertions for results.
+- Inspect surviving mutants: missing scenario/check, equivalent behavior, irrelevant abstraction, or incomplete search? Check budgets and completion before deciding.
+- If removing a write survives, read the state through public behavior; announcement-only checks can miss it.
+- Explain intentional exceptions. Do not suppress unresolved risks to obtain a passing command.
+- Report asserted properties, bounds, assumptions, completion, and unresolved findings.
+
+## Progress
+
+- Safety: “no duplicate effect.” Progress: “accepted work eventually completes.” Check useful success where promised, not merely a response.
+- State delivery, scheduling, and recovery assumptions. Infinite outages cannot guarantee completion.
+- Hot states detect outstanding obligations at checked execution ends when enabled; they do not establish scheduler fairness.
+- See [checking models](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md).

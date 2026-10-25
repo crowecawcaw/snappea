@@ -1,30 +1,8 @@
-# P patterns worth keeping nearby
+# P syntax and commands
 
-The Python distribution is `pysnappea`; application and test code import `snappea`. The skill’s reservation example includes a complete implementation and a test that checks events emitted by real method calls:
+## Independent monitor
 
-```python
-from snappea import check_spec
-from storage import ReservationStore
-
-with check_spec(
-    "Capacity",
-    spec_files=["capacity.p"],
-    strict=True,
-    check_hot=True,
-    unknown_events="error",
-):
-    store = ReservationStore(1)  # emits eOpened
-    first = store.read()
-    second = store.read()
-    assert store.reserve_if_unchanged("order-a", 1, first)
-    assert not store.reserve_if_unchanged("order-b", 1, second)
-```
-
-This form fails if the event history violates the monitor. The example also checks an intentionally broken stale write and uses a separate Python invariant over the actual committed records. `strict=True` rejects a selected spec that saw no relevant events; it does not prove that every operation emitted an event. `unknown_events="error"` catches misspelled or undeclared event names. Runtime observation can only check events it receives. See [reservation](../examples/reservation/README.md).
-
-## Monitor state from events
-
-The [Capacity spec](../examples/reservation/capacity.p) tracks available units from an opening event and subsequent reservations:
+From [Capacity](../examples/reservation/capacity.p):
 
 ```p
 event eOpened: (available: int);
@@ -70,28 +48,31 @@ spec Capacity observes eOpened, eReserved {
 }
 ```
 
-Events declare payload shape; `observes` selects which events advance the monitor; monitor variables capture contract state. Keep the oracle independent: derive capacity from committed reservation events instead of trusting an application result flag.
+- `observes` selects events; monitor variables track independent contract state.
+- Hot states mark outstanding obligations when liveness checking is enabled; cold states do not. Hot states do not imply fairness.
 
-## Test case and commands
-
-A P test case names the entry machine and the monitor it checks. The reservation project includes both a conditional atomic case and an intentionally broken read/check/write case:
+## Test case
 
 ```p
 test tcAtomicConditionalReserve [main=AtomicCase]:
   assert Capacity in { Store, Client, AtomicCase };
 ```
 
-From the example directory, run each complete project with:
+- Names the entry machine, participating machines, and checked monitor.
+- Scheduling points include `send`, `receive`, and machine creation; local assignments do not yield. Match non-yielding updates to real atomic primitives.
+
+## Commands
+
+From [reservation](../examples/reservation/README.md):
 
 ```sh
 snappea check Atomic.pproj --timeout 5s
 snappea check StaleWrite.pproj --timeout 5s
 ```
 
-The atomic project should pass with complete coverage; the stale-write project is a negative control and should fail with the oversell assertion. Selecting only `tcAtomicConditionalReserve` misses the monitor’s later-reservation handler, so use the full atomic project when interpreting its coverage. A passing check covers only the represented actors, bounds, and operations. The [example README](../examples/reservation/README.md) gives exact expected results and its deliberate limits.
-
-Snappea runs a machine until a scheduling point such as `send`, `receive`, or machine creation; ordinary local assignments do not yield by themselves. A sequence of assignments can represent one storage primitive only when the implementation gives it the same atomic guarantee. Put a real read and later write across messages or phases so another client can run between them. The [durable retry example](../examples/durable-retry/README.md) shows how to keep durable and volatile state distinct across a restart; [versioned publication](../examples/versioned-publication/README.md) shows evidence tied to a version.
-
-A `hot state` marks work that must not remain unfinished at a checked execution end when liveness checking is enabled. A `cold state` has no such obligation. For event histories, `snappea observe --check-hot` also checks whether a monitor ends hot. This validates only the supplied history; it does not schedule or exercise the implementation.
-
-The CLI type-checks and lints before exploring. Its default limit is 10 seconds per test case; `--timeout 2m` changes that limit. A timeout is incomplete evidence. A clean exhaustive finite search covers the bounded model, not unbounded deployments. See [checking models](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md).
+- Atomic project: expected pass with complete required coverage. Run the whole project; one case misses the later-reservation handler.
+- Stale-write project: expected oversell assertion failure.
+- Checking type-checks and lints first. Default timeout: 10 seconds per test case; override with `--timeout 2m`.
+- A timeout is incomplete evidence; exhaustive search covers only finite modeled bounds.
+- For Python capture/check syntax, see [implementation](../guides/implementation.md); install `pysnappea`, import `snappea`.
+- Related: [durable retry](../examples/durable-retry/README.md), [versioned publication](../examples/versioned-publication/README.md), [checking docs](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md).

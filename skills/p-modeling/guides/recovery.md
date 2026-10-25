@@ -1,19 +1,30 @@
-# Model what survives a restart
+# Recovery and retry
 
-Recovery bugs often come from treating a process restart as if it erased the whole system, or as if it erased nothing. Separate durable state from volatile state before writing transitions. A database row, committed ledger entry, or idempotency record may survive. A worker’s memory, pending response, or local “already handled” flag may disappear. The same request can then arrive in a process that has forgotten work the durable store already records.
+## Preserve the right state
 
-A revealing sequence is: accept a request, commit the effect, lose the response, restart, and retry the same request identity. If the retry applies the effect twice, the design has confused “the caller did not hear back” with “the operation did not commit.” The [durable retry example](../examples/durable-retry/README.md) represents the committed effect, durable request record, volatile worker state, and lost response separately so the checker can place a restart between them.
+- Separate durable effects/outcome records from volatile worker memory, pending replies, and local flags.
+- Restart clears volatile state; retain committed durable state unless modeling storage loss explicitly.
+- Preserve request identity across retries. Generating a new ID changes the idempotency contract.
+- Model effect + outcome memo atomically only if a real primitive co-commits them. Otherwise allow a crash between writes.
 
-Keep request identity stable across retries. If the system promises idempotency, the model should retain enough durable state to decide that a repeated ID has already been applied, and assert that the effect count remains one. If the identifier is regenerated on retry, the model has changed the contract and cannot establish idempotency for a stable ID. Likewise, model the actual transaction boundary: recording the idempotency key and applying the effect must be atomic together if the implementation guarantees that. If they are separate writes, allow a crash between them.
+## Histories to challenge
 
-Conditional retries need their own guard. A version, lease token, or compare-and-swap can prevent stale work from overwriting newer state, but only if the condition and write share the promised atomic operation. Model the old version, the concurrent update, and the retry carrying stale evidence. If the code checks the version and later writes without a transaction or CAS, expose that gap as an interleaving. The [versioned publication example](../examples/versioned-publication/README.md) illustrates evidence tied to a version and a single pointer update.
+- Commit effect → lose response → restart → retry the same ID. Missing response does not imply missing commit.
+- Complete A → B advances the same state → retry A. If promised, return A's original result without reapplying A over B.
+- Track original per-request responses separately from current state; they can legitimately differ.
+- Distinguish replay/no-op log records from new state-changing effects.
+- See [durable retry](../examples/durable-retry/README.md) for correct and split-commit/reapplied-effect variants.
 
-Decide explicitly what “restart” means. A model can create a new worker with empty volatile variables while preserving shared durable variables. It should not reset durable state unless the real storage can be lost in the failure being studied. Conversely, retaining every local variable across a restart hides bugs caused by lost memory. Keep the restart transition simple and label its assumptions: for example, “process dies; database remains available and committed writes persist.”
+## Stale evidence
 
-Progress after failure requires a condition such as “eventually failures stop,” “a worker is eventually scheduled,” or “the service eventually recovers.” Without it, an infinite outage is a valid execution in which no request completes. Treat that as an environmental assumption, not an implementation guarantee. Check that the model can both reach a stable retry and finish the pending work when recovery assumptions hold. A safety property like no duplicate effect can often be checked without assuming eventual recovery; completion cannot.
+- Keep the old version, concurrent update, and stale retry explicit.
+- Version/lease checks protect writes only when enforced at the atomic update.
+- After CAS conflict, reread, recompute, and revalidate version-dependent work; changing only the expected version may publish stale evidence.
+- See [versioned publication](../examples/versioned-publication/README.md).
 
-Small models are especially effective here: one request ID, one durable effect, and one restart often suffice. Add concurrent IDs or multiple workers only if they change the claim. A bounded model can reveal a recovery counterexample, but a clean finite search does not establish correctness for unbounded identifiers, repeated crashes, storage failures outside the model, or implementation code that behaves differently from the represented transitions.
+## Bounds and progress
 
-## Replay an old result after new work
-
-For a contract promising idempotent retries and an original response, the relevant history is not just the same call twice in an otherwise empty system. Complete operation A, perform a different operation B that advances state, then retry A. A should return its original outcome while leaving B's newer state intact. This distinguishes replaying a response from replaying an effect. An event log must likewise distinguish a replay/no-op entry from a new state-changing event. In the oracle, remember each operation's original response separately from the current system state; those are allowed to differ. The durable-retry example includes this history as a separate scenario.
+- Start with one request/effect/restart; add actors and IDs when they change the claim.
+- State omitted crash points, expiration, conflicting payloads under one ID, network behavior, and storage failures.
+- Completion needs assumptions such as eventual recovery and scheduling. Safety may not.
+- A bounded pass does not establish arbitrary-crash or implementation correctness.

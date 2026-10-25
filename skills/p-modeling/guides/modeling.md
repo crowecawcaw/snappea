@@ -1,21 +1,24 @@
-# Model the boundary that decides the outcome
+# Model the risky boundary
 
-A P model is useful when the question depends on competing actions, asynchronous delivery, retries, crashes, or more than one state owner. Its value comes from making the important choices visible. A model that removes a real scheduling point or puts separate calls into one non-yielding segment can make a broken design look safe, because the checker never gets a chance to interleave them.
+## Scope
 
-Start with one claim that could be false: for example, “two clients cannot both reserve the same last unit,” or “retrying after a lost response does not apply a payment twice.” Name the actors that can act independently, then write down the state each actor and shared resource owns. Include identity and version where they change what a stale message or retry means. A client’s belief that a reservation succeeded is not the same fact as the inventory’s committed quantity.
+- Start with a falsifiable contract: “two clients cannot reserve the last unit” or “retry cannot apply an effect twice.”
+- Name independent actors, owned/shared state, real storage primitives, and relevant identities/versions.
+- Start small: two competing clients, one resource, a few values. Retain distinctions that permit the defect; omit unrelated detail.
+- State atomicity, message delay/duplication, persistence, bounds, and omissions. Ask whether each omission could change the property.
 
-Snappea runs a machine cooperatively until it reaches a scheduling point such as `send`, `receive`, or machine creation. Plain assignments do not yield on their own, so consecutive local updates can model one atomic storage primitive. Keep that group non-yielding only when the implementation has a matching guarantee, such as one transaction, a lock spanning the operation, or one compare-and-swap. To expose a read/decide/write race, represent the read and later write across messages or machine phases; a scheduling point lets another client change the resource in between. Otherwise the model assumes the very protection it is meant to assess. The [reservation example](../examples/reservation/README.md) shows how check-then-write can oversell when two clients read the same stock, and why collapsing the operation into an atomic reservation is a different design assumption.
+## Preserve interference
 
-Abstraction is necessary because real systems have too much data and too many operations to enumerate. Keep distinctions that affect the claim and collapse distinctions that do not. If the property is “never grant twice for one request ID,” retain request identity and whether it was applied; concrete amounts, customer profiles, and timestamps may be irrelevant. If the property is about version-bound evidence, retain the version and the atomic publication pointer. Dropping those distinctions can remove the counterexample. Adding unrelated detail can make a finite search unhelpfully large without adding evidence.
+- Snappea schedules at operations such as `send`, `receive`, and machine creation. Ordinary assignments do not yield.
+- A non-yielding group may represent **one real atomic primitive**: a transaction, lock-protected update, or CAS. A whole handler is not automatically atomic.
+- Split read → decide → write across messages/phases when another actor can intervene. Otherwise the model assumes away the race.
+- Keep preparation, dependency writes, validation, and publication separate when those boundaries matter. Prepared-but-unpublished records are not committed state.
+- A per-resource model cannot check a shared global limit unless it represents the competing resources.
+- See [reservation](../examples/reservation/README.md) for atomic conditional update versus stale read/write.
 
-Record what the model leaves out next to the claim. Say which primitive is atomic, which messages may be delayed or duplicated, whether state survives restart, and which inputs are bounded. Then ask whether the omitted detail could change the property. A model of one resource may support a per-resource invariant, but says nothing about races across resources if the implementation shares a global limit.
+## Compare with implementation
 
-A practical first model is deliberately small: two clients and one resource often expose a race; a single request retried across restart can expose duplicate application. Use only a few values and actors first. If a counterexample appears, replay it and inspect the interleaving before adding realism. If none appears, check that the model actually contains each competing step and failure point. Exhausting a model proves a claim only for the represented transitions and finite bounds.
-
-P is usually unnecessary for a pure deterministic transformation with no relevant interleaving, durable state, or failure boundary. A normal unit test is clearer for “this parser maps this input to this output.” P becomes useful when the result depends on order, concurrency, recovery, or protocol history. It cannot prove arbitrary implementation correctness: it can only explore the model you wrote, and implementation checks only cover behavior that was observed and represented.
-
-## Check the abstraction against the actual primitive
-
-Before choosing what one model action does, name the real reads, writes, conditional updates, and restart points. A model of an atomic commit pointer can answer questions about clients competing at that pointer. It cannot establish that code building a candidate, writing its dependencies, and retrying CAS implements the pointer correctly. Preserve those stages in a more detailed model when that construction is the risky decision; compare the implementation to each stage. A state prepared but not published is different from a committed state, even if it can be garbage-collected later.
-
-Representation limits are part of this choice too. If the storage contract bounds an individual record but logical operations can be larger, putting the whole operation in one modeled record assumes away a design obligation. Use a small representative capacity and a logical operation that crosses it to model the splitting/publication relationship. Small bounds illustrate the protocol; implementation tests must separately check actual encoded limits.
+- Map each modeled read, write, version check, retry, and restart to its actual primitive.
+- An atomic commit-pointer model alone does not validate candidate construction or CAS retry logic; model those stages if risky.
+- For bounded records and larger logical operations, represent splitting plus publication. Separately test actual encoded sizes in the implementation.
+- Replay and reduce counterexamples before adding realism. A passing finite search covers only represented transitions and bounds.

@@ -1,20 +1,15 @@
 # Reserving the last unit
 
-Two clients each want the only available unit. A read tells each client what was available at that moment; it does not hold that capacity for the client. The contract here is that committed reservations never exceed the initial stock and that the stored remaining stock agrees with the committed reservation records.
+- **Contract:** committed reservations never exceed initial stock; remaining stock agrees with reservation records.
+- **Correct:** `ReservationStore.reserve_if_unchanged` validates version/stock and updates stock + reservation under one lock. A database needs equivalent conditional update or transaction guarantees.
+- **Broken:** both clients read the last unit, check stale snapshots, then independently write zero stock and a reservation. Locking only the final writes still oversells and loses a decrement.
+- **Model:** `atomic.p` represents one conditional storage primitive; `stale-write.p` separates reads from writes so clients can interfere.
+- **Oracle:** `capacity.p` subtracts committed reservation events independently; negative capacity fails. Hot `Open` requires a reservation in these bounded cases.
+- **Implementation tests:** call real `storage.py` methods under `check_spec`, check emitted source locations, and independently compare actual records with initial/remaining stock. The broken implementation fails both checks.
 
-`ReservationStore.reserve_if_unchanged` uses a lock to validate the snapshot version and stock and update both stock and the reservation record in one critical section. A database implementation needs the equivalent real primitive, such as a conditional `UPDATE ... WHERE version = ? AND available >= ?` whose row count is checked, or a transaction with suitable locking. Merely putting a client’s read, check, and later write into one P handler would hide the race by assumption.
+## Run
 
-The deliberately broken method still locks each final update, but it checks an old snapshot before taking that lock and never verifies that the snapshot is current. The deterministic test schedule makes both clients read first, then commit. Each writes `available = 0` and records one reservation, so the result contains two reservations for one unit. This is both overselling and a lost update: the stock field reflects only one decrement while two reservation rows exist.
-
-`capacity.p` is the independent `Capacity` monitor used by both the P tests and the Python tests. It subtracts every actual `eReserved` event from the capacity and fails if the result goes negative. It never accepts a `valid` flag from the application. The hot `Open` state also requires an available unit to be reserved in these bounded model cases. In Python, `strict=True` requires the monitor to have relevant events and `check_hot=True` checks that progress expectation. `emit` is called after a successful state change; the test’s `check_spec` evaluates the recorded events when its context exits. The application does not use monitor results to decide whether to commit.
-
-The Python test calls the real `storage.py` methods while the `snappea` recorder captures their `emit` calls. It checks the same P monitor against those implementation-origin events, and checks the source location of the actual reservation event. Separately, `assert_inventory_invariant` derives the total from the actual reservation records and compares it with both initial and remaining stock. The intentionally broken implementation fails both checks.
-
-The P model has an explicit correspondence boundary. `atomic.p` makes the conditional storage operation one `Store` event handler; that is valid for this property only when the implementation really has one atomic compare-and-update boundary. `stale-write.p` splits the read response from the later write, allowing both clients to carry the same old snapshot into separate commits. The P model explores small executions of those abstractions; it does not prove a database’s transaction semantics or all behavior of a deployed service.
-
-## Run it
-
-Install `pysnappea` (which provides the `snappea` Python import and checker), or use your existing installation. From this example directory:
+From this directory:
 
 ```sh
 python -m pip install pysnappea
@@ -24,19 +19,20 @@ snappea check lint Atomic.pproj
 snappea check lint StaleWrite.pproj
 ```
 
-The Python tests pass. The atomic P project passes with complete model coverage and all 12 generated mutations detected. The lint commands report no findings. Each command takes well under a second here.
-
-The broken model is an expected failure. Run it separately and expect exit status `1` with `reservations exceed available capacity` in the report:
+- Distribution: `pysnappea`; import: `snappea`.
+- Expected: Python tests pass, lint clean, atomic project complete coverage and 12/12 mutants detected with the validated checker.
+- Negative control:
 
 ```sh
 snappea check StaleWrite.pproj --timeout 5s
 ```
 
-It stops at the first counterexample, so its coverage is partial and mutation checking is skipped. That is expected for this negative control; the passing atomic project is the one used for full coverage and mutation feedback.
+- Expected: exit 1, `reservations exceed available capacity`. Coverage is partial and mutation checking skipped after failure.
 
-## Assumptions and limits
+## Boundaries
 
-- The Python store stands in for a single storage authority. Its `Lock` makes the conditional validation and update atomic among threads using this object. A real service must rely on the database’s documented transaction or compare-and-swap guarantee.
-- This schedule isolates concurrent stale reads. It omits crashes, retries, idempotency, timeouts, multiple processes, and persistence; the lock does not represent a cross-process guarantee.
-- The P model checks the event-level capacity contract for the modeled clients and finite values. It does not establish correctness for every input, workload, storage engine, or implementation path. Events cannot reveal behavior that the implementation does not emit.
-- The production `emit` API is observational instrumentation. These tests use an explicit recorder that can fail the test after calls complete; they do not route checker failures into application control flow.
+- Python `Lock` protects threads using this object, not other processes. Real storage must supply equivalent atomicity.
+- Omits crashes, retries, idempotency, timeouts, persistence, and multiple processes.
+- P explores finite event-level abstractions, not database semantics or every implementation path.
+- Events are emitted after successful changes. Explicit recorder validation can fail tests; runtime emission must not alter application control flow.
+- `strict=True` requires relevant events; `check_hot=True` checks outstanding progress. Neither proves complete instrumentation.
