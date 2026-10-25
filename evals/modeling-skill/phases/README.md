@@ -15,6 +15,10 @@ Separate capabilities before testing an end-to-end flow:
 - Coverage/schedule/test counts are diagnostics, not quality scores. Source review checks independent expectations, real boundaries, meaningful shared state, and observation provenance.
 - Keep adaptive revisions separate. These development pilots have no causal skill-effect claim; `baseline` is available for a later matched comparison.
 
+## Novel transfer checks
+
+[Schema migration and streaming windows](NOVEL.md) add two different domains, with separate model/test tasks and an unchanged skill. See [cold results](NOVEL_RESULTS.md).
+
 ## Protocol
 
 - Fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.

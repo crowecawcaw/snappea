@@ -16,6 +16,10 @@ def verify(run):
         raise ValueError('frozen submission changed')
     if digest(Path(meta['binary']))!=meta['binary_sha256']:
         raise ValueError('binary changed')
+    if meta.get('harness_sha256'):
+        for name,want in meta['harness_sha256'].items():
+            if digest(ROOT/name)!=want:
+                raise ValueError('grading harness changed since provisioning')
     phase=ROOT/meta['phase']
     grader=run/'private' if (run/'private').exists() else phase/'private'
     if manifest(grader)!=meta['grader_sha256']:
@@ -33,7 +37,9 @@ if __name__=='__main__':
     a=p.parse_args()
     run=ROOT/'runs'/a.run_id
     meta=verify(run)
-    if meta['phase']=='modeling':
+    if '/' in meta['phase']:
+        args=[sys.executable,str(ROOT/'grade_novel.py'),'--run-id',a.run_id]
+    elif meta['phase']=='modeling':
         args=[sys.executable,str(ROOT/'grade_model.py'),'--run-id',a.run_id]
     else:
         grader=(run/'private/grade.py') if (run/'private').exists() else ROOT/meta['phase']/'private/grade.py'

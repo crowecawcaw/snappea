@@ -1,0 +1,656 @@
+{
+  "trials": [
+    {
+      "run_id": "stream-model-skill-01",
+      "phase": "streaming/model",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0b4d40897236430ce8653d99ad99c69f4527478036763bea1b8ab894903a62fb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da"
+      },
+      "grader_sha256": {
+        "DESIGN.md": "145b1ac32f60da094eac7150afe3ce4738552696cf89ab8e4898670b5dd93946",
+        "cases.py": "4cf6aafb9586492ed937e334a8a5bc33b412c08e0b07f0dfde736ad5e5bc2809",
+        "model.p": "7080eeeeeafe7ce22aa49aa577b5308ce9604c1a989af0f5b6d643d09fda53e3",
+        "monitor.p": "2e2bf676cfc57010946ba564ff3e9f996c796e109eb84fec8459a7a05be3cd91",
+        "tests.p": "40c9083722966c348b7537ec8a4c31392ae3ea75b87ad19a5f1eb01061190ad0"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 178.19490265846252,
+      "calls": 20,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_tests": 1,
+        "search_complete": true,
+        "schedules": 2,
+        "valid_accepted": 5,
+        "valid_total": 6,
+        "invalid_rejected": 9,
+        "invalid_total": 9,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-model-skill-02",
+      "phase": "streaming/model",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0b4d40897236430ce8653d99ad99c69f4527478036763bea1b8ab894903a62fb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da"
+      },
+      "grader_sha256": {
+        "DESIGN.md": "145b1ac32f60da094eac7150afe3ce4738552696cf89ab8e4898670b5dd93946",
+        "cases.py": "4cf6aafb9586492ed937e334a8a5bc33b412c08e0b07f0dfde736ad5e5bc2809",
+        "model.p": "7080eeeeeafe7ce22aa49aa577b5308ce9604c1a989af0f5b6d643d09fda53e3",
+        "monitor.p": "2e2bf676cfc57010946ba564ff3e9f996c796e109eb84fec8459a7a05be3cd91",
+        "tests.p": "40c9083722966c348b7537ec8a4c31392ae3ea75b87ad19a5f1eb01061190ad0"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 173.8217396736145,
+      "calls": 22,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_tests": 1,
+        "search_complete": true,
+        "schedules": 4,
+        "valid_accepted": 6,
+        "valid_total": 6,
+        "invalid_rejected": 9,
+        "invalid_total": 9,
+        "timeouts": 0,
+        "all_probes_passed": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-model-base-01",
+      "phase": "streaming/model",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0b4d40897236430ce8653d99ad99c69f4527478036763bea1b8ab894903a62fb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da"
+      },
+      "grader_sha256": {
+        "DESIGN.md": "145b1ac32f60da094eac7150afe3ce4738552696cf89ab8e4898670b5dd93946",
+        "cases.py": "4cf6aafb9586492ed937e334a8a5bc33b412c08e0b07f0dfde736ad5e5bc2809",
+        "model.p": "7080eeeeeafe7ce22aa49aa577b5308ce9604c1a989af0f5b6d643d09fda53e3",
+        "monitor.p": "2e2bf676cfc57010946ba564ff3e9f996c796e109eb84fec8459a7a05be3cd91",
+        "tests.p": "40c9083722966c348b7537ec8a4c31392ae3ea75b87ad19a5f1eb01061190ad0"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 169.09999799728394,
+      "calls": 9,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_tests": 0,
+        "search_complete": false,
+        "schedules": 0,
+        "valid_accepted": 0,
+        "valid_total": 6,
+        "invalid_rejected": 0,
+        "invalid_total": 9,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-model-v2-skill-01",
+      "phase": "streaming/model",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "b656eb00859442788f6ff81685a2042f8fa06906ff8ede99ead6ed484feae38f",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da"
+      },
+      "grader_sha256": {
+        "DESIGN.md": "145b1ac32f60da094eac7150afe3ce4738552696cf89ab8e4898670b5dd93946",
+        "cases.py": "4cf6aafb9586492ed937e334a8a5bc33b412c08e0b07f0dfde736ad5e5bc2809",
+        "model.p": "7080eeeeeafe7ce22aa49aa577b5308ce9604c1a989af0f5b6d643d09fda53e3",
+        "monitor.p": "2e2bf676cfc57010946ba564ff3e9f996c796e109eb84fec8459a7a05be3cd91",
+        "tests.p": "40c9083722966c348b7537ec8a4c31392ae3ea75b87ad19a5f1eb01061190ad0"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 261.9967677593231,
+      "calls": 20,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_tests": 1,
+        "search_complete": true,
+        "schedules": 147,
+        "valid_accepted": 6,
+        "valid_total": 6,
+        "invalid_rejected": 9,
+        "invalid_total": 9,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-model-v2-base-01",
+      "phase": "streaming/model",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "b656eb00859442788f6ff81685a2042f8fa06906ff8ede99ead6ed484feae38f",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da"
+      },
+      "grader_sha256": {
+        "DESIGN.md": "145b1ac32f60da094eac7150afe3ce4738552696cf89ab8e4898670b5dd93946",
+        "cases.py": "4cf6aafb9586492ed937e334a8a5bc33b412c08e0b07f0dfde736ad5e5bc2809",
+        "model.p": "7080eeeeeafe7ce22aa49aa577b5308ce9604c1a989af0f5b6d643d09fda53e3",
+        "monitor.p": "2e2bf676cfc57010946ba564ff3e9f996c796e109eb84fec8459a7a05be3cd91",
+        "tests.p": "40c9083722966c348b7537ec8a4c31392ae3ea75b87ad19a5f1eb01061190ad0"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 258.05114483833313,
+      "calls": 30,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": true,
+        "selected_tests": 1,
+        "search_complete": true,
+        "schedules": 67,
+        "valid_accepted": 5,
+        "valid_total": 6,
+        "invalid_rejected": 9,
+        "invalid_total": 9,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-model-skill-01",
+      "phase": "migration/model",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f697aa947010a11aa6792309167e34e4b134bb224b328b41d736ecd52bd559f",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "a25e0474b601c4c26af9abbb9386ea18cbada588e5f2291a42c9d5c66919aa6b",
+        "cases.py": "6fe58db0728d12250311c4933f10fd9a5e8407b1b99dce6d385e034c79cbcf2b",
+        "reference_solution/DESIGN.md": "de6ffa8c992f39276c65a9bc9aaaf72ffd1c3b814c410d34e19e6b12c0a1e2a5",
+        "reference_solution/model.p": "8ccddd799ebcbf214d0a6ba5858dda2379ebb6400fdaa9feffbb5d4928cf9f3a",
+        "reference_solution/monitor.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "reference_solution/tests.p": "9553ecd1b13f28c70a75ec37fb88a30c60cf6106e91a5da89ae2a96582dfeb77"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "tool_command_timeout",
+      "seconds": 277.4989011287689,
+      "calls": 15,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_tests": 1,
+        "search_complete": false,
+        "schedules": 16291,
+        "valid_accepted": 1,
+        "valid_total": 7,
+        "invalid_rejected": 8,
+        "invalid_total": 8,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-model-skill-02",
+      "phase": "migration/model",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f697aa947010a11aa6792309167e34e4b134bb224b328b41d736ecd52bd559f",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "a25e0474b601c4c26af9abbb9386ea18cbada588e5f2291a42c9d5c66919aa6b",
+        "cases.py": "6fe58db0728d12250311c4933f10fd9a5e8407b1b99dce6d385e034c79cbcf2b",
+        "reference_solution/DESIGN.md": "de6ffa8c992f39276c65a9bc9aaaf72ffd1c3b814c410d34e19e6b12c0a1e2a5",
+        "reference_solution/model.p": "8ccddd799ebcbf214d0a6ba5858dda2379ebb6400fdaa9feffbb5d4928cf9f3a",
+        "reference_solution/monitor.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "reference_solution/tests.p": "9553ecd1b13f28c70a75ec37fb88a30c60cf6106e91a5da89ae2a96582dfeb77"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 312.6140034198761,
+      "calls": 32,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_tests": 1,
+        "search_complete": true,
+        "schedules": 5597,
+        "valid_accepted": 0,
+        "valid_total": 7,
+        "invalid_rejected": 0,
+        "invalid_total": 8,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "supplemental_monitor_sources": {
+        "version": "novel-model-v2",
+        "result": {
+          "model_check_passed": false,
+          "selected_tests": 1,
+          "search_complete": true,
+          "schedules": 5597,
+          "valid_accepted": 6,
+          "valid_total": 7,
+          "invalid_rejected": 8,
+          "invalid_total": 8,
+          "timeouts": 0,
+          "all_probes_passed": false
+        },
+        "monitor_source_files": [
+          "events.p",
+          "monitor.p",
+          "model.p",
+          "tests.p"
+        ],
+        "provenance": {
+          "posthoc": true,
+          "native_check_preserved": true,
+          "reason": "Allow shared P type/helper declarations; observe does not run model machines.",
+          "original_grade_sha256": "f79935084273df863f066b939ec6babb03261c9c2ccc6eb2539872f5eba73bdf",
+          "submission_manifest_sha256": "c9a2081591fbd5c531a2a40e67afc0671e9b3c3c23b9728c0e983a3ce9f02d6f",
+          "harness_sha256": {
+            "grade_novel.py": "396af7d9384340f6d730a42d0054452957a9cf25d75eb5cf945ed82096533d07",
+            "recheck_novel_monitors.py": "f81c654737805538d3f4225038f16b058b4ca85ea8022c79eb5bdd65a2c71129",
+            "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+          },
+          "public_sha256": {
+            "TASK.md": "0f697aa947010a11aa6792309167e34e4b134bb224b328b41d736ecd52bd559f",
+            "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224"
+          },
+          "grader_sha256": {
+            "DESIGN-CONTRACT.md": "a25e0474b601c4c26af9abbb9386ea18cbada588e5f2291a42c9d5c66919aa6b",
+            "cases.py": "6fe58db0728d12250311c4933f10fd9a5e8407b1b99dce6d385e034c79cbcf2b",
+            "reference_solution/DESIGN.md": "de6ffa8c992f39276c65a9bc9aaaf72ffd1c3b814c410d34e19e6b12c0a1e2a5",
+            "reference_solution/model.p": "8ccddd799ebcbf214d0a6ba5858dda2379ebb6400fdaa9feffbb5d4928cf9f3a",
+            "reference_solution/monitor.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+            "reference_solution/tests.p": "9553ecd1b13f28c70a75ec37fb88a30c60cf6106e91a5da89ae2a96582dfeb77"
+          },
+          "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+          "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e"
+        }
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-model-base-01",
+      "phase": "migration/model",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f697aa947010a11aa6792309167e34e4b134bb224b328b41d736ecd52bd559f",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "a25e0474b601c4c26af9abbb9386ea18cbada588e5f2291a42c9d5c66919aa6b",
+        "cases.py": "6fe58db0728d12250311c4933f10fd9a5e8407b1b99dce6d385e034c79cbcf2b",
+        "reference_solution/DESIGN.md": "de6ffa8c992f39276c65a9bc9aaaf72ffd1c3b814c410d34e19e6b12c0a1e2a5",
+        "reference_solution/model.p": "8ccddd799ebcbf214d0a6ba5858dda2379ebb6400fdaa9feffbb5d4928cf9f3a",
+        "reference_solution/monitor.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "reference_solution/tests.p": "9553ecd1b13f28c70a75ec37fb88a30c60cf6106e91a5da89ae2a96582dfeb77"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 477.6749379634857,
+      "calls": 43,
+      "public_unchanged": true,
+      "result": {
+        "model_check_passed": false,
+        "selected_tests": 2,
+        "search_complete": false,
+        "schedules": 71316,
+        "valid_accepted": 7,
+        "valid_total": 7,
+        "invalid_rejected": 8,
+        "invalid_total": 8,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-test-skill-01",
+      "phase": "streaming/testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "575c48a7d066c47d9080164cf1acf51cef4a86441b241d883c15da62fd45d13a",
+        "contract.p": "d36bd5cc65d641aa8ed9110f2b613a4e3786cd9f9d2fa433ca81a406dc285ceb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da",
+        "window.py": "7f8c29f349c57ac404a3ad9709ae61b800714e844195d4ea46493e97b365f8ae"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "77491aa26b5ebf32282b9403ffd37aa75d014529196077bd8ede73749a708985",
+        "mutants.py": "2369eb96986ff76cc0e48ce70e11d12bfdc620815827059b2db6a53a2770f9c3",
+        "reference_suite/test_window.py": "5e7674b590b691f56a6cad449d975db7b77941ff67d65fdb60277022029989a1"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 93.1461889743805,
+      "calls": 12,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 1,
+        "valid_total": 1,
+        "faults_rejected": 6,
+        "faults_total": 8,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-test-skill-02",
+      "phase": "streaming/testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "575c48a7d066c47d9080164cf1acf51cef4a86441b241d883c15da62fd45d13a",
+        "contract.p": "d36bd5cc65d641aa8ed9110f2b613a4e3786cd9f9d2fa433ca81a406dc285ceb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da",
+        "window.py": "7f8c29f349c57ac404a3ad9709ae61b800714e844195d4ea46493e97b365f8ae"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "77491aa26b5ebf32282b9403ffd37aa75d014529196077bd8ede73749a708985",
+        "mutants.py": "2369eb96986ff76cc0e48ce70e11d12bfdc620815827059b2db6a53a2770f9c3",
+        "reference_suite/test_window.py": "5e7674b590b691f56a6cad449d975db7b77941ff67d65fdb60277022029989a1"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 89.03812909126282,
+      "calls": 8,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 1,
+        "valid_total": 1,
+        "faults_rejected": 5,
+        "faults_total": 8,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "stream-test-base-01",
+      "phase": "streaming/testing",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "575c48a7d066c47d9080164cf1acf51cef4a86441b241d883c15da62fd45d13a",
+        "contract.p": "d36bd5cc65d641aa8ed9110f2b613a4e3786cd9f9d2fa433ca81a406dc285ceb",
+        "events.p": "457fd5c08fd8cfa3bf145bc40b5975f39bc9c5712979cfc802e3fb64f544c8da",
+        "window.py": "7f8c29f349c57ac404a3ad9709ae61b800714e844195d4ea46493e97b365f8ae"
+      },
+      "grader_sha256": {
+        "DESIGN-CONTRACT.md": "77491aa26b5ebf32282b9403ffd37aa75d014529196077bd8ede73749a708985",
+        "mutants.py": "2369eb96986ff76cc0e48ce70e11d12bfdc620815827059b2db6a53a2770f9c3",
+        "reference_suite/test_window.py": "5e7674b590b691f56a6cad449d975db7b77941ff67d65fdb60277022029989a1"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 82.22408652305603,
+      "calls": 9,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 1,
+        "valid_total": 1,
+        "faults_rejected": 5,
+        "faults_total": 8,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": false
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-test-skill-01",
+      "phase": "migration/testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f8f37a2117285a4d37a334e42669b16c24a70c26b780eafc75289e48f3f2517",
+        "contract.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224",
+        "migration.py": "c1a9408174c43b89db4e0b279207c154f49b220c737bae29e7533f99f0db5042"
+      },
+      "grader_sha256": {
+        "calibrate.py": "4381fa90a77e73dbd94b21eb4f2adda56ee221d2f0020faa1475b9c2c8511333",
+        "calibration/calibration.json": "7837b737a0803e4937dc0d8bd7cc2dd55e103a513106eae728b9959f25b1a785",
+        "calibration/reference_tests/test_migration.py": "b89960585c67dc339ed3388bb71e95e64988bd6a10357c8ac3a5877020ef8c60",
+        "mutants.py": "2b6bd759256de421bd724a0f0916f36bb4a24982ec9c5643546b4ee8579b01c9"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 79.32331776618958,
+      "calls": 6,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 2,
+        "valid_total": 2,
+        "faults_rejected": 9,
+        "faults_total": 9,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-test-skill-02",
+      "phase": "migration/testing",
+      "condition": "skill",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": "7b68681ecb4626249add3e8ed15f424dee9dd083d509fb9e0e595a2340af0c0d",
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f8f37a2117285a4d37a334e42669b16c24a70c26b780eafc75289e48f3f2517",
+        "contract.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224",
+        "migration.py": "c1a9408174c43b89db4e0b279207c154f49b220c737bae29e7533f99f0db5042"
+      },
+      "grader_sha256": {
+        "calibrate.py": "4381fa90a77e73dbd94b21eb4f2adda56ee221d2f0020faa1475b9c2c8511333",
+        "calibration/calibration.json": "7837b737a0803e4937dc0d8bd7cc2dd55e103a513106eae728b9959f25b1a785",
+        "calibration/reference_tests/test_migration.py": "b89960585c67dc339ed3388bb71e95e64988bd6a10357c8ac3a5877020ef8c60",
+        "mutants.py": "2b6bd759256de421bd724a0f0916f36bb4a24982ec9c5643546b4ee8579b01c9"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 72.68312478065491,
+      "calls": 9,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 2,
+        "valid_total": 2,
+        "faults_rejected": 9,
+        "faults_total": 9,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": true
+      },
+      "archived_grader": true
+    },
+    {
+      "run_id": "migration-test-base-01",
+      "phase": "migration/testing",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "skill_sha256": null,
+      "binary_sha256": "98cd2dadfb69ca790af0c0842991d236d65a0fb00c01cce67eccdcb48e175a2e",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "public_sha256": {
+        "TASK.md": "0f8f37a2117285a4d37a334e42669b16c24a70c26b780eafc75289e48f3f2517",
+        "contract.p": "681d3e820a2f75f43257db8a769e3dbb5acbfd7c4a4b849d7b100ef80571bae9",
+        "events.p": "7c5302e442ab66e5948b57db0768664784401813e8c57a1577503235dccfb224",
+        "migration.py": "c1a9408174c43b89db4e0b279207c154f49b220c737bae29e7533f99f0db5042"
+      },
+      "grader_sha256": {
+        "calibrate.py": "4381fa90a77e73dbd94b21eb4f2adda56ee221d2f0020faa1475b9c2c8511333",
+        "calibration/calibration.json": "7837b737a0803e4937dc0d8bd7cc2dd55e103a513106eae728b9959f25b1a785",
+        "calibration/reference_tests/test_migration.py": "b89960585c67dc339ed3388bb71e95e64988bd6a10357c8ac3a5877020ef8c60",
+        "mutants.py": "2b6bd759256de421bd724a0f0916f36bb4a24982ec9c5643546b4ee8579b01c9"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "33f59089665fd0ac05f9b1839ff5367af733af5e6d04d81c2338b3271fefb4c3",
+        "grade_novel.py": "ebf05caeeeef34e07b07027a1a9336515ba41b0f531e92376c0adf18f882626e",
+        "runner.py": "c48b3ae2d4d7f4a9bcef995ef7839d89acb3d5311fd962e6e9eb5931c36129c1"
+      },
+      "status": "agent_finished",
+      "seconds": 132.7864818572998,
+      "calls": 13,
+      "public_unchanged": true,
+      "result": {
+        "valid_passed": 2,
+        "valid_total": 2,
+        "faults_rejected": 9,
+        "faults_total": 9,
+        "setup_errors": 0,
+        "timeouts": 0,
+        "all_probes_passed": true
+      },
+      "archived_grader": true
+    }
+  ],
+  "limits": "Adaptive small development pilots. Keep revisions separate; no causal or population-level claims."
+}

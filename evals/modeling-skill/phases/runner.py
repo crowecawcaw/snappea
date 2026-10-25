@@ -70,6 +70,9 @@ def start(args):
     image_id = image.stdout.strip()
     private = ROOT/args.phase/'private'
     shutil.copytree(private,run/'private',ignore=shutil.ignore_patterns('__pycache__'))
+    harness=['runner.py','bridge.py','grade.py','grade_novel.py']
+    (run/'harness').mkdir()
+    for name in harness:shutil.copy2(ROOT/name,run/'harness'/name)
     prompt = ('Read TASK.md.' + (' Use the P modeling skill at /opt/p-modeling/SKILL.md.'
               if args.condition=='skill' else '') + '\nComplete the requested deliverables.\n')
     bridge = ROOT/'bridge.py'
@@ -92,6 +95,7 @@ Return when finished; /work files are your submission.
             'skill_sha256': skill['tree_sha256'] if skill else None, 'skill_snapshot': str(snapshot) if snapshot else None,
             'public_sha256': manifest(public), 'grader_sha256': manifest(private),
             'prompt_sha256': hashlib.sha256(delegation.encode()).hexdigest(),
+            'harness_sha256': manifest(run/'harness'),
             'limits': {'seconds': seconds, 'calls': calls, 'command_seconds': 90},
             'status': 'running', 'provisioned_unix': time.time()}
     (run/'prompt.txt').write_text(delegation)
@@ -135,7 +139,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('action', choices=['start', 'finish'])
     p.add_argument('--run-id', required=True)
-    p.add_argument('--phase', choices=['modeling', 'testing', 'flow'])
+    p.add_argument('--phase', choices=['modeling', 'testing', 'flow', 'migration/model', 'migration/testing', 'streaming/model', 'streaming/testing'])
     p.add_argument('--condition',choices=['skill','baseline'],default='skill')
     p.add_argument('--status', default='agent_finished')
     a = p.parse_args()

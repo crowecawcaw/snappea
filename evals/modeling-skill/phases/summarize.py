@@ -17,7 +17,7 @@ def summarize(ids):
             raise ValueError(f'{name} submission changed')
         report=json.loads((run/'grading/grade.json').read_text())
         record={k:meta.get(k) for k in ['run_id','phase','condition','model','reasoning_effort',
-                  'skill_sha256','binary_sha256','image','public_sha256','grader_sha256',
+                  'skill_sha256','binary_sha256','image','public_sha256','grader_sha256','harness_sha256',
                   'status','seconds','calls','public_unchanged']}
         if meta['phase']=='modeling':
             keys=['model_check_passed','selected_test_count','all_search_complete','schedules',
@@ -31,7 +31,13 @@ def summarize(ids):
             record['supplemental_v2']={'version':recheck.get('version'),
                                        'result':recheck['summary'],
                                        'provenance':json.loads((run/'supplemental-v2/provenance.json').read_text())}
-        record['archived_grader']=(run/'private').is_dir()
+        source_recheck=run/'supplemental-monitor-sources/grade.json'
+        if source_recheck.exists():
+            corrected=json.loads(source_recheck.read_text())
+            record['supplemental_monitor_sources']={'version':corrected['version'],
+                'result':corrected['summary'],'monitor_source_files':corrected['monitor_source_files'],
+                'provenance':json.loads((source_recheck.parent/'provenance.json').read_text())}
+        record['archived_grader']= (run/'private').is_dir()
         records.append(record)
     return {'trials':records,'limits':'Adaptive small development pilots. Keep revisions separate; no causal or population-level claims.'}
 

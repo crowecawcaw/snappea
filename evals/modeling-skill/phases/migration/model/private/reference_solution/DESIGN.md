@@ -1,0 +1,5 @@
+# Reference model design
+
+`MigrationStore` serializes each public method at its handler's state update. `BackfillWorker` captures a complete logical snapshot and waits before applying it; `LiveWriter` updates one existing row and deletes another after preparation. The driver's separate sends let the Store receive the live operations and the staged apply in either order. The Store retains per-row revisions and applies only newer snapshot rows, so an apply after the live changes cannot replace either row. The monitor derives expected state from public events rather than model-private state.
+
+The model bounds the initial table to `a` and `b`, one migration token, and one live write plus one delete. It omits failures, crashes, transaction recovery, repeated snapshots, new-key behavior, and post-cutover calls. `snappea check` explored 521 schedules to completion for the selected case, but aggregate required coverage remained incomplete (52 reported points, especially cutover/inspection/ready handlers and alternate token/tombstone branches). The pass is partial evidence, not a complete check of the written contract.

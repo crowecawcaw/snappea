@@ -46,6 +46,41 @@ for status in ['infrastructure_error','tests_rejected','timeout']:
                               capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_novel_scenario_setup_errors_are_not_fault_detection(self):
+        import grade_novel
+        for output in ['Ran 0 tests\nOK',
+                       'SetupError: no events\nRan 1 test\nFAILED (errors=1)',
+                       'SnappeaCompilationError\nRan 1 test\nFAILED (errors=1)']:
+            result={'exit_code':1,'stdout':output,'stderr':'','timeout':False}
+            self.assertEqual(grade_novel.classify(result)['status'],'infrastructure_error')
+        result={'exit_code':1,'stdout':'Ran 2 tests\nFAILED (failures=1)','stderr':'','timeout':False}
+        self.assertEqual(grade_novel.classify(result)['status'],'tests_rejected')
+
+    def test_monitor_shared_types_use_project_sources_without_counting_compile_errors(self):
+        import grade_novel
+        with tempfile.TemporaryDirectory() as tmp:
+            run=Path(tmp)
+            for folder in ['submission','public','private']:(run/folder).mkdir()
+            for name in ['model.p','monitor.p','tests.p','DESIGN.md']:
+                (run/'submission'/name).write_text('fixture')
+            (run/'public/events.p').write_text('fixture')
+            (run/'private/cases.py').write_text(
+                "def cases():\n return [('good',True,[{'event':'good'}]),('bad',False,[{'event':'bad'}])]\n")
+            def execute(work,meta,args,timeout=60):
+                if args[1]=='check':
+                    payload={'test_cases':[{'schedules':1,'search_complete':True}]}
+                    return {'exit_code':0,'stdout':json.dumps(payload),'stderr':'','timeout':False}
+                if 'model.p' not in args:
+                    return {'exit_code':2,'stdout':'{}','stderr':'missing shared type','timeout':False}
+                bad='bad' in (work/'history.jsonl').read_text()
+                payload={'specs':[{'errors':[{'kind':'spec_violation'}] if bad else []}]}
+                return {'exit_code':int(bad),'stdout':json.dumps(payload),'stderr':'','timeout':False}
+            with patch.object(grade_novel,'execute',side_effect=execute):
+                report=grade_novel.model_grade(run,{}, {'spec':'Contract'},run)
+            self.assertEqual(report['summary']['valid_accepted'],1)
+            self.assertEqual(report['summary']['invalid_rejected'],1)
+            self.assertIn('model.p',report['monitor_source_files'])
+
     def test_grading_rejects_changed_submission_inputs_binary_or_grader(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);run=root/'runs/trial';run.mkdir(parents=True)
