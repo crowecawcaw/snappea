@@ -139,7 +139,8 @@ class Recorder:
     * ``spec_files``: the P files: paths, globs, or folders meaning every ``.p`` in
       them. Relative to the working directory here; to the pyproject.toml in config.
     * ``strict``: require a relevant event for every selected spec. Default: true when
-      ``specs`` are named, false for every spec.
+      ``specs`` are named, false for every spec. When this named-spec default applies,
+      missing relevant events currently warn; set ``strict=True`` explicitly to fail.
     * ``check_hot``: also fail on a spec left in a hot state. Default: false.
     * ``unknown_events``: an event name no P file declares is an ``"error"`` (default),
       a ``"warn"``\\ ing, or ``"ignore"``\\ d.

@@ -46,7 +46,7 @@ The source-first audit found that all three wrote Python implementation before t
 
 The second cohort passed the supplemental wide-input probe in all three submissions. This repeats the first pilot's representation result but is still adaptive evidence on the same task.
 
-## Final entry revision: explicit implementation handoff
+## Third entry revision: explicit implementation handoff
 
 Fresh runs `skill-v3-01..03` used snapshot `132d5175e77953171ad56f040a1881ebc6e668d3d6f7ecae86ce108eee15d0f9`, committed in `11c8f2f`. The task prompt was unchanged. The entry was shortened and the saved implementation observation test was moved near the top, with an explanation of its maintenance value and explicit event-provenance limits. The durable-retry README also received a portability-only command fix. This revision was reviewed before the trials.
 
@@ -73,6 +73,30 @@ No product CLI changes or runtime instrumentation semantics changed. The skill s
 
 All skill links and correct/broken example cases passed `skills/p-modeling/validate.py`; the reservation example's saved Python tests include a deliberately defective implementation. Snapshot/prompt parity and tamper-detection tests passed. Workspace build, tests, formatting, Clippy, and emit-only build passed. Frozen submission hashes and public inputs were verified for all three cohorts, each with the same checker binary, P image, public-file hashes, grader version, and 64-seed setting.
 
-Ignored `evals/certified-bundles/runs/` retains exact prompts, tool transcripts, submissions/manifests, content-addressed skill snapshots, grading and wide-probe results, and final observation reruns. The downloadable evidence archive contains the twelve actual solver trials and the three skill snapshots used by those trials; setup-only snapshots and scripted protocol smoke are not counted as agent results.
+Ignored `evals/certified-bundles/runs/` retains exact prompts, tool transcripts, submissions/manifests, content-addressed skill snapshots, grading and wide-probe results, and final observation reruns. The downloadable evidence archive contains the fourteen actual solver trials and the four skill snapshots used by those trials; setup-only snapshots and scripted protocol smoke are not counted as agent results.
 
 The final source-first audit also confirmed that all three v3 agents still wrote implementation before the P model. The next focused revision adds one explicit design-first sentence at the top of the skill, with its reason: resolving counterexamples before committing to code. Two fresh exploratory trials test this ordering issue and retention of the observation bridge; they are reported separately from the three-run cohorts.
+
+## Focused design-first follow-up
+
+Two fresh trials `skill-v4-01..02` used the current skill snapshot `99d8691874f5c40c7a959c5dee28d60811be1bbfc7fb7dc58ce7879a8a161ad2` (content commit `24ec9a4`). Both passed all primary cases (40/40 total), both passed the wide probe, and both saved genuine observation tests. Independent fresh-container reruns passed seven and five tests respectively, including four public tests each. See pilot-v4.json and audit-v4.md.
+
+The stronger top-line instruction did not fix chronology: both implemented before checking their models. Their P models exercised deterministic two-schedule histories, not substantive concurrent read/CAS exploration. One observer also collapsed all noninitial head strings to a single value, weakening its ability to detect an incorrect noninitial result. This reinforces why successful hidden tests and clean coverage are insufficient measures of tool quality. The saved tests provide useful evidence for their bounded public-call histories, not proof of the design's concurrency boundary.
+
+Across all four revisions:
+
+| Condition | Full primary passes | Primary cases | Wide probe | Saved real observation test |
+|---|---:|---:|---:|---:|
+| P baseline | 3/3 | 60/60 | 0/3 | 0/3 |
+| Skill v1 | 2/3 | 59/60 | 3/3 | 0/3 |
+| Skill v2 | 2/3 | 59/60 | 3/3 | 0/3 |
+| Skill v3 | 2/3 | 58/60 | 2/3 | 3/3 |
+| Current skill, focused v4 pair | 2/2 | 40/40 | 2/2 | 2/2 |
+
+Keep these rows separate: the controls were reused, revisions were adaptive, and the last cohort has only two runs. These results demonstrate improved retention of implementation checks and attention to a storage representation boundary. They do not establish a general correctness advantage or reliable model-first behavior. Model fidelity and observation adapters still need review; the tool should not reward a check merely for existing or passing.
+
+## General API documentation follow-up
+
+Transcript review identified tool-usage friction independent of this task. Python API docstrings now distinguish the `pysnappea` distribution from the `snappea` import, emitted-event recording from interception of ordinary calls, and observation of supplied traces from P schedule exploration. They clarify explicit `strict=True`, that observation needs no P driver/test declaration, intentional observation-only monitor handling, and preserving property-relevant values in adapters. This helps avoid adding synthetic P behavior merely to satisfy model lint.
+
+No runtime behavior, API signatures, CLI commands, or CLI help changed. Existing CLI help already distinguishes model exploration, observation, strictness, and test discovery; changing it solely to improve this benchmark was not justified. The 35 existing explicit Python helper tests passed with updated source in the offline test image. The agent cohorts used the original frozen image/package, so no cohort improvement is attributed to this later docstring-only change.
