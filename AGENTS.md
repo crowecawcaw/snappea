@@ -23,6 +23,9 @@ Make P easier for developers to incorporate into application design and developm
 3. **Agentic development is the primary use case.** P is especially well suited to it.
    Help developers understand what P is and how to use it strategically, and help agents
    incorporate P effectively into development for design and implementation validation.
+4. **Fail on likely modeling mistakes, with explicit suppression for intentional cases.**
+   Models and validation fail by default to avoid undetected issues; runtime instrumentation
+   must remain best-effort and must not introduce errors that break application code.
 
 For compatibility details, see [Compatibility](docs/compatibility.md).
 
