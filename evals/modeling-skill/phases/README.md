@@ -19,6 +19,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Schema migration and streaming windows](NOVEL.md) add two different domains, with separate model/test tasks and an unchanged skill. See [cold results](NOVEL_RESULTS.md).
 
+[Feedback revision and priority-queue holdout](FEEDBACK.md) test generated histories, valid value classes, a compact P reference, and clearer check outcomes.
+
 ## Protocol
 
 - Fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.

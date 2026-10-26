@@ -14,10 +14,12 @@
 - Ambiguous commit: effect commits, response is lost, restart, retry the same ID.
 - Old replay: complete A, let B change the same resource, retry A; distinguish A's saved result from current state.
 - For **each acceptance precondition**, make it false while all others hold; combined invalid conditions can hide missing enforcement.
+- Cover each meaningful valid value class and the output partition boundaries (for example, below/exactly-at/above capacity), not just one representative input.
 - Exercise operations on both sides of lifecycle boundaries; querying state alone does not test enforcement.
 - Exercise stale operations against a successor's live state, not only empty/expired state.
 - Include stale/rejected operations and useful success. Always rejecting can satisfy safety while violating the contract.
 - Use bounded choices that preserve these relationships; schedule count alone says little.
+- Bound a history generator's input IDs and values to preserve contract-relevant cases; let the checker explore schedules independently. Check a few manually calculated valid and invalid histories against the oracle before relying on generated histories. See the [bounded history generator](../examples/bounded-history/README.md).
 
 ## Choose discriminating tests
 

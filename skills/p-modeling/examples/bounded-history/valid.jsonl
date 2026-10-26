@@ -1,0 +1,3 @@
+{"event":"eDecision","payload":{"id":"a","replenish":false,"units":1,"accepted":true}}
+{"event":"eDecision","payload":{"id":"b","replenish":false,"units":1,"accepted":true}}
+{"event":"eDecision","payload":{"id":"c","replenish":false,"units":1,"accepted":false}}

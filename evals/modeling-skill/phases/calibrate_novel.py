@@ -11,6 +11,7 @@ from runner import ROOT,BINARY,IMAGE,command
 REFERENCE = {
     'migration': {'model':'private/reference_solution','testing':'private/calibration/reference_tests'},
     'streaming': {'model':'private','testing':'private/reference_suite'},
+    'priority': {'testing':'private/calibration/reference_tests'},
 }
 
 
@@ -20,7 +21,7 @@ def calibrate(scenario,binary,output):
     meta={'image':image.stdout.strip(),'binary':str(binary)}
     output.mkdir(parents=True,exist_ok=True)
     passed=True
-    for phase in ['model','testing']:
+    for phase in REFERENCE[scenario]:
         source=ROOT/scenario/phase
         with tempfile.TemporaryDirectory(prefix='snappea-novel-controls-') as tmp:
             run=Path(tmp)

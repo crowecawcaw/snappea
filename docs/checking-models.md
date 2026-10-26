@@ -136,7 +136,13 @@ is, and 2 on any other error. `snappea <command> --help` lists the options.
 On a terminal or in CI (`CI` set) the output is the text above; otherwise (agents,
 scripts) it is JSON: per test case its result, schedules, bug report and `replay`
 command, and coverage; then the coverage of all test cases with every uncovered entry,
-and the mutation testing results under `mutation`.
+and the mutation testing results under `mutation`. The top-level `summary` gives a
+machine-readable `status` (`tests_failed`, `coverage_failed`, `search_incomplete` or
+`passed`), counts for the test and coverage outcomes, and the independent
+`mutation_time_limit_reached` flag. For a coverage failure, `summary.uncovered` lists up
+to five required source sites with their file, line, context and uncovered branch or
+handler; `summary.uncovered_more` counts additional sites. A mutation time limit applies
+only to mutant testing and does not change the check status.
 `--format text|json` or `--json` chooses, as does `SNAPPEA_FORMAT=text|json`, and
 `--json-report FILE` also writes the JSON to `FILE`. Every `snappea` command takes
 these options, before or after the command (for example, `snappea --json check`).

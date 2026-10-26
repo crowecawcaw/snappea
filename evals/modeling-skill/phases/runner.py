@@ -55,6 +55,7 @@ def container_args(work, image=IMAGE, binary=BINARY, name=None, skill=None):
 def start(args):
     if not re.fullmatch('[a-z0-9-]+', args.run_id):
         raise ValueError('invalid run id')
+    binary = args.binary.resolve()
     public = ROOT / args.phase / 'public'
     run = ROOT / 'runs' / args.run_id
     run.mkdir(parents=True, exist_ok=False)
@@ -91,7 +92,7 @@ Return when finished; /work files are your submission.
 '''
     meta = {'run_id': args.run_id, 'phase': args.phase, 'condition': args.condition,
             'model': 'gpt-6-luna', 'reasoning_effort': 'high',
-            'image': image_id, 'binary_sha256': digest(BINARY), 'binary': str(BINARY),
+            'image': image_id, 'binary_sha256': digest(binary), 'binary': str(binary),
             'skill_sha256': skill['tree_sha256'] if skill else None, 'skill_snapshot': str(snapshot) if snapshot else None,
             'public_sha256': manifest(public), 'grader_sha256': manifest(private),
             'prompt_sha256': hashlib.sha256(delegation.encode()).hexdigest(),
@@ -101,7 +102,7 @@ Return when finished; /work files are your submission.
     (run/'prompt.txt').write_text(delegation)
     (run/'metadata.json').write_text(json.dumps(meta, indent=2)+'\n')
     result = command(container_args((run/'work').resolve(), image=image_id,
-                                   name='snappea-phase-'+args.run_id, skill=snapshot) + ['sleep', 'infinity'])
+                                   name='snappea-phase-'+args.run_id, skill=snapshot, binary=binary) + ['sleep', 'infinity'])
     if result.returncode:
         raise RuntimeError(result.stderr)
     check = command(['docker', 'exec', 'snappea-phase-'+args.run_id, 'bash', '-c',
@@ -139,7 +140,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('action', choices=['start', 'finish'])
     p.add_argument('--run-id', required=True)
-    p.add_argument('--phase', choices=['modeling', 'testing', 'flow', 'migration/model', 'migration/testing', 'streaming/model', 'streaming/testing'])
+    p.add_argument('--phase', choices=['modeling', 'testing', 'flow', 'migration/model', 'migration/testing', 'streaming/model', 'streaming/testing', 'priority/testing'])
+    p.add_argument('--binary', type=Path, default=BINARY, help='checker binary to freeze for this trial')
     p.add_argument('--condition',choices=['skill','baseline'],default='skill')
     p.add_argument('--status', default='agent_finished')
     a = p.parse_args()

@@ -13,12 +13,14 @@ description: Model stateful designs with P/Snappea; validate implementation hist
 
 - State contract, atomic primitives, bounds, assumptions, omissions.
 - Preserve interference: separate reads/later writes unless a real transaction, lock, or CAS makes them atomic. Local assignments do not yield; communication can.
+- Bound generated input histories to contract-relevant choices; let schedule exploration vary interleavings. Keep a few manually calculated valid and invalid oracle probes to check the monitor itself. See the [bounded history generator](examples/bounded-history/README.md).
 - Preserve relevant IDs, versions, durable/volatile state, and prepared/committed distinctions.
 - Make competitors share a resource. Retry A after B advances that resource; check A's original result and B's retained state where promised.
 - Model the algorithm, not just atomic API behavior: include reads, failed conditional writes, and retries when those are the design risk.
 - Assert contract obligations, not incidental implementation choices.
 - Derive monitor expectations independently from contract/history. Check useful success. Read public state immediately after rejected operations, before later work can hide side effects.
 - Name each scenario's plausible defect. Test **every acceptance precondition** independently, including lifecycle boundaries; other failing guards can mask missing enforcement. Test stale operations against newer live state.
+- Cover valid value classes and output boundaries, not just rejection guards: signed/zero values where allowed, empty/nonempty, and either side of a partition.
 - Use coverage and mutation feedback to find gaps. Neither finds omitted requirements; report bounds and incomplete search. Progress needs recovery/scheduling assumptions.
 
 ## Implement and maintain

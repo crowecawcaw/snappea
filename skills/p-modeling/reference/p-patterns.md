@@ -1,78 +1,75 @@
 # P syntax and commands
 
-## Independent monitor
-
-From [Capacity](../examples/reservation/capacity.p):
+## Small syntax reference
 
 ```p
-event eOpened: (available: int);
-event eReserved: (order: string, units: int);
+event eRequestToService: (client: Client, id: int);
+event eReply: (ok: bool);
+event eAudit: (id: int);
 
-// The monitor is an independent contract: each committed reservation consumes
-// capacity. It does not trust an application-supplied `valid` result.
-spec Capacity observes eOpened, eReserved {
-  var available: int;
-  var orders: set[string];
-
-  start state BeforeOpen {
-    on eOpened do (p: (available: int)) {
-      assert p.available >= 0, "opened with negative stock";
-      available = p.available;
-      goto Open;
-    }
-    on eReserved do { assert false, "reservation before store opened"; }
+spec Contract observes eAudit {
+  start state Ready {
+    on eAudit do (p: (id: int)) { assert p.id >= 0; }
   }
+}
 
-  hot state Open {
-    on eOpened do { assert false, "store opened twice"; }
-    on eReserved do (p: (order: string, units: int)) {
-      assert p.units > 0, "reservation must be positive";
-      assert !(p.order in orders), "order reserved twice";
-      available = available - p.units;
-      assert available >= 0, "reservations exceed available capacity";
-      orders += (p.order);
-      goto HasReservation;
-    }
-  }
+machine Service {
+  var counts: map[string, int];
 
-  state HasReservation {
-    on eOpened do { assert false, "store opened twice"; }
-    on eReserved do (p: (order: string, units: int)) {
-      assert p.units > 0, "reservation must be positive";
-      assert !(p.order in orders), "order reserved twice";
-      available = available - p.units;
-      assert available >= 0, "reservations exceed available capacity";
-      orders += (p.order);
+  start state Serving {
+    on eRequestToService do (p: (client: Client, id: int)) {
+      var key: string;             // block locals go before statements
+      key = format("{0}", p.id);
+      counts[key] = choose(3);     // nondeterministic integer: 0, 1, or 2
+      announce eAudit, (id = p.id,);
+      send p.client, eReply, (ok = counts[key] > 0,);
     }
   }
 }
+
+machine Client {
+  start state Run {
+    entry (s: Service) {
+      send s, eRequestToService, (client = this, id = choose(2)); // send can interleave
+      receive { case eReply: (reply: (ok: bool)) { } }
+    }
+  }
+}
+
+machine Main {
+  start state Init {
+    entry {
+      var m: map[string, int];
+      var key: string;             // foreach iterator is a declared variable
+      var s: Service;
+      m = default(map[string, int]);
+      m["example"] = 1;
+      foreach (key in keys(m)) { print key; }
+      s = new Service();
+      new Client(s);
+    }
+  }
+}
+
+test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 ```
 
-- `observes` selects events; monitor variables track independent contract state.
-- Hot states mark outstanding obligations when liveness checking is enabled; cold states do not. Hot states do not imply fairness.
+- `int` is a type; `1` is an integer expression. A singleton tuple type is `(id: int)`; its expression uses a trailing comma, `(id = 1,)`. `choose(n)` explores integers from `0` through `n - 1`; `$` is a nondeterministic Boolean.
+- Maps use `map[keyType, valueType]`, membership (`k in m`), indexing (`m[k]`), and `keys(m)`. `foreach (item in collection)` iterates a set, sequence, or `keys(map)`; declare `item` as a local before the loop. Avoid using a machine field as the iterator.
+- Put handler/function locals at the start of that block, before executable statements. P keywords such as `start`, `state`, and `event` are reserved; using one as a name causes a parse error, so rename it.
+- `send target, event, payload` delivers to a machine; `receive { case event: (p: Type) { ... } }` waits; `announce event, payload` records a monitor-visible event. `send`, `receive`, and `new` are scheduling points; assignments do not yield.
 
-## Test case
-
-```p
-test tcAtomicConditionalReserve [main=AtomicCase]:
-  assert Capacity in { Store, Client, AtomicCase };
-```
-
-- Names the entry machine, participating machines, and checked monitor.
-- Scheduling points include `send`, `receive`, and machine creation; local assignments do not yield. Match non-yielding updates to real atomic primitives.
-
-## Commands
-
-From [reservation](../examples/reservation/README.md):
+## Checking
 
 ```sh
-snappea check Atomic.pproj --timeout 5s
-snappea check StaleWrite.pproj --timeout 5s
+snappea check events.p monitor.p model.p tests.p --timeout 5s  # check, coverage, then mutations
+snappea check 'tcRetry*' --timeout 5s
+snappea check --no-mutation --timeout 5s # quick model iteration
+snappea check mutation tcRetry --mutation-timeout 5s
 ```
 
-- Atomic project: expected pass with complete required coverage. Run the whole project; one case misses the later-reservation handler.
-- Stale-write project: expected oversell assertion failure.
-- Checking type-checks and lints first. Default timeout: 10 seconds per test case; override with `--timeout 2m`.
-- A timeout is incomplete evidence; exhaustive search covers only finite modeled bounds.
-- For Python capture/check syntax, see [implementation](../guides/implementation.md); install `pysnappea`, import `snappea`.
-- Related: [durable retry](../examples/durable-retry/README.md), [versioned publication](../examples/versioned-publication/README.md), [checking docs](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md).
+- Check the top-level `summary` first: assertion failures, missing required coverage, and incomplete search are separate outcomes. Mutation limits alone do not fail the base check.
+- Completion means the search finished within its budget; a timeout is incomplete evidence. Exhaustive completion covers only finite modeled bounds.
+- Coverage shows which statements, branches, and handlers ran; it does not show that assertions enforce the contract. Mutation checking perturbs executed model code and reports changes surviving the test cases. Inspect survivors and add a discriminating scenario or independent assertion.
+- For implementation histories, see [capture and observation](../guides/implementation.md). For a compact input-history generator, see [bounded history](../examples/bounded-history/README.md).
+- Related examples: [reservation](../examples/reservation/README.md), [durable retry](../examples/durable-retry/README.md), and [versioned publication](../examples/versioned-publication/README.md).

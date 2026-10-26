@@ -971,8 +971,7 @@ fn run_check(
         + required.handlers.total
         - required.handlers.covered;
     let coverage_failed = !only && failed == 0 && !allow_incomplete_coverage && required_missing;
-    let coverage_failure_message =
-        format!("Required coverage was not reached within the run budget ({} points).", required_gap_count);
+    let coverage_failure_message = format!("Required coverage is missing ({} points).", required_gap_count);
     let coverage_failure_help = "Add scenarios that reach the listed sites, or increase the timeout if exploration ran out of time. For deliberate omissions, add a scoped `coverage` suppression with a reason; use --allow-incomplete-coverage only for exploratory checking.";
     let excluded = scope.excluded(prog);
     if !only {
@@ -997,7 +996,7 @@ fn run_check(
             con.inner.out_line(&format!("{coverage_failure_message} {coverage_failure_help}"));
         } else if failed == 0 && allow_incomplete_coverage && !required_uncovered.is_empty() {
             con.inner.out_line(&format!(
-                "Coverage gate bypassed: required coverage was not reached within the run budget ({} points).",
+                "Coverage gate bypassed: required coverage is missing ({} points).",
                 required_gap_count
             ));
         }
@@ -1025,6 +1024,16 @@ fn run_check(
     };
     let seconds = con.inner.now() - start;
     let (elapsed, memory) = (duration(seconds), memory(con.inner));
+    let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
+    let summary = check_summary(
+        failed,
+        n,
+        incomplete,
+        coverage_failed,
+        required_gap_count,
+        &required_uncovered,
+        mutation_time_limit_reached,
+    );
     let out = match cfg.output_path.trim_end_matches('/') {
         "" if cfg.output_path.is_empty() => ".",
         o => o,
@@ -1034,22 +1043,8 @@ fn run_check(
             0 => format!("🫛 Every mutant was detected in {}{}.", elapsed, memory),
             n => format!("{} mutant{} not detected in {}{}.", n, plural(n), elapsed, memory),
         }
-    } else if failed == 0 && coverage_failed {
-        format!(
-            "Coverage requirements were not met for {} point{}. Output: {}/",
-            required_gap_count,
-            plural(required_gap_count),
-            out
-        )
-    } else if failed == 0 && incomplete > 0 {
-        format!(
-            "🫛 No bugs found in {}{}. Search incomplete for {} test case{}. Output: {}/",
-            elapsed,
-            memory,
-            incomplete,
-            plural(incomplete),
-            out
-        )
+    } else if failed == 0 && (coverage_failed || incomplete > 0) {
+        format!("{} in {}{}. Output: {}/", summary["message"].as_str().unwrap(), elapsed, memory, out)
     } else if failed == 0 && n == 1 {
         format!("🫛 The test case passed in {}{}. Output: {}/", elapsed, memory, out)
     } else if failed == 0 {
@@ -1080,6 +1075,7 @@ fn run_check(
         Value::Null
     };
     let result = json!({
+        "summary": summary,
         "project": cfg.project_name,
         "test_cases": cases,
         "failed": failed,
@@ -1092,6 +1088,48 @@ fn run_check(
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
     Ok((if failed > 0 || coverage_failed { BUG } else { OK }, result))
+}
+
+/// A concise top-level outcome. Mutation time limits are reported independently because
+/// they do not change whether the test search or required-coverage gate passed.
+fn check_summary(
+    failed: usize,
+    test_cases: usize,
+    incomplete: usize,
+    coverage_failed: bool,
+    coverage_gaps: usize,
+    uncovered: &[crate::checker::code_coverage::Uncovered],
+    mutation_time_limit_reached: bool,
+) -> Value {
+    let (status, message) = if failed > 0 {
+        ("tests_failed", format!("{} of {} test case{} failed", failed, test_cases, plural(test_cases)))
+    } else if coverage_failed {
+        ("coverage_failed", format!("Required coverage is missing ({} points)", coverage_gaps))
+    } else if incomplete > 0 {
+        (
+            "search_incomplete",
+            format!("No bugs found; search incomplete for {} test case{}", incomplete, plural(incomplete)),
+        )
+    } else {
+        ("passed", "All test cases passed".to_string())
+    };
+    json!({
+        "status": status,
+        "message": message,
+        "test_cases": test_cases,
+        "failed": failed,
+        "incomplete": incomplete,
+        "coverage_failed": coverage_failed,
+        "coverage_gaps": coverage_gaps,
+        "uncovered": uncovered.iter().take(5).map(|u| json!({
+            "file": u.file,
+            "line": u.line,
+            "context": u.context,
+            "what": u.what,
+        })).collect::<Vec<_>>(),
+        "uncovered_more": uncovered.len().saturating_sub(5),
+        "mutation_time_limit_reached": mutation_time_limit_reached,
+    })
 }
 
 /// One test case's result as JSON.
@@ -1480,5 +1518,30 @@ mod tests {
         assert_eq!(split_latency("l.toml:fast"), ("l.toml", Some("fast")));
         assert_eq!(split_latency("C:\\x\\l.toml"), ("C:\\x\\l.toml", None));
         assert_eq!(split_latency("C:\\x\\l.toml:fast"), ("C:\\x\\l.toml", Some("fast")));
+    }
+
+    #[test]
+    fn check_summary_separates_check_outcomes_from_mutation_limits() {
+        let uncovered = crate::checker::code_coverage::Uncovered {
+            file: "coverage.p".into(),
+            line: 9,
+            end_line: 9,
+            context: "Main.S, on ePing".into(),
+            what: "if (x) never true".into(),
+        };
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true);
+        assert_eq!(coverage["status"], "coverage_failed");
+        assert_eq!(coverage["message"], "Required coverage is missing (3 points)");
+        assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
+        assert_eq!(coverage["mutation_time_limit_reached"], true);
+
+        let failed = check_summary(1, 2, 0, false, 0, &[], false);
+        assert_eq!(failed["status"], "tests_failed");
+
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false);
+        assert_eq!(incomplete["status"], "search_incomplete");
+
+        let passed = check_summary(0, 2, 0, false, 0, &[], false);
+        assert_eq!(passed["status"], "passed");
     }
 }

@@ -16,6 +16,7 @@ from grade import verify
 CONFIG = {
     'migration': {'spec':'MigrationContract','service':'migration.py'},
     'streaming': {'spec':'WindowContract','service':'window.py'},
+    'priority': {'spec':'QueueContract','service':'queue_service.py'},
 }
 
 
