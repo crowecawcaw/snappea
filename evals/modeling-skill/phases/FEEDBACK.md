@@ -17,6 +17,8 @@ causal contribution of each edit.
   source sites. Assertion failures, coverage failures, incomplete search, and
   mutation timeout are reported separately. Existing exit behavior is retained.
 
+[Results and qualitative review](FEEDBACK_RESULTS.md).
+
 ## Fresh trials
 
 Use fresh Luna/high agents, the existing offline bridge and unchanged budgets.
