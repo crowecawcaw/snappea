@@ -38,6 +38,7 @@ public final class SnappeaObserver {
     private final boolean checkHot;
     private final UnknownEvents unknownEvents;
     private final Path coverage;
+    private final boolean coverageOff;
     private final Mode mode;
     private final Map<String, String> environment;
 
@@ -78,7 +79,12 @@ public final class SnappeaObserver {
         else timeout = Duration.ofSeconds(30);
         if (timeout.isNegative() || timeout.toMillis() < 1)
             throw SetupError.config("timeout must be at least one millisecond, not " + timeout);
+        // "off" (environment or config file) turns suite coverage off instead of naming a path.
+        var coverageSetting = builder.coverage != null ? null
+                : nonblank(env.get("SNAPPEA_COVERAGE")) ? env.get("SNAPPEA_COVERAGE") : config.get("coverage");
+        coverageOff = "off".equals(coverageSetting);
         if (builder.coverage != null) coverage = builder.coverage.toAbsolutePath().normalize();
+        else if (coverageOff) coverage = null;
         else if (nonblank(env.get("SNAPPEA_COVERAGE"))) coverage = cwd.resolve(env.get("SNAPPEA_COVERAGE")).normalize();
         else if (config.get("coverage") != null) coverage = config.base().resolve(config.get("coverage")).normalize();
         else coverage = null;
@@ -99,6 +105,7 @@ public final class SnappeaObserver {
         this.checkHot = checkHot;
         unknownEvents = base.unknownEvents;
         coverage = base.coverage;
+        coverageOff = base.coverageOff;
         mode = base.mode;
         environment = base.environment;
     }
@@ -213,13 +220,20 @@ public final class SnappeaObserver {
     public Recording start(String label) { return recording(label); }
 
     /** A suite coverage collector writing to {@code destination} when closed. */
-    public CoverageCollector coverage(Path destination) { return new CoverageCollector(this, destination); }
+    public CoverageCollector coverage(Path destination) {
+        return new CoverageCollector(this, destination, false);
+    }
 
     /**
      * A suite coverage collector for the configured destination ({@code SNAPPEA_COVERAGE} or the
-     * config file's {@code coverage}); inert when none is configured.
+     * config file's {@code coverage}). With none configured, closing it only prints the coverage
+     * summary and writes no file; with {@code SNAPPEA_COVERAGE=off} (or {@code coverage = off}) it
+     * does nothing. Close it once, after the last recording, for example in {@code @AfterAll}.
      */
-    public CoverageCollector coverage() { return new CoverageCollector(this, coverage); }
+    public CoverageCollector coverage() {
+        if (coverage != null) return new CoverageCollector(this, coverage, false);
+        return new CoverageCollector(this, null, !coverageOff);
+    }
 
     /** Used to reject collectors sharing a destination but using different CLI settings. */
     String coverageCompatibilityKey() {
@@ -315,6 +329,8 @@ public final class SnappeaObserver {
     List<Path> files() { return files; }
     UnknownEvents unknownEvents() { return unknownEvents; }
     Optional<Path> coverageDestination() { return Optional.ofNullable(coverage); }
+    /** True when SNAPPEA_COVERAGE or the config file's coverage is {@code off}. */
+    boolean coverageOff() { return coverageOff; }
     Mode mode() { return mode; }
 
     public static final class Builder {
@@ -359,7 +375,11 @@ public final class SnappeaObserver {
         public Builder checkHot(boolean value) { checkHot = value; return this; }
         /** Event names no P file declares. Default: {@link UnknownEvents#ERROR}. */
         public Builder unknownEvents(UnknownEvents value) { unknownEvents = Objects.requireNonNull(value); return this; }
-        /** Suite coverage JSON, for {@link SnappeaObserver#coverage()} and the JUnit extension. */
+        /**
+         * Suite coverage JSON, for {@link SnappeaObserver#coverage()} and the JUnit extension.
+         * Default: {@code SNAPPEA_COVERAGE}, then the config file's {@code coverage}; without
+         * either, the suite coverage is printed but not written.
+         */
         public Builder coverage(Path value) { coverage = Objects.requireNonNull(value); return this; }
         /** Which tests the JUnit extension records. Default: {@link Mode#AUTO}. */
         public Builder mode(Mode value) { mode = Objects.requireNonNull(value); return this; }

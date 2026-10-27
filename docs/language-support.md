@@ -28,7 +28,7 @@ Each helper implements all five.
 | L1 Emitter | `emit` from application code; no dependencies; inert outside tests; safe in production | helper |
 | L2 Recording | Start, collect, check; structured result and errors | helper |
 | L3 Framework integration | Automatic per-test checking in the language's main test framework | helper |
-| L4 Suite | Coverage union across tests, written once at suite end | helper, merging delegated to core |
+| L4 Suite | Coverage union across tests, printed at suite end (and written when a path is set) | helper, merging delegated to core |
 
 ## Uniform names
 
@@ -44,7 +44,7 @@ old name as a deprecated alias for one minor release, warning when it is used.
 | `SNAPPEA_SPEC_FILES` | Spec files, separated like `PATH` (`os.pathsep`) | overrides config |
 | `SNAPPEA_EVENTS_DIR` | Folder child processes write events to ([format](observe.md#events-folder-format)) | set by the recording |
 | `SNAPPEA_ARTIFACTS` | Folder to keep artifacts of failed checks in | overrides config |
-| `SNAPPEA_COVERAGE` | Suite coverage JSON path; setting it enables L4 | overrides config |
+| `SNAPPEA_COVERAGE` | Suite coverage JSON path, or `off` to turn the default report off | overrides config |
 | `SNAPPEA_MODE` | L3 mode: `auto`, `marked` or `off` | overrides config |
 | `SNAPPEA_DOWNLOAD` | `0` turns off downloading the checker (Go only) | |
 
@@ -249,13 +249,19 @@ that is.
 
 ## L4 Suite
 
-- One setting enables suite coverage: `SNAPPEA_COVERAGE` or the framework option.
+- Where the framework offers a suite-end hook, the helper prints suite coverage by
+  default: it keeps each check's report in memory and at suite end merges them with
+  `snappea coverage merge-observe --stdin --format text`, writing no file, so a run
+  reports only itself. Nothing is printed when no check ran. An error in this default
+  report is a one-line warning and MUST NOT fail the run.
+- One setting also writes the JSON: `SNAPPEA_COVERAGE` or the framework option (a
+  path). `SNAPPEA_COVERAGE=off` turns the default report off.
 - The helper owns collection and the merge call. Users write no `TestMain`, static
   mutex or JSON code where the framework offers a suite-end hook.
 - With a suite-end hook (pytest session finish, JUnit `CloseableResource` /
   `LauncherSessionListener`), the helper writes the file once at suite end.
-- Without one (Rust; Go without `snappeatest.Main`), the helper merges each check into the
-  file as it completes.
+- Without one (Rust; Go without `snappeatest.Main`), there is no default report; with a
+  path, the helper merges each check into the file as it completes.
 - Several processes may share one `SNAPPEA_COVERAGE` path (pytest-xdist, `go test ./...`,
   Gradle forks): the helper MUST merge into an existing file under an exclusive file
   lock, never overwrite it. Deleting a stale file before a run is the user's job (CI
@@ -456,7 +462,7 @@ The common items #45, #47, #48, #49 and #53 cover are linked.
 - [x] Failure output in Python's format, with `src` from `runtime.Caller`
 - [x] `EventsDir()`, `Env()`, `AddEventsDir`, `AddLog` (#49); move `snappeaemit` out of `python/`
 - [x] `UnknownEvents`, default `error` (#47)
-- [x] `snappeatest.Main(m)` and `SNAPPEA_COVERAGE`; per-check merge without it
+- [x] `snappeatest.Main(m)` prints suite coverage by default (no file); `SNAPPEA_COVERAGE` path or `off`; per-check merge without `Main`
 - [x] `SNAPPEA_SPEC_FILES`, `SNAPPEA_ARTIFACTS`, `SNAPPEA_MODE`
 - [x] Production emitter package (#48)
 - [x] Conformance runner
@@ -466,7 +472,7 @@ The common items #45, #47, #48, #49 and #53 cover are linked.
 
 - [x] `emit(event, key, payload)`, `emitAt`
 - [x] `SNAPPEA_BIN`, `strict` default true, `checkHot`, `timeout`, `artifacts`
-- [x] Suite coverage via the extension; jqwik via `@AfterContainer`
+- [x] Suite coverage via the extension, printed by default (no file); `SNAPPEA_COVERAGE` path or `off`; jqwik via `@AfterContainer`
 - [x] Packaging per [Packaging and distribution](#packaging-and-distribution): one `snappea` artifact with natives classifier jars, on Maven Central (#64)
 - [x] `specs` optional (default all), `exclude`
 - [x] `SpecViolation extends AssertionFailedError` with structured fields; `SetupError` with `kind` (`ObservationFailure` stays as their deprecated superclass)

@@ -227,12 +227,32 @@ class ObserverTest {
         assertEquals(3, Json.items(Json.get(Json.read(target), "observations")).size());
     }
 
-    @Test void configuredCoverageCollectorIsInertWithoutADestination() {
+    private static String stdout(Runnable body) {
+        var out = new java.io.ByteArrayOutputStream();
+        var original = System.out;
+        System.setOut(new java.io.PrintStream(out, true));
+        try { body.run(); } finally { System.setOut(original); }
+        return out.toString();
+    }
+
+    @Test void configuredCoverageCollectorPrintsOnlyWithoutADestinationAndOffIsInert() throws Exception {
         var observer = builder("Counter").build();
-        try (var coverage = observer.coverage()) {
-            assertNull(coverage.destination());
-            try (var events = observer.recording("no coverage", coverage)) { events.emit("eAdd", "sku", 2); }
-        }
+        var printed = stdout(() -> {
+            try (var coverage = observer.coverage()) {
+                assertNull(coverage.destination());
+                try (var events = observer.recording("no coverage file", coverage)) { events.emit("eAdd", "sku", 2); }
+            }
+        });
+        assertTrue(printed.contains(CoverageCollector.HEADING) && printed.contains("Counter.Ready, on eTake: never handled"), printed);
+        var env = Map.of("SNAPPEA_BIN", System.getenv().getOrDefault("SNAPPEA_BIN", "snappea"), "PATH", System.getenv("PATH"));
+        var off = builder("Counter").environment(new HashMap<>(env) {{ put("SNAPPEA_COVERAGE", "off"); }}).build();
+        assertEquals("", stdout(() -> {
+            try (var coverage = off.coverage()) {
+                assertNull(coverage.destination());
+                try (var events = off.recording("coverage off", coverage)) { events.emit("eAdd", "sku", 2); }
+            }
+        }));
+        assertFalse(Files.exists(Path.of("off")), "off was taken as a path");
         var target = temporary.resolve("env.json");
         var fromEnv = builder("Counter").environment(Map.of("SNAPPEA_COVERAGE", target.toString(),
                 "SNAPPEA_BIN", System.getenv().getOrDefault("SNAPPEA_BIN", "snappea"), "PATH", System.getenv("PATH"))).build();
