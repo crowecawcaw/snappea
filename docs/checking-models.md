@@ -135,8 +135,8 @@ is, and 2 on any other error. `snappea <command> --help` lists the options.
 
 On a terminal or in CI (`CI` set) the output is the text above; otherwise (agents,
 scripts) it is JSON: per test case its result, schedules, bug report and `replay`
-command, and coverage; then the coverage of all test cases with every uncovered entry,
-and the mutation testing results under `mutation`.
+command, coverage and driver limits (`driver`); then the coverage of all test cases
+with every uncovered entry, and the mutation testing results under `mutation`.
 `--format text|json` or `--json` chooses, as does `SNAPPEA_FORMAT=text|json`, and
 `--json-report FILE` also writes the JSON to `FILE`. Every `snappea` command takes
 these options, before or after the command (for example, `snappea --json check`).
@@ -223,7 +223,7 @@ A mutant changes one place in the code of the machines under test:
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
 
-Spec monitors and each test case's main machine are the tests, so they are not mutated,
+Spec monitors and the [drivers](#driver-limits) are the tests, so they are not mutated,
 and neither are assertions, `print` or format strings. Conditions on a choice (`$`,
 `$$`, `choose`) are not forced, swapped or negated: the checker already explores every
 choice, so that only relabels the branches. Only code a passing test case ran
@@ -270,6 +270,53 @@ if (req.units <= stock && !(req.order in reservations)) {
 `mutation` allows every mutant in the code that follows; `mutation:<kind>` allows one
 kind (the IDs in the table above). Suppressed mutants do not run and are counted as
 suppressed. A misspelled kind fails linting, so it cannot silently allow nothing.
+
+## Driver limits
+
+A test can only find bugs in what its driver makes happen. A passing test case lists
+the limits its driver kept in every schedule it explored:
+
+```
+ok    tcTwoClients (all 226 schedules, 4 workers, 0.01s)
+      Coverage: 19/19 statements, 4/4 branches, 5/5 event handlers, 4/4 condition outcomes
+      Driver limits (held in all 226 schedules):
+        each Client sends eAcquire, then eRelease, once each
+        creates 1 LockServer and 2 Client, never more
+      hint: if the real environment can do more, extend the driver to try it
+```
+
+Here every client acquires the lock once and releases it once. A lock server that breaks
+when a client acquires it again passes this test with full coverage. Each limit is a
+choice: if real clients can do it, extend the driver (a loop, more clients, a `$` or
+`choose`); if they cannot, the limit is part of the design, and worth knowing.
+
+The driver is the test case's main machine, the machines declared under a `PTst`
+folder, and machines marked with a comment on the line before them:
+
+```p
+// snappea: driver
+machine Client { ... }
+```
+
+The limits are of these kinds, most telling first:
+
+| Kind | Example |
+| --- | --- |
+| `sequence` | `each Client sends eAcquire, then eRelease, once each` |
+| `order` | `no Client sends eAcquire after eRelease`; `User sends eRegister once, before everything else` |
+| `instances` | `creates 1 LockServer and 2 Client, never more` |
+| `count` | `each Client sends eWithdraw at most twice` (only when it is at most twice: every driver stops somewhere, and higher limits rarely matter) |
+| `values` | `Proposer is only created with proposerId = 1 or 2`; `eWithdraw is always sent with amount = 10` |
+
+The console shows the first 5; JSON has every one under `driver.facts`, each with its
+`kind`, a stable `id` and a `hint`, and the machines treated as the driver under
+`driver.machines`. Only events a driver sends to a machine that is not a driver count,
+and only `bool`, `int`, enum and `string` payload values. A search that stops before
+the end says "explored schedules": the limits held in what it ran. When the search
+found a cycle or hit the step bound, the driver may repeat without limit: no counts or
+orders are listed then, and `driver.repeats` is true. Driver limits are not listed for a
+test case that failed, and never change the exit status. `--no-driver-facts` turns them
+off.
 
 For installation and a first model, see the [command line guide](https://snappea.dev/docs/cli.html).
 For checking application events and logs, see [snappea observe](observe.md).

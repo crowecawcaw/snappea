@@ -211,3 +211,21 @@ fn external_rules_share_the_same_suppression_and_reporting_pipeline() {
     sm.add("test.p", "// snappea-lint: allow example-rule -- fixture\nmachine Main { start state S {} }");
     assert!(registry.check(&Context::parse(&sm).unwrap()).is_empty());
 }
+
+#[test]
+fn driver_directives_mark_machines_and_malformed_ones_fail() {
+    let marked = "// snappea: driver -- stands in for real clients\nmachine Client { start state S {} }\nmachine Server { start state S {} }";
+    assert!(!has(marked, "invalid-directive"));
+    let mut sm = SourceMap::new();
+    sm.add("model.p", marked);
+    let spans = snappea_lint::driver_machines(&sm).unwrap();
+    assert_eq!(spans.len(), 1);
+    assert!(sm.text(spans[0]).starts_with("machine Client"));
+    // a typo, a directive before something else, and trailing code all fail
+    assert!(has("// snappea: drivr\nmachine Client { start state S {} }", "invalid-directive"));
+    assert!(has("// snappea: driver\nevent E;\nmachine Client { start state S {} }", "invalid-directive"));
+    assert!(has("event E; // snappea: driver\nmachine Client { start state S {} }", "invalid-directive"));
+    assert!(has("// snappea: driver\nspec S observes E { start state A {} }\nevent E;", "invalid-directive"));
+    // strings and other comments do not count
+    assert!(!has("// see snappea: driver docs\nmachine Client { start state S {} }", "invalid-directive"));
+}
