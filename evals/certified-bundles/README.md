@@ -181,6 +181,8 @@ delegation is ready. Finish each solver with the usual `finish --run-id ...`
 command and summarize the two cohorts separately. Existing prompt variants and
 saved historical run records remain intact.
 
+The collaboration runner accepts `--model gpt-6.1-terra --reasoning-effort medium` to record the delegated configuration; match those settings when spawning the solver. New trials archive public/private/tooling inputs, and grading verifies and uses those frozen inputs. See [Terra broader-task results](../modeling-skill/phases/TERRA-OPEN-RESULTS.md).
+
 ## Interpret measurements
 
 The primary measure is submissions passing all twenty primary cases. The

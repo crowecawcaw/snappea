@@ -23,6 +23,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Terra 6.1 / medium rerun](TERRA_RESULTS.md) repeats the nine feedback-revision trials with the same skill, checker, fixtures, and budgets.
 
+[Terra broader design/build runs](TERRA-OPEN-RESULTS.md) compare the skill on the shared FIFO and protected VCS tasks.
+
 ## Protocol
 
 - Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.

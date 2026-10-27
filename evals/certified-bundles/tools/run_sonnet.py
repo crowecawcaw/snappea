@@ -117,11 +117,16 @@ def frozen_submission(run,work):
 def grade(run,seeds):
     out=run/'grading'
     out.mkdir(exist_ok=True)
+    meta=json.loads((run/'metadata.json').read_text())
+    for name,want in meta.get('archived_inputs_sha256',{}).items():
+        if hashlib.sha256((run/name).read_bytes()).hexdigest()!=want:
+            raise ValueError('archived grading input changed: '+name)
+    grader_root=run if (run/'private').is_dir() else ROOT
     args=['docker','run','--rm','--network','none','--cap-drop','ALL',
         '--security-opt','no-new-privileges','--user',f'{os.getuid()}:{os.getgid()}','--memory','768m','--cpus','1','--pids-limit','128',
         '--read-only','--tmpfs','/tmp:rw,size=128m',
-        '--mount',f'type=bind,src={ROOT}/private,dst=/grader/private,readonly',
-        '--mount',f'type=bind,src={ROOT}/public,dst=/grader/public,readonly',
+        '--mount',f'type=bind,src={grader_root}/private,dst=/grader/private,readonly',
+        '--mount',f'type=bind,src={grader_root}/public,dst=/grader/public,readonly',
         '--mount',f'type=bind,src={run}/submission,dst=/submission,readonly',
         '--mount',f'type=bind,src={out},dst=/output',grading_image(run),
         'python','/grader/private/grade.py','/submission/solution.py',

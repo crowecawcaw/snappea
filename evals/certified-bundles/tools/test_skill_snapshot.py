@@ -1,5 +1,10 @@
 """Focused checks for the skill-treatment freeze and paired task prompts."""
 from pathlib import Path
+import hashlib
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
+import run_sonnet
 import tempfile
 import unittest
 
@@ -58,6 +63,27 @@ class SkillSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'hash mismatch'):
                 verify_snapshot(snapshot)
             make_writable(snapshot_root)
+
+    def test_grading_uses_archived_inputs_and_rejects_tampering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            for name in ('private', 'public', 'submission', 'grading'):
+                (run / name).mkdir()
+            fixture = run / 'private' / 'grade.py'
+            fixture.write_text('original grader')
+            meta = {'image': 'pinned-image', 'archived_inputs_sha256': {
+                'private/grade.py': hashlib.sha256(fixture.read_bytes()).hexdigest()}}
+            (run / 'metadata.json').write_text(json.dumps(meta))
+            (run / 'grading' / 'grade.json').write_text(json.dumps({'passed': 1, 'total': 1}))
+            with patch.object(run_sonnet, 'command', return_value=SimpleNamespace(stdout='', stderr='')) as command:
+                self.assertEqual(run_sonnet.grade(run, 64)['passed'], 1)
+                argv = command.call_args.args[0]
+                self.assertIn(f'type=bind,src={run}/private,dst=/grader/private,readonly', argv)
+                self.assertIn(f'type=bind,src={run}/public,dst=/grader/public,readonly', argv)
+                fixture.write_text('changed grader')
+                with self.assertRaisesRegex(ValueError, 'archived grading input changed'):
+                    run_sonnet.grade(run, 64)
+                self.assertEqual(command.call_count, 1)
 
     def test_paired_prompts_differ_only_by_skill_instruction(self):
         baseline = task_prompt('p', 'baseline')
