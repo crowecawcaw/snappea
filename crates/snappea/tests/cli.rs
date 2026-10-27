@@ -143,16 +143,30 @@ fn verbose_shows_progress() {
     assert!(h.stdout.contains("\nFAIL  tcCoins (bug found after "), "{}", h.stdout);
 }
 
+/// Issue #106: foreign files would be left out of the check, so they fail it unless the
+/// check opts out explicitly.
 #[test]
-fn warnings_show_without_verbose() {
+fn foreign_files_fail_the_check_unless_ignored_explicitly() {
     let mut h = host();
     h.add_file(
         "p.pproj",
         "<Project><ProjectName>P</ProjectName><InputFiles><PFile>./coins.p</PFile><PFile>./F.cs</PFile></InputFiles></Project>",
     );
     h.add_file("F.cs", "");
-    assert_eq!(snappea(&mut h, &["check", "tcFine"]), 0, "{}", h.stdout);
-    assert!(h.stdout.starts_with("Warning: foreign file /w/F.cs is ignored;"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "tcFine"]), 2, "{}", h.stdout);
+    assert!(h.stderr.contains("the project lists foreign file /w/F.cs, which snappea cannot run"), "{}", h.stderr);
+    assert!(h.stderr.contains("hint: ") && h.stderr.contains("--ignore-foreign-files"), "{}", h.stderr);
+    assert!(!h.stdout.contains("Checking "), "{}", h.stdout);
+
+    assert_eq!(snappea(&mut h, &["check", "tcFine", "--ignore-foreign-files"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stdout.contains("foreign") && !h.stderr.contains("foreign"), "{}{}", h.stdout, h.stderr);
+    // listing and linting run nothing, so nothing is left out
+    assert_eq!(snappea(&mut h, &["tests"]), 0, "{}", h.stderr);
+    assert!(h.stdout.contains("tcFine"));
+
+    // snappea-compat keeps upstream's warning
+    assert_eq!(compat(&mut h, &["check", "-tc", "tcFine", "--schedules", "1"]), 0, "{}", h.stdout);
+    assert!(h.stdout.contains("Warning: foreign file /w/F.cs is ignored;"), "{}", h.stdout);
 }
 
 #[test]
@@ -460,7 +474,11 @@ fn observe_reports_coverage_and_merges_it_without_the_sources() {
     };
     assert_eq!(observe(&mut h, "a.jsonl", "a.json"), 0, "{}", h.stderr);
     // `assert false` handlers must never run, so they are not counted
-    assert!(h.stdout.contains("\n      Coverage: 8/12 statements, 0/0 branches, 2/3 event handlers\n"), "{}", h.stdout);
+    assert!(
+        h.stdout.contains("\n      Coverage: 2/2 states, 8/12 statements, 0/0 branches, 2/3 event handlers\n"),
+        "{}",
+        h.stdout
+    );
     assert!(
         h.stdout.contains(
             "Not covered by the events:\n  inventory.p:30  InventoryCorrect.Ready, on eReleased: never handled\n"
@@ -478,9 +496,12 @@ fn observe_reports_coverage_and_merges_it_without_the_sources() {
         "{}",
         h.stderr
     );
-    assert!(h.stdout.contains("InventoryCorrect: 8/12 statements"), "{}", h.stdout);
+    assert!(h.stdout.contains("InventoryCorrect: 2/2 states, 8/12 statements"), "{}", h.stdout);
     assert_eq!(snappea(&mut h, &["coverage", "merge-observe", "suite.json", "b.json", "--format", "text"]), 0);
-    assert_eq!(h.stdout, "Coverage:\n  InventoryCorrect: 12/12 statements, 0/0 branches, 3/3 event handlers\n");
+    assert_eq!(
+        h.stdout,
+        "Coverage:\n  InventoryCorrect: 2/2 states, 12/12 statements, 0/0 branches, 3/3 event handlers\n"
+    );
     // merging again changes nothing
     let merged = read(&h, "suite.json");
     h.add_file("again.json", &merged);
@@ -547,7 +568,10 @@ fn observe_reports_a_misspelled_event_name() {
         }
         a
     };
-    assert_eq!(snappea(&mut h, &args("")), 0);
+    // the default is error (issue #106); ignore is the explicit choice for mixed logs
+    assert_eq!(snappea(&mut h, &args("")), 2);
+    assert!(h.stdout.contains("did you mean eReserved?"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &args("ignore")), 0);
     assert!(h.stderr.is_empty());
     assert!(!read(&h, "r.json").contains("eReserverd"));
 

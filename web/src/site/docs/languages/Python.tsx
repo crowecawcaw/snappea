@@ -333,11 +333,14 @@ def server(tmp_path_factory):
         <h3>Strict checks</h3>
         <p>
           Strict means every selected spec checked at least one relevant event, which catches instrumentation that was
-          removed or never ran. With named specs (<code>check_spec("Name")</code>, <code>[tool.snappea] specs</code>) it
-          defaults to true; for this release such a check emits a <code>snappea.StrictDefaultWarning</code> where it
-          would fail, and the next release fails it. Pass <code>strict=False</code> to keep the old behaviour. With every
-          spec selected (the plugin's default) it defaults to false; turn it on with <code>strict = true</code> or{" "}
-          <code>pytest --snappea-strict</code>, and mark uninstrumented tests <code>skip=True</code>.
+          removed or never ran. An explicit check with named specs (<code>check_spec("Name")</code>,{" "}
+          <code>Recorder(specs=[...])</code>) defaults to strict: a named spec that saw no relevant event fails the
+          check with a <code>SetupError</code> of kind <code>"validation"</code>. Pass <code>strict=False</code> where
+          a spec may rightly see no events. (<code>snappea.StrictDefaultWarning</code>, which warned about this change
+          for one release, is no longer emitted.) The plugin checks every test, and most tests emit no events for a
+          given spec, so its checks are not strict unless asked, even with <code>[tool.snappea] specs</code>: set{" "}
+          <code>strict = true</code>, run <code>pytest --snappea-strict</code>, or mark one test{" "}
+          <code>@pytest.mark.snappea(strict=True)</code>. Mark uninstrumented tests <code>skip=True</code>.
         </p>
         <h3>Environment variables</h3>
         <EnvTable lang="python" />
@@ -348,9 +351,13 @@ def server(tmp_path_factory):
         </p>
         <h3>Suite coverage</h3>
         <p>
-          <code>pytest --snappea-coverage=coverage/monitor.json</code> (or <code>SNAPPEA_COVERAGE</code>) reports the P
-          spec handlers, statements and branches the suite's checks reached, and writes them as JSON for CI. Runs merge into an
-          existing file under a lock, so pytest-xdist workers can share one path; delete the file to start over.
+          At the end of a run the plugin prints the spec coverage of all its checks: the states, handlers, statements and
+          branches they reached, then what none reached, such as <code>Spec.State: state never reached</code>. Nothing is
+          written, so each run reports only itself; pytest-xdist workers report to the controller.{" "}
+          <code>pytest --snappea-coverage=coverage/monitor.json</code> (or <code>SNAPPEA_COVERAGE</code>) also writes it as
+          JSON for CI. Runs merge into an existing file under a lock, so workers and separate runs can share one path; delete
+          the file to start over. <code>--snappea-coverage=off</code> (or <code>SNAPPEA_COVERAGE=off</code>) turns the report
+          off. Without a path, a reporting error is printed but never fails the run.
         </p>
         <h3>How it works</h3>
         <p>

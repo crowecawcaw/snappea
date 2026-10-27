@@ -105,10 +105,12 @@ public final class SnappeaExtension implements BeforeEachCallback, AfterEachCall
         }
         CoverageCollector coverage = null;
         var destination = effective.coverageDestination();
-        if (destination.isPresent()) {
+        if (destination.isPresent() || !effective.coverageOff()) {
+            // Closed when the test run ends: writes each destination, or only prints the
+            // coverage of the checks without one.
             var registry = context.getRoot().getStore(ROOT).getOrComputeIfAbsent(
                     "registry", ignored -> new CoverageRegistry(), CoverageRegistry.class);
-            coverage = registry.collector(effective, destination.get());
+            coverage = destination.isPresent() ? registry.collector(effective, destination.get()) : registry.printed(effective);
         }
         var recording = coverage == null ? effective.recording(label) : effective.recording(label, coverage);
         context.getStore(namespace).put("state", new State(recording, label));
@@ -182,6 +184,13 @@ public final class SnappeaExtension implements BeforeEachCallback, AfterEachCall
     private static final class CoverageRegistry implements ExtensionContext.Store.CloseableResource {
         private record Entry(String configuration, CoverageCollector collector) {}
         private final Map<Path, Entry> entries = new LinkedHashMap<>();
+        private CoverageCollector printed;
+
+        /** The print-only collector for checks without a destination; the first check's binary merges. */
+        synchronized CoverageCollector printed(SnappeaObserver observer) {
+            if (printed == null) printed = observer.coverage();
+            return printed;
+        }
 
         synchronized CoverageCollector collector(SnappeaObserver observer, Path destination) {
             var existing = entries.get(destination);
@@ -204,6 +213,7 @@ public final class SnappeaExtension implements BeforeEachCallback, AfterEachCall
                     else failure.addSuppressed(error);
                 }
             }
+            if (printed != null) printed.close(); // never throws: failures are warnings
             if (failure != null) throw failure;
         }
     }
@@ -223,7 +233,11 @@ public final class SnappeaExtension implements BeforeEachCallback, AfterEachCall
         public Builder strict(boolean value) { observer.strict(value); return this; }
         public Builder checkHot(boolean value) { observer.checkHot(value); return this; }
         public Builder unknownEvents(UnknownEvents value) { observer.unknownEvents(value); return this; }
-        /** Suite coverage JSON, written once when the test run ends. Default: {@code SNAPPEA_COVERAGE}. */
+        /**
+         * Suite coverage JSON, written once when the test run ends. Default: {@code SNAPPEA_COVERAGE},
+         * then the config file's {@code coverage}; without either, the run's suite coverage is only
+         * printed. {@code SNAPPEA_COVERAGE=off} (or {@code coverage = off}) turns it off.
+         */
         public Builder coverage(Path value) { observer.coverage(value); return this; }
         /** Default: {@code SNAPPEA_MODE}, then the config file, then {@link Mode#AUTO}. */
         public Builder mode(Mode value) { observer.mode(value); return this; }

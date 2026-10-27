@@ -137,6 +137,13 @@ impl Model {
                 crate::sema::CompileError::Analysis(error) => error.messages(&map).join("\n"),
             })
         })?;
+        // the spec rules `snappea observe` enforces
+        let findings = snappea_lint::lint_observation(&map).map_err(|e| config(e.message))?;
+        if !findings.is_empty() {
+            let mut text: String = findings.iter().map(|f| crate::driver::lint::render(&map, f) + "\n").collect();
+            text.push_str(&crate::driver::lint::summary(findings.len()));
+            return Err(config(text));
+        }
         Ok(Model { program: Arc::new(analysis.program), options: Options::default() })
     }
 
@@ -227,12 +234,17 @@ impl Model {
         self.options.strict.unwrap_or(self.options.specs.is_some())
     }
 
+    /// `.coverage(path)`, else `SNAPPEA_COVERAGE` (`off` turns coverage off, as in the
+    /// other languages' helpers), else the `coverage` setting.
     fn coverage_path(&self) -> Option<PathBuf> {
-        self.options
-            .coverage
-            .clone()
-            .or_else(|| std::env::var_os(COVERAGE_ENV).filter(|v| !v.is_empty()).map(|v| cwd().join(v)))
-            .or_else(|| self.options.file_coverage.clone())
+        if let Some(path) = &self.options.coverage {
+            return Some(path.clone());
+        }
+        match std::env::var_os(COVERAGE_ENV) {
+            Some(v) if v == "off" => None,
+            Some(v) if !v.is_empty() => Some(cwd().join(v)),
+            _ => self.options.file_coverage.clone(),
+        }
     }
 
     fn select_specs(&self) -> Result<Vec<Spec<'_>>, SetupError> {

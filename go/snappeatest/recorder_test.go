@@ -646,6 +646,24 @@ func TestSnappeaemitReachesTheRecording(t *testing.T) {
 	}
 }
 
+type panicky struct{}
+
+func (panicky) MarshalJSON() ([]byte, error) { panic("boom") }
+
+func TestSnappeaemitPanickingPayloadFailsTheCheck(t *testing.T) {
+	r := New(t, fixtureConfig(t))
+	before := snappeaemit.Dropped()
+	snappeaemit.Emit("bad", "k", panicky{}) // must not panic in the code under test
+	snappeaemit.Emit("fine", "k", nil)
+	if snappeaemit.Dropped() != before {
+		t.Fatalf("the recording should have taken the event, not snappeaemit's drop count")
+	}
+	_, err := r.Verify(context.Background())
+	if se := setupKind(t, err, "parser"); !strings.Contains(se.Message, "cannot encode the payload of bad") || !strings.Contains(se.Message, "boom") {
+		t.Fatalf("panicking payload: %v", se)
+	}
+}
+
 func TestSnappeaemitWithSeveralRecordings(t *testing.T) {
 	a, b := New(t, fixtureConfig(t)), New(t, fixtureConfig(t))
 	snappeaemit.EmitCtx(a.Context(context.Background()), "e", "k", nil)

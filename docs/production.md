@@ -109,10 +109,10 @@ the wrong order. Pick one:
 
 ## 7. Unknown event names
 
-Tests default to `unknown_events = error`. `snappea observe` defaults to `ignore`,
-since production logs often carry events the spec doesn't model. Run
-`--unknown-events warn` after a deploy that changes instrumentation: a typo shows
-up as a warning with the likely intended name.
+Tests and `snappea observe` default to `unknown_events = error`. Production logs
+often carry events the spec doesn't model: pass `--unknown-events ignore` for those,
+or `--unknown-events warn` after a deploy that changes instrumentation, so a typo
+shows up as a warning with the likely intended name.
 
 ## 8. When production reports a violation
 

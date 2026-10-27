@@ -11,24 +11,32 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// Main runs the package's tests and then writes suite coverage once, for use as
+// Main runs the package's tests and then prints suite spec coverage once: what every
+// check together covered of the spec monitors, and the states and handlers no check
+// reached. Use it as
 //
 //	func TestMain(m *testing.M) { snappeatest.Main(m) }
 //
-// Checks whose Config.Coverage (or SNAPPEA_COVERAGE) names a path are merged into that
-// file, together with what is already there, and the summary is printed. Without
-// Main, each check merges into the file as it completes, which is slower.
+// By default the coverage is only printed; no file is written. Set Config.Coverage
+// (or SNAPPEA_COVERAGE) to a path to also keep it as JSON: the checks are merged into
+// that file together with what is already there. SNAPPEA_COVERAGE=off (or
+// Config.Coverage "off") turns suite coverage off. A failure to print the default
+// report is a warning; a failure to write a configured path fails the run.
+//
+// Without Main there is no default report, and checks with a coverage path merge into
+// the file as each one completes, which is slower.
 func Main(m *testing.M) {
 	collector.mu.Lock()
 	collector.inMain = true
 	collector.mu.Unlock()
 	code := m.Run()
-	if err := flushCoverage(context.Background(), os.Stdout); err != nil {
+	if err := flushCoverage(context.Background(), os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "snappeatest:", err)
 		if code == 0 {
 			code = 1
@@ -43,17 +51,29 @@ type pending struct {
 }
 
 var collector struct {
-	mu     sync.Mutex
-	inMain bool
-	paths  map[string]*pending
+	mu       sync.Mutex
+	inMain   bool
+	paths    map[string]*pending
+	implicit *pending // checks without a coverage path, for the default report
 }
 
-// addCoverage adds a check's report to the suite coverage file named by s.coverage.
+// addCoverage adds a check's report to the suite coverage file named by s.coverage,
+// or, with Main and no path, to the default report printed at the end of the run.
 func addCoverage(s settings, report []byte) error {
-	if s.coverage == "" {
+	if s.coverageOff {
 		return nil
 	}
 	collector.mu.Lock()
+	if s.coverage == "" {
+		if collector.inMain {
+			if collector.implicit == nil {
+				collector.implicit = &pending{s: s}
+			}
+			collector.implicit.reports = append(collector.implicit.reports, append(json.RawMessage(nil), report...))
+		}
+		collector.mu.Unlock()
+		return nil
+	}
 	if collector.inMain {
 		if collector.paths == nil {
 			collector.paths = map[string]*pending{}
@@ -71,11 +91,19 @@ func addCoverage(s settings, report []byte) error {
 	return mergeCoverage(context.Background(), s, s.coverage, []json.RawMessage{report}, io.Discard)
 }
 
-func flushCoverage(ctx context.Context, human io.Writer) error {
+// flushCoverage merges the collected reports: into each configured path, then the
+// checks without a path into a printed-only report. That report's errors go to warn as
+// a warning, since nobody asked for it.
+func flushCoverage(ctx context.Context, human, warn io.Writer) error {
 	collector.mu.Lock()
-	paths := collector.paths
-	collector.paths = nil
+	paths, implicit := collector.paths, collector.implicit
+	collector.paths, collector.implicit = nil, nil
 	collector.mu.Unlock()
+	if implicit != nil && len(implicit.reports) > 0 {
+		if err := printCoverage(ctx, implicit.s, implicit.reports, human); err != nil {
+			fmt.Fprintf(warn, "snappeatest: warning: no suite spec coverage report: %s\n", oneLine(err))
+		}
+	}
 	keys := make([]string, 0, len(paths))
 	for path := range paths {
 		keys = append(keys, path)
@@ -89,6 +117,38 @@ func flushCoverage(ctx context.Context, human io.Writer) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// printCoverage writes the merged text summary of reports to human, writing no file.
+func printCoverage(ctx context.Context, s settings, reports []json.RawMessage, human io.Writer) error {
+	data, err := json.Marshal(reports)
+	if err != nil {
+		return err
+	}
+	binary, missing := findBinary(ctx, s.binary)
+	if missing != nil {
+		return missing
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "coverage", "merge-observe", "--stdin", "--format", "text")
+	cmd.Dir = s.workDir
+	cmd.Stdin = bytes.NewReader(data)
+	cmd.WaitDelay = time.Second
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		err = errors.Join(err, ctx.Err())
+	}
+	if err != nil {
+		return fmt.Errorf("snappea coverage merge-observe: %w: %s", err, bytes.TrimSpace(output))
+	}
+	_, err = fmt.Fprintf(human, "\nSpec coverage of all checks (SNAPPEA_COVERAGE=<file.json> keeps it, =off hides it):\n%s", output)
+	return err
+}
+
+// oneLine joins the lines of err's message, for a one-line warning.
+func oneLine(err error) string {
+	return strings.Join(strings.Fields(err.Error()), " ")
 }
 
 // mergeCoverage merges reports into the suite file at path under an exclusive lock,

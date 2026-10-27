@@ -12,22 +12,31 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Suite coverage: collects each check's coverage and, when closed, merges it into the
- * destination with {@code snappea coverage merge-observe}. An existing destination is merged
+ * Suite coverage: collects each check's coverage and, when closed, merges it with
+ * {@code snappea coverage merge-observe} and prints what no check reached.
+ *
+ * <p>With a destination, the merge is written there as JSON. An existing destination is merged
  * into, under an exclusive file lock, so several JVMs (Maven or Gradle forks) can share one
- * path; delete a stale file before a run. Thread-safe.
+ * path; delete a stale file before a run. Without one, the reports are kept in memory and
+ * closing only prints the summary, writing no file; a failure then is a one-line warning on
+ * stderr instead of an error. Thread-safe.
  */
 public final class CoverageCollector implements AutoCloseable {
     private static final Map<Path, Object> JVM_LOCKS = new ConcurrentHashMap<>();
+    static final String HEADING = "Spec coverage of all checks (SNAPPEA_COVERAGE=<file.json> keeps it, =off hides it):";
     private final SnappeaObserver observer;
     private final Path destination;
+    private final boolean printOnly;
     private final Path directory;
     private final List<Path> reports = new ArrayList<>();
+    private final List<String> inMemory = new ArrayList<>();
     private boolean closed;
 
-    CoverageCollector(SnappeaObserver observer, Path destination) {
+    /** printOnly applies without a destination: print the summary instead of doing nothing. */
+    CoverageCollector(SnappeaObserver observer, Path destination, boolean printOnly) {
         this.observer = observer;
         this.destination = destination == null ? null : destination.toAbsolutePath().normalize();
+        this.printOnly = this.destination == null && printOnly;
         if (this.destination == null) {
             directory = null;
             return;
@@ -42,17 +51,19 @@ public final class CoverageCollector implements AutoCloseable {
         }
     }
 
-    /** The coverage JSON written on close; null for an inert collector (no destination configured). */
+    /** The coverage JSON written on close; null when none is configured (print only, or off). */
     public Path destination() { return destination; }
 
-    boolean enabled() { return destination != null; }
+    boolean enabled() { return destination != null || printOnly; }
 
     void requireCompatible(SnappeaObserver candidate) {
+        if (printOnly) return; // only prints, with this collector's binary: nothing to keep consistent
         if (!observer.coverageCompatibilityKey().equals(candidate.coverageCompatibilityKey()))
             throw new IllegalArgumentException("Coverage collector has incompatible binary, timeout or artifact settings");
     }
 
     synchronized void add(ObservationReport report) {
+        if (printOnly && !closed) inMemory.add(report.json());
         if (destination == null) return;
         if (closed) throw new SetupError(SetupError.CONFIG, "Coverage scope was closed before recording", directory, report, null);
         try {
@@ -64,10 +75,15 @@ public final class CoverageCollector implements AutoCloseable {
         }
     }
 
-    /** Merges into the destination and prints the summary. Idempotent. */
+    /** Merges into the destination (if any) and prints the summary. Idempotent. */
     @Override public synchronized void close() {
-        if (closed || destination == null) return;
+        if (closed) return;
         closed = true;
+        if (printOnly) {
+            print();
+            return;
+        }
+        if (destination == null) return;
         var input = directory.resolve("observations.json");
         var console = directory.resolve("console.txt");
         Path temporary = null;
@@ -121,6 +137,23 @@ public final class CoverageCollector implements AutoCloseable {
             if (temporary != null) {
                 try { Files.deleteIfExists(temporary); } catch (IOException ignored) { /* keep the original failure */ }
             }
+        }
+    }
+
+    /** The print-only merge: nobody asked for it, so a failure is a warning, never an error. */
+    private void print() {
+        if (inMemory.isEmpty()) return;
+        var input = "[" + String.join(",", inMemory) + "]";
+        inMemory.clear();
+        try {
+            var result = Processes.capture(List.of(observer.executable(), "coverage", "merge-observe", "--stdin",
+                    "--format", "text"), input, observer.timeout());
+            if (result.exit() != 0)
+                throw new IOException("snappea coverage merge-observe exit " + result.exit() + ": " + result.output().strip());
+            System.out.print(System.lineSeparator() + HEADING + System.lineSeparator() + result.output());
+        } catch (IOException | RuntimeException error) {
+            var reason = String.valueOf(error.getMessage()).strip().replaceAll("\\s+", " ");
+            System.err.println("snappea: warning: no suite spec coverage report: " + reason);
         }
     }
 }

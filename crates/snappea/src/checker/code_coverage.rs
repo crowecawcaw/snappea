@@ -34,6 +34,9 @@ pub enum PointKind {
     ConditionFalse,
     /// Two consecutive state transitions, on one instance in one execution.
     TransitionPair,
+    /// A state of a spec or scenario monitor was entered. Its handlers and entry/exit
+    /// functions are its children, so an unreached state is reported once.
+    State,
 }
 
 impl PointKind {
@@ -47,6 +50,7 @@ impl PointKind {
             PointKind::ConditionTrue => "condition_true",
             PointKind::ConditionFalse => "condition_false",
             PointKind::TransitionPair => "transition_pair",
+            PointKind::State => "state",
         }
     }
 
@@ -60,6 +64,7 @@ impl PointKind {
             PointKind::ConditionTrue,
             PointKind::ConditionFalse,
             PointKind::TransitionPair,
+            PointKind::State,
         ]
         .into_iter()
         .find(|k| k.name() == s)
@@ -128,6 +133,8 @@ impl Count {
 /// Coverage counts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Summary {
+    /// Monitor states entered (spec and scenario monitors only).
+    pub states: Count,
     pub statements: Count,
     pub branches: Count,
     pub handlers: Count,
@@ -137,15 +144,19 @@ pub struct Summary {
 
 impl Summary {
     pub fn to_json(self) -> Value {
-        json!({"statements": self.statements.to_json(), "branches": self.branches.to_json(), "handlers": self.handlers.to_json(),
+        json!({"states": self.states.to_json(), "statements": self.statements.to_json(), "branches": self.branches.to_json(), "handlers": self.handlers.to_json(),
             "conditions": self.conditions.to_json(), "transition_pairs": self.transition_pairs.to_json()})
     }
 }
 
 impl std::fmt::Display for Summary {
-    /// `41/50 statements, 6/8 branches, 9/12 event handlers`.
+    /// `3/4 states, 41/50 statements, 6/8 branches, 9/12 event handlers` (states only
+    /// when monitors are covered).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Summary { statements: s, branches: b, handlers: h, conditions: c, transition_pairs: t } = self;
+        let Summary { states: st, statements: s, branches: b, handlers: h, conditions: c, transition_pairs: t } = self;
+        if st.total > 0 {
+            write!(f, "{}/{} states, ", st.covered, st.total)?;
+        }
         write!(
             f,
             "{}/{} statements, {}/{} branches, {}/{} event handlers",
@@ -244,6 +255,8 @@ pub struct Hits {
     probes: ProbeSet,
     handled: FxHashSet<(StateId, EventId)>,
     transition_pairs: FxHashSet<(StateId, StateId, StateId)>,
+    /// Monitor states entered.
+    states: FxHashSet<StateId>,
 }
 
 impl Hits {
@@ -258,7 +271,12 @@ impl Hits {
                 }
             }
         }
-        Hits { probes: info.probes.clone(), handled, transition_pairs: info.transition_pairs.clone() }
+        Hits {
+            probes: info.probes.clone(),
+            handled,
+            transition_pairs: info.transition_pairs.clone(),
+            states: info.monitor_states.clone(),
+        }
     }
 
     /// Whether code coverage probe `id` ran.
@@ -270,6 +288,7 @@ impl Hits {
         self.probes.union(&other.probes);
         self.handled.extend(other.handled.iter().copied());
         self.transition_pairs.extend(other.transition_pairs.iter().copied());
+        self.states.extend(other.states.iter().copied());
     }
 }
 
@@ -284,6 +303,7 @@ pub struct CodeMap {
     probe_point: Vec<Option<u32>>,
     handler_point: FxHashMap<(StateId, EventId), u32>,
     transition_point: FxHashMap<(StateId, StateId, StateId), u32>,
+    state_point: FxHashMap<StateId, u32>,
 }
 
 impl CodeMap {
@@ -312,6 +332,20 @@ impl CodeMap {
             }
             for s in &m.states {
                 let st = prog.state(*s);
+                // monitor states: whether a check ever entered them
+                let state_point = if m.is_spec() {
+                    let context = format!("{}.{}", m.name, st.name);
+                    let point = map.push(sm, PointKind::State, st.span, context, "state never reached".into(), None);
+                    if let Some(p) = point {
+                        map.state_point.insert(*s, p);
+                        for f in st.entry.iter().chain(&st.exit) {
+                            runs.entry(*f).or_default().push(p);
+                        }
+                    }
+                    point
+                } else {
+                    None
+                };
                 for h in &st.handlers {
                     let (fun, missed) = match h.action {
                         HandlerAction::Do(f) => (Some(f), "never handled".to_string()),
@@ -324,7 +358,9 @@ impl CodeMap {
                         continue;
                     }
                     let context = format!("{}.{}, on {}", m.name, st.name, prog.event(h.event).name);
-                    let Some(point) = map.push(sm, PointKind::Handler, h.span, context, missed, None) else { continue };
+                    let Some(point) = map.push(sm, PointKind::Handler, h.span, context, missed, state_point) else {
+                        continue;
+                    };
                     map.handler_point.insert((*s, h.event), point);
                     if let Some(f) = fun {
                         runs.entry(f).or_default().push(point);
@@ -427,6 +463,11 @@ impl CodeMap {
                 c.hit.insert(*p);
             }
         }
+        for (st, p) in &self.state_point {
+            if hits.states.contains(st) {
+                c.hit.insert(*p);
+            }
+        }
     }
 
     /// Required points not reached by any selected test and not covered by a scoped
@@ -503,6 +544,7 @@ impl CodeCoverage {
                 PointKind::Handler => s.handlers.add(hit),
                 PointKind::ConditionTrue | PointKind::ConditionFalse => s.conditions.add(hit),
                 PointKind::TransitionPair => s.transition_pairs.add(hit),
+                PointKind::State => s.states.add(hit),
                 PointKind::Entry => {}
             }
         }

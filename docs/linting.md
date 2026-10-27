@@ -19,6 +19,10 @@ source errors. It does not explore schedules or write checker artifacts. Test-na
 filters are not accepted: selection checks need the complete loaded project.
 `check` also lints the whole loaded project, even when you select one test to run.
 
+`snappea observe` and the test libraries (Rust `snappea::test`, and Python, Go and
+Java through `snappea observe`) enforce the spec rule `unobserved-handler` too, with
+the same suppression comments; the other rules concern model tests.
+
 Linting identifies common weak checks. A clean result does not establish that the
 model covers every requirement or faithfully represents the implementation.
 `snappea-compat` retains upstream behavior and does not apply these lint rules.
@@ -32,6 +36,9 @@ model covers every requirement or faithfully represents the implementation.
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
 | `unused-payload-field` | An event handler in a spec declares a named payload field but never reads it. | Validate or use the field, or suppress an intentional abstraction. |
+| `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
+| `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
+| `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
 
 ### Permissive monitors
 
@@ -134,6 +141,45 @@ resolves tuple type aliases, and reports unused fields separately. A direct writ
 to a field does not count as reading it. Passing or copying the whole payload is
 conservatively treated as using every field; this is not interprocedural dataflow
 analysis. Reading a field also does not prove it contributes to a useful property.
+
+### Unobserved handlers
+
+A monitor sees only the events in its `observes` list. Here the `eRefund` handler
+never runs, so the check passes without ever testing refunds:
+
+```p
+spec Balance observes ePay {
+  start state Open {
+    on ePay do (n: int) { assert n > 0; }
+    on eRefund do (n: int) { assert n <= paid; }   // error[unobserved-handler]
+  }
+}
+```
+
+Write `spec Balance observes ePay, eRefund`, or delete the handler. `on ... goto` and
+`ignore` items are checked too. `snappea-compat` keeps upstream's `[Warning:]` line
+instead. For a handler kept on purpose, for example for an event not emitted yet:
+
+```p
+    // snappea-lint: allow unobserved-handler -- eRefund is not emitted until v2
+    on eRefund do (n: int) { assert n <= paid; }
+```
+
+### Scenario states
+
+A scenario counts as covered when it reaches an accepting (`cold`) state.
+`scenario-never-accepts` reports a scenario without one: it can never be covered.
+`scenario-cold-start` reports one that starts in a `cold` state: it accepts before
+anything happens, and counts as covered only after events re-enter an accepting
+state. Mark the start state `hot` (or leave it unmarked) and the goal state `cold`:
+
+```p
+scenario RefundAfterPay observes ePay, eRefund {
+  start state Waiting { on ePay goto Paid; }
+  state Paid { on eRefund goto Done; }
+  cold state Done {}
+}
+```
 
 ## Suppress intentional findings
 

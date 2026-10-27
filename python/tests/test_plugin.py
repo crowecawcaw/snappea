@@ -299,12 +299,33 @@ def test_misspelled_event_fails_the_test(project):
     r.assert_outcomes(passed=1, warnings=1)
 
 
-def test_named_specs_in_settings_default_to_strict(project):
+def test_named_specs_in_settings_do_not_make_plugin_checks_strict(project):
+    # the plugin checks every test, and most emit no events for a given spec
     project.makepyprojecttoml('[tool.snappea]\nspec_files = ["specs/*.p"]\nspecs = ["MutualExclusion"]\n')
     r = run(project, "-k", "test_no_events or test_correct or test_waiting_forever_fails")
     # test_waiting_forever_fails emits only eRequest, which MutualExclusion ignores
-    r.assert_outcomes(passed=3, deselected=7, warnings=2)
-    r.stdout.fnmatch_lines(["*StrictDefaultWarning*"])
+    r.assert_outcomes(passed=3, deselected=7)
+    r.stdout.no_fnmatch_line("*StrictDefaultWarning*")
+    # strict = true opts in, and fails tests whose named spec saw no relevant event
+    project.makepyprojecttoml(
+        '[tool.snappea]\nspec_files = ["specs/*.p"]\nspecs = ["MutualExclusion"]\nstrict = true\n'
+    )
+    r = run(project, "-k", "test_no_events or test_correct or test_waiting_forever_fails")
+    r.assert_outcomes(passed=1, failed=2, deselected=7)
+    r.stdout.fnmatch_lines(["*checked no relevant events*", "*strict=False*"])
+
+
+def test_strict_mark_opts_one_test_in(project):
+    project.makepyfile(test_marked_strict="""
+import pytest
+
+@pytest.mark.snappea(strict=True)
+def test_marked_no_events():
+    pass
+""")
+    r = run(project, "-k", "test_marked_no_events or test_no_events")
+    r.assert_outcomes(passed=1, failed=1, deselected=9)
+    r.stdout.fnmatch_lines(["*test_marked_no_events*", "*checked no relevant events*"])
 
 
 def test_artifacts_setting_keeps_failed_checks(project, monkeypatch):
@@ -346,3 +367,38 @@ def test_coverage_with_xdist(project):
     report = json.loads((project.path / "cov.json").read_text())
     assert len(report["observations"]) == 3
     result.stdout.fnmatch_lines(["*Spec coverage*", "*JSON:*cov.json*"])
+
+
+def test_coverage_reported_by_default_without_a_file(project):
+    # no path: the run's coverage is printed, including states no check entered, and
+    # nothing is written
+    result = run(project, "-k", "test_skip_one_spec")
+    result.assert_outcomes(passed=1, deselected=9)
+    result.stdout.fnmatch_lines([
+        "*Spec coverage (all completed checks)*",
+        "Coverage:",
+        "  RequestsGranted: 0/2 states, *",
+        "Not covered by any observation:",
+        "  specs/lock.p:*  RequestsGranted.Waiting: state never reached",
+        "--snappea-coverage=PATH keeps it as JSON; =off turns this report off.",
+    ])
+    # the unreached state's handlers are not listed one by one
+    result.stdout.no_fnmatch_line("*RequestsGranted.Waiting, on*")
+    assert not list(project.path.rglob("*.json.lock"))
+
+
+def test_default_coverage_report_can_be_turned_off(project, monkeypatch):
+    result = run(project, "-k", "test_correct", "--snappea-coverage=off")
+    result.assert_outcomes(passed=1, deselected=9)
+    result.stdout.no_fnmatch_line("*Spec coverage*")
+    assert not (project.path / "off").exists()
+    monkeypatch.setenv("SNAPPEA_COVERAGE", "off")
+    result = run(project, "-k", "test_correct")
+    result.stdout.no_fnmatch_line("*Spec coverage*")
+
+
+def test_default_coverage_report_with_xdist(project):
+    pytest.importorskip("xdist")
+    result = run(project, "-n", "2", "-k", "test_correct or test_fixture or test_skip_one")
+    result.assert_outcomes(passed=3)
+    result.stdout.fnmatch_lines(["*Spec coverage (all completed checks)*", "  MutualExclusion: 2/2 states, *"])

@@ -94,6 +94,49 @@ class ExtensionTest {
         assertEquals(1, summary.getTestsSucceededCount(), summary.getFailures().toString());
     }
 
+    /** Runs the launcher with System.out and System.err captured: {stdout, stderr}. */
+    private String[] captured(Class<?>... classes) {
+        var out = new java.io.ByteArrayOutputStream();
+        var err = new java.io.ByteArrayOutputStream();
+        var originalOut = System.out;
+        var originalErr = System.err;
+        System.setOut(new java.io.PrintStream(out, true));
+        System.setErr(new java.io.PrintStream(err, true));
+        try {
+            var summary = run(false, classes);
+            assertEquals(0, summary.getTotalFailureCount(), summary.getFailures().toString());
+        } finally {
+            System.setOut(originalOut);
+            System.setErr(originalErr);
+        }
+        return new String[] {out.toString(), err.toString()};
+    }
+
+    @Test void suiteCoverageIsPrintedByDefaultWithoutWritingAFile() throws Exception {
+        var output = captured(DefaultCoverageFixture.class, AnotherDefaultCoverageFixture.class);
+        assertEquals("", output[1]);
+        var printed = output[0];
+        assertEquals(1, printed.split(java.util.regex.Pattern.quote(CoverageCollector.HEADING), -1).length - 1, printed);
+        assertTrue(printed.contains("Counter: 1/1 states"), printed);
+        assertTrue(printed.contains("Counter.Ready, on eTake: never handled"), printed);
+        assertTrue(printed.contains("Completion.Pending: state never reached"), printed);
+        try (var files = Files.walk(temporary)) {
+            assertEquals(java.util.List.of(), files.filter(Files::isRegularFile).toList(), "default coverage wrote a file");
+        }
+    }
+
+    @Test void suiteCoverageOffPrintsNothing() {
+        var output = captured(CoverageOffFixture.class);
+        assertEquals("", output[0] + output[1]);
+    }
+
+    @Test void defaultSuiteCoverageFailureIsAWarning() {
+        var output = captured(DefaultCoverageBadBinaryFixture.class);
+        assertEquals("", output[0]);
+        assertTrue(output[1].startsWith("snappea: warning: no suite spec coverage report: "), output[1]);
+        assertEquals(1, output[1].strip().lines().count(), output[1]);
+    }
+
     @Test void sameCoverageDestinationRejectsConflictingConfiguration() {
         var summary = run(false, ConflictingFixture.class);
         assertEquals(1, summary.getTestsFailedCount());
@@ -266,6 +309,41 @@ class ExtensionTest {
         @Test @Snappea(checkHot = true) void hotChecked(Recording events) {
             events.emit("eAdd", "sku", 1);
             events.emit("eBegin", "flow");
+        }
+    }
+
+    static class DefaultCoverageFixture {
+        @RegisterExtension static final SnappeaExtension SNAPPEA = builder("Counter", "Completion").strict(false).build();
+        @Test void adds(Recording events) { events.emit("eAdd", "sku", 2); }
+    }
+
+    static class AnotherDefaultCoverageFixture {
+        @RegisterExtension static final SnappeaExtension SNAPPEA = builder("Counter").timeout(Duration.ofSeconds(9)).build();
+        @Test void addsAgain(Recording events) { events.emit("eAdd", "sku", 1); }
+    }
+
+    static class CoverageOffFixture {
+        @RegisterExtension static final SnappeaExtension SNAPPEA = builder("Counter")
+                .config(new SnappeaConfig(null, java.util.Map.of("coverage", "off"))).build();
+        @Test void adds(Recording events) { events.emit("eAdd", "sku", 2); }
+    }
+
+    /** The checks pass with a stub binary whose coverage merge fails. */
+    static class DefaultCoverageBadBinaryFixture {
+        @RegisterExtension static final SnappeaExtension SNAPPEA = builder("Counter").binary(stub().toString()).build();
+        @Test void adds(Recording events) { events.emit("eAdd", "sku", 2); }
+        static Path stub() {
+            try {
+                var real = SnappeaObserver.builder().config(SnappeaConfig.NONE)
+                        .specFiles(Path.of("src/test/resources/spec.p")).build().executable();
+                var stub = root.resolve("stub-snappea");
+                Files.writeString(stub, "#!/bin/sh\nif [ \"$1\" = coverage ]; then printf 'merge broke\\n  badly\\n' >&2; exit 2; fi\n"
+                        + "exec '" + real + "' \"$@\"\n");
+                assertTrue(stub.toFile().setExecutable(true));
+                return stub;
+            } catch (java.io.IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
         }
     }
 

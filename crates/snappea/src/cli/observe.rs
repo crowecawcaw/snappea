@@ -60,8 +60,8 @@ Checks:
                               event: work that never finished (liveness)
       --strict                Fail a spec that checked no relevant event. Use in
                               tests to catch missing instrumentation.
-      --unknown-events <P>    Events no P source declares: ignore (default), warn or
-                              error. Use error to catch misspelled event names.
+      --unknown-events <P>    Events no P source declares: error (default), warn or
+                              ignore. Use ignore for logs that mix in other events.
 
 Output:
   -v, --verbose               Show progress, logged messages and each error's events
@@ -165,7 +165,8 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         strict: a.has("strict"),
         unknown_events: match a.get("unknown-events") {
             Some(v) => v.parse::<UnknownEvents>()?,
-            None => UnknownEvents::Ignore,
+            // a misspelled event name would otherwise go unchecked
+            None => UnknownEvents::Error,
         },
         input_kind: if a.has("p-trace") { InputKind::Json } else { InputKind::Text },
         sequence: a.get("sequence").map(str::to_string),

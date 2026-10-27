@@ -88,6 +88,10 @@ _file = None
 _file_pid = 0
 _file_dir = None
 _sink: Optional["Sink"] = None
+#: Events a process started by a recording test could not write to `SNAPPEA_EVENTS_DIR`
+#: (a payload that cannot be encoded, or a failed write). `emit` drops them rather than
+#: raising into application code.
+dir_dropped = 0
 
 
 def _after_fork_in_child() -> None:
@@ -171,19 +175,26 @@ def events_file_name(pid: Optional[int] = None) -> str:
 
 
 def _write_to_dir(events_dir: str, ev: Event) -> None:
-    """Appends to this process's own file in `events_dir`, so writes never interleave."""
-    global _file, _file_pid, _file_dir
-    line = ev.to_json() + "\n"
-    with _lock:
-        pid = os.getpid()
-        if _file is None or _file_pid != pid or _file_dir != events_dir:
-            if _file is not None and _file_pid == pid:
-                _file.close()
-            os.makedirs(events_dir, exist_ok=True)
-            _file = open(os.path.join(events_dir, events_file_name(pid)), "a", encoding="utf-8")
-            _file_pid, _file_dir = pid, events_dir
-        _file.write(line)
-        _file.flush()
+    """Appends to this process's own file in `events_dir`, so writes never interleave.
+
+    Best-effort: this runs inside application code, so an event that cannot be encoded
+    or written is dropped and counted in :data:`dir_dropped`, never raised."""
+    global _file, _file_pid, _file_dir, dir_dropped
+    try:
+        line = ev.to_json() + "\n"
+        with _lock:
+            pid = os.getpid()
+            if _file is None or _file_pid != pid or _file_dir != events_dir:
+                if _file is not None and _file_pid == pid:
+                    _file.close()
+                    _file = None
+                os.makedirs(events_dir, exist_ok=True)
+                _file = open(os.path.join(events_dir, events_file_name(pid)), "a", encoding="utf-8")
+                _file_pid, _file_dir = pid, events_dir
+            _file.write(line)
+            _file.flush()
+    except Exception:
+        dir_dropped += 1
 
 
 # ---- production sink -------------------------------------------------------------------

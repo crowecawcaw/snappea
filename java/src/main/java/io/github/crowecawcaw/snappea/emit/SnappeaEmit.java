@@ -18,9 +18,12 @@ import java.util.Objects;
  *   <li>nowhere (the default): {@code emit} costs two volatile reads.</li>
  * </ol>
  *
- * <p>Outside tests, {@code emit} never throws and never waits for I/O: sinks write from a
- * background thread, and an event that cannot be written (full queue, I/O
- * error, a payload JSON cannot hold) is dropped and counted in {@link #dropped()}.
+ * <p>{@code emit} never throws because an event cannot be encoded or written, and outside
+ * tests it never waits for I/O: sinks write from a background thread, and an event that
+ * cannot be written (full queue, I/O error, a payload JSON cannot hold) is dropped and
+ * counted in {@link #dropped()}. In a test, such an event fails the recording's check
+ * instead. Misuse a test cannot check through (emitting after the recording was checked, or
+ * from a thread shared by parallel recordings) still throws.
  *
  * <p>Payloads: a {@code Map} or record for a P named tuple, a single value, or none. Enums
  * are sent by name; collections and arrays as lists.
@@ -67,8 +70,21 @@ public final class SnappeaEmit {
         if (hook != null) {
             var target = hook.target();
             if (target != null) {
-                // In a test: errors (a bad payload, a checked recording) fail the test.
-                target.accept(EmitHook.line(at, event, key, payload, EmitHook.callSite()));
+                // In a test: a payload that cannot be encoded fails the recording's check,
+                // without throwing into the code under test (which might swallow it).
+                String src = EmitHook.callSite();
+                String line;
+                try {
+                    line = EmitHook.line(at, event, key, payload, src);
+                } catch (RuntimeException error) {
+                    Sinks.DROPPED.increment();
+                    hook.failed(new IllegalArgumentException("cannot encode event " + event
+                            + (src == null ? "" : " at " + src) + ": " + error.getMessage()
+                            + "; pass a payload JSON can hold (null, strings, finite numbers, booleans, enums,"
+                            + " maps, records, collections, arrays)", error));
+                    return;
+                }
+                target.accept(line);
                 return;
             }
         }

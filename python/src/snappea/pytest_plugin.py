@@ -9,7 +9,11 @@ Configured under ``[tool.snappea]`` in pyproject.toml::
     mode = "auto"             # optional: "auto" (every test) | "marked" | "off"
 
 Per test: ``@pytest.mark.snappea(skip=True)``, ``@pytest.mark.snappea(skip=["DraftSpec"])``,
-``@pytest.mark.snappea(check_hot=True)``. The ``snappea_events`` fixture gives the test's recorder.
+``@pytest.mark.snappea(check_hot=True)``, ``@pytest.mark.snappea(strict=True)``.
+
+Plugin checks are not strict unless asked (``strict = true``, ``--snappea-strict`` or the
+mark): most tests in a suite emit no events for a given spec. Explicit checks
+(``Recorder``, ``check_spec``) with named specs are strict by default. The ``snappea_events`` fixture gives the test's recorder.
 """
 
 from __future__ import annotations
@@ -34,8 +38,12 @@ _ERROR = pytest.StashKey[Optional[str]]()
 _COVERAGE = pytest.StashKey[list]()
 _COVERAGE_PATH = pytest.StashKey[Optional[Path]]()
 _COVERAGE_SUMMARY = pytest.StashKey[tuple]()
+#: Report suite coverage at the end of the run without a file (no path set, not turned off).
+_COVERAGE_DEFAULT = pytest.StashKey[bool]()
+#: How xdist workers hand their reports to the controller.
+_WORKER_KEY = "snappea_coverage_reports"
 
-MARK_KEYS = {"skip", "check_hot", "liveness"}
+MARK_KEYS = {"skip", "check_hot", "liveness", "strict"}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -43,7 +51,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--snappea-strict", action="store_true", default=False,
                     help="Require relevant events for every selected P spec in each checked test.")
     group.addoption("--snappea-coverage", metavar="PATH", default=None,
-                    help="Print suite monitor coverage and merge it as JSON into PATH (or set SNAPPEA_COVERAGE).")
+                    help="Merge suite monitor coverage as JSON into PATH (or set SNAPPEA_COVERAGE). Without it the "
+                         "summary is still printed; 'off' turns it off.")
     group.addoption(
         "--snappea",
         dest="snappea_mode",
@@ -56,12 +65,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "snappea(skip=False, check_hot=False): P spec checking for this test. skip=True turns it off, "
-        "skip=[names] leaves out some specs, check_hot=True also fails on a spec left in a hot state.",
+        "snappea(skip=False, check_hot=False, strict=False): P spec checking for this test. skip=True turns it "
+        "off, skip=[names] leaves out some specs, check_hot=True also fails on a spec left in a hot state, "
+        "strict=True fails when a selected spec saw no relevant event.",
     )
     config.stash[_COVERAGE] = []
     config.stash[_ERROR] = None
-    config.stash[_COVERAGE_PATH] = _coverage_path(config)
+    path = _coverage_path(config)
+    config.stash[_COVERAGE_DEFAULT] = path is None and not _coverage_off(config)
+    config.stash[_COVERAGE_PATH] = path
     try:
         cfg = _config.load(str(config.rootpath))
     except SetupError as e:
@@ -76,9 +88,17 @@ def pytest_configure(config: pytest.Config) -> None:
     config.stash[_CONFIG] = cfg
 
 
+def _coverage_off(config: pytest.Config) -> bool:
+    """`--snappea-coverage=off`, else `SNAPPEA_COVERAGE=off`."""
+    option = config.getoption("snappea_coverage")
+    return (option or os.environ.get(_config.COVERAGE_ENV)) == "off"
+
+
 def _coverage_path(config: pytest.Config) -> Optional[Path]:
     """`--snappea-coverage` (relative to the rootdir), else `SNAPPEA_COVERAGE` (relative to the
-    working directory)."""
+    working directory); None without one, or when it is `off`."""
+    if _coverage_off(config):
+        return None
     option = config.getoption("snappea_coverage")
     if option:
         path = Path(option)
@@ -121,10 +141,11 @@ def _settings(item: pytest.Item) -> Optional[dict]:
         return None
     skip: List[str] = []
     check_hot: Optional[bool] = None
+    strict: Optional[bool] = None
     for m in reversed(marks):  # closest mark wins
         unknown = set(m.kwargs) - MARK_KEYS
         if unknown or m.args:
-            raise pytest.UsageError(f"@pytest.mark.snappea takes skip= and check_hot=; got {m.args or ''} {m.kwargs}")
+            raise pytest.UsageError(f"@pytest.mark.snappea takes skip=, check_hot= and strict=; got {m.args or ''} {m.kwargs}")
         s = m.kwargs.get("skip", False)
         if s is True:
             return None
@@ -135,10 +156,23 @@ def _settings(item: pytest.Item) -> Optional[dict]:
             check_hot = bool(m.kwargs["liveness"])
         if "check_hot" in m.kwargs:
             check_hot = bool(m.kwargs["check_hot"])
+        if "strict" in m.kwargs:
+            strict = bool(m.kwargs["strict"])
     specs = [s for s in cfg.specs if s not in skip]
     if cfg.specs and not specs:
         return None  # every configured spec skipped
-    return {"specs": specs, "exclude": [*cfg.exclude, *skip], "check_hot": check_hot, "files": cfg.files(), "config": cfg}
+    if strict is None and cfg.strict is None:
+        # Not strict by default: unlike an explicit check, the plugin checks every test,
+        # and most tests emit no events for a given spec.
+        strict = False
+    return {
+        "specs": specs,
+        "exclude": [*cfg.exclude, *skip],
+        "check_hot": check_hot,
+        "strict": strict,
+        "files": cfg.files(),
+        "config": cfg,
+    }
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -157,7 +191,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         spec_files=settings["files"] if settings else [],
         exclude=settings["exclude"] if settings else (),
         check_hot=settings["check_hot"] if settings else None,
-        strict=True if item.config.getoption("snappea_strict") else None,
+        strict=True if item.config.getoption("snappea_strict") else settings["strict"] if settings else None,
     )
     rec._cfg = settings["config"] if settings else None
     rec._default_artifacts = _output_root(item.config)
@@ -185,7 +219,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, Any]:
             try:
                 rec.check()
             finally:
-                if rec.report is not None and "specs" in rec.report and item.config.stash[_COVERAGE_PATH] is not None:
+                collect = item.config.stash[_COVERAGE_PATH] is not None or item.config.stash[_COVERAGE_DEFAULT]
+                if rec.report is not None and "specs" in rec.report and collect:
                     item.config.stash[_COVERAGE].append(rec.report)
         else:
             rec._cleanup_owned()
@@ -248,6 +283,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     config = session.config
     path = config.stash.get(_COVERAGE_PATH, None)
     if path is None:
+        if config.stash.get(_COVERAGE_DEFAULT, False):
+            _default_report(config)
         return
     try:
         with _locked(path):
@@ -270,6 +307,38 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
+def _default_report(config: pytest.Config) -> None:
+    """Without a path: the merged summary of this run's checks, written nowhere. An xdist
+    worker hands its reports to the controller, which prints the whole run's."""
+    reports = config.stash[_COVERAGE]
+    workeroutput = getattr(config, "workeroutput", None)
+    if workeroutput is not None:
+        workeroutput[_WORKER_KEY] = json.dumps(reports)
+        return
+    if not reports:
+        return
+    try:
+        result = subprocess.run(
+            [find_snappea(), "coverage", "merge-observe", "--stdin", "--format", "text"],
+            input=json.dumps(reports), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+        )
+        if result.returncode:
+            raise SetupError(f"coverage merge exited {result.returncode}: {result.stdout}")
+        config.stash[_COVERAGE_SUMMARY] = (True, result.stdout, None)
+    except (SetupError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+        # reporting by default must not fail a run whose checks passed
+        config.stash[_COVERAGE_SUMMARY] = (False, str(error), None)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node: Any, error: Any) -> None:
+    """pytest-xdist: collect a finished worker's coverage reports."""
+    reports = getattr(node, "workeroutput", {}).get(_WORKER_KEY)
+    if reports:
+        node.config.stash[_COVERAGE].extend(json.loads(reports))
+
+
 def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pytest.Config) -> None:
     summary = config.stash.get(_COVERAGE_SUMMARY, None)
     if summary is None:
@@ -278,7 +347,12 @@ def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pyte
     terminalreporter.section("Spec coverage (all completed checks)")
     for line in output.splitlines():
         terminalreporter.write_line(line)
-    if success:
+    if path is None:
+        if success:
+            terminalreporter.write_line("--snappea-coverage=PATH keeps it as JSON; =off turns this report off.")
+        else:
+            terminalreporter.write_line("Spec coverage could not be reported (the checks are unaffected).", yellow=True)
+    elif success:
         terminalreporter.write_line(f"JSON: {path}")
     else:
         terminalreporter.write_line("Spec coverage reporting failed", red=True)

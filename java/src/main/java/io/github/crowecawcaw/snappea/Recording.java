@@ -3,7 +3,6 @@ package io.github.crowecawcaw.snappea;
 import io.github.crowecawcaw.snappea.emit.EmitHook;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -121,9 +120,14 @@ public final class Recording implements AutoCloseable {
             writer.write('\n');
             emitted++;
         } catch (IOException error) {
+            // the check fails with it; emit does not throw into the code under test
             if (emissionError == null) emissionError = error;
-            throw new UncheckedIOException(error);
         }
+    }
+
+    /** An event for this recording could not be encoded: the check fails with {@code error}. */
+    synchronized void failed(Throwable error) {
+        if (state != State.CHECKED && emissionError == null) emissionError = error;
     }
 
     synchronized void fail(String message) {

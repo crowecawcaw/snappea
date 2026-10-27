@@ -229,3 +229,42 @@ fn driver_directives_mark_machines_and_malformed_ones_fail() {
     // strings and other comments do not count
     assert!(!has("// see snappea: driver docs\nmachine Client { start state S {} }", "invalid-directive"));
 }
+
+#[test]
+fn unobserved_handlers_are_reported_for_every_handler_form() {
+    let text = "event A; event B; event C; event D; spec S observes A { start state X { on A do { assert false; } on B do { assert false; } on C goto X; ignore D; } }";
+    let found: Vec<_> = findings(&[text]).into_iter().filter(|f| f.rule == "unobserved-handler").collect();
+    assert_eq!(found.len(), 3, "{found:?}");
+    for (f, event) in found.iter().zip(["'B'", "'C'", "'D'"]) {
+        assert!(f.message.contains(event), "{}", f.message);
+    }
+    assert!(!has("event A; spec S observes A { start state X { on A do { assert false; } } }", "unobserved-handler"));
+    assert!(has(
+        "event A; event B; scenario S observes A { start state X { on B goto Y; } cold state Y {} }",
+        "unobserved-handler"
+    ));
+}
+
+#[test]
+fn scenarios_need_a_cold_state_and_a_non_cold_start() {
+    assert!(has(
+        "event A; scenario S observes A { start state X { on A goto Y; } state Y {} }",
+        "scenario-never-accepts"
+    ));
+    assert!(has("event A; scenario S observes A { start cold state X { on A goto X; } }", "scenario-cold-start"));
+    let ok = "event A; scenario S observes A { start hot state X { on A goto Y; } cold state Y {} }";
+    assert!(!has(ok, "scenario-never-accepts") && !has(ok, "scenario-cold-start"));
+    // specs may start cold or have no cold state
+    assert!(!has(
+        "event A; spec S observes A { start cold state X { on A do { assert false; } } }",
+        "scenario-cold-start"
+    ));
+}
+
+#[test]
+fn observation_lint_keeps_only_spec_rules_and_bad_suppressions() {
+    let mut sm = SourceMap::new();
+    sm.add("a.p", "event A; event B; spec S observes A { start state X { on A goto X; on B goto X; } }\n// snappea-lint: allow nonsense\nmachine M { start state X {} }");
+    let rules: Vec<_> = snappea_lint::lint_observation(&sm).unwrap().into_iter().map(|f| f.rule).collect();
+    assert_eq!(rules, ["unobserved-handler", "invalid-suppression"]);
+}

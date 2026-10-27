@@ -13,7 +13,10 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
 schedules. Unsuppressed lint findings stop the check with exit status 2; run
-`snappea check lint` to inspect them without exploration. It selects search strategies automatically.
+`snappea check lint` to inspect them without exploration. A project that lists
+foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
+would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
+It selects search strategies automatically.
 It starts with exhaustive search so small finite models can finish; with several
 workers, each explores its own part of the schedules.
 After each 1,024 controlled choices it checks whether the unexplored frontier is
@@ -170,7 +173,8 @@ written to `scenario_coverage.json` for merging across runs.
 The default gate checks aggregate coverage across all selected test cases. It requires
 all executable statements (including ordinary assertions), event handlers, and both
 outcomes of each `if` branch. Condition-expression outcomes and consecutive transition
-pairs remain advisory. `assert false` paths keep their existing exclusion because they
+pairs remain advisory, as do monitor states (a spec or scenario state no schedule
+entered is listed, but its handlers are what the gate counts). `assert false` paths keep their existing exclusion because they
 must never run. Components outside the selected tests do not enter the totals. To accept
 an intentional gap, place `// snappea-lint: allow coverage -- reason` before its
 statement, handler, function, or machine; coverage suppressions need a reason and are

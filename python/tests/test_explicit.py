@@ -12,7 +12,7 @@ import pytest
 from app.locks import LockServer
 from conftest import SPEC
 
-from snappea import Event, Recorder, SetupError, StrictDefaultWarning, SpecViolation, check_events, check_spec, emit, expect_violation
+from snappea import Event, Recorder, SetupError, SpecViolation, check_events, check_spec, emit, expect_violation
 
 FILES = [SPEC]
 
@@ -284,23 +284,32 @@ def test_events_from_forked_processes():
         emit("eEnter", key="F", client="parent")
 
 
-def test_strict_defaults_to_true_for_named_specs_but_only_warns_for_now():
-    with pytest.warns(StrictDefaultWarning, match="strict=False") as caught:
-        with check_spec("MutualExclusion", spec_files=FILES):
-            pass
-    assert caught[0].message.error.kind == "validation"
-    assert caught[0].filename == __file__  # points at the test, not at snappea
-    with pytest.warns(StrictDefaultWarning) as caught:
+def test_strict_defaults_to_true_for_named_specs():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # fails now: no StrictDefaultWarning grace period
+        with pytest.raises(SetupError, match="checked no relevant events") as info:
+            with check_spec("MutualExclusion", spec_files=FILES):
+                pass
+    assert info.value.kind == "validation"
+    assert "strict=False" in info.value.message  # the way out when no events is intended
+    with pytest.raises(SetupError, match="RequestsGranted") as info:
         with check_spec("MutualExclusion", "RequestsGranted", spec_files=FILES):
             emit("eEnter", client="a")
-    assert "RequestsGranted" in caught[0].message.error.message
+    assert info.value.kind == "validation"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with check_spec("MutualExclusion", spec_files=FILES):
+            emit("eEnter", client="a")
+        with check_spec(spec_files=FILES):  # every spec: not strict
+            emit("eEnter", client="a")
+
+
+def test_strict_false_allows_named_specs_without_events():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         with check_spec("MutualExclusion", spec_files=FILES, strict=False):
             pass
-        with check_spec("MutualExclusion", spec_files=FILES):
-            emit("eEnter", client="a")
-        with check_spec(spec_files=FILES):  # every spec: not strict
+        with check_spec("MutualExclusion", "RequestsGranted", spec_files=FILES, strict=False):
             emit("eEnter", client="a")
 
 

@@ -79,6 +79,12 @@ final class Routing implements EmitHook.Router {
         return out;
     }
 
+    @Override public void failed(RuntimeException error) {
+        // the recordings target() sent the event to
+        var mine = enclosing();
+        (mine.isEmpty() ? List.copyOf(ACTIVE) : mine).forEach(r -> r.failed(error));
+    }
+
     @Override public Consumer<String> target() {
         var mine = enclosing();
         if (!mine.isEmpty()) return line -> mine.forEach(r -> r.accept(line));

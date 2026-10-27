@@ -37,21 +37,16 @@ class SetupError(Exception):
 
 
 class StrictDefaultWarning(DeprecationWarning):
-    """A check with named specs would fail under the new ``strict`` default.
+    """Deprecated and no longer emitted; kept so existing references keep working.
 
-    ``strict`` now defaults to true when specs are named. For one release such a check
-    warns instead of failing; pass ``strict=False`` to keep the old behaviour, or
-    ``strict=True`` (or turn this warning into an error) to get the new one now.
-    ``error`` is the :class:`SetupError` the check will raise.
+    It warned, for one release, that a check with named specs would fail under the new
+    ``strict`` default. That default is now in force: such a check raises
+    :class:`SetupError` with ``kind == "validation"``. Pass ``strict=False`` (or set
+    ``[tool.snappea] strict = false``) when a spec may rightly see no events.
     """
 
     def __init__(self, error: SetupError):
-        super().__init__(
-            f"{error.message}\n"
-            "strict now defaults to true when specs are named; this check will fail in the next "
-            "release. Pass strict=False to keep checking without requiring events, or emit the "
-            "missing events."
-        )
+        super().__init__(error.message)
         self.error = error
 
 

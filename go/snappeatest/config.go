@@ -44,7 +44,8 @@ type Config struct {
 	Artifacts string
 	// Coverage is the suite coverage JSON path. Each check's observed monitor
 	// coverage is merged into it, once at the end with Main, otherwise as each check
-	// completes, under a file lock. SNAPPEA_COVERAGE overrides it.
+	// completes, under a file lock. Empty means Main only prints the suite coverage;
+	// "off" turns it off. SNAPPEA_COVERAGE (a path or "off") overrides it.
 	Coverage string
 	// Mode is "auto" or "marked" (the same in Go: tests opt in by calling Start) or
 	// "off" (recordings do nothing and pass). SNAPPEA_MODE overrides it.
@@ -79,6 +80,7 @@ type settings struct {
 	timeout       time.Duration
 	artifacts     string
 	coverage      string
+	coverageOff   bool
 	off           bool
 	binary        string
 	workDir       string
@@ -187,8 +189,12 @@ func resolve(cfg Config) (settings, error) {
 	} else {
 		s.artifacts = abs(s.workDir, cfg.ArtifactRoot)
 	}
-	if env := os.Getenv("SNAPPEA_COVERAGE"); env != "" {
+	if env := os.Getenv("SNAPPEA_COVERAGE"); env == "off" {
+		s.coverageOff = true
+	} else if env != "" {
 		s.coverage = abs(cwd, env)
+	} else if cfg.Coverage == "off" {
+		s.coverageOff = true
 	} else {
 		s.coverage = abs(s.workDir, cfg.Coverage)
 	}
