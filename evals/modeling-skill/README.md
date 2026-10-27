@@ -20,6 +20,7 @@ The content validator checks local links, correct P models, documented negative 
 Use the [phased evals](phases/README.md) for model construction and implementation-test quality before combined flows. These isolate failures that the original large task conflated.
 
 The [Luna/high CLI comparison](phases/LUNA-CLI-RESULTS.md) runs the broader tasks with Snappea versus compat and no skill in either arm.
+The [small Sol/medium trial](phases/SOL-CLI-RESULTS.md) repeats the same setup with four fresh agents.
 
 ## Pilot comparison
 

@@ -1,0 +1,208 @@
+{
+  "trials": [
+    {
+      "run_id": "sol-cli-vcs-native-01",
+      "tool": "snappea",
+      "condition": "baseline",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "status": "agent_finished",
+      "seconds": 478.273,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "cli_binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "calls": 13,
+      "skill_sha256": null,
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "7b3b04762990ee9d8bf2b8c4f29be52d36f36edb952aebbfb57d24ab057cdaae",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "ebbda53dda4adaf06b4fb0ac65ece70648eef97e22b7f65c9465c96e7e6ff005",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "implementation": {
+        "passed": 20,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": []
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": true
+      },
+      "saved_tests": {
+        "modules": [
+          "test_collisions",
+          "test_extra"
+        ],
+        "exit_code": 0,
+        "count": 9,
+        "includes_supplied_public_tests": 4
+      },
+      "native_model": {
+        "exit_code": 0,
+        "source_files": [
+          "Design.p"
+        ],
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "error": null,
+        "test_cases": [
+          {
+            "name": "tcTransactions",
+            "passed": null,
+            "schedules": 129897,
+            "search_complete": false,
+            "driver": {
+              "machines": [
+                "Main"
+              ],
+              "repeats": false,
+              "facts": [
+                {
+                  "kind": "instances",
+                  "id": "instances",
+                  "text": "creates 1 TransactionModel, never more",
+                  "hint": "if more of these can run at once, create more in the driver"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "run_id": "sol-cli-vcs-compat-01",
+      "tool": "snappea-compat",
+      "condition": "baseline",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "status": "agent_finished",
+      "seconds": 301.62,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "cli_binary_sha256": "f969f66ae7dc03a39823113fff33c0a94e4da61918253be173070d73024f8092",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "calls": 8,
+      "skill_sha256": null,
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "7b3b04762990ee9d8bf2b8c4f29be52d36f36edb952aebbfb57d24ab057cdaae",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "ebbda53dda4adaf06b4fb0ac65ece70648eef97e22b7f65c9465c96e7e6ff005",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "implementation": {
+        "passed": 20,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": []
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": true
+      },
+      "saved_tests": {
+        "modules": [
+          "test_design"
+        ],
+        "exit_code": 0,
+        "count": 9,
+        "includes_supplied_public_tests": 4
+      },
+      "native_model": {
+        "exit_code": 2,
+        "source_files": [
+          "Model.p"
+        ],
+        "summary": null,
+        "error": "error[no-model-machine]: test configuration has no implementation machine besides entry machine 'Main'; split modeled behavior into another implementation machine and select it with the entry driver\n   --> Model.p:71:20\n   |\n69 |   }\n70 | }\n71 | test RootCAS [main=Main]: { Main };\n   |                    ^^^^\n72 |\n   |\n   = help: put modeled behavior in a separate `machine` and include it with the entry driver in the test module; for an intentional trace-only configuration, suppress this rule immediately before its test or implementation declaration, or before `machine Main` for the implicit default configuration\n\nLint failed: 1 finding(s). See docs/linting.md for fixes and scoped suppression comments.",
+        "test_cases": []
+      }
+    }
+  ],
+  "scope": "Primary cases and existing supplemental wide-payload probe separate; native rechecks not contract-fidelity scores."
+}

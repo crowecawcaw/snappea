@@ -1,0 +1,61 @@
+{
+  "reviewed_runs": [
+    {
+      "run_id": "sol-cli-flow-compat-01",
+      "status": "agent_finished",
+      "source_sha256": {
+        "DESIGN.md": "68eb2d016bbeff6bc9b079d18d0448cf4f71de2f1962adeb0ca9695052ac4a15",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "model.p": "a165982fd5d96e83ddae6ef8f166ccfb9259437452bc3f8bde90caae205ea037",
+        "monitor.p": "931ae56fb90813e3fb82c7c2f1dddade5eebeed6bad9601c4844919288b22da4",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+        "solution.py": "9f6c903ca65348fbf5899e86e6d741ba3ff82b458a042e4745912edf4dc9b6de",
+        "test_observation.py": "ca3d967ceb02429b933ef27235f4a67a7e5e1e05d8d615c150b06a798109874e",
+        "tests.p": "1666515cc90225cb74a4cec7592196e64ab66e66fef3fe179e4472946adf0340"
+      },
+      "transcript_sha256": "282aad15b54beaaea95441108473050f607f113f3c6244af9b16a113da076125",
+      "submission_manifest_sha256": "3029bec5019baab5c762effecaf0a4fadc76af922aad643103a4e133e490c9d6"
+    },
+    {
+      "run_id": "sol-cli-flow-native-01",
+      "status": "agent_finished",
+      "source_sha256": {
+        "DESIGN.md": "946a12159001da8981cb4586516785c27eb7369b6b17ff26f991de223975ea40",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "model.p": "79ba282e1bd7a15e78acc86e02cac35f1dd6be10d15537d4f466506219f3f72d",
+        "monitor.p": "9b854273422b858367bd8375eae1121ac7b42a100b5ecdda4f0d5fe9c1474b1f",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+        "solution.py": "dc209d983c79f275034890d82ef654fc3666f21101fae0fd2ba42f8749476b04",
+        "test_observation.py": "14500a409928e3ba0279d8e736b41f32968962559b8d3443d33543db9959a433",
+        "tests.p": "c34c1425dfdcf6ead50afe6310f37c8ee5dcc12e8a58db11201babfaf594b84a"
+      },
+      "transcript_sha256": "bfbda04b3e49d1df8707e3bd73c90c09fc1473c1a1dc19e8bb5d691f009de62e",
+      "submission_manifest_sha256": "d22a332342ef8bccb6a5e4d10615b95c0fe22240824d1a8c3ebcf2643a6d8324"
+    },
+    {
+      "run_id": "sol-cli-vcs-compat-01",
+      "status": "agent_finished",
+      "source_sha256": {
+        "solution.py": "9054b77add05282308c0e701d424dbdef115000a32102588fd78e485fe1da202",
+        "test_design.py": "5589961ca67d1b4a4b66f29ac411ce8917986ee965edc2bfeea1667b9000d68f",
+        "DESIGN.md": "5db47027fbd00ccd1099afb755d33a3a5484972bb3f4c284a0f07a62c9819f6f",
+        "Model.p": "d5c159f826174b2069d3be76469a9916c5b1cc1cfdcd54c1d81b5e7c72297771"
+      },
+      "transcript_sha256": "81c4e793a93a1a7858a92fe5dcf8fcef3bf975fb384fd2e9d57b57b0eeaa3555",
+      "submission_manifest_sha256": "2046148dac574ed24e2575a8250a931037714201dd7bd9757ef3637e8394332e"
+    },
+    {
+      "run_id": "sol-cli-vcs-native-01",
+      "status": "agent_finished",
+      "source_sha256": {
+        "test_collisions.py": "2bffa2e16e50292a657ed323d62479a4d68f3c3801f5c5d1efba01cb63c008c3",
+        "solution.py": "590080b63df662e4718dbc5be86bcb79ab6822a6c45e3e1bba44999705587d1e",
+        "DESIGN.md": "cdfffd8afcd6d229e6dcedc0e98acf27bde5edf702f5b6c15d9928e9b9e29300",
+        "test_extra.py": "99223267f132709cf1e0de647237d87e840c3ff0c25ce9653f248eb46d0d60d1",
+        "Design.p": "f4eb6b20135aa56aeb430875e525b8501d55ae076093fc39fe264f55b91e46b1"
+      },
+      "transcript_sha256": "b19da6e117aacb7d5bda83cc077f436217d5ecb20f2567e0bf2fd2ba05395a45",
+      "submission_manifest_sha256": "4fb7ca64e7e0d6fcbc35c5d0211a0ba3eaa666dbebfa192042967acde0d1ae17"
+    }
+  ]
+}

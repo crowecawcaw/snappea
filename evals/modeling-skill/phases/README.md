@@ -29,6 +29,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Luna/high: Snappea versus compat](LUNA-CLI-RESULTS.md) compares both CLIs without a skill, including uptake of driver-limit reports.
 
+[Small Sol/medium CLI trial](SOL-CLI-RESULTS.md) repeats that comparison with one run per task and CLI.
+
 ## Protocol
 
 - Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.
