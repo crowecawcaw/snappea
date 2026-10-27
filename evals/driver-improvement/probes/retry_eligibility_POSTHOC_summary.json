@@ -1,0 +1,100 @@
+{
+  "version": "posthoc-retry-eligibility-v1",
+  "origin": "Posthoc, source-informed exploration after primary scores were frozen: the Luna retry scripts do not necessarily advance to the rejected request's expected version. The primary recomputation fault also changes the returned version, so detecting it does not establish eligibility-boundary coverage.",
+  "not_part_of_primary_inventory_or_scores": true,
+  "contract": "Every rejection is an immutable per-ID outcome, even if its expected version later becomes current.",
+  "checker_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+  "raw_results_sha256": "1e7c099281c859d1a601cb27e3bff8c3f034afaca69c599dcf9d6bbc61bdba7a",
+  "calibration": [
+    {
+      "driver": "weak",
+      "variant": "correct",
+      "status": "accepted",
+      "search_complete": true
+    },
+    {
+      "driver": "weak",
+      "variant": "correct_alt",
+      "status": "accepted",
+      "search_complete": true
+    },
+    {
+      "driver": "weak",
+      "variant": "posthoc_rejected_becomes_eligible",
+      "status": "accepted",
+      "search_complete": true
+    },
+    {
+      "driver": "strong",
+      "variant": "correct",
+      "status": "accepted",
+      "search_complete": true
+    },
+    {
+      "driver": "strong",
+      "variant": "correct_alt",
+      "status": "accepted",
+      "search_complete": true
+    },
+    {
+      "driver": "strong",
+      "variant": "posthoc_rejected_becomes_eligible",
+      "status": "assertion_failure",
+      "search_complete": false
+    }
+  ],
+  "candidates": [
+    {
+      "run": "sol-retry-a01",
+      "model": "gpt-6.1-sol",
+      "reports": "off",
+      "source_integrity_verified": true,
+      "driver_sha256": "10b283069819e1f55dba68ce16474585cb01405efbcda201e16dee84ea544122",
+      "tests_sha256": "139af02d668ac837de68aa0bf47f5060c3f75f298824f0731746c2dfd0bbe415",
+      "correct_variants_accepted": true,
+      "valid_for_probe_credit": true,
+      "correct_all_search_complete": false,
+      "additional_fault_monitor_assertion": true,
+      "additional_fault_detected_credited": true
+    },
+    {
+      "run": "sol-retry-b01",
+      "model": "gpt-6.1-sol",
+      "reports": "on",
+      "source_integrity_verified": true,
+      "driver_sha256": "7f7d374ef059459cffb7c0cb27e3af162347e251206c2b3f6bf9062514d49801",
+      "tests_sha256": "f0a11dc0377b2495cc1e40ab94fdfe2dbb61d2c91e1f7f5f8f4ea1f49224893f",
+      "correct_variants_accepted": true,
+      "valid_for_probe_credit": true,
+      "correct_all_search_complete": false,
+      "additional_fault_monitor_assertion": true,
+      "additional_fault_detected_credited": true
+    },
+    {
+      "run": "luna-retry-a01",
+      "model": "gpt-6-luna",
+      "reports": "on",
+      "source_integrity_verified": true,
+      "driver_sha256": "d68379cea4d222b5115b211fd41951f529947ce46416b54aba47db8a8851b76d",
+      "tests_sha256": "520ef6a751a475b7b325236eb2d120569ef0bc08e6ded2c44fa7d4b6105bd475",
+      "correct_variants_accepted": true,
+      "valid_for_probe_credit": true,
+      "correct_all_search_complete": true,
+      "additional_fault_monitor_assertion": false,
+      "additional_fault_detected_credited": false
+    },
+    {
+      "run": "luna-retry-b01",
+      "model": "gpt-6-luna",
+      "reports": "off",
+      "source_integrity_verified": true,
+      "driver_sha256": "60b1945402ceb6c8c6d4ea2f22dbba0fd8e06620a7304fb53fa42c6f0bd55b01",
+      "tests_sha256": "b7c84fc74c570c5ed3854549b7d36d561a2e7fd5a78858e8aea941005bc11a45",
+      "correct_variants_accepted": true,
+      "valid_for_probe_credit": true,
+      "correct_all_search_complete": true,
+      "additional_fault_monitor_assertion": false,
+      "additional_fault_detected_credited": false
+    }
+  ]
+}

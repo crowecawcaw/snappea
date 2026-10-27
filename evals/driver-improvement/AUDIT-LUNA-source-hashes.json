@@ -1,0 +1,157 @@
+{
+  "blind_source_hashes": {
+    "luna-priority-a01": {
+      "public/TASK.md": "df6a9c0d826802774f53ede5e606c14f664618937fc2ab3b3a9fa9f5bc8f1d68",
+      "public/events.p": "de2a7173d6ec1733eefdb3325b5f9fa28b7092321caf2ea1f5ae348c553b6b94",
+      "public/model.p": "9ec0d3d567ea9f4be2a94cb988f788b5b50e3105cf57df1e4d874fe4642ae456",
+      "public/monitor.p": "0ce965af36944005ac1d08be5ff5c73f444717f6f97ba0b29529da46e244fb8f",
+      "submission/driver.p": "0e5420034a95936bc956f3cbab3b280339332e513acd85ad6843afdd890104ed",
+      "submission/tests.p": "6e478ec0675be22c74bc81779e572e0c73b7ee44bf925083387bb66771671731",
+      "submission/REVIEW.md": "a39c0105d6fdab0c526a41fb4d8cdcf6862e2b13780aca3db0ab8d9af593f1fb",
+      "submission/TASK.md": "df6a9c0d826802774f53ede5e606c14f664618937fc2ab3b3a9fa9f5bc8f1d68",
+      "submission/events.p": "de2a7173d6ec1733eefdb3325b5f9fa28b7092321caf2ea1f5ae348c553b6b94",
+      "submission/model.p": "9ec0d3d567ea9f4be2a94cb988f788b5b50e3105cf57df1e4d874fe4642ae456",
+      "submission/monitor.p": "0ce965af36944005ac1d08be5ff5c73f444717f6f97ba0b29529da46e244fb8f"
+    },
+    "luna-priority-b01": {
+      "public/TASK.md": "df6a9c0d826802774f53ede5e606c14f664618937fc2ab3b3a9fa9f5bc8f1d68",
+      "public/events.p": "de2a7173d6ec1733eefdb3325b5f9fa28b7092321caf2ea1f5ae348c553b6b94",
+      "public/model.p": "9ec0d3d567ea9f4be2a94cb988f788b5b50e3105cf57df1e4d874fe4642ae456",
+      "public/monitor.p": "0ce965af36944005ac1d08be5ff5c73f444717f6f97ba0b29529da46e244fb8f",
+      "submission/driver.p": "419cac4a7e458bbf24251de9b4d7bd927d8a706cb67fb634d0be2184719ee890",
+      "submission/tests.p": "cb09473f3cebdf42d8bda32f10f2e42cc7a2b3840b4c4c2586553c95736baccc",
+      "submission/REVIEW.md": "dfad10fa37f4a949a95eb5af76a40e10d2a0e8c99c7a39b2db9563e3eec3b3f7",
+      "submission/TASK.md": "df6a9c0d826802774f53ede5e606c14f664618937fc2ab3b3a9fa9f5bc8f1d68",
+      "submission/events.p": "de2a7173d6ec1733eefdb3325b5f9fa28b7092321caf2ea1f5ae348c553b6b94",
+      "submission/model.p": "9ec0d3d567ea9f4be2a94cb988f788b5b50e3105cf57df1e4d874fe4642ae456",
+      "submission/monitor.p": "0ce965af36944005ac1d08be5ff5c73f444717f6f97ba0b29529da46e244fb8f"
+    },
+    "luna-retry-a01": {
+      "public/TASK.md": "7e19f6ad0caf11b4e10dc1deaf181b284d5a15121c7ebe3635da20f9b783da6b",
+      "public/events.p": "a33b069ac7a74f2df01769090056be6618b5c9bdda1abb3644d8f0276a8613b9",
+      "public/model.p": "8b01f05bd6a84c4bfeb6c9d675304df1283dd24f1fc36f6b30cc40dfe66f6e4b",
+      "public/monitor.p": "172f2b2f8d5e96284a50b807ac690562e13bf93715329ec59a3454ef0e32a4fa",
+      "submission/driver.p": "d68379cea4d222b5115b211fd41951f529947ce46416b54aba47db8a8851b76d",
+      "submission/tests.p": "520ef6a751a475b7b325236eb2d120569ef0bc08e6ded2c44fa7d4b6105bd475",
+      "submission/REVIEW.md": "0f90551ca19e45b338d9e9072b7760bed18c910876986c3495d3ab5fad395951",
+      "submission/TASK.md": "7e19f6ad0caf11b4e10dc1deaf181b284d5a15121c7ebe3635da20f9b783da6b",
+      "submission/events.p": "a33b069ac7a74f2df01769090056be6618b5c9bdda1abb3644d8f0276a8613b9",
+      "submission/model.p": "8b01f05bd6a84c4bfeb6c9d675304df1283dd24f1fc36f6b30cc40dfe66f6e4b",
+      "submission/monitor.p": "172f2b2f8d5e96284a50b807ac690562e13bf93715329ec59a3454ef0e32a4fa"
+    },
+    "luna-retry-b01": {
+      "public/TASK.md": "7e19f6ad0caf11b4e10dc1deaf181b284d5a15121c7ebe3635da20f9b783da6b",
+      "public/events.p": "a33b069ac7a74f2df01769090056be6618b5c9bdda1abb3644d8f0276a8613b9",
+      "public/model.p": "8b01f05bd6a84c4bfeb6c9d675304df1283dd24f1fc36f6b30cc40dfe66f6e4b",
+      "public/monitor.p": "172f2b2f8d5e96284a50b807ac690562e13bf93715329ec59a3454ef0e32a4fa",
+      "submission/driver.p": "60b1945402ceb6c8c6d4ea2f22dbba0fd8e06620a7304fb53fa42c6f0bd55b01",
+      "submission/tests.p": "b7c84fc74c570c5ed3854549b7d36d561a2e7fd5a78858e8aea941005bc11a45",
+      "submission/REVIEW.md": "8c6b4ced94bea1a2ade379bb6f520d9db5547a2d54df4e2bdb0c2bc4b18e678a",
+      "submission/TASK.md": "7e19f6ad0caf11b4e10dc1deaf181b284d5a15121c7ebe3635da20f9b783da6b",
+      "submission/events.p": "a33b069ac7a74f2df01769090056be6618b5c9bdda1abb3644d8f0276a8613b9",
+      "submission/model.p": "8b01f05bd6a84c4bfeb6c9d675304df1283dd24f1fc36f6b30cc40dfe66f6e4b",
+      "submission/monitor.p": "172f2b2f8d5e96284a50b807ac690562e13bf93715329ec59a3454ef0e32a4fa"
+    },
+    "luna-sessions-a01": {
+      "public/TASK.md": "6271ae4fde22d5600fceb7c4a76045b603a53290752bd39eeab6ac26284d09db",
+      "public/events.p": "3507743dc8d176e1672d660d031e94b630344b6b4789908460d0364b0cd66572",
+      "public/model.p": "76e3c52f770791c461947a33303f61fb04fe6c21dd879371213d485b97f2f3a6",
+      "public/monitor.p": "fd4b786423ceb95d30bace2be17347db5e29b0bda625b7c42d8d6286e5f6043e",
+      "submission/driver.p": "9c278e07f37e0dea9f0b78963ea8d5c47fa4f7fe37ab40639081e8f79b48fca9",
+      "submission/tests.p": "eb69e6870bcf03cbf45cf77ac0f8ddb10ec07a7a1d572f46a38f9bf345622255",
+      "submission/REVIEW.md": "70d9e2ce808b8573e9e062bf010c75416c72452c779b70beb4e12990b0df1350",
+      "submission/TASK.md": "6271ae4fde22d5600fceb7c4a76045b603a53290752bd39eeab6ac26284d09db",
+      "submission/events.p": "3507743dc8d176e1672d660d031e94b630344b6b4789908460d0364b0cd66572",
+      "submission/model.p": "76e3c52f770791c461947a33303f61fb04fe6c21dd879371213d485b97f2f3a6",
+      "submission/monitor.p": "fd4b786423ceb95d30bace2be17347db5e29b0bda625b7c42d8d6286e5f6043e"
+    },
+    "luna-sessions-b01": {
+      "public/TASK.md": "6271ae4fde22d5600fceb7c4a76045b603a53290752bd39eeab6ac26284d09db",
+      "public/events.p": "3507743dc8d176e1672d660d031e94b630344b6b4789908460d0364b0cd66572",
+      "public/model.p": "76e3c52f770791c461947a33303f61fb04fe6c21dd879371213d485b97f2f3a6",
+      "public/monitor.p": "fd4b786423ceb95d30bace2be17347db5e29b0bda625b7c42d8d6286e5f6043e",
+      "submission/driver.p": "934297f3082959e79e30494581fea0b16970c0c906ddb73612344376468e2252",
+      "submission/tests.p": "eb69e6870bcf03cbf45cf77ac0f8ddb10ec07a7a1d572f46a38f9bf345622255",
+      "submission/REVIEW.md": "7d7bab94fbfc6107cc7b00671458ceea98c6107c0057670bd2db451717726dda",
+      "submission/TASK.md": "6271ae4fde22d5600fceb7c4a76045b603a53290752bd39eeab6ac26284d09db",
+      "submission/events.p": "3507743dc8d176e1672d660d031e94b630344b6b4789908460d0364b0cd66572",
+      "submission/model.p": "76e3c52f770791c461947a33303f61fb04fe6c21dd879371213d485b97f2f3a6",
+      "submission/monitor.p": "fd4b786423ceb95d30bace2be17347db5e29b0bda625b7c42d8d6286e5f6043e"
+    }
+  },
+  "independent_notes_sha256": "c6239e4d10f4b6963176ee53d923e4dd7b59f9d66ee5db1b459e9fb3326a4ffe",
+  "unblind_evidence_hashes": {
+    "luna-priority-a01": {
+      "metadata.json": "a5df565a842470ebe4b03737772c2699e779b5be3e60602210eaebb21a0d19d4",
+      "tool-transcript.jsonl": "6e4a2bbd2a3500b8a899415bd6372ff1cd0762437e6033d73d556df4fd5af3f8",
+      "grading/grade.json": "698d726979f7603f38ab9b3558718d6fb9ec86ab6c99543f2bdcc4625d38a6b6",
+      "private/FAULTS.md": "6402095b85419a13f1f08d55f703669b0515224809bac9ec124a7bbc9606ca65",
+      "private/variants.py": "3660db240d7106bb58c993cbb5d5ca52e550d07f1be89b564a0e8e1e8ac18f3d",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "3e3edd00ded391ce80019ff573f31f6dd828e4a9674828d209fe0470193c1ed6",
+      "public/driver.p": "260457f81dd6de4d1d94e3917c50832315a6d7ca0c7c6dfc03475aa343fba284",
+      "public/tests.p": "93672f367a27eda2f9b0640f38609b68706913674bb923f72a1093d91284bfca"
+    },
+    "luna-priority-b01": {
+      "metadata.json": "be3049afeea785214358b6c380c49a6dfa02c83097fd98b7d60b40bbb7df8dca",
+      "tool-transcript.jsonl": "357fda654b468a9c61156536d24ea17c1f241138031fdad12d83ae898ac3c32c",
+      "grading/grade.json": "54d695ed70d75320e5e71798bff991f890ae0c45cc54b4e54ba861b59818c612",
+      "private/FAULTS.md": "6402095b85419a13f1f08d55f703669b0515224809bac9ec124a7bbc9606ca65",
+      "private/variants.py": "3660db240d7106bb58c993cbb5d5ca52e550d07f1be89b564a0e8e1e8ac18f3d",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "57e43428dc86bcbadd653e9ef7e4a4c433992784df58af31d7136fbd344f00ae",
+      "public/driver.p": "260457f81dd6de4d1d94e3917c50832315a6d7ca0c7c6dfc03475aa343fba284",
+      "public/tests.p": "93672f367a27eda2f9b0640f38609b68706913674bb923f72a1093d91284bfca"
+    },
+    "luna-retry-a01": {
+      "metadata.json": "e0a0272312cecc1e8147633a7b003e79d604af4a8132ffaccb83ceae3b9a4a8c",
+      "tool-transcript.jsonl": "57c7908fcc930d7c4c0e0d771011b73581f545ebc0451d09427ebc947b861306",
+      "grading/grade.json": "7c8592c73f8d218f3cacf0f2cae9b005ce84f805c44d3c6d91c5a284ef24077d",
+      "private/FAULTS.md": "f6b6ca1cab1991f640c0af1eb10dda1d7f5a5d60b632a97ac2cff81ed864a234",
+      "private/variants.py": "cb44f5efe42bc8b1e0446f216742a2aba30d6509c4497112735bdcd9ec6648a2",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "d45e61f0980c45b683f054085d62f56976ae22be3d92815e7f705b6d23c9d513",
+      "public/driver.p": "d23cd4ff64488edfd5768a922eeacfe8b7fa70ae82f900e62a88dfd7543dc5c9",
+      "public/tests.p": "13e5d4eeb68e7e45be956af53ea0dc4e4ff6b04a487758d6abf9b0f1474baf90"
+    },
+    "luna-retry-b01": {
+      "metadata.json": "21f3a704d5e75b8980a4aae731ee72bd8b088769305d9fd2c35973d98016ea08",
+      "tool-transcript.jsonl": "de87e69ebc8e162a9b5173ba820fbdece91725962032a01ece10b4edc91c74d1",
+      "grading/grade.json": "241aa993bf5cc0fefa31dda307e3aa0c31e5b9a66bb43bca5a8bea2d8db9da03",
+      "private/FAULTS.md": "f6b6ca1cab1991f640c0af1eb10dda1d7f5a5d60b632a97ac2cff81ed864a234",
+      "private/variants.py": "cb44f5efe42bc8b1e0446f216742a2aba30d6509c4497112735bdcd9ec6648a2",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "55a97d67869c19c69f04fc699a740dd96345e020d67d5059aea8fc0873134527",
+      "public/driver.p": "d23cd4ff64488edfd5768a922eeacfe8b7fa70ae82f900e62a88dfd7543dc5c9",
+      "public/tests.p": "13e5d4eeb68e7e45be956af53ea0dc4e4ff6b04a487758d6abf9b0f1474baf90"
+    },
+    "luna-sessions-a01": {
+      "metadata.json": "7c2b684233d853c2f9749d45012a93cd38b790bf042c6fa9df0bd67b12699d2a",
+      "tool-transcript.jsonl": "7cfe4504afbe0bb6fd3b7ad9d4f48efed760dbfc6c2b01583501eebada4c2bdc",
+      "grading/grade.json": "5f49a7fecdbf062fad150f0a3ed95a5dae939f43d134455db4be8a351fd593c4",
+      "private/FAULTS.md": "cf4aca1e88b890734060465de923f241220bd356bcc1e1001f095e44269cc78e",
+      "private/variants.py": "6f0137228938ffd7385efa6b23bf488b9eda0bef529d63c68776f864c499a6aa",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "103bcfb4b6d0f8aa2150a831e0c244729cf0bf6ddcc12c3d8720c49f91631f69",
+      "public/driver.p": "a0ec927c7a15f00ff74cc896e82f15e809325760ed40d9c729f9cf1f516b3ed2",
+      "public/tests.p": "eb69e6870bcf03cbf45cf77ac0f8ddb10ec07a7a1d572f46a38f9bf345622255"
+    },
+    "luna-sessions-b01": {
+      "metadata.json": "5bedaf62be968d5482285611df3d1ea6ee45f84f3eec0aa2fc5fcef510b9cd9e",
+      "tool-transcript.jsonl": "649e21ff1fc1f5cca1069685e9c708bd3ffe7b674ab6412bd7f5caac81207e19",
+      "grading/grade.json": "248d58b77130d4d63538fd331d7fb83463eb3ed3ce9feeb5266bb34f3f93366e",
+      "private/FAULTS.md": "cf4aca1e88b890734060465de923f241220bd356bcc1e1001f095e44269cc78e",
+      "private/variants.py": "6f0137228938ffd7385efa6b23bf488b9eda0bef529d63c68776f864c499a6aa",
+      "harness/cli_wrapper.py": "e6600faf22ecf292287ca5193c0302211ef76f881c64669ecc749a839e1ead9a",
+      "harness/grade.py": "744a9b74cb79f4c1f91ec3f4d652dcfa6e5acd5ea06cfe25951d038ed2254bee",
+      "prompt.txt": "92b4a19ae3b9bfd54a20e91c38931dc814c06b62df5d8d7178b06e6c3d0bc8b2",
+      "public/driver.p": "a0ec927c7a15f00ff74cc896e82f15e809325760ed40d9c729f9cf1f516b3ed2",
+      "public/tests.p": "eb69e6870bcf03cbf45cf77ac0f8ddb10ec07a7a1d572f46a38f9bf345622255"
+    }
+  }
+}

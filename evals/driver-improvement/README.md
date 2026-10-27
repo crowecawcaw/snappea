@@ -4,6 +4,10 @@ Given a correct P model, an independent monitor and a weak passing driver, ask a
 agent to improve tests. Compare native driver-limit reports on/off with the same
 binary, prompt, public inputs and budgets. No skill is installed.
 
+See [results](RESULTS.md), the [initial plan](PLAN.md), and the separately labeled
+[Luna follow-up](FOLLOWUP-LUNA.md). This measures test-driver improvement, not
+implementation construction.
+
 The wrapper fixes `--no-mutation --allow-incomplete-coverage --timeout 2s --json`
 for every check in both arms. Coverage output remains available. Both arms collect driver facts with identical
 native arguments; the off arm removes only each test case's `driver` JSON field
@@ -63,6 +67,25 @@ calibration before provisioning; do not tune a frozen cohort from hidden results
 ```sh
 PYTHONPATH=evals/driver-improvement python -m unittest test_harness -v
 ```
+
+The initial grader incorrectly searched only `tests.p` for monitor selection.
+Current grading also accepts declarations in editable `driver.p`. Preserve old
+grades and apply the verified selection-only correction uniformly:
+
+```sh
+python evals/driver-improvement/correct_selection.py --run-root evals/driver-improvement/runs/RUN_ID
+PYTHONPATH=evals/driver-improvement python -m unittest test_harness test_selection_correction -v
+python evals/driver-improvement/summarize.py
+```
+
+The correction reuses original native results, verifies frozen hashes, and writes
+`supplemental-selection-v2/` with provenance. It does not rerun the checker or
+overwrite the original grade. `summarize.py` reproduces this pilot's twelve-run
+report after all grades and supplements exist.
+
+Two [post-hoc probes](probes/retry_eligibility_POSTHOC.md) test narrower boundaries
+identified during source review. Their scripts and outputs stay separate from
+the original fault inventory and primary scores.
 
 The common calibration exercises real Docker report-on/off runs, verifies equal
 native arguments and equal non-driver JSON fields (apart from timing), checks

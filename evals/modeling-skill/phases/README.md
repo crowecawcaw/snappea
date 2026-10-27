@@ -31,6 +31,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Small Sol/medium CLI trial](SOL-CLI-RESULTS.md) repeats that comparison with one run per task and CLI.
 
+[Driver-improvement experiments](../../driver-improvement/RESULTS.md) isolate report display while agents improve existing tests, with hidden faults and source-informed boundary probes.
+
 ## Protocol
 
 - Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.
