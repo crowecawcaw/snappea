@@ -76,6 +76,18 @@ class HarnessTests(unittest.TestCase):
                 (sub/'tests.p').write_text(text)
                 self.assertEqual(selected_monitors(public, sub), {'Contract': expected})
 
+    def test_monitor_selection_accepts_declaration_moved_to_driver(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); public = root/'public'; sub = root/'submission'
+            public.mkdir(); sub.mkdir()
+            (public/'monitor.p').write_text('spec Contract observes eDone {}')
+            (sub/'tests.p').write_text('// Test declaration moved to driver.p.')
+            driver = sub/'driver.p'
+            driver.write_text('machine Main {}\ntest T [main=Main]: assert Contract in M;')
+            self.assertEqual(selected_monitors(public, sub), {'Contract': True})
+            driver.write_text('// assert Contract in M;\nprint "assert Contract";')
+            self.assertEqual(selected_monitors(public, sub), {'Contract': False})
+
     def test_wrapper_collects_identically_and_filters_stdout_and_sidecars(self):
         wrapper = Path(__file__).with_name('cli_wrapper.py')
         original = {'test_cases': [{'name': 'T', 'driver': {'facts': ['fixed input']}, 'result': 'ok'}], 'exit_code': 0}

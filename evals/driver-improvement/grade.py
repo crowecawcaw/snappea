@@ -35,8 +35,11 @@ def verify(run):
 
 def selected_monitors(public, submission):
     required = re.findall(r'\bspec\s+(\w+)\s+observes\b', (Path(public)/'monitor.p').read_text())
-    path = Path(submission)/'tests.p'
-    text = path.read_text() if path.is_file() else ''
+    # Both editable files are compiled together; P permits test declarations
+    # in either file. Their filename does not determine monitor selection.
+    text = '\n'.join((Path(submission)/name).read_text()
+                     for name in ['driver.p', 'tests.p']
+                     if (Path(submission)/name).is_file())
     text = p_code(text)
     return {s: bool(re.search(r'\bassert\s+'+re.escape(s)+r'\b', text)) for s in required}
 
