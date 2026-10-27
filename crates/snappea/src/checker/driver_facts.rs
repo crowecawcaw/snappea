@@ -21,6 +21,11 @@ use snappea_syntax::{SourceMap, Span};
 /// Distinct payload values kept per field; more means the driver varies it.
 const VALUES: usize = 3;
 
+/// The most sends of one event a count fact reports. Every driver stops somewhere; what
+/// matters is whether it ever repeats an action, or does it a third time. Higher limits
+/// rarely hide a bug the smaller ones do not.
+const COUNT_LIMIT: u32 = 2;
+
 /// The machines that drive the model, by [`MachineId`]: those declared under a `PTst`
 /// folder or marked `// snappea: driver` (`marked`, their declaration spans). A test
 /// case's main machine is a driver too; the checker adds it.
@@ -394,7 +399,7 @@ impl DriverFacts {
             }
             // events sent equally often share one fact
             let mut groups: BTreeMap<(u32, u32), Vec<&str>> = BTreeMap::new();
-            for (e, c) in &rest {
+            for (e, c) in rest.iter().filter(|(_, c)| c.max <= COUNT_LIMIT) {
                 groups.entry((min(c), c.max)).or_default().push(prog.event(*e).name.as_str());
             }
             for ((lo, hi), names) in groups {
@@ -660,6 +665,17 @@ mod tests {
         let facts = d.facts(&prog, false);
         assert!(facts.iter().any(|f| f.id == "Client.eAcquire-after-eRelease"), "{:?}", texts(&facts));
         assert_eq!(facts[0].text, "no Client sends eAcquire after eRelease");
+    }
+
+    #[test]
+    fn counts_above_two_are_not_limits() {
+        let prog = program();
+        let mut d = recorder(&prog);
+        schedule(&mut d, &prog, &[1], &["eAcquire", "eRelease", "eAcquire", "eRelease", "eAcquire"], false);
+        schedule(&mut d, &prog, &[1], &["eAcquire", "eRelease", "eRelease"], false);
+        let facts = texts(&d.facts(&prog, false));
+        assert!(facts.contains(&"Client sends eRelease exactly twice".to_string()), "{:?}", facts);
+        assert!(facts.iter().all(|t| !t.contains("sends eAcquire")), "{:?}", facts);
     }
 
     #[test]
