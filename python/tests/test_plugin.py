@@ -367,3 +367,38 @@ def test_coverage_with_xdist(project):
     report = json.loads((project.path / "cov.json").read_text())
     assert len(report["observations"]) == 3
     result.stdout.fnmatch_lines(["*Spec coverage*", "*JSON:*cov.json*"])
+
+
+def test_coverage_reported_by_default_without_a_file(project):
+    # no path: the run's coverage is printed, including states no check entered, and
+    # nothing is written
+    result = run(project, "-k", "test_skip_one_spec")
+    result.assert_outcomes(passed=1, deselected=9)
+    result.stdout.fnmatch_lines([
+        "*Spec coverage (all completed checks)*",
+        "Coverage:",
+        "  RequestsGranted: 0/2 states, *",
+        "Not covered by any observation:",
+        "  specs/lock.p:*  RequestsGranted.Waiting: state never reached",
+        "--snappea-coverage=PATH keeps it as JSON; =off turns this report off.",
+    ])
+    # the unreached state's handlers are not listed one by one
+    result.stdout.no_fnmatch_line("*RequestsGranted.Waiting, on*")
+    assert not list(project.path.rglob("*.json.lock"))
+
+
+def test_default_coverage_report_can_be_turned_off(project, monkeypatch):
+    result = run(project, "-k", "test_correct", "--snappea-coverage=off")
+    result.assert_outcomes(passed=1, deselected=9)
+    result.stdout.no_fnmatch_line("*Spec coverage*")
+    assert not (project.path / "off").exists()
+    monkeypatch.setenv("SNAPPEA_COVERAGE", "off")
+    result = run(project, "-k", "test_correct")
+    result.stdout.no_fnmatch_line("*Spec coverage*")
+
+
+def test_default_coverage_report_with_xdist(project):
+    pytest.importorskip("xdist")
+    result = run(project, "-n", "2", "-k", "test_correct or test_fixture or test_skip_one")
+    result.assert_outcomes(passed=3)
+    result.stdout.fnmatch_lines(["*Spec coverage (all completed checks)*", "  MutualExclusion: 2/2 states, *"])

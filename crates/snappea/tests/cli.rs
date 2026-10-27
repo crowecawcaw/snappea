@@ -474,7 +474,11 @@ fn observe_reports_coverage_and_merges_it_without_the_sources() {
     };
     assert_eq!(observe(&mut h, "a.jsonl", "a.json"), 0, "{}", h.stderr);
     // `assert false` handlers must never run, so they are not counted
-    assert!(h.stdout.contains("\n      Coverage: 8/12 statements, 0/0 branches, 2/3 event handlers\n"), "{}", h.stdout);
+    assert!(
+        h.stdout.contains("\n      Coverage: 2/2 states, 8/12 statements, 0/0 branches, 2/3 event handlers\n"),
+        "{}",
+        h.stdout
+    );
     assert!(
         h.stdout.contains(
             "Not covered by the events:\n  inventory.p:30  InventoryCorrect.Ready, on eReleased: never handled\n"
@@ -492,9 +496,12 @@ fn observe_reports_coverage_and_merges_it_without_the_sources() {
         "{}",
         h.stderr
     );
-    assert!(h.stdout.contains("InventoryCorrect: 8/12 statements"), "{}", h.stdout);
+    assert!(h.stdout.contains("InventoryCorrect: 2/2 states, 8/12 statements"), "{}", h.stdout);
     assert_eq!(snappea(&mut h, &["coverage", "merge-observe", "suite.json", "b.json", "--format", "text"]), 0);
-    assert_eq!(h.stdout, "Coverage:\n  InventoryCorrect: 12/12 statements, 0/0 branches, 3/3 event handlers\n");
+    assert_eq!(
+        h.stdout,
+        "Coverage:\n  InventoryCorrect: 2/2 states, 12/12 statements, 0/0 branches, 3/3 event handlers\n"
+    );
     // merging again changes nothing
     let merged = read(&h, "suite.json");
     h.add_file("again.json", &merged);

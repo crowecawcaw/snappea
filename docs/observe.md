@@ -227,9 +227,11 @@ consecutive state-transition pairs within a single monitor instance. Merging rep
 unions witnessed pairs; it never joins transitions from different keys or runs.
 See [coverage types and limits](https://snappea.dev/docs/coverage.html).
 
-Every observation reports, per spec, which of its `do` and `goto` event handlers,
-statements and `if` outcomes (true and false) the events ran, as `snappea check` does
-for a model. Code that starts with `assert false` must never run, so it is not
+Every observation reports, per spec, which of its states the events entered, and which
+of its `do` and `goto` event handlers, statements and `if` outcomes (true and false)
+they ran, as `snappea check` does for a model. A state never entered is listed once
+(`Spec.State: state never reached`), not handler by handler; this includes states
+with no handlers, such as an end state. Code that starts with `assert false` must never run, so it is not
 counted. The text output lists what never ran: for each piece of code, the outermost
 part that did not run (a handler never triggered rather than each of its statements),
 with its file and line; `--json` lists all of it under `coverage.uncovered`.

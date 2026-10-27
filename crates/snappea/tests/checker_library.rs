@@ -56,10 +56,10 @@ fn observed_coverage_unions_real_monitor_runs() {
     let mut left = spec.observe(&[vec!["eLeft".into()]], &Events, &options, &mut clock).coverage;
     let right = spec.observe(&[vec!["eRight".into()]], &Events, &options, &mut clock).coverage;
     let missed: Vec<String> = left.uncovered().iter().map(|u| format!("{}: {}", u.context, u.what)).collect();
-    assert_eq!(missed, ["Choice.Ready, on eRight: never handled"]);
+    assert_eq!(missed, ["Choice.Ready, on eRight: never handled", "Choice.Right: state never reached"]);
     left.merge(&right).unwrap();
     left.merge(&right).unwrap();
-    assert_eq!(left.summary().to_string(), "1/1 statements, 0/0 branches, 2/2 event handlers");
+    assert_eq!(left.summary().to_string(), "3/3 states, 1/1 statements, 0/0 branches, 2/2 event handlers");
     assert!(left.uncovered().is_empty());
 }
 
@@ -167,4 +167,37 @@ fn unknown_events_in_batch_and_live_observation() {
     assert!(report.errors.is_empty());
     assert_eq!(report.unknown_events[0].count, 2);
     assert_eq!(report.warnings.len(), 1);
+}
+
+#[test]
+fn an_unreached_monitor_state_is_reported_once() {
+    use snappea::checker::observe::{ObserveOptions, ObservedEvent, Parser, Spec, Timestamp};
+    use snappea::checker::value::Value;
+    struct Events;
+    impl Parser for Events {
+        fn name(&self) -> &str {
+            "Events"
+        }
+        fn parse(&self, entry: &str, spec: &Spec) -> Result<Vec<ObservedEvent>, String> {
+            Ok(vec![spec.event("key", Timestamp::default(), entry, Value::Null, None)?])
+        }
+    }
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add(
+        "spec.p",
+        "event eOpen; event eClose; spec Door observes eOpen, eClose {\n\
+         start state Shut { on eOpen goto Open; on eClose do { assert true; } }\n\
+         state Open { entry { assert true; } on eClose goto Shut; on eOpen do { assert false; } }\n}",
+    );
+    let analysis = snappea::sema::compile(&sm, &snappea::sema::Options::default()).expect("compiles");
+    let spec = Spec::new(&analysis.program, "Door").unwrap();
+    let mut clock = || 0.0;
+    let c = spec.observe(&[vec!["eClose".into()]], &Events, &ObserveOptions::default(), &mut clock).coverage;
+    let missed: Vec<String> = c.uncovered().iter().map(|u| format!("{}: {}", u.context, u.what)).collect();
+    // the start state is entered when the spec starts; Open's entry and handlers are not
+    // listed one by one
+    assert!(missed.contains(&"Door.Open: state never reached".to_string()), "{missed:?}");
+    assert!(!missed.iter().any(|m| m.starts_with("Door.Open ") || m.starts_with("Door.Open,")), "{missed:?}");
+    assert!(!missed.contains(&"Door.Shut: state never reached".to_string()), "{missed:?}");
+    assert_eq!((c.summary().states.covered, c.summary().states.total), (1, 2));
 }

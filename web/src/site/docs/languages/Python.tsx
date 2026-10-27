@@ -351,9 +351,13 @@ def server(tmp_path_factory):
         </p>
         <h3>Suite coverage</h3>
         <p>
-          <code>pytest --snappea-coverage=coverage/monitor.json</code> (or <code>SNAPPEA_COVERAGE</code>) reports the P
-          spec handlers, statements and branches the suite's checks reached, and writes them as JSON for CI. Runs merge into an
-          existing file under a lock, so pytest-xdist workers can share one path; delete the file to start over.
+          At the end of a run the plugin prints the spec coverage of all its checks: the states, handlers, statements and
+          branches they reached, then what none reached, such as <code>Spec.State: state never reached</code>. Nothing is
+          written, so each run reports only itself; pytest-xdist workers report to the controller.{" "}
+          <code>pytest --snappea-coverage=coverage/monitor.json</code> (or <code>SNAPPEA_COVERAGE</code>) also writes it as
+          JSON for CI. Runs merge into an existing file under a lock, so workers and separate runs can share one path; delete
+          the file to start over. <code>--snappea-coverage=off</code> (or <code>SNAPPEA_COVERAGE=off</code>) turns the report
+          off. Without a path, a reporting error is printed but never fails the run.
         </p>
         <h3>How it works</h3>
         <p>
