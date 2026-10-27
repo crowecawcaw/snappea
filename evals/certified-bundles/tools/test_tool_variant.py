@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -16,6 +17,13 @@ spec.loader.exec_module(phase_runner)
 
 
 class ToolVariantTests(unittest.TestCase):
+    def test_binary_command_output_does_not_abort_bridge(self):
+        result = run_sonnet.command([sys.executable, '-c',
+            "import sys; sys.stdout.buffer.write(b'\\xff'); sys.stderr.buffer.write(b'\\xfe')"])
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, '\ufffd')
+        self.assertEqual(result.stderr, '\ufffd')
+
     def test_both_container_builders_separate_selected_cli_and_native_python_backend(self):
         native = Path('/tools/snappea')
         for tool in tool_variant.TOOLS:

@@ -35,7 +35,7 @@ def grading_image(run):
 
 
 def command(argv, **kwargs):
-    return subprocess.run(argv,capture_output=True,text=True,**kwargs)
+    return subprocess.run(argv,capture_output=True,text=True,errors='replace',**kwargs)
 
 
 def prepare(run_id, arm, condition='legacy'):
