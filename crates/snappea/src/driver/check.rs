@@ -111,6 +111,8 @@ pub struct CheckConfig {
     pub timed: bool,
     /// Record which statements, branches and handlers run ([`CaseOutcome::code_coverage`]).
     pub code_coverage: bool,
+    /// Report what the driver did in every schedule ([`CaseOutcome::driver`]).
+    pub driver_facts: bool,
 }
 
 impl Default for CheckConfig {
@@ -147,6 +149,7 @@ impl Default for CheckConfig {
             latency_profile: None,
             timed: false,
             code_coverage: false,
+            driver_facts: false,
         }
     }
 }
@@ -570,6 +573,20 @@ pub struct CaseOutcome {
     pub code_coverage: Option<(crate::checker::code_coverage::Scope, crate::checker::code_coverage::Hits)>,
     /// Scenario results, also written to the per-test artifact for cross-run merging.
     pub scenario_coverage: crate::driver::scenario::Artifact,
+    /// What the driver did in every schedule, with `cfg.driver_facts`.
+    pub driver: Option<DriverReport>,
+}
+
+/// What a test case's driver did in every schedule it explored.
+#[derive(Debug, Clone)]
+pub struct DriverReport {
+    /// The machines treated as the driver.
+    pub machines: Vec<String>,
+    /// What held in every schedule, most telling first.
+    pub facts: Vec<crate::checker::driver_facts::Fact>,
+    /// The driver may repeat without limit (the search found cycles, or hit the step
+    /// bound), so no counts or orders are claimed.
+    pub repeats: bool,
 }
 
 impl CaseOutcome {
@@ -587,7 +604,13 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         None => host.random_seed(),
     };
     let tc = select_test_case(host, loaded, &cfg.test_case_name)?;
-    let opts = engine_options(cfg, seed);
+    let mut opts = engine_options(cfg, seed);
+    if cfg.driver_facts {
+        let sources = loaded.sources.source_map();
+        let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
+        opts.driver_machines =
+            Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources, &marked));
+    }
     let engine_start = host.now();
     let deadline = cfg.timeout.map(|t| engine_start + f64::from(t));
     let (res, workers) = run_engine(host, loaded, &tc, &opts, deadline, cfg.workers, cfg.code_coverage)?;
@@ -636,6 +659,21 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         let xml = crate::driver::sci::coverage_xml(prog, &checker.coverage_tables(), cov);
         write_output(host, &sci, &xml)?;
     }
+    let driver = res.driver_facts.as_ref().zip(opts.driver_machines.as_ref()).map(|(d, machines)| {
+        let repeats = res.exhaustive.as_ref().is_some_and(|x| x.cycle_prunes > 0) || d.truncated > 0;
+        let (module, main) = prog.test_case_module(&tc);
+        let mut names: Vec<String> = module
+            .interface_def
+            .iter()
+            .map(|(_, m)| *m)
+            .chain(main)
+            .filter(|m| machines[m.idx()] || Some(*m) == main)
+            .map(|m| prog.machine(m).name.clone())
+            .collect();
+        names.sort();
+        names.dedup();
+        DriverReport { machines: names, facts: d.facts(prog, repeats), repeats }
+    });
     let process_elapsed = host.now() - process_start;
     host.out_line(&res.report.text(&opts, "..."));
     if let Some(x) = &res.exhaustive {
@@ -682,6 +720,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         schedule_file,
         code_coverage,
         scenario_coverage: crate::driver::scenario::from_report(&res.report, &cfg.test_case_name),
+        driver,
     })
 }
 

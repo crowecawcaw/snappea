@@ -19,6 +19,70 @@ pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Find
             .any(|(s, id)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
     });
     findings.extend(invalid);
+    findings.extend(snappea_directives(ctx).1);
+}
+
+/// The machines marked `// snappea: driver`: test code that drives the model, as the
+/// spans of their declarations. Malformed directives are reported by linting, not here.
+pub fn driver_machines(ctx: &Context<'_>) -> Vec<Span> {
+    snappea_directives(ctx).0
+}
+
+/// Every `// snappea: driver` directive: the machine declaration each marks, and the
+/// findings for malformed ones (another directive, or not before a machine).
+fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>) {
+    let machines: Vec<Span> = ctx.machines().filter(|m| m.kind == MachineKind::Impl).map(|m| m.span).collect();
+    let mut marked = Vec::new();
+    let mut invalid = Vec::new();
+    each_comment(ctx, &mut |id, text, start, comment, next| {
+        let Some(directive) = comment.trim().strip_prefix("snappea:") else {
+            return;
+        };
+        let span = Span::new(id, start as u32, (start + 2 + comment.len()) as u32);
+        let bad = |message: &str| Finding::new("invalid-directive", span, message);
+        let directive = directive.split_once("--").map_or(directive, |(d, _)| d).trim();
+        if directive != "driver" {
+            invalid.push(bad("unknown snappea directive; the only one is '// snappea: driver' before a machine"));
+            return;
+        }
+        let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
+        let target = machines.iter().find(|m| m.file == id && Some(m.start) == next);
+        match target {
+            Some(m) if text[line_start..start].trim().is_empty() => marked.push(*m),
+            _ => invalid.push(bad("put '// snappea: driver' on its own line directly before a machine declaration")),
+        }
+    });
+    (marked, invalid)
+}
+
+/// Calls `f(file, text, start, comment, next)` for every comment of the sources, with
+/// `next` the start of the token after it. Only lexer gaps are inspected, so strings
+/// cannot forge comments.
+/// Called with a comment's file, the file's text, the comment's start, its text after
+/// `//`, and the start of the next token.
+type OnComment<'f> = dyn FnMut(FileId, &str, usize, &str, Option<u32>) + 'f;
+
+fn each_comment(ctx: &Context<'_>, f: &mut OnComment<'_>) {
+    for (i, file) in ctx.sources.files().iter().enumerate() {
+        let id = FileId(i as u32);
+        let Ok(tokens) = lexer::lex(id, &file.text) else {
+            continue;
+        };
+        let mut end = 0;
+        for token in &tokens {
+            if token.span.start > end {
+                comments(&file.text, end as usize, token.span.start as usize, &mut |start, text| {
+                    f(id, &file.text, start, text, Some(token.span.start))
+                });
+            }
+            end = token.span.end;
+        }
+        if (end as usize) < file.text.len() {
+            comments(&file.text, end as usize, file.text.len(), &mut |start, text| {
+                f(id, &file.text, start, text, None)
+            });
+        }
+    }
 }
 
 /// The mutation suppressions of the sources: the code each covers, and `mutation` or

@@ -936,3 +936,104 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(snappea(&mut h, &["check", "coins.p", "--seed", "2", "--format", "text"]), 1);
     assert!(h.stdout.contains("Mutation testing skipped: a test case failed."), "{}", h.stdout);
 }
+
+/// A lock server whose release frees the lock even when it hands it to a waiting client;
+/// `{client}` is how each client uses the lock.
+fn lock_model(client: &str) -> String {
+    format!(
+        "event eAcquire: machine;\n\
+         event eRelease: machine;\n\
+         event eGranted: machine;\n\
+         machine LockServer {{\n\
+           var free: bool;\n\
+           var waiting: seq[machine];\n\
+           start state Serving {{\n\
+             entry {{ free = true; }}\n\
+             on eAcquire do (c: machine) {{\n\
+               if (free) {{ free = false; send c, eGranted, c; }} else {{ waiting += (sizeof(waiting), c); }}\n\
+             }}\n\
+             on eRelease do (c: machine) {{\n\
+               var next: machine;\n\
+               if (sizeof(waiting) > 0) {{ next = waiting[0]; waiting -= (0); send next, eGranted, next; }}\n\
+               free = true;\n\
+             }}\n\
+           }}\n\
+         }}\n\
+         spec MutualExclusion observes eGranted, eRelease {{\n\
+           var held: bool;\n\
+           start state S {{\n\
+             on eGranted do {{ assert !held, \"two clients hold the lock\"; held = true; }}\n\
+             on eRelease do {{ held = false; }}\n\
+           }}\n\
+         }}\n\
+         // snappea: driver\n\
+         machine Client {{\n\
+           var server: machine;\n\
+           start state Init {{\n\
+             entry (s: machine) {{ server = s; send server, eAcquire, this; }}\n\
+             on eGranted do {{ {client} }}\n\
+           }}\n\
+         }}\n\
+         machine TestDriver {{\n\
+           start state Init {{\n\
+             entry {{ var server: machine; server = new LockServer(); new Client(server); new Client(server); }}\n\
+           }}\n\
+         }}\n\
+         test tcTwoClients [main=TestDriver]: assert MutualExclusion in {{ TestDriver, Client, LockServer }};\n"
+    )
+}
+
+#[test]
+fn driver_limits_show_what_the_driver_never_did() {
+    let mut h = host();
+    h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text"]), 0, "{}", h.stderr);
+    assert!(
+        h.stdout.contains(
+            "      Driver limits (held in all "
+        ) && h.stdout.contains(
+            " schedules):\n        each Client sends eAcquire, then eRelease, once each\n        creates 1 LockServer and 2 Client, never more\n      hint: if the real environment can do more, extend the driver to try it\n"
+        ),
+        "{}",
+        h.stdout
+    );
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--json"]), 0, "{}", h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let d = &v["test_cases"][0]["driver"];
+    assert_eq!(d["machines"], serde_json::json!(["Client", "TestDriver"]));
+    assert_eq!(d["repeats"], false);
+    assert_eq!(d["facts"][0]["kind"], "sequence");
+    assert_eq!(d["facts"][0]["id"], "Client.sequence");
+    assert!(d["facts"][0]["hint"].as_str().unwrap().contains("extend the driver"));
+    assert_eq!(d["facts"][1]["kind"], "instances");
+
+    // the limit was the gap: a client that acquires the lock again finds the bug
+    h.add_file("lock.p", &lock_model("send server, eRelease, this; send server, eAcquire, this;"));
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--json"]), 1, "{}", h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert!(v["test_cases"][0]["bug"]["report"].as_str().unwrap().contains("two clients hold the lock"));
+    // no limits for a failing test case
+    assert!(v["test_cases"][0].get("driver").is_none());
+
+    h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text"]), 0);
+    assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);
+}
+
+#[test]
+fn machines_under_ptst_are_drivers_and_are_not_mutated() {
+    let mut h = MemHost::new("/w");
+    h.threads = Some(Threads { available: 4, run: run_threads });
+    let model = lock_model("send server, eRelease, this;").replace("// snappea: driver\n", "");
+    let split = model.find("machine Client").unwrap();
+    let test = model.find("test tcTwoClients").unwrap();
+    h.add_file("PSrc/Lock.p", &format!("{}{}", &model[..split], &model[test..]));
+    h.add_file("PTst/Driver.p", &model[split..test]);
+    assert_eq!(snappea(&mut h, &["check", "--json"]), 0, "{}", h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["test_cases"][0]["driver"]["machines"], serde_json::json!(["Client", "TestDriver"]));
+    assert_eq!(v["test_cases"][0]["driver"]["facts"][0]["id"], "Client.sequence");
+    let mutants = v["mutation"]["undetected"].as_array().unwrap();
+    assert!(!mutants.is_empty());
+    assert!(mutants.iter().all(|m| !m["file"].as_str().unwrap().contains("PTst")), "{}", h.stdout);
+}

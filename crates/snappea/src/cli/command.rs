@@ -100,6 +100,9 @@ Mutation testing:
                             Do not fail when selected code coverage is missing; useful
                             for exploratory checks while a test suite is being built.
 
+Driver limits:
+      --no-driver-facts     Do not list the limits each test's driver kept
+
 Output:
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
       --coverage-file <FILE>
@@ -125,6 +128,13 @@ case detects marks code whose effect no spec or assertion checks. Undetected mut
 are listed but do not change the exit status. To accept one, put
 `// snappea-lint: allow mutation[:<kind>] -- reason` before the statement
 (see docs/checking-models.md).
+
+Each passing test case also lists the limits its driver kept in every schedule: the
+machines it created, the events it sent the model, in what order, and the values it
+used. They show what the check never tried, e.g. `no Client sends eAcquire after
+eRelease`; if the real environment can do that, extend the driver. The driver is the
+test's main machine, machines declared under PTst/, and machines marked with a
+`// snappea: driver` comment. Driver limits never change the exit status.
 ";
 
 const MUTATION_HELP: &str = "\
@@ -706,6 +716,7 @@ const CHECK_OPTS: &[Opt] = &[
     value("mutation-timeout", None),
     flag("no-mutation", None),
     flag("allow-incomplete-coverage", None),
+    flag("no-driver-facts", None),
 ];
 
 /// Default time limit for mutation testing, in seconds.
@@ -829,6 +840,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.output_path = o.to_string();
     }
     cfg.verbose = a.has("verbose");
+    cfg.driver_facts = !a.has("no-driver-facts");
     check::finish_options(cfg);
     Ok(patterns)
 }
@@ -873,6 +885,7 @@ fn snappea_config() -> CheckConfig {
     let mut cfg = CheckConfig {
         style: Style::Snappea,
         code_coverage: true,
+        driver_facts: true,
         strategy: StrategyKind::Auto,
         iterations: 0,
         timeout: Some(10),
@@ -952,6 +965,18 @@ fn run_check(
                 }
             }
         }
+        if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
+            if !only {
+                for l in driver_lines(d, &case) {
+                    con.inner.out_line(&l);
+                }
+            }
+            result["driver"] = json!({
+                "machines": d.machines,
+                "repeats": d.repeats,
+                "facts": d.facts.iter().map(|f| f.to_json()).collect::<Vec<_>>(),
+            });
+        }
         if !case.scenario_coverage.scenarios.is_empty() {
             result["scenarios"] = serde_json::from_str(&case.scenario_coverage.to_json()).unwrap();
             scenarios.push(case.scenario_coverage.clone());
@@ -1014,7 +1039,11 @@ fn run_check(
         Mutation::After(Some(limit)) | Mutation::Only(limit) => {
             // the sources parsed when they were loaded
             let suppressed = snappea_lint::mutation_suppressions(&loaded.sources.source_map()).unwrap_or_default();
-            let report = crate::driver::mutation::run(con.inner, prog, &cfg, &passed, &suppressed, f64::from(limit));
+            let sources = loaded.sources.source_map();
+            let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
+            let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
+            let report =
+                crate::driver::mutation::run(con.inner, prog, &cfg, &passed, &suppressed, &drivers, f64::from(limit));
             for l in report.lines(SHOWN_UNCOVERED) {
                 con.inner.out_line(&l);
             }
@@ -1130,6 +1159,31 @@ fn check_summary(
         "uncovered_more": uncovered.len().saturating_sub(5),
         "mutation_time_limit_reached": mutation_time_limit_reached,
     })
+}
+
+/// Driver facts shown for a test case; `--json` has them all.
+const SHOWN_DRIVER_FACTS: usize = 5;
+
+/// The console lines for what a test case's driver did in every schedule.
+fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome) -> Vec<String> {
+    if d.facts.is_empty() {
+        return Vec::new();
+    }
+    let s = case.schedules;
+    let schedules = match case.exhaustive_finished {
+        Some(true) => format!("all {} schedule{}", s, plural(s)),
+        _ => format!("all {} explored schedule{}", s, plural(s)),
+    };
+    let mut out = vec![format!("      Driver limits (held in {}):", schedules)];
+    for f in d.facts.iter().take(SHOWN_DRIVER_FACTS) {
+        out.push(format!("        {}", f.text));
+    }
+    if d.facts.len() > SHOWN_DRIVER_FACTS {
+        let n = d.facts.len() - SHOWN_DRIVER_FACTS;
+        out.push(format!("        ... and {} more (--json lists all)", n));
+    }
+    out.push("      hint: if the real environment can do more, extend the driver to try it".into());
+    out
 }
 
 /// One test case's result as JSON.

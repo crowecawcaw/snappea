@@ -63,6 +63,9 @@ pub struct CheckerOptions {
     pub log_every_schedule: bool,
     /// Collect activity coverage (`CheckResult::coverage`), as upstream does by default.
     pub activity_coverage: bool,
+    /// Record what the test's driver does (`CheckResult::driver_facts`): per machine,
+    /// whether it drives the model (see [`crate::checker::driver_facts::driver_machines`]).
+    pub driver_machines: Option<Vec<bool>>,
     /// Produce the JSON trace of the first buggy schedule (by replaying it with JSON
     /// logging on, so exploration itself pays nothing).
     pub json_trace: bool,
@@ -103,6 +106,7 @@ impl Default for CheckerOptions {
             verbose: false,
             log_every_schedule: false,
             activity_coverage: false,
+            driver_machines: None,
             json_trace: false,
             xml_trace: false,
             timeline: Default::default(),
@@ -385,6 +389,8 @@ pub struct CheckResult {
     pub verbose_json_trace: Option<String>,
     /// Activity coverage over all schedules (see `activity_coverage`).
     pub coverage: Option<crate::checker::coverage::CoverageInfo>,
+    /// What the test's driver did over all schedules (see `driver_machines`).
+    pub driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
     /// Statistics of an exhaustive search (`dfs`, `random-dfs`).
     pub exhaustive: Option<crate::checker::exhaustive::SearchStats>,
 }
@@ -811,6 +817,11 @@ impl<'p> Checker<'p> {
         let mut coverage_epoch = strategy.coverage_epoch();
         let mut earlier_coverage: Option<crate::checker::coverage::CoverageInfo> = None;
         let mut reported_complete = false;
+        let mut driver_facts = opts
+            .driver_machines
+            .clone()
+            .filter(|_| !is_replay)
+            .map(|d| crate::checker::driver_facts::DriverFacts::new(d, main));
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -846,6 +857,7 @@ impl<'p> Checker<'p> {
                             None => cov,
                         }
                     }),
+                    driver_facts: driver_facts.take(),
                     ..Setup::default()
                 };
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
@@ -965,6 +977,11 @@ impl<'p> Checker<'p> {
                 if let Some(c) = rt.coverage.take() {
                     result.coverage = Some(c.into_info());
                 }
+                if let Some(mut d) = rt.driver_facts.take() {
+                    let stopped = !rt.ran_to_end();
+                    d.end_schedule(stopped, rt.bound_hit_at.is_some());
+                    driver_facts = Some(d);
+                }
             }
             // a bug that ends the run ends it, deadline or not
             let ended_by_bug = !opts.full_exploration && result.report.num_bugs > 0;
@@ -1004,6 +1021,7 @@ impl<'p> Checker<'p> {
             unverifiable,
             ..s
         });
+        result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
         Ok(Exploration { result, first_bug, won, time })
     }
@@ -1100,6 +1118,13 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
             }
             (None, None) => {}
         }
+        result.driver_facts = match (result.driver_facts.take(), r.driver_facts) {
+            (Some(mut a), Some(b)) => {
+                a.merge(&b);
+                Some(a)
+            }
+            (a, b) => a.or(b),
+        };
         result.coverage = match (result.coverage.take(), r.coverage) {
             (Some(mut a), Some(b)) => {
                 a.merge(b);

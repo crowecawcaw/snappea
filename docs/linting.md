@@ -182,6 +182,14 @@ directives without an eligible following node produce an `invalid-suppression`
 finding; a misspelling cannot silently disable a check. Text inside strings and
 block comments is not a directive. There is no global command-line lint bypass.
 
+## Mark driver machines
+
+`// snappea: driver` on its own line before a machine marks it as test code that drives
+the model, like the machines under `PTst`. `snappea check` then lists the
+[limits it kept](checking-models.md#driver-limits) and does not mutate it. Another
+`// snappea:` directive, or one that is not directly before a machine, fails linting
+with `invalid-directive`.
+
 ## Add a rule
 
 The `snappea-lint` crate has no I/O or scheduling dependency. Implement its `Rule`
