@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from snappea import Recorder, SpecViolation, _emit, check_spec, emit, set_sink
+from snappea import Recorder, SetupError, SpecViolation, _emit, check_spec, emit, set_sink
 from snappea._recorder import _parse_time
 
 
@@ -101,6 +101,39 @@ def test_sink_never_raises_and_counts_drops(no_recording):
     emit(42)  # not a string: dropped
     sink.flush()
     assert sink.dropped == 3
+
+
+def test_events_dir_never_raises_and_counts_drops(no_recording, monkeypatch, tmp_path):
+    # a process a recording test started: emit runs in application code, so a payload
+    # that cannot be encoded or a failed write is dropped and counted, not raised
+    monkeypatch.setenv("SNAPPEA_EVENTS_DIR", str(tmp_path))
+    monkeypatch.setattr(_emit, "dir_dropped", 0)
+    cyclic: dict = {}
+    cyclic["self"] = cyclic
+    emit("eEnter", client=cyclic)
+    emit("eEnter", {(1, 2): "tuple key"})
+    assert _emit.dir_dropped == 2
+    emit("eEnter", client="c1")  # later events still get through
+    (f,) = tmp_path.iterdir()
+    assert [json.loads(line)["payload"] for line in f.read_text().splitlines()] == [{"client": "c1"}]
+    _emit._file.close()
+    _emit._file = None
+    monkeypatch.setenv("SNAPPEA_EVENTS_DIR", str(f))  # a file, not a folder: writes fail
+    emit("eEnter", client="c2")
+    assert _emit.dir_dropped == 3
+
+
+def test_unencodable_event_in_a_recording_fails_the_check():
+    from conftest import SPEC
+
+    cyclic: dict = {}
+    cyclic["self"] = cyclic
+    rec = Recorder(spec_files=[SPEC])
+    with rec:
+        emit("eEnter", client=cyclic)  # no error here, in the code under test
+    with pytest.raises(SetupError, match=r"could not be encoded(.|\n)*eEnter \(.*test_emit.py:\d+\): \w+Error") as info:
+        rec.check()
+    assert info.value.kind == "parser"
 
 
 def test_sink_to_a_callback_and_stdout(no_recording, capsys):

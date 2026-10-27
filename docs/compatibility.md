@@ -52,6 +52,8 @@ to:
   `--check-hot`, several `-l` values and glob patterns, and live input (`--stdin`,
   `--live`, `--sequence`, `--record`). Runs that use none of them are unchanged.
 * Foreign functions and log parsers are written in Rust, not C# or Java.
+  `snappea-compat` warns about the foreign files a project lists and ignores them;
+  `snappea check` rejects such a project unless given `--ignore-foreign-files`.
 
 **Not supported yet**:
 

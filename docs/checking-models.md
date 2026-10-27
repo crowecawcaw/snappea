@@ -13,7 +13,10 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
 schedules. Unsuppressed lint findings stop the check with exit status 2; run
-`snappea check lint` to inspect them without exploration. It selects search strategies automatically.
+`snappea check lint` to inspect them without exploration. A project that lists
+foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
+would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
+It selects search strategies automatically.
 It starts with exhaustive search so small finite models can finish; with several
 workers, each explores its own part of the schedules.
 After each 1,024 controlled choices it checks whether the unexplored frontier is

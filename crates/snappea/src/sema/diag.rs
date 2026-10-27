@@ -149,6 +149,8 @@ impl Diagnostics {
         }
     }
 
+    /// An upstream warning, printed only by `snappea-compat`: give each a lint rule in
+    /// `snappea-lint` too, so `snappea` fails on it unless it is suppressed.
     pub fn warn(&mut self, msg: impl Into<String>) {
         self.warnings.push(msg.into());
     }

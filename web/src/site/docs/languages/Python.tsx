@@ -334,8 +334,10 @@ def server(tmp_path_factory):
         <p>
           Strict means every selected spec checked at least one relevant event, which catches instrumentation that was
           removed or never ran. With named specs (<code>check_spec("Name")</code>, <code>[tool.snappea] specs</code>) it
-          defaults to true; for this release such a check emits a <code>snappea.StrictDefaultWarning</code> where it
-          would fail, and the next release fails it. Pass <code>strict=False</code> to keep the old behaviour. With every
+          defaults to true, and a named spec that saw no relevant event fails the check with a{" "}
+          <code>SetupError</code> of kind <code>"validation"</code>. Pass <code>strict=False</code> (or set{" "}
+          <code>strict = false</code>) where a spec may rightly see no events. (<code>snappea.StrictDefaultWarning</code>,
+          which warned about this change for one release, is no longer emitted.) With every
           spec selected (the plugin's default) it defaults to false; turn it on with <code>strict = true</code> or{" "}
           <code>pytest --snappea-strict</code>, and mark uninstrumented tests <code>skip=True</code>.
         </p>

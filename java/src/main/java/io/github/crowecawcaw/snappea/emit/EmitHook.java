@@ -16,6 +16,12 @@ public final class EmitHook {
     public interface Router {
         /** Where an event emitted on the current thread goes, or null when no recording takes it. */
         Consumer<String> target();
+
+        /**
+         * An event for the recordings {@link #target()} named could not be encoded: they fail
+         * their check with {@code error} instead of {@code emit} throwing into application code.
+         */
+        void failed(RuntimeException error);
     }
 
     private static final Object LOCK = new Object();

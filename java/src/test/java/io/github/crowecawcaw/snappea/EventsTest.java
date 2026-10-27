@@ -37,6 +37,18 @@ class EventsTest {
         assertTrue(violation.events().get(0).src().startsWith("io/github/crowecawcaw/snappea/EventsTest.java:"));
     }
 
+    @Test void unencodablePayloadFailsTheCheckWithoutThrowingFromEmit() {
+        var recording = observer("Counter").recording("bad payload");
+        long dropped = SnappeaEmit.dropped();
+        assertDoesNotThrow(() -> SnappeaEmit.emit("eAdd", "sku", Double.NaN)); // the code under test keeps running
+        SnappeaEmit.emit("eAdd", "sku", 1);
+        assertEquals(dropped + 1, SnappeaEmit.dropped());
+        var failure = assertThrows(SetupError.class, recording::close);
+        assertTrue(failure.getMessage().contains("cannot encode event eAdd at io/github/crowecawcaw/snappea/EventsTest.java:"),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("not finite"), failure.getMessage());
+    }
+
     @Test void emitAfterTheCheckFails() throws Exception {
         var recording = observer("Counter").recording("finished");
         SnappeaEmit.emit("eAdd", "sku", 1);

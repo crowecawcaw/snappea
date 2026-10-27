@@ -303,8 +303,15 @@ def test_named_specs_in_settings_default_to_strict(project):
     project.makepyprojecttoml('[tool.snappea]\nspec_files = ["specs/*.p"]\nspecs = ["MutualExclusion"]\n')
     r = run(project, "-k", "test_no_events or test_correct or test_waiting_forever_fails")
     # test_waiting_forever_fails emits only eRequest, which MutualExclusion ignores
-    r.assert_outcomes(passed=3, deselected=7, warnings=2)
-    r.stdout.fnmatch_lines(["*StrictDefaultWarning*"])
+    r.assert_outcomes(passed=1, failed=2, deselected=7)
+    r.stdout.fnmatch_lines(["*checked no relevant events*", "*strict=False*"])
+    r.stdout.no_fnmatch_line("*StrictDefaultWarning*")
+    # strict = false is the explicit allowance
+    project.makepyprojecttoml(
+        '[tool.snappea]\nspec_files = ["specs/*.p"]\nspecs = ["MutualExclusion"]\nstrict = false\n'
+    )
+    r = run(project, "-k", "test_no_events or test_correct or test_waiting_forever_fails")
+    r.assert_outcomes(passed=3, deselected=7)
 
 
 def test_artifacts_setting_keeps_failed_checks(project, monkeypatch):

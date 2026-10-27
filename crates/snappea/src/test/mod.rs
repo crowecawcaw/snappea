@@ -137,6 +137,13 @@ impl Model {
                 crate::sema::CompileError::Analysis(error) => error.messages(&map).join("\n"),
             })
         })?;
+        // the spec rules `snappea observe` enforces
+        let findings = snappea_lint::lint_observation(&map).map_err(|e| config(e.message))?;
+        if !findings.is_empty() {
+            let mut text: String = findings.iter().map(|f| crate::driver::lint::render(&map, f) + "\n").collect();
+            text.push_str(&crate::driver::lint::summary(findings.len()));
+            return Err(config(text));
+        }
         Ok(Model { program: Arc::new(analysis.program), options: Options::default() })
     }
 

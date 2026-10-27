@@ -35,8 +35,14 @@ the events ran ([below](#coverage)).
 
 Exit status: 0 no violation, 1 a violation (a spec assertion, or a hot state with
 `--check-hot`), 2 any other error (command line, P type errors, log parser errors,
-`--unknown-events error`, `--strict`, I/O). Command-line errors go to stderr as
+lint findings in the specs, unknown event names, `--strict`, I/O). Command-line errors go to stderr as
 `error: <message>`.
+
+Before reading logs, `snappea observe` lints the specs for handlers that can never
+run: a handler for an event the spec's `observes` list leaves out
+([`unobserved-handler`](linting.md#unobserved-handlers)). A finding fails with exit
+status 2 unless a `// snappea-lint: allow unobserved-handler -- reason` comment
+suppresses it. Model-test rules such as `unselected-spec` do not apply here.
 
 On a terminal or in CI (`CI` set) the output is text; otherwise (agents, scripts,
 supervisors) it is the JSON result below. `--format text|json` or `--json` chooses,
@@ -72,7 +78,7 @@ that PObserve doesn't have (`--all-specs`, `--check-hot`, `--strict`,
 | `--sorted` | The logs are already in timestamp order: merge them instead of sorting. |
 | `--check-hot` | Also report a key whose spec is in a hot state after its last event, with the message `snappea check` uses for liveness bugs at the end of an execution. |
 | `--strict` | Require at least one successfully checked relevant event per selected spec, after key filtering. |
-| `--unknown-events ignore\|warn\|error` | What to do with event names no loaded P source declares (default `ignore`, as PObserve). See [Unknown event names](#unknown-event-names). |
+| `--unknown-events error\|warn\|ignore` | What to do with event names no loaded P source declares (default `error`; `snappea-compat` keeps PObserve's `ignore`). See [Unknown event names](#unknown-event-names). |
 | `--format text\|json`, `--json` | Print text or the JSON result (default: text on a terminal or in CI, else JSON). |
 | `--json-report FILE` | Also write the JSON result to `FILE`. |
 | `-v`, `--verbose` | Show progress, logged messages and each error's events. |
@@ -377,20 +383,21 @@ error in the overall test result.
 
 ## Unknown event names
 
-By default, as in PObserve, an event whose name no loaded P source declares is
-dropped silently, so a misspelled `emit` (`eReserverd` for `eReserved`) hides the
-very bug the spec should catch. `--unknown-events` decides what happens to them:
+An event whose name no loaded P source declares is often a misspelled `emit`
+(`eReserverd` for `eReserved`), which would hide the very bug the spec should catch.
+`--unknown-events` decides what happens to them:
 
-* `ignore` (default): drop them. Production logs often hold events the spec does
-  not model.
-* `warn`: print one line per distinct name to stderr, with its count, where it first
-  appeared and a likely intended name; the result and exit status are unchanged. The
-  JSON report lists the names under `unknown_events` and the lines under `warnings`.
-* `error`: report each distinct name once as an error of kind `unknown_event`, with
-  the same details. The exit status is the tool/input error (`snappea` 2, PObserve and
+* `error` (default): report each distinct name once as an error of kind
+  `unknown_event`, with its count, where it first appeared and a likely intended
+  name. The exit status is the tool/input error (`snappea` 2, PObserve and
   `snappea-compat` 3), even alongside a spec violation, since the input cannot be trusted.
   Known events are still checked. With `--stdin` the run stops at the first unknown
   name.
+* `warn`: print one line per distinct name to stderr, with the same details; the
+  result and exit status are unchanged. The JSON report lists the names under
+  `unknown_events` and the lines under `warnings`.
+* `ignore`: drop them. Use it for logs that also hold events the spec does not
+  model. `snappea-compat observe` defaults to `ignore`, as PObserve does.
 
 ```text
 warning: Unknown event 'eReserverd': not declared in the P sources (1 occurrence, first at typo.jsonl:2); did you mean eReserved?

@@ -219,13 +219,10 @@ fn report_native(
 ) -> bool {
     use crate::sema::diag::render_snippet;
     use crate::sema::CompileError;
+    // The front end's warnings are upstream's text; snappea reports each as a lint
+    // finding instead (`snappea check lint`), which fails unless suppressed.
     let errors: Vec<String> = match r {
-        Ok(a) => {
-            for w in &a.warnings {
-                host.out_colored_line(w, Color::Yellow);
-            }
-            return true;
-        }
+        Ok(_) => return true,
         Err(CompileError::Parse { message, span, .. }) => {
             // `message` is `line L:C detail`; the location is shown separately
             let detail =
@@ -241,9 +238,6 @@ fn report_native(
             vec![render_snippet(sm, None, &format!("'{}' is not supported, at {}", keyword, at), Some(&help))]
         }
         Err(CompileError::Analysis(a)) => {
-            for w in &a.warnings {
-                host.out_colored_line(w, Color::Yellow);
-            }
             a.diagnostics(sm).iter().map(|d| render_snippet(sm, d.span, &d.message, d.help.as_deref())).collect()
         }
     };

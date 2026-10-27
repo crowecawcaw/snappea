@@ -75,6 +75,9 @@ pub struct CheckConfig {
     pub project_name: String,
     pub p_files: Vec<PathBuf>,
     pub foreign_files: Vec<PathBuf>,
+    /// Check the P model even though the project lists foreign files, which snappea cannot
+    /// run. Without it, [`Style::Snappea`] rejects such a project.
+    pub ignore_foreign_files: bool,
     pub output_path: String,
     /// Output directory with a trailing separator, as upstream builds it.
     pub output_directory: String,
@@ -123,6 +126,7 @@ impl Default for CheckConfig {
             project_name: project::DEFAULT_NAME.into(),
             p_files: Vec::new(),
             foreign_files: Vec::new(),
+            ignore_foreign_files: false,
             output_path: "PCheckerOutput".into(),
             output_directory: String::new(),
             mode: Mode::BugFinding,
@@ -292,14 +296,27 @@ pub fn load(host: &mut dyn Host, cfg: &CheckConfig) -> Result<Loaded, Exit> {
     if !project::report_result(host, &sources, &sm, &r, cfg.style == Style::Upstream) {
         return Err(Exit(1));
     }
-    for f in &cfg.foreign_files {
-        host.out_colored_line(
+    if cfg.style == Style::Upstream {
+        for f in &cfg.foreign_files {
+            host.out_colored_line(
+                &format!(
+                    "Warning: foreign file {} is ignored; snappea runs P models directly, so foreign functions must be provided to the checker in Rust.",
+                    f.display()
+                ),
+                Color::Yellow,
+            );
+        }
+    } else if !cfg.foreign_files.is_empty() && !cfg.ignore_foreign_files {
+        let files: Vec<String> = cfg.foreign_files.iter().map(|f| f.display().to_string()).collect();
+        return Err(report_and_exit_hint(
+            host,
             &format!(
-                "Warning: foreign file {} is ignored; snappea runs P models directly, so foreign functions must be provided to the checker in Rust.",
-                f.display()
+                "the project lists foreign file{} {}, which snappea cannot run: a check would silently leave out that code.",
+                if files.len() == 1 { "" } else { "s" },
+                files.join(", ")
             ),
-            Color::Yellow,
-        );
+            "model the foreign behavior in P, or provide foreign functions to the checker in Rust (snappea::checker::foreign); to check the P model without that code, pass --ignore-foreign-files",
+        ));
     }
     let analysis = r.map_err(|_| Exit(1))?;
     Ok(Loaded { sources, analysis })

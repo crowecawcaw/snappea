@@ -9,7 +9,10 @@ mod visit;
 
 use snappea_syntax::{ast::*, parse, FileId, ParseError, SourceMap, Span};
 
-pub use rules::{NoModelMachine, PermissiveMonitor, TautologicalAssert, UnselectedSpec, UnusedPayloadField};
+pub use rules::{
+    NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts, TautologicalAssert, UnobservedHandler,
+    UnselectedSpec, UnusedPayloadField,
+};
 pub use suppression::MUTATIONS;
 
 /// An actionable diagnostic. Every unsuppressed finding fails CLI linting.
@@ -91,6 +94,9 @@ impl Registry {
         r.register(UnselectedSpec);
         r.register(TautologicalAssert);
         r.register(UnusedPayloadField);
+        r.register(UnobservedHandler);
+        r.register(ScenarioNeverAccepts);
+        r.register(ScenarioColdStart);
         r
     }
 
@@ -122,6 +128,20 @@ impl Registry {
 
 pub fn lint(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
     Ok(Registry::builtins().check(&Context::parse(sources)?))
+}
+
+/// The rules checking logs against specs enforces (`snappea observe`, test libraries):
+/// definite mistakes in a spec, not the model-test rules such as `unselected-spec`.
+pub const OBSERVATION_RULES: &[&str] = &["unobserved-handler"];
+
+/// [`lint`] restricted to [`OBSERVATION_RULES`], plus malformed suppressions and
+/// directives, so a misspelled suppression cannot hide a finding.
+pub fn lint_observation(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
+    let mut findings = lint(sources)?;
+    findings.retain(|f| {
+        OBSERVATION_RULES.contains(&f.rule) || matches!(f.rule, "invalid-suppression" | "invalid-directive")
+    });
+    Ok(findings)
 }
 
 /// The code `// snappea-lint: allow mutation[:<kind>]` comments exclude from mutation

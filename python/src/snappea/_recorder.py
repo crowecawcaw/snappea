@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 from . import _config, _emit
 from ._binary import find_snappea
 from ._emit import Event
-from ._errors import SetupError, StrictDefaultWarning, warn
+from ._errors import SetupError, warn
 
 #: Events shown in a failure report, counting back from the one that broke the spec.
 REPORT_EVENTS = 20
@@ -119,8 +119,6 @@ class _Settings:
     specs: List[str]
     exclude: List[str]
     strict: bool
-    #: `strict` comes from the named-specs default, which only warns for now.
-    strict_warns: bool
     check_hot: bool
     unknown_events: str
     timeout: float
@@ -334,13 +332,6 @@ class Recorder:
             settings = self._settings()
             if not self._events and not self._logs and not any(os.path.getsize(p) for p in self._dir_files()):
                 # nothing happened: every spec still holds, unless strict wants events
-                if settings.strict_warns:
-                    _warn_strict(SetupError(
-                        f"Strict observation: no events were recorded, so {', '.join(settings.specs)} "
-                        "checked no relevant events.",
-                        "validation",
-                    ))
-                    return []
                 if not settings.strict:
                     return []
             return self._run(settings)
@@ -358,12 +349,13 @@ class Recorder:
         cfg = self._cfg if self._cfg is not None else _config.load(os.getcwd())
         specs = self.specs or list(cfg.specs)
         if self.strict is not None:
-            strict, warns = self.strict, False
+            strict = self.strict
         elif cfg.strict is not None:
-            strict, warns = cfg.strict, False
+            strict = cfg.strict
         else:
-            # named specs default to strict; for one release that only warns
-            strict, warns = bool(specs), bool(specs)
+            # named specs default to strict: a named spec that saw no events is likely a
+            # mistake (missing instrumentation, wrong key, wrong spec name)
+            strict = bool(specs)
         unknown = self.unknown_events or cfg.unknown_events or "error"
         timeout = self.timeout if self.timeout is not None else cfg.timeout or _config.DEFAULT_TIMEOUT
         if self.artifacts is not None:
@@ -374,7 +366,6 @@ class Recorder:
             specs=specs,
             exclude=self.exclude if self.exclude is not None else list(cfg.exclude),
             strict=strict,
-            strict_warns=warns,
             check_hot=bool(self.check_hot if self.check_hot is not None else cfg.check_hot),
             unknown_events=unknown,
             timeout=timeout,
@@ -397,6 +388,7 @@ class Recorder:
     def _run(self, s: _Settings) -> List[SpecViolation]:
         __tracebackhide__ = True
         files = self._files(s.config)
+        own_lines = _encode(self._events)
         if s.artifacts:
             os.makedirs(s.artifacts, exist_ok=True)
         workdir = os.path.abspath(tempfile.mkdtemp(prefix="snappea-check-", dir=s.artifacts))
@@ -406,7 +398,7 @@ class Recorder:
         # this process's events first: equal timestamps keep input order
         own = os.path.join(workdir, "events.jsonl")
         with open(own, "w", encoding="utf-8") as f:
-            f.writelines(e.to_json() + "\n" for e in self._events)
+            f.writelines(own_lines)
         inputs = [own, *self._dirs]
         for i, (path, parse) in enumerate(self._logs):
             if parse is None:
@@ -414,7 +406,7 @@ class Recorder:
                 continue
             parsed = os.path.join(workdir, f"log-{i}-{os.path.basename(path)}.jsonl")
             with open(path, encoding="utf-8", errors="replace") as src, open(parsed, "w", encoding="utf-8") as dst:
-                dst.writelines(ev.to_json() + "\n" for ev in _parse_log(src, path, parse))
+                dst.writelines(_encode(_parse_log(src, path, parse)))
             inputs.append(parsed)
         report_path = os.path.join(workdir, "report.json")
         cmd = [find_snappea(), "observe", *files]
@@ -507,16 +499,45 @@ class Recorder:
             text = "\n".join(_unique(m for _, m in other))
             raise SetupError(f"snappea could not check the events ({kind}):\n{text}\n\nsnappea output: {workdir}", kind, output_dir=workdir)
         if validation:
-            error = SetupError("\n".join(_unique(validation)) + f"\n\nsnappea output: {workdir}", "validation", output_dir=workdir)
-            if not s.strict_warns:
-                raise error
-            _warn_strict(error)
+            raise SetupError(_validation_error(validation, workdir), "validation", output_dir=workdir)
         shutil.rmtree(workdir, ignore_errors=True)
         return []
 
 
-def _warn_strict(error: SetupError) -> None:
-    warn(StrictDefaultWarning(error))
+def _validation_error(messages: List[str], workdir: str) -> str:
+    return (
+        "\n".join(_unique(messages))
+        + "\n\nEmit the events these specs watch in the code under test (check the event names "
+        "and keys), or pass strict=False (or set [tool.snappea] strict = false) if a spec may "
+        "rightly see no events here."
+        + f"\nsnappea output: {workdir}"
+    )
+
+
+def _encode(events: Iterable[Event]) -> List[str]:
+    """The JSON lines of `events`. An event that cannot be encoded fails the check:
+    dropping it would check incomplete evidence."""
+    lines: List[str] = []
+    bad: List[Tuple[Event, Exception]] = []
+    for ev in events:
+        try:
+            lines.append(ev.to_json() + "\n")
+        except Exception as e:  # circular payload, non-string dict keys, a failing __str__
+            bad.append((ev, e))
+    if not bad:
+        return lines
+    out = ["Some events could not be encoded as JSON, so the check would miss them:"]
+    for ev, e in bad[:10]:
+        where = f" ({ev.src})" if ev.src else ""
+        out.append(f"  {ev.event}{where}: {type(e).__name__}: {e}")
+    if len(bad) > 10:
+        out.append(f"  ... and {len(bad) - 10} more")
+    out.append("")
+    out.append(
+        "Pass payload values JSON can hold: str, int, float, bool, None, lists, dicts with "
+        "string keys, enums and dataclasses of these, with no cycles."
+    )
+    raise SetupError("\n".join(out), "parser")
 
 
 def _unique(items: Iterable[str]) -> List[str]:

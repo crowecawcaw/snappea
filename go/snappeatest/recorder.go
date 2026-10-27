@@ -176,13 +176,24 @@ func (r *Recorder) record(at time.Time, src, event, key string, payload any) {
 		return
 	}
 	n, ns := eventline.Stamp(at)
-	line, err := eventline.Encode(ns, !at.IsZero(), event, key, payload, src, n)
+	line, err := encodeSafely(ns, !at.IsZero(), event, key, payload, src, n)
 	if err != nil {
-		r.stick("parser", fmt.Sprintf("cannot encode the payload of %s at %s: %v", event, src, err))
+		r.stick("parser", fmt.Sprintf("cannot encode the payload of %s at %s: %v; pass a payload encoding/json can marshal", event, src, err))
 		return
 	}
 	r.trace.Write(line)
 	r.count++
+}
+
+// encodeSafely is eventline.Encode with a panic (a MarshalJSON method that panics) turned
+// into an error, so the event fails the check instead of being dropped by Emit's recover.
+func encodeSafely(ns int64, at bool, event, key string, payload any, src string, n int64) (line []byte, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			line, err = nil, fmt.Errorf("panic while encoding: %v", p)
+		}
+	}()
+	return eventline.Encode(ns, at, event, key, payload, src, n)
 }
 
 func (r *Recorder) stick(kind, msg string) {

@@ -137,7 +137,11 @@ $ snappea observe --spec BankBalanceCorrect logs/
             There's no compile step. <code>check</code> reads P sources, not a compiled <code>.dll</code>, and{" "}
             <code>OutputDir</code> and <code>Target</code> in <code>.pproj</code> files are ignored.
           </li>
-          <li>Foreign functions and log parsers are written in Rust, not C# or Java.</li>
+          <li>
+            Foreign functions and log parsers are written in Rust, not C# or Java. <code>snappea check</code> rejects
+            a project that lists <code>.cs</code> or <code>.java</code> files, since it cannot run them; pass{" "}
+            <code>--ignore-foreign-files</code> to check the P model anyway. <code>snappea-compat</code> only warns.
+          </li>
           <li>
             <code>snappea check</code> runs one worker per CPU core by default. Each worker has its own seed, so a given{" "}
             <code>--seed</code> explores different schedules from upstream's, and which bug is reported can vary between

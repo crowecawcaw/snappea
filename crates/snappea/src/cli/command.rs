@@ -103,6 +103,13 @@ Mutation testing:
 Driver limits:
       --no-driver-facts     Do not list the limits each test's driver kept
 
+Inputs:
+      --ignore-foreign-files
+                            Check the P model even though the project lists foreign
+                            (.cs, .java) files, which snappea cannot run. Without it,
+                            such a project fails, since the check would leave that
+                            code out.
+
 Output:
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
       --coverage-file <FILE>
@@ -186,6 +193,9 @@ Options:
       --max-steps <N>       The step options the schedule was found with. Copy
       --fair-max-steps <N>  them from the replay line `snappea check` prints;
       --fail-on-max-steps   only older schedules need them.
+      --ignore-foreign-files
+                            Replay although the project lists foreign files, as
+                            `snappea check --ignore-foreign-files` did
   -v, --verbose             Log the schedule
 ";
 
@@ -667,6 +677,8 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         return usage_error(host, "--list-rules does not take sources", Some("check lint"));
     }
     let mut cfg = snappea_config();
+    // nothing runs, so foreign code is not left out of a check
+    cfg.ignore_foreign_files = true;
     match sources(&mut cfg, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
         Ok(_) => return usage_error(host, "lint accepts sources (.p or .pproj), not test names", Some("check lint")),
@@ -717,6 +729,7 @@ const CHECK_OPTS: &[Opt] = &[
     flag("no-mutation", None),
     flag("allow-incomplete-coverage", None),
     flag("no-driver-facts", None),
+    flag("ignore-foreign-files", None),
 ];
 
 /// Default time limit for mutation testing, in seconds.
@@ -841,6 +854,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     }
     cfg.verbose = a.has("verbose");
     cfg.driver_facts = !a.has("no-driver-facts");
+    cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     check::finish_options(cfg);
     Ok(patterns)
 }
@@ -1206,6 +1220,9 @@ fn replay_command(schedule: &str, cfg: &CheckConfig) -> String {
     words.extend(cfg.input.pproj.iter().cloned());
     words.extend(cfg.input.pfiles.iter().cloned());
     words.extend(step_args(cfg));
+    if cfg.ignore_foreign_files {
+        words.push("--ignore-foreign-files".into());
+    }
     words.iter().map(|w| shell_quote(w)).collect::<Vec<_>>().join(" ")
 }
 
@@ -1262,6 +1279,7 @@ const REPLAY_OPTS: &[Opt] = &[
     value("max-steps", None),
     value("fair-max-steps", None),
     flag("fail-on-max-steps", None),
+    flag("ignore-foreign-files", None),
     flag("verbose", Some('v')),
 ];
 
@@ -1293,6 +1311,7 @@ fn replay(args: &[String], host: &mut dyn Host) -> i32 {
         }
     };
     cfg.verbose = a.has("verbose");
+    cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.strategy = StrategyKind::Replay;
     if let Err(m) = step_options(&a, &mut cfg) {
         return usage_error(host, &m, Some("replay"));
@@ -1358,6 +1377,8 @@ fn tests(args: &[String], host: &mut dyn Host) -> i32 {
         return OK;
     }
     let mut cfg = snappea_config();
+    // nothing runs, so foreign code is not left out of a check
+    cfg.ignore_foreign_files = true;
     match sources(&mut cfg, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
         Ok(rest) => {

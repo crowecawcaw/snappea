@@ -137,6 +137,12 @@ pub fn compile(
     if !project::report_result(host, &art, &sm, &r, style == Style::Upstream) {
         return Err("The P specification does not type-check.".into());
     }
+    // Observation enforces the spec rules of `snappea check lint`; upstream has no lint.
+    if style == Style::Snappea
+        && crate::driver::lint::run_observation(host, &sm).map_err(|_| "The P specification does not parse.")? > 0
+    {
+        return Err("The P specification has lint findings.".into());
+    }
     let program = r.map(|a| a.program).map_err(|_| "The P specification does not type-check.".to_string())?;
     crate::checker::time::declares_time(&program)?;
     Ok(SpecProgram { program, java_package: java_package.unwrap_or_else(|| format!("{}.pobserve", project_name)) })
