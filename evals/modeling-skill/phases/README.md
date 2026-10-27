@@ -25,6 +25,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Terra broader design/build runs](TERRA-OPEN-RESULTS.md) compare the skill on the shared FIFO and protected VCS tasks.
 
+[Sol 6.1 / medium broader runs](SOL-OPEN-RESULTS.md) retain the same tasks and tools, with source audits and separately labeled growth/reproducibility diagnostics.
+
 ## Protocol
 
 - Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.

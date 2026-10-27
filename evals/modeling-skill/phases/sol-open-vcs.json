@@ -1,0 +1,617 @@
+{
+  "trials": [
+    {
+      "run_id": "sol-vcs-skill-01",
+      "arm": "p",
+      "condition": "skill",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "status": "agent_finished",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "skill_snapshot": {
+        "tree_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+        "files": {
+          "SKILL.md": "47c2050fae53549b027d187c8caa0fdfe3db8d237a8d42efdb93f3fe5b7a4869",
+          "examples/bounded-history/README.md": "9fca823553071aa1fe1330967de210983c612d78a935197b173d8c099ae8073d",
+          "examples/bounded-history/bounded-history.p": "64657ba8b497209cdd69adcd94b256580fd16109ffc68c1a92f60e788381d4d1",
+          "examples/bounded-history/invalid.jsonl": "bbaeae8a4b884a1ac15383d272f82db9992eaaf797f0b5ef2f6b88760b7bef2c",
+          "examples/bounded-history/valid.jsonl": "e59d4fc7021568084fd7c927b5dbfb4475ef5461aea427a1acbf1d17912e8d9a",
+          "examples/durable-retry/DurableRetry.pproj": "7e5e9261e8ad9afb183c93c26b3bcf0dde0d489332b2d1294f60468f9c3f042c",
+          "examples/durable-retry/PSpec/Contract.p": "f41fdf8ba747856a75ceacf828239f0c6dbf410e14ee3f6cf4523b92534c429c",
+          "examples/durable-retry/PSrc/RetryModel.p": "5bb46dbcea6473d585dfd4724ffc8b546fd855ef9afd55ca143ae995bdb04899",
+          "examples/durable-retry/PTst/Driver.p": "4d13fd44ededc415ff366c5e1edf183ae1ba3a9148e5e828af853a8d12ef1164",
+          "examples/durable-retry/PTst/TestScript.p": "c50948f0ed936f54b8a21885503e7cf2eaa5464203243df387a7aa9ba6bacd65",
+          "examples/durable-retry/README.md": "1df80895475b3b984f1c49b4861a56379afb408af32a3a26c4b9424566198359",
+          "examples/reservation/Atomic.pproj": "cd481172ab4582ea5964186a1f8401a84b8c6beb466a2e11b2033d359f00b4b6",
+          "examples/reservation/README.md": "36d36e62333a8666bb9308360df574e3409144c3a41c16903b937a2cf93994e0",
+          "examples/reservation/StaleWrite.pproj": "7e010664679abe6314d88ab6aa378c2bf4e2e3dc07ff12fffcc7a16a0cb0359a",
+          "examples/reservation/atomic-tests.p": "d0aa24b181a7fdb0430da93ba348d959c1670d7c352194b8828db80086c6ccab",
+          "examples/reservation/atomic.p": "eb43e5eb8368d47b6998229b18b86db0cfd7cac292871051ed7a15953889d1f8",
+          "examples/reservation/capacity.p": "c30392c1bf5e0a869e977f7534f9bdd6c2590660febc31a617d8b85e7210e66f",
+          "examples/reservation/stale-write-tests.p": "5853549d3a97ead3efca44a936bc4dc2e982872015947b4eb0d24a66de425c4f",
+          "examples/reservation/stale-write.p": "fc1478efff2cfc4f232090b40355d2c2068d10da989091d0491c1bdf0218d682",
+          "examples/reservation/storage.py": "aa17c4971f6abc5a7625e224d10781724707d231f0f54f8931dcdd9ed4536288",
+          "examples/reservation/test_storage.py": "5f01fbdf695361d4b6d5164d348c64d2825a33462a4dbd6daf4bbda98e6efe4d",
+          "examples/versioned-publication/README.md": "066aa36e5af6d0f447bdbe101d76f9f8db2832ac9c37895a574423c01ce1f55e",
+          "examples/versioned-publication/Revalidated.p": "c8b10fb423267662a51e69c30242e3d29ac58178a26c772acef557a1ed6c26ed",
+          "examples/versioned-publication/StaleRetry.p": "514a5307cc6ecf073bd04cd4793a75586f4d35149c8f04c59a1293cdaf55b237",
+          "guides/implementation.md": "af9c5a99af9d2c3fe5b39883b488217d2d75db924f923ed32ecce125d00cf2f7",
+          "guides/modeling.md": "fdd2d0925a8f742f66a47cb926d432cdb92944471c6be102b3cef779e4092e21",
+          "guides/recovery.md": "d4d55b6ce850ec6b12de11743995d89be3a58a1d7ffdf48c178c3858c04ac477",
+          "guides/scenarios-and-oracles.md": "ba15bbd6e285e3d49e8ae98ecef5b5c64cc85e86c0b9eb4a8f5ed7a4de9bb47e",
+          "reference/p-patterns.md": "35cb8e27108a36fb4fe99e149503ea67381674eeafa515d0f3f20472e5841a51",
+          "validate.py": "f145009ef7b39e93c133a021cc2978a3bb6e648952077767dc77a787f45b1b78"
+        }
+      },
+      "snappea_binary_sha256": "2ea61378c21ff899f3977eaefc505753b566f2fa3a114d5288c4a8a60d864194",
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "4859977c6784e1c5d8672282be6d78a9ebfc9283bd594d541efe84e792e2fe9b",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "6eee0fd6d1570331f61ae0aeba9d9a16b0535c082bf633a4f99e931042698c42",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78"
+      },
+      "docs_source_revision": "193fb3b57afb0d94fac503f9d9eafbb140536ed2",
+      "limits": {
+        "seconds": 900,
+        "tool_calls": 80,
+        "generated_tokens": null
+      },
+      "command_timeout_seconds": 120,
+      "seconds": 438.352,
+      "tool_calls": 13,
+      "public_files_unchanged": true,
+      "primary": {
+        "source_sha256": {
+          "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+          "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+          "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+        },
+        "seeds": 64,
+        "passed": 20,
+        "total": 20,
+        "all_passed": true
+      },
+      "failed_cases": [],
+      "wide_supplement": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": true,
+        "run": "sol-vcs-skill-01"
+      },
+      "model_recheck": {
+        "exit_code": 0,
+        "selected_tests": 1,
+        "search_complete": false,
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "scope": "Post-freeze model-only recheck at fixed5s, not a bundle-contract fidelity score. Compare agent own-budget completion separately."
+      },
+      "saved_tests": {
+        "provided": true,
+        "exit_code": 0,
+        "modules": [
+          "test_validation"
+        ],
+        "p_observation_present_by_source_audit": true
+      },
+      "exploratory_cost_probe": {
+        "scope": "Auditor postfreeze source-motivated cost probe, not primary scoring. Host Python, fixed public Store with seed0; no contention or injected failures. Same inputs all3.",
+        "input": {
+          "run": "sol-vcs-skill-01",
+          "branches": 64,
+          "bundles": 176,
+          "updates_compact_ascii_bytes": 85293
+        },
+        "last_submit": {
+          "operation": "submit",
+          "bundle": 175,
+          "store_calls": 5008
+        },
+        "over_target": [
+          {
+            "operation": "submit",
+            "bundle": 175,
+            "store_calls": 5008
+          }
+        ],
+        "call_target": 5000
+      },
+      "own_budget_recheck": {
+        "command": [
+          "snappea",
+          "check",
+          "protocol.p",
+          "--timeout",
+          "40s",
+          "--no-mutation",
+          "--json"
+        ],
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        }
+      },
+      "solver_saved_model_report": {
+        "file": "model-check.json",
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        },
+        "test_cases": [
+          {
+            "name": "tcPointer",
+            "search_complete": true,
+            "schedules": 30304,
+            "seconds": 1.965
+          }
+        ]
+      },
+      "seeded_rechecks": [
+        {
+          "command": [
+            "snappea",
+            "check",
+            "protocol.p",
+            "--timeout",
+            "5s",
+            "--no-mutation",
+            "--seed",
+            "0",
+            "--json"
+          ],
+          "summary": {
+            "status": "search_incomplete",
+            "message": "No bugs found; search incomplete for 1 test case",
+            "test_cases": 1,
+            "failed": 0,
+            "incomplete": 1,
+            "coverage_failed": false,
+            "coverage_gaps": 0,
+            "uncovered": [],
+            "uncovered_more": 0,
+            "mutation_time_limit_reached": false
+          }
+        },
+        {
+          "command": [
+            "snappea",
+            "check",
+            "protocol.p",
+            "--timeout",
+            "5s",
+            "--no-mutation",
+            "--seed",
+            "1",
+            "--json"
+          ],
+          "summary": {
+            "status": "search_incomplete",
+            "message": "No bugs found; search incomplete for 1 test case",
+            "test_cases": 1,
+            "failed": 0,
+            "incomplete": 1,
+            "coverage_failed": false,
+            "coverage_gaps": 0,
+            "uncovered": [],
+            "uncovered_more": 0,
+            "mutation_time_limit_reached": false
+          }
+        },
+        {
+          "command": [
+            "snappea",
+            "check",
+            "protocol.p",
+            "--timeout",
+            "5s",
+            "--no-mutation",
+            "--seed",
+            "0",
+            "--json"
+          ],
+          "summary": {
+            "status": "search_incomplete",
+            "message": "No bugs found; search incomplete for 1 test case",
+            "test_cases": 1,
+            "failed": 0,
+            "incomplete": 1,
+            "coverage_failed": false,
+            "coverage_gaps": 0,
+            "uncovered": [],
+            "uncovered_more": 0,
+            "mutation_time_limit_reached": false
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "sol-vcs-skill-02",
+      "arm": "p",
+      "condition": "skill",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "status": "agent_finished",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "skill_snapshot": {
+        "tree_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+        "files": {
+          "SKILL.md": "47c2050fae53549b027d187c8caa0fdfe3db8d237a8d42efdb93f3fe5b7a4869",
+          "examples/bounded-history/README.md": "9fca823553071aa1fe1330967de210983c612d78a935197b173d8c099ae8073d",
+          "examples/bounded-history/bounded-history.p": "64657ba8b497209cdd69adcd94b256580fd16109ffc68c1a92f60e788381d4d1",
+          "examples/bounded-history/invalid.jsonl": "bbaeae8a4b884a1ac15383d272f82db9992eaaf797f0b5ef2f6b88760b7bef2c",
+          "examples/bounded-history/valid.jsonl": "e59d4fc7021568084fd7c927b5dbfb4475ef5461aea427a1acbf1d17912e8d9a",
+          "examples/durable-retry/DurableRetry.pproj": "7e5e9261e8ad9afb183c93c26b3bcf0dde0d489332b2d1294f60468f9c3f042c",
+          "examples/durable-retry/PSpec/Contract.p": "f41fdf8ba747856a75ceacf828239f0c6dbf410e14ee3f6cf4523b92534c429c",
+          "examples/durable-retry/PSrc/RetryModel.p": "5bb46dbcea6473d585dfd4724ffc8b546fd855ef9afd55ca143ae995bdb04899",
+          "examples/durable-retry/PTst/Driver.p": "4d13fd44ededc415ff366c5e1edf183ae1ba3a9148e5e828af853a8d12ef1164",
+          "examples/durable-retry/PTst/TestScript.p": "c50948f0ed936f54b8a21885503e7cf2eaa5464203243df387a7aa9ba6bacd65",
+          "examples/durable-retry/README.md": "1df80895475b3b984f1c49b4861a56379afb408af32a3a26c4b9424566198359",
+          "examples/reservation/Atomic.pproj": "cd481172ab4582ea5964186a1f8401a84b8c6beb466a2e11b2033d359f00b4b6",
+          "examples/reservation/README.md": "36d36e62333a8666bb9308360df574e3409144c3a41c16903b937a2cf93994e0",
+          "examples/reservation/StaleWrite.pproj": "7e010664679abe6314d88ab6aa378c2bf4e2e3dc07ff12fffcc7a16a0cb0359a",
+          "examples/reservation/atomic-tests.p": "d0aa24b181a7fdb0430da93ba348d959c1670d7c352194b8828db80086c6ccab",
+          "examples/reservation/atomic.p": "eb43e5eb8368d47b6998229b18b86db0cfd7cac292871051ed7a15953889d1f8",
+          "examples/reservation/capacity.p": "c30392c1bf5e0a869e977f7534f9bdd6c2590660febc31a617d8b85e7210e66f",
+          "examples/reservation/stale-write-tests.p": "5853549d3a97ead3efca44a936bc4dc2e982872015947b4eb0d24a66de425c4f",
+          "examples/reservation/stale-write.p": "fc1478efff2cfc4f232090b40355d2c2068d10da989091d0491c1bdf0218d682",
+          "examples/reservation/storage.py": "aa17c4971f6abc5a7625e224d10781724707d231f0f54f8931dcdd9ed4536288",
+          "examples/reservation/test_storage.py": "5f01fbdf695361d4b6d5164d348c64d2825a33462a4dbd6daf4bbda98e6efe4d",
+          "examples/versioned-publication/README.md": "066aa36e5af6d0f447bdbe101d76f9f8db2832ac9c37895a574423c01ce1f55e",
+          "examples/versioned-publication/Revalidated.p": "c8b10fb423267662a51e69c30242e3d29ac58178a26c772acef557a1ed6c26ed",
+          "examples/versioned-publication/StaleRetry.p": "514a5307cc6ecf073bd04cd4793a75586f4d35149c8f04c59a1293cdaf55b237",
+          "guides/implementation.md": "af9c5a99af9d2c3fe5b39883b488217d2d75db924f923ed32ecce125d00cf2f7",
+          "guides/modeling.md": "fdd2d0925a8f742f66a47cb926d432cdb92944471c6be102b3cef779e4092e21",
+          "guides/recovery.md": "d4d55b6ce850ec6b12de11743995d89be3a58a1d7ffdf48c178c3858c04ac477",
+          "guides/scenarios-and-oracles.md": "ba15bbd6e285e3d49e8ae98ecef5b5c64cc85e86c0b9eb4a8f5ed7a4de9bb47e",
+          "reference/p-patterns.md": "35cb8e27108a36fb4fe99e149503ea67381674eeafa515d0f3f20472e5841a51",
+          "validate.py": "f145009ef7b39e93c133a021cc2978a3bb6e648952077767dc77a787f45b1b78"
+        }
+      },
+      "snappea_binary_sha256": "2ea61378c21ff899f3977eaefc505753b566f2fa3a114d5288c4a8a60d864194",
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "4859977c6784e1c5d8672282be6d78a9ebfc9283bd594d541efe84e792e2fe9b",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "6eee0fd6d1570331f61ae0aeba9d9a16b0535c082bf633a4f99e931042698c42",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78"
+      },
+      "docs_source_revision": "193fb3b57afb0d94fac503f9d9eafbb140536ed2",
+      "limits": {
+        "seconds": 900,
+        "tool_calls": 80,
+        "generated_tokens": null
+      },
+      "command_timeout_seconds": 120,
+      "seconds": 420.533,
+      "tool_calls": 10,
+      "public_files_unchanged": true,
+      "primary": {
+        "source_sha256": {
+          "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+          "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+          "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+        },
+        "seeds": 64,
+        "passed": 20,
+        "total": 20,
+        "all_passed": true
+      },
+      "failed_cases": [],
+      "wide_supplement": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": true,
+        "run": "sol-vcs-skill-02"
+      },
+      "model_recheck": {
+        "exit_code": 0,
+        "selected_tests": 1,
+        "search_complete": true,
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "scope": "Post-freeze model-only recheck at fixed5s, not a bundle-contract fidelity score. Compare agent own-budget completion separately."
+      },
+      "saved_tests": {
+        "provided": true,
+        "exit_code": 0,
+        "modules": [
+          "test_solution"
+        ],
+        "p_observation_present_by_source_audit": true
+      },
+      "exploratory_cost_probe": {
+        "scope": "Auditor postfreeze source-motivated cost probe, not primary scoring. Host Python, fixed public Store with seed0; no contention or injected failures. Same inputs all3.",
+        "input": {
+          "run": "sol-vcs-skill-02",
+          "branches": 64,
+          "bundles": 176,
+          "updates_compact_ascii_bytes": 85293
+        },
+        "last_submit": {
+          "operation": "submit",
+          "bundle": 175,
+          "store_calls": 121
+        },
+        "over_target": [],
+        "call_target": 5000
+      },
+      "solver_saved_model_report": {
+        "file": "model-check.json",
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        },
+        "test_cases": [
+          {
+            "name": "tcBundles",
+            "search_complete": true,
+            "schedules": 6304,
+            "seconds": 0.218
+          }
+        ]
+      }
+    },
+    {
+      "run_id": "sol-vcs-base-01",
+      "arm": "p",
+      "condition": "baseline",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "status": "agent_finished",
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "skill_snapshot": null,
+      "snappea_binary_sha256": "2ea61378c21ff899f3977eaefc505753b566f2fa3a114d5288c4a8a60d864194",
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "4859977c6784e1c5d8672282be6d78a9ebfc9283bd594d541efe84e792e2fe9b",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "6eee0fd6d1570331f61ae0aeba9d9a16b0535c082bf633a4f99e931042698c42",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78"
+      },
+      "docs_source_revision": "193fb3b57afb0d94fac503f9d9eafbb140536ed2",
+      "limits": {
+        "seconds": 900,
+        "tool_calls": 80,
+        "generated_tokens": null
+      },
+      "command_timeout_seconds": 120,
+      "seconds": 599.948,
+      "tool_calls": 15,
+      "public_files_unchanged": true,
+      "primary": {
+        "source_sha256": {
+          "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+          "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+          "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e"
+        },
+        "seeds": 64,
+        "passed": 20,
+        "total": 20,
+        "all_passed": true
+      },
+      "failed_cases": [],
+      "wide_supplement": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": true,
+        "run": "sol-vcs-base-01"
+      },
+      "model_recheck": {
+        "exit_code": 0,
+        "selected_tests": 2,
+        "search_complete": false,
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 2,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "scope": "Post-freeze model-only recheck at fixed5s, not a bundle-contract fidelity score. Compare agent own-budget completion separately."
+      },
+      "saved_tests": {
+        "provided": true,
+        "exit_code": 0,
+        "modules": [
+          "test_extra"
+        ],
+        "p_observation_present_by_source_audit": false
+      },
+      "exploratory_cost_probe": {
+        "scope": "Auditor postfreeze source-motivated cost probe, not primary scoring. Host Python, fixed public Store with seed0; no contention or injected failures. Same inputs all3.",
+        "input": {
+          "run": "sol-vcs-base-01",
+          "branches": 64,
+          "bundles": 176,
+          "updates_compact_ascii_bytes": 85293
+        },
+        "last_submit": {
+          "operation": "submit",
+          "bundle": 175,
+          "store_calls": 48
+        },
+        "over_target": [],
+        "call_target": 5000
+      },
+      "solver_saved_model_report": {
+        "file": "model-report.json",
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 2,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        },
+        "test_cases": [
+          {
+            "name": "CertifiedRoot",
+            "search_complete": false,
+            "schedules": 217364,
+            "seconds": 30.0
+          },
+          {
+            "name": "Semantics",
+            "search_complete": true,
+            "schedules": 1,
+            "seconds": 0.001
+          }
+        ]
+      }
+    }
+  ],
+  "limits": "Two skill and one no-skill control; P requested in both. Primary outcomes separate from model scope, incomplete search, saved tests, and posthoc cost witness."
+}
