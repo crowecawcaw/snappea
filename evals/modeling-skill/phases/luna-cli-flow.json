@@ -1,0 +1,257 @@
+{
+  "trials": [
+    {
+      "run_id": "luna-cli-flow-native-01",
+      "tool": "snappea",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 497.6945743560791,
+      "calls": 76,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "original_public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "ef7cfb291496d08c7b7fa5d3505ceafc9d46b384bf14e03fdbbff21a068c244b",
+        "grade_novel.py": "73e8921e20752282036ff2d64e5753850ca0b69474e23f178e6f10852c7f74de",
+        "runner.py": "aa4944e4abacbf2ca764b09a4e8fce91e88f9bc74b72ea55ac0925e47d8d2917",
+        "tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "submitted_tests_passed": true,
+        "model_check_passed": true,
+        "model_search_complete": true,
+        "model_selected_tests": 1,
+        "monitor_valid_accepted": 4,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 4,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": true,
+        "portable_probe_valid": false,
+        "portable_probe_reference_status": "tests_rejected",
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "valid": true
+      },
+      "implementation_tests": 8,
+      "saved_tests": 5,
+      "native_model_status": "passed"
+    },
+    {
+      "run_id": "luna-cli-flow-native-02",
+      "tool": "snappea",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 431.5517237186432,
+      "calls": 52,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "original_public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "ef7cfb291496d08c7b7fa5d3505ceafc9d46b384bf14e03fdbbff21a068c244b",
+        "grade_novel.py": "73e8921e20752282036ff2d64e5753850ca0b69474e23f178e6f10852c7f74de",
+        "runner.py": "aa4944e4abacbf2ca764b09a4e8fce91e88f9bc74b72ea55ac0925e47d8d2917",
+        "tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "submitted_tests_passed": true,
+        "model_check_passed": false,
+        "model_search_complete": false,
+        "model_selected_tests": 1,
+        "monitor_valid_accepted": 4,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 4,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": true,
+        "portable_probe_valid": true,
+        "portable_probe_reference_status": "passed",
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "portable_probe_mutations_rejected": 2,
+        "portable_probe_mutations_total": 3,
+        "valid": false
+      },
+      "implementation_tests": 8,
+      "saved_tests": 3,
+      "native_model_status": "failed"
+    },
+    {
+      "run_id": "luna-cli-flow-compat-01",
+      "tool": "snappea-compat",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 192.75559377670288,
+      "calls": 33,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "f969f66ae7dc03a39823113fff33c0a94e4da61918253be173070d73024f8092",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "original_public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "ef7cfb291496d08c7b7fa5d3505ceafc9d46b384bf14e03fdbbff21a068c244b",
+        "grade_novel.py": "73e8921e20752282036ff2d64e5753850ca0b69474e23f178e6f10852c7f74de",
+        "runner.py": "aa4944e4abacbf2ca764b09a4e8fce91e88f9bc74b72ea55ac0925e47d8d2917",
+        "tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "submitted_tests_passed": true,
+        "model_check_passed": false,
+        "model_search_complete": false,
+        "model_selected_tests": 0,
+        "monitor_valid_accepted": 0,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 2,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": false,
+        "portable_probe_valid": true,
+        "portable_probe_reference_status": "passed",
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "portable_probe_mutations_rejected": 2,
+        "portable_probe_mutations_total": 3,
+        "valid": false
+      },
+      "implementation_tests": 8,
+      "saved_tests": 4,
+      "native_model_status": "infrastructure_error"
+    },
+    {
+      "run_id": "luna-cli-flow-compat-02",
+      "tool": "snappea-compat",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 186.40960025787354,
+      "calls": 28,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "f969f66ae7dc03a39823113fff33c0a94e4da61918253be173070d73024f8092",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "original_public_sha256": {
+        "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+        "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+        "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44"
+      },
+      "grader_sha256": {
+        "calibrate.py": "6340043c2c47dd0884b86f0e94dca073f92b08db859ab97a460813741da1b1ff",
+        "calibration.py": "adb7bae512e26160a84e39502264e90b3fe9d963fe0f13c9c554d6305ca38ce9",
+        "grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+        "hidden_tests/test_contract.py": "04fe4dd696a110afb231759dcd0cc392d10d35bcbf74eb82ed071ccf1402b95f",
+        "model_cases.py": "d9a90439ba6ac1051cca70805c6ba9d5026a354d96025e113734b0ceadce382a",
+        "reference_monitor.p": "88724341d2374427d97efe8d4c57190543c76fbf73ae0581e9f54b5f3e7a8e2d",
+        "reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8"
+      },
+      "harness_sha256": {
+        "bridge.py": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+        "grade.py": "ef7cfb291496d08c7b7fa5d3505ceafc9d46b384bf14e03fdbbff21a068c244b",
+        "grade_novel.py": "73e8921e20752282036ff2d64e5753850ca0b69474e23f178e6f10852c7f74de",
+        "runner.py": "aa4944e4abacbf2ca764b09a4e8fce91e88f9bc74b72ea55ac0925e47d8d2917",
+        "tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "result": {
+        "implementation_passed": true,
+        "submitted_tests_passed": true,
+        "model_check_passed": false,
+        "model_search_complete": true,
+        "model_selected_tests": 1,
+        "monitor_valid_accepted": 4,
+        "monitor_valid_total": 4,
+        "monitor_invalid_rejected": 4,
+        "monitor_invalid_total": 4,
+        "monitor_traces_passed": true,
+        "portable_probe_valid": false,
+        "portable_probe_reference_status": "tests_rejected",
+        "timeouts": 0,
+        "missing_deliverables": [],
+        "valid": false
+      },
+      "implementation_tests": 8,
+      "saved_tests": 2,
+      "native_model_status": "failed"
+    }
+  ],
+  "scope": "Eight-trial no-skill CLI comparison; no population effect-size claim."
+}

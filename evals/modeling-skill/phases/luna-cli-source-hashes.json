@@ -1,0 +1,65 @@
+{
+  "luna-cli-flow-compat-01": {
+    "DESIGN.md": "3aa110964aefc4e00d5a69f3df010c940819ec9052522c40b0356819c5d29713",
+    "TASK.md": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+    "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+    "model.p": "c6dfea561753755529a94574d9bbdde975690d8c76115cc727e68c5cd8b30480",
+    "monitor.p": "eb2f1d89ed55d870b9fce9c05c4e4e8fa726868f2fb95f24969cfe05dab184b7",
+    "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+    "solution.py": "d328a60d94fdf72b0e1c82183dd49cd1bb7f64180ee28c8ab7dd8f83911e24af",
+    "test_observation.py": "ce4600767f14b8505164c8e8c2cea8ac22689426256a7b76972cd3c104295ca9",
+    "tests.p": "7aa428bbb69d15f87b24701e9bfb80b65067f969340b46a1c7c069b25c29a7d3"
+  },
+  "luna-cli-flow-compat-02": {
+    "DESIGN.md": "d3b29f78bfce2629609ddeb2093b7700e53d92da4980d579c2e10f0acd39d832",
+    "TASK.md": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+    "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+    "model.p": "5a6563cacbeb252503912551cbd7a09ba5c8b18bcb53a564b9735f3713a62a18",
+    "monitor.p": "4b776e11670bb72c5010c09cc64bcd248d1b142d2e8b565f4344293e54bb1a84",
+    "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+    "solution.py": "cfb0637ff7c7e9db560a9a4fdf9e4d219ba81f130d0cbdc8e03900b5f7f6639a",
+    "test_observation.py": "4af4ebcb044453c3d302027b0629123b6e2dc4d9e1ad2ffb51fd31c4e1e805ad",
+    "tests.p": "03ef7d4e88b0c0640cd57e55cb4de29b85b72b3767e7ea6a763adecb3d503002"
+  },
+  "luna-cli-flow-native-01": {
+    "DESIGN.md": "dae83b6b1ec3fd35f650402a99ad911eeda8e5a0d62cf32571af39671674e40b",
+    "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+    "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+    "model.p": "b19e51bbe034466b405cc499f18b8e01936ec739d9b6ce5e7227abc709a71be2",
+    "monitor.p": "b1e710b883b221f6c09f431d0ac5a7b8f999a0262848791432482ccc25ac4b7c",
+    "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+    "solution.py": "7ac0dcacc705b87dec50df3105a94594c7786cfb7e174f087f8c68d4682b750e",
+    "test_observation.py": "1408eebc5db89b8ae57c87ac35f1025c2f99e206684cf52c9a8bd0085e2b1f2a",
+    "tests.p": "e15606f1c1a5b45d0d90793c5aa66a84824f518caadc23de68b4499e8e3839ca"
+  },
+  "luna-cli-flow-native-02": {
+    "DESIGN.md": "b9466a184bb43e7f0cd3b87619004af8840eecafdbc3fb07eb3893e9c93034a1",
+    "TASK.md": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+    "events.p": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+    "model.p": "6870d8328e8d1927daff32ad5b5ce33c5e7c73783638a13fe181a679a44e582e",
+    "monitor.p": "012e5d8904b6809be2787e39641d8b3be8848226dc8ffea79ddaa4478d06d2d1",
+    "runtime.py": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+    "solution.py": "65a58ffb6ce357407e63ebc000410e992f413bc4b05c950feb30a57f3dbdfb3b",
+    "test_observation.py": "edfd91af4d99ddb21748460c2272134f9d1460b1e99727ae312cc86dfded255c",
+    "tests.p": "d21d042052890b187f91860295c2332b7e5ff9df0b41a33916c4df5b8ae62251"
+  },
+  "luna-cli-vcs-compat-02": {
+    "DESIGN.md": "1527ab50689e1d4a420df38b9a4378b28809fff99442cff8a29ba40a03226ca2",
+    "model.p": "3581252c9f9357368c5033bfe0c01a063602e4e520949820f255e58dac2f18a3",
+    "solution.py": "6ac113687ef4f5ef9afb2c297e952bc177d616df5f5266d6593374291c6f4a89"
+  },
+  "luna-cli-vcs-compat-03": {
+    "DESIGN.md": "356782fa2424f151b5eb5b2475860814679828bb04a6020cc003046b88cc0229",
+    "solution.py": "e73cc38cbfb3db14719b40d962c8f3f27825884625b9045ef47cd1e97db815f7"
+  },
+  "luna-cli-vcs-native-01": {
+    "DESIGN.md": "4550868b3fba481539875101569b538514264ea60be6e6585d416ccb111f8bba",
+    "model.p": "ad8fcf3b9ccdaa0bbdad6f35c5ca9d4a5cc30bcc0297971e35344982fd1b90ab",
+    "solution.py": "5f2d9a2918a9f7fd730b70ffc2d631eb486247ad7d6de4dbf54a5dcf2c26ab54"
+  },
+  "luna-cli-vcs-native-02": {
+    "DESIGN.md": "b6ee6aec10d3b8b9cd1439fc056ae01bbfbb71394e10fe772cc1fd4cbf572571",
+    "model.p": "90feaf711b3d89c90cedb366b1337900bb815b4d1ee259f976700204509a6650",
+    "solution.py": "a884fd79ebab8312a2515e08fb452bd4cddd67052846a28631bd2bf0e5a23109"
+  }
+}

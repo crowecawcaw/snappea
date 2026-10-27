@@ -1,0 +1,864 @@
+{
+  "trials": [
+    {
+      "run_id": "luna-cli-vcs-native-01",
+      "tool": "snappea",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 222.547,
+      "calls": 23,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "8a348f56aa2778c4dd220f80d9ff98271764d1c6a27b9f9bbf9fa82640d9c1d7",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "1a6ec56a72fa4326a694d4a2444dca666261a512fd2e0f00ce213af205560328",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "implementation": {
+        "passed": 20,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": []
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": false,
+        "error": "ValueError: record exceeds 16384 bytes"
+      },
+      "saved_additional_python_tests": [],
+      "native_model": {
+        "exit_code": 0,
+        "source_files": [
+          "model.p"
+        ],
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        },
+        "error": null,
+        "test_cases": [
+          {
+            "name": "tcAtomicPublication",
+            "passed": null,
+            "schedules": 50,
+            "search_complete": true,
+            "driver": {
+              "machines": [
+                "Starter"
+              ],
+              "repeats": false,
+              "facts": [
+                {
+                  "kind": "instances",
+                  "id": "instances",
+                  "text": "creates 1 BundleStore, never more",
+                  "hint": "if more of these can run at once, create more in the driver"
+                },
+                {
+                  "kind": "count",
+                  "id": "Starter.ePassCI+ePublish.count",
+                  "text": "Starter sends ePassCI and ePublish exactly twice each",
+                  "hint": "if the real environment can send more, or in other orders, extend the driver (a loop, or a choice with `$`)"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "run_id": "luna-cli-vcs-native-02",
+      "tool": "snappea",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 138.977,
+      "calls": 13,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "7b3b04762990ee9d8bf2b8c4f29be52d36f36edb952aebbfb57d24ab057cdaae",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "ebbda53dda4adaf06b4fb0ac65ece70648eef97e22b7f65c9465c96e7e6ff005",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "implementation": {
+        "passed": 19,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": [
+          {
+            "case": "test_published_bundle_cannot_reapply",
+            "passed": false,
+            "error": "AssertionError: read_heads(['schema', 'service', 'client'],): expected {'schema': 's3', 'service': 'v1', 'client': 'c0'}, got {'schema': 's1', 'service': 'v1', 'client': 'c0'}",
+            "traceback": "Traceback (most recent call last):\n  File \"/grader/private/grade.py\", line 344, in main\n    await asyncio.wait_for(getattr(grader,name)(),timeout=args.timeout)\n  File \"/usr/local/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/grader/private/grade.py\", line 129, in test_published_bundle_cannot_reapply\n    await self.call(s,m,'read_heads',list(HEADS))\n  File \"/grader/private/grade.py\", line 39, in call\n    assert got == want, f'{method}{args}: expected {want!r}, got {got!r}'\n           ^^^^^^^^^^^\nAssertionError: read_heads(['schema', 'service', 'client'],): expected {'schema': 's3', 'service': 'v1', 'client': 'c0'}, got {'schema': 's1', 'service': 'v1', 'client': 'c0'}\n",
+            "replay": [
+              {
+                "method": "submit",
+                "args": [
+                  "a",
+                  {
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s1"
+                    },
+                    "service": {
+                      "expected": "v0",
+                      "new": "v1"
+                    }
+                  }
+                ]
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "a",
+                  1,
+                  "alice"
+                ]
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "a",
+                  1,
+                  "bob"
+                ]
+              },
+              {
+                "method": "record_ci",
+                "args": [
+                  "a",
+                  1,
+                  "7fb477ca7660b0363bfd2d207ef9fd8428fe939e42a274e5dbe5ddc03158a065",
+                  true
+                ]
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "a",
+                  1,
+                  "pa"
+                ]
+              },
+              {
+                "method": "submit",
+                "args": [
+                  "b",
+                  {
+                    "schema": {
+                      "expected": "s1",
+                      "new": "s3"
+                    }
+                  }
+                ]
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "b",
+                  1,
+                  "alice"
+                ]
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "b",
+                  1,
+                  "bob"
+                ]
+              },
+              {
+                "method": "record_ci",
+                "args": [
+                  "b",
+                  1,
+                  "71ed7643f49a049784d07b0a3ede3cac2b156ad488bc2384a4bead600645d083",
+                  true
+                ]
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "b",
+                  1,
+                  "pb"
+                ]
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "a",
+                  1,
+                  "pa"
+                ]
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "a",
+                  1,
+                  "another"
+                ]
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "a",
+                  1,
+                  "carol"
+                ]
+              },
+              {
+                "method": "record_ci",
+                "args": [
+                  "a",
+                  1,
+                  "7fb477ca7660b0363bfd2d207ef9fd8428fe939e42a274e5dbe5ddc03158a065",
+                  false
+                ]
+              },
+              {
+                "method": "revise",
+                "args": [
+                  "a",
+                  1,
+                  {
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s2"
+                    },
+                    "client": {
+                      "expected": "c0",
+                      "new": "c2"
+                    }
+                  }
+                ]
+              },
+              {
+                "method": "read_heads",
+                "args": [
+                  [
+                    "schema",
+                    "service",
+                    "client"
+                  ]
+                ]
+              }
+            ],
+            "seconds": 0.0057
+          }
+        ]
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": false,
+        "error": "ValueError: record exceeds 16384 bytes"
+      },
+      "saved_additional_python_tests": [],
+      "native_model": {
+        "exit_code": 0,
+        "source_files": [
+          "model.p"
+        ],
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": false
+        },
+        "error": null,
+        "test_cases": [
+          {
+            "name": "tcAtomicMultiBranch",
+            "passed": null,
+            "schedules": 585,
+            "search_complete": true,
+            "driver": {
+              "machines": [
+                "TwoWriters"
+              ],
+              "repeats": false,
+              "facts": [
+                {
+                  "kind": "instances",
+                  "id": "instances",
+                  "text": "creates 1 Store, 2 Writer and 1 Reader, never more",
+                  "hint": "if more of these can run at once, create more in the driver"
+                },
+                {
+                  "kind": "values",
+                  "id": "new.Writer.values",
+                  "text": "Writer is only created with bundle = 1 or 2, a = \"a1\" or \"a2\", b = \"b1\" or \"b2\"",
+                  "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "run_id": "luna-cli-vcs-compat-02",
+      "tool": "snappea-compat",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 173.23,
+      "calls": 17,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "f969f66ae7dc03a39823113fff33c0a94e4da61918253be173070d73024f8092",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "7b3b04762990ee9d8bf2b8c4f29be52d36f36edb952aebbfb57d24ab057cdaae",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "ebbda53dda4adaf06b4fb0ac65ece70648eef97e22b7f65c9465c96e7e6ff005",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "implementation": {
+        "passed": 20,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": []
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": false,
+        "error": "ValueError: record exceeds 16384 bytes"
+      },
+      "saved_additional_python_tests": [],
+      "native_model": {
+        "exit_code": 1,
+        "source_files": [
+          "model.p"
+        ],
+        "summary": {
+          "status": "coverage_failed",
+          "message": "Required coverage is missing (37 points)",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": true,
+          "coverage_gaps": 37,
+          "uncovered": [
+            {
+              "file": "model.p",
+              "line": 14,
+              "context": "Main.Init, on EApprove",
+              "what": "never handled"
+            },
+            {
+              "file": "model.p",
+              "line": 15,
+              "context": "Main.Init, on ECi",
+              "what": "never handled"
+            },
+            {
+              "file": "model.p",
+              "line": 16,
+              "context": "Main.Init, on ERevise",
+              "what": "never handled"
+            },
+            {
+              "file": "model.p",
+              "line": 17,
+              "context": "Main.Init, on EPub",
+              "what": "never handled"
+            },
+            {
+              "file": "model.p",
+              "line": 19,
+              "context": "Main.Init, on EApprove",
+              "what": "if (!published) never false"
+            }
+          ],
+          "uncovered_more": 32,
+          "mutation_time_limit_reached": false
+        },
+        "error": null,
+        "test_cases": [
+          {
+            "name": "DefaultImpl",
+            "passed": null,
+            "schedules": 1,
+            "search_complete": true,
+            "driver": {
+              "machines": [
+                "Main"
+              ],
+              "repeats": false,
+              "facts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "run_id": "luna-cli-vcs-compat-03",
+      "tool": "snappea-compat",
+      "condition": "baseline",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "status": "agent_finished",
+      "seconds": 183.453,
+      "calls": 33,
+      "image": "sha256:00dbf3678a1e6fc660c1cc87fe05f9a8d2cdaeda2daa73fedd9941bb55ce5431",
+      "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "cli_binary_sha256": "f969f66ae7dc03a39823113fff33c0a94e4da61918253be173070d73024f8092",
+      "python_backend_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+      "skill_sha256": null,
+      "public_sha256": {
+        "TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397"
+      },
+      "archived_inputs_sha256": {
+        "public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+        "public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+        "public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+        "public/test_public.py": "f83a227bfef8b84bfd218a6264757169d057aa2a724616a73eee811332f26397",
+        "private/calibration-p/Bundle.pproj": "80712877ffe412a612dc622240acbc8dba0253c996400b4e44637f0b9e1b62dc",
+        "private/calibration-p/Model.p": "aa658f3df2f0f66b198f3d18cac4ee975fe1d95e7a4e90e9f1b86a7dc35a4c28",
+        "private/grade.py": "9568cafc4ae577d49de98324b4bbdbbed94d727d2f71acbd8c6598c0db8fe8d2",
+        "private/oracle.py": "4618d57f239c4eb07d8ff43572021b223a8be0a4ea4cf045dc97226f0f943a9e",
+        "private/reference.py": "d4ffb1ae8f19d2fcde68a897781ad68365994dff699fba527434a1ca459d1f3d",
+        "private/stress_wide.py": "96acd693a9cf5bca3ca2408bf95c76b56e0b12197f2bace046ff23b741504e81",
+        "tools/bootstrap.py": "701e645f542cfc6db208a559ca8be62cb96b0750039c4709211221de8111a933",
+        "tools/build_eval_images.py": "f7b0b95e8968727d82752d7277fcab346b942c0d2c34cd7ee804b62c2af55854",
+        "tools/calibrate.py": "1956536b809b3d396a5720759929b72ee9fcbb16f39459c5e4ce63b0864dd6a6",
+        "tools/collaboration_run.py": "13169feb62941b4df91382b2ff92ed3ed5ce941dd5e65ad174d94c116c5fbd80",
+        "tools/container/Dockerfile.base": "a898c3f2aa092fa67d053e19908ae4bb6d6fbe14049ef5dea02249a67c9e083a",
+        "tools/container/Dockerfile.p": "4cece83224eee8688da3475cc9016d14091a5959dd2809751e42fa602ce38666",
+        "tools/container/smoke-positive.p": "1ea9978198ad0b3ed38f12614d31f45c34282d96e782abd44faba62312a2fa82",
+        "tools/delegation.py": "f7a34b6d98dbe1b8467dff14e4624f81205f767db4743ac51348c591b228e20c",
+        "tools/prompts.py": "d925bfe7c9deabe5233ccb2f3afe724b30b8d47bd736ca629ac6cf7fee752c34",
+        "tools/regrade.py": "fa729412826548b96c1b63a1384fc2f0cb9ff04c9ea62d4abfb9430731b4b83e",
+        "tools/run_sonnet.py": "7b3b04762990ee9d8bf2b8c4f29be52d36f36edb952aebbfb57d24ab057cdaae",
+        "tools/skill_snapshot.py": "8c5966152f265f23a057d156781a7b83dd3c0b9f93fe734076f0e102d21a265e",
+        "tools/smoke_eval_image.py": "65f1150dba3d4cd6d87d8f17e1859344b82f13f603948e0368bc89c969313705",
+        "tools/snapshot_skill.py": "d2900274e1550a35c1420deacb19f30a7e562fb49e44f5aed1e2257e9edc2082",
+        "tools/solver_shell.py": "208e3eab0df568217004f5d094ee2a4b8330fe13b676f214c4f87ef4d1df96f6",
+        "tools/stress_all.py": "b47b96cc81a0db6ffddc34bea93c48203dbec060d3c19b83d080ca329e4695fc",
+        "tools/summarize.py": "6794fd52adfd3ab9ed8470b9187902797dc265e97f27cf71cfa5774b652a466e",
+        "tools/test_harness.py": "f4079d7a43f965b1b60a9c37a9c35af99bb4b7003dc9805fc063cbb690a3e3a8",
+        "tools/test_runner_protocol.py": "b744971c42eecb0b497fd4fcad49ae59a4807a0924c84b7a2bf7c3016b339ec5",
+        "tools/test_skill_snapshot.py": "fada6230d462f0a44475d1adad9ece53ac0f0b865d1a11bfe2144d7a6c109a78",
+        "tools/test_tool_variant.py": "ebbda53dda4adaf06b4fb0ac65ece70648eef97e22b7f65c9465c96e7e6ff005",
+        "tools/tool_variant.py": "276438d67ab2218ef8edd5d4e68791cbbf9a45865158bbd9bfbc90c2bd5bbe2f"
+      },
+      "public_unchanged": true,
+      "implementation": {
+        "passed": 18,
+        "total": 20,
+        "seeds": 64,
+        "failed_cases": [
+          {
+            "case": "test_concurrent_evidence_revision_publish",
+            "passed": false,
+            "error": "AssertionError: non-linearizable history seed=9: [{'method': 'publish', 'args': ('b', 1, 'p'), 'start': 4, 'result': 'not_ready', 'end': 5}, {'method': 'record_ci', 'args': ('b', 1, '7fb477ca7660b0363bfd2d207ef9fd8428fe939e42a274e5dbe5ddc03158a065', True), 'start': 2, 'result': True, 'end': 6}, {'method': 'revise', 'args': ('b', 1, {'schema': {'expected': 's0', 'new': 's2'}, 'client': {'expected': 'c0', 'new': 'c2'}}), 'start': 3, 'result': 'updated', 'end': 7}, {'method': 'approve', 'args': ('b', 1, 'bob'), 'start': 1, 'result': True, 'end': 8}, {'method': 'approve', 'args': ('b', 1, 'alice'), 'start': 0, 'result': False, 'end': 9}, {'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 10, 'result': {'schema': 's0', 'service': 'v0', 'client': 'c0'}, 'end': 11}, {'method': 'get_status', 'args': ('b',), 'start': 12, 'result': {'revision': 2, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['bob'], 'ci': False, 'published': False}, 'end': 13}]",
+            "traceback": "Traceback (most recent call last):\n  File \"/grader/private/grade.py\", line 344, in main\n    await asyncio.wait_for(getattr(grader,name)(),timeout=args.timeout)\n  File \"/usr/local/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/grader/private/grade.py\", line 176, in test_concurrent_evidence_revision_publish\n    await self.history(seed,setup,[('approve',('b',1,'alice')),('approve',('b',1,'bob')),\n  File \"/grader/private/grade.py\", line 163, in history\n    assert linearizable(before,history), f'non-linearizable history seed={seed}: {history!r}'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: non-linearizable history seed=9: [{'method': 'publish', 'args': ('b', 1, 'p'), 'start': 4, 'result': 'not_ready', 'end': 5}, {'method': 'record_ci', 'args': ('b', 1, '7fb477ca7660b0363bfd2d207ef9fd8428fe939e42a274e5dbe5ddc03158a065', True), 'start': 2, 'result': True, 'end': 6}, {'method': 'revise', 'args': ('b', 1, {'schema': {'expected': 's0', 'new': 's2'}, 'client': {'expected': 'c0', 'new': 'c2'}}), 'start': 3, 'result': 'updated', 'end': 7}, {'method': 'approve', 'args': ('b', 1, 'bob'), 'start': 1, 'result': True, 'end': 8}, {'method': 'approve', 'args': ('b', 1, 'alice'), 'start': 0, 'result': False, 'end': 9}, {'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 10, 'result': {'schema': 's0', 'service': 'v0', 'client': 'c0'}, 'end': 11}, {'method': 'get_status', 'args': ('b',), 'start': 12, 'result': {'revision': 2, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['bob'], 'ci': False, 'published': False}, 'end': 13}]\n",
+            "replay": [
+              {
+                "method": "publish",
+                "args": [
+                  "b",
+                  1,
+                  "p"
+                ],
+                "start": 4,
+                "result": "not_ready",
+                "end": 5
+              },
+              {
+                "method": "record_ci",
+                "args": [
+                  "b",
+                  1,
+                  "7fb477ca7660b0363bfd2d207ef9fd8428fe939e42a274e5dbe5ddc03158a065",
+                  true
+                ],
+                "start": 2,
+                "result": true,
+                "end": 6
+              },
+              {
+                "method": "revise",
+                "args": [
+                  "b",
+                  1,
+                  {
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s2"
+                    },
+                    "client": {
+                      "expected": "c0",
+                      "new": "c2"
+                    }
+                  }
+                ],
+                "start": 3,
+                "result": "updated",
+                "end": 7
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "b",
+                  1,
+                  "bob"
+                ],
+                "start": 1,
+                "result": true,
+                "end": 8
+              },
+              {
+                "method": "approve",
+                "args": [
+                  "b",
+                  1,
+                  "alice"
+                ],
+                "start": 0,
+                "result": false,
+                "end": 9
+              },
+              {
+                "method": "read_heads",
+                "args": [
+                  [
+                    "schema",
+                    "service",
+                    "client"
+                  ]
+                ],
+                "start": 10,
+                "result": {
+                  "schema": "s0",
+                  "service": "v0",
+                  "client": "c0"
+                },
+                "end": 11
+              },
+              {
+                "method": "get_status",
+                "args": [
+                  "b"
+                ],
+                "start": 12,
+                "result": {
+                  "revision": 2,
+                  "updates": {
+                    "client": {
+                      "expected": "c0",
+                      "new": "c2"
+                    },
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s2"
+                    }
+                  },
+                  "digest": "bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3",
+                  "approvals": [
+                    "bob"
+                  ],
+                  "ci": false,
+                  "published": false
+                },
+                "end": 13
+              }
+            ],
+            "seconds": 0.0518
+          },
+          {
+            "case": "test_concurrent_overlapping_publish",
+            "passed": false,
+            "error": "AssertionError: non-linearizable history seed=1: [{'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 2, 'result': {'schema': 's0', 'service': 'v0', 'client': 'c0'}, 'end': 4}, {'method': 'get_status', 'args': ('b',), 'start': 3, 'result': {'revision': 1, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['alice', 'bob'], 'ci': True, 'published': False}, 'end': 5}, {'method': 'publish', 'args': ('a', 1, 'pa'), 'start': 0, 'result': 'published', 'end': 6}, {'method': 'publish', 'args': ('b', 1, 'pb'), 'start': 1, 'result': 'published', 'end': 7}, {'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 8, 'result': {'schema': 's2', 'service': 'v1', 'client': 'c2'}, 'end': 9}, {'method': 'get_status', 'args': ('b',), 'start': 10, 'result': {'revision': 1, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['alice', 'bob'], 'ci': True, 'published': True}, 'end': 11}]",
+            "traceback": "Traceback (most recent call last):\n  File \"/grader/private/grade.py\", line 344, in main\n    await asyncio.wait_for(getattr(grader,name)(),timeout=args.timeout)\n  File \"/usr/local/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/grader/private/grade.py\", line 170, in test_concurrent_overlapping_publish\n    await self.history(seed,setup,[('publish',('a',1,'pa')),('publish',('b',1,'pb')),\n  File \"/grader/private/grade.py\", line 163, in history\n    assert linearizable(before,history), f'non-linearizable history seed={seed}: {history!r}'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: non-linearizable history seed=1: [{'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 2, 'result': {'schema': 's0', 'service': 'v0', 'client': 'c0'}, 'end': 4}, {'method': 'get_status', 'args': ('b',), 'start': 3, 'result': {'revision': 1, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['alice', 'bob'], 'ci': True, 'published': False}, 'end': 5}, {'method': 'publish', 'args': ('a', 1, 'pa'), 'start': 0, 'result': 'published', 'end': 6}, {'method': 'publish', 'args': ('b', 1, 'pb'), 'start': 1, 'result': 'published', 'end': 7}, {'method': 'read_heads', 'args': (['schema', 'service', 'client'],), 'start': 8, 'result': {'schema': 's2', 'service': 'v1', 'client': 'c2'}, 'end': 9}, {'method': 'get_status', 'args': ('b',), 'start': 10, 'result': {'revision': 1, 'updates': {'client': {'expected': 'c0', 'new': 'c2'}, 'schema': {'expected': 's0', 'new': 's2'}}, 'digest': 'bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3', 'approvals': ['alice', 'bob'], 'ci': True, 'published': True}, 'end': 11}]\n",
+            "replay": [
+              {
+                "method": "read_heads",
+                "args": [
+                  [
+                    "schema",
+                    "service",
+                    "client"
+                  ]
+                ],
+                "start": 2,
+                "result": {
+                  "schema": "s0",
+                  "service": "v0",
+                  "client": "c0"
+                },
+                "end": 4
+              },
+              {
+                "method": "get_status",
+                "args": [
+                  "b"
+                ],
+                "start": 3,
+                "result": {
+                  "revision": 1,
+                  "updates": {
+                    "client": {
+                      "expected": "c0",
+                      "new": "c2"
+                    },
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s2"
+                    }
+                  },
+                  "digest": "bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3",
+                  "approvals": [
+                    "alice",
+                    "bob"
+                  ],
+                  "ci": true,
+                  "published": false
+                },
+                "end": 5
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "a",
+                  1,
+                  "pa"
+                ],
+                "start": 0,
+                "result": "published",
+                "end": 6
+              },
+              {
+                "method": "publish",
+                "args": [
+                  "b",
+                  1,
+                  "pb"
+                ],
+                "start": 1,
+                "result": "published",
+                "end": 7
+              },
+              {
+                "method": "read_heads",
+                "args": [
+                  [
+                    "schema",
+                    "service",
+                    "client"
+                  ]
+                ],
+                "start": 8,
+                "result": {
+                  "schema": "s2",
+                  "service": "v1",
+                  "client": "c2"
+                },
+                "end": 9
+              },
+              {
+                "method": "get_status",
+                "args": [
+                  "b"
+                ],
+                "start": 10,
+                "result": {
+                  "revision": 1,
+                  "updates": {
+                    "client": {
+                      "expected": "c0",
+                      "new": "c2"
+                    },
+                    "schema": {
+                      "expected": "s0",
+                      "new": "s2"
+                    }
+                  },
+                  "digest": "bd10abb38bba8e56f770e5c4105f496b74a95adca057c4ad39ae26f38d70aaa3",
+                  "approvals": [
+                    "alice",
+                    "bob"
+                  ],
+                  "ci": true,
+                  "published": true
+                },
+                "end": 11
+              }
+            ],
+            "seconds": 0.0145
+          }
+        ]
+      },
+      "wide": {
+        "solution": "/submission/solution.py",
+        "branches": 64,
+        "update_map_bytes": 27565,
+        "supplemental": true,
+        "passed": false,
+        "error": "ValueError: record exceeds 16384 bytes"
+      },
+      "saved_additional_python_tests": [],
+      "native_model": {
+        "exit_code": 2,
+        "source_files": [],
+        "summary": null,
+        "error": "Error: Could not find any *.p file.\nhint: run the command in the model's folder, or pass its files: `snappea check model.pproj` or `snappea check src/*.p`",
+        "test_cases": []
+      }
+    }
+  ],
+  "excluded_infrastructure_attempt": {
+    "run_id": "luna-cli-vcs-compat-01",
+    "status": "infrastructure_error",
+    "reason": "bridge UnicodeDecodeError on binary stdout; retained, replaced with fresh run; not included in arm scores"
+  },
+  "scope": "Eight-trial no-skill CLI comparison; wide probe reported separately from primary cases."
+}

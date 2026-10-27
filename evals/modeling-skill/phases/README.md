@@ -27,6 +27,8 @@ Separate capabilities before testing an end-to-end flow:
 
 [Sol 6.1 / medium broader runs](SOL-OPEN-RESULTS.md) retain the same tasks and tools, with source audits and separately labeled growth/reproducibility diagnostics.
 
+[Luna/high: Snappea versus compat](LUNA-CLI-RESULTS.md) compares both CLIs without a skill, including uptake of driver-limit reports.
+
 ## Protocol
 
 - Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.
