@@ -42,3 +42,5 @@ The supplied checker fixes a short timeout, disables mutation, and permits
 incomplete coverage for this review exercise. Coverage still
 reports gaps, but the initial exploratory driver may omit branches. Do not add
 other bypasses or weaken assertions to make checks pass.
+
+Do not add `assume` statements; generate valid bounded inputs directly.

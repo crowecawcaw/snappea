@@ -26,3 +26,5 @@ Edit only `driver.p` and `tests.p` (and write `REVIEW.md`). Do not edit the mode
 monitor, events, or task; remove/weaken assertions; add suppressions; or bypass
 checks. Keep scenarios bounded. You may use multiple explicit tests and bounded
 choices when useful. Use only model responses; do not fabricate observations.
+
+Do not add `assume` statements; generate valid bounded inputs directly.

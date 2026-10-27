@@ -22,3 +22,5 @@ selected monitor and announce `eFinished` after completed scenarios. Save
 `REVIEW.md` explaining what the tests establish and their remaining limits.
 
 Run `snappea check events.p model.p monitor.p driver.p tests.p`.
+
+Do not add `assume` statements; generate valid bounded inputs directly.
