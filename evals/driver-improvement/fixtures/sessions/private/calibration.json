@@ -1,0 +1,304 @@
+{
+  "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+  "latent_faults": [
+    "foreign_release",
+    "resource_alias",
+    "rejected_acquire_steals"
+  ],
+  "retention_control": "baseline_dropped_release",
+  "records": [
+    {
+      "driver": "weak",
+      "variant": "correct",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 4
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "weak",
+      "variant": "correct_alt",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 4
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "weak",
+      "variant": "foreign_release",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 4
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "weak",
+      "variant": "resource_alias",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 4
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "weak",
+      "variant": "rejected_acquire_steals",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 5
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "weak",
+      "variant": "baseline_dropped_release",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 17
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:19:9 release by non-owner accepted"
+      ]
+    },
+    {
+      "driver": "reference",
+      "variant": "correct",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 0
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "reference",
+      "variant": "correct_alt",
+      "expected_exit_code": 0,
+      "exit_code": 0,
+      "summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 0
+      },
+      "search_complete": true,
+      "bugs": []
+    },
+    {
+      "driver": "reference",
+      "variant": "foreign_release",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 15
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:19:9 release by non-owner accepted"
+      ]
+    },
+    {
+      "driver": "reference",
+      "variant": "resource_alias",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 20
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:26:7 resource ownership changed incorrectly"
+      ]
+    },
+    {
+      "driver": "reference",
+      "variant": "rejected_acquire_steals",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 17
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:26:7 resource ownership changed incorrectly"
+      ]
+    },
+    {
+      "driver": "reference",
+      "variant": "baseline_dropped_release",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 26
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:19:9 release by non-owner accepted"
+      ]
+    },
+    {
+      "driver": "omitted_finish",
+      "variant": "correct",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 8
+      },
+      "search_complete": false,
+      "bugs": [
+        "PImplementation.OwnershipContract detected liveness bug in hot state 'Checking' at the end of program execution."
+      ]
+    },
+    {
+      "driver": "zero_work",
+      "variant": "correct",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 69
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:30:7 driver performed no operations"
+      ]
+    },
+    {
+      "driver": "invalid_client",
+      "variant": "correct",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 64
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:8:7 client outside model bounds"
+      ]
+    },
+    {
+      "driver": "invalid_resource",
+      "variant": "correct",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 63
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:9:7 resource outside model bounds"
+      ]
+    },
+    {
+      "driver": "invalid_kind",
+      "variant": "correct",
+      "expected_exit_code": 1,
+      "exit_code": 1,
+      "summary": {
+        "status": "tests_failed",
+        "message": "1 of 1 test case failed",
+        "failed": 1,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 62
+      },
+      "search_complete": false,
+      "bugs": [
+        "Assertion Failed: monitor.p:10:7 command outside model bounds"
+      ]
+    }
+  ],
+  "raw_outputs": "runs/calibration-sessions/results.json"
+}

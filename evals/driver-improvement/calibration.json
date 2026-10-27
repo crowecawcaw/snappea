@@ -1,0 +1,105 @@
+[
+  {
+    "arm": "on",
+    "exit_code": 0,
+    "driver_report_present": true,
+    "summary": {
+      "status": "passed",
+      "message": "All test cases passed",
+      "test_cases": 1,
+      "failed": 0,
+      "incomplete": 0,
+      "coverage_failed": false,
+      "coverage_gaps": 0,
+      "uncovered": [],
+      "uncovered_more": 0,
+      "mutation_time_limit_reached": false
+    }
+  },
+  {
+    "arm": "off",
+    "exit_code": 0,
+    "driver_report_present": false,
+    "summary": {
+      "status": "passed",
+      "message": "All test cases passed",
+      "test_cases": 1,
+      "failed": 0,
+      "incomplete": 0,
+      "coverage_failed": false,
+      "coverage_gaps": 0,
+      "uncovered": [],
+      "uncovered_more": 0,
+      "mutation_time_limit_reached": false
+    }
+  },
+  {
+    "fixture": "priority",
+    "reference_summary": {
+      "valid": true,
+      "static_instruction_checks_passed": true,
+      "instruction_review_required": true,
+      "runtime_instruction_mentions": 0,
+      "required_monitors_selected": true,
+      "correct_accepted": 2,
+      "correct_total": 2,
+      "correct_incomplete": 0,
+      "correct_search_complete_count": 2,
+      "correct_all_search_complete": true,
+      "score_qualification": "complete_correct_search",
+      "baseline_faults_detected": 1,
+      "new_faults_detected": 5,
+      "baseline_faults_lost": 0,
+      "faults_detected": 6,
+      "faults_total": 6,
+      "fault_assertion_failures_uncredited": 0,
+      "infrastructure_errors": 0
+    }
+  },
+  {
+    "fixture": "retry",
+    "reference_summary": {
+      "valid": true,
+      "static_instruction_checks_passed": true,
+      "instruction_review_required": true,
+      "runtime_instruction_mentions": 0,
+      "required_monitors_selected": true,
+      "correct_accepted": 2,
+      "correct_total": 2,
+      "correct_incomplete": 0,
+      "correct_search_complete_count": 2,
+      "correct_all_search_complete": true,
+      "score_qualification": "complete_correct_search",
+      "baseline_faults_detected": 1,
+      "new_faults_detected": 3,
+      "baseline_faults_lost": 0,
+      "faults_detected": 4,
+      "faults_total": 4,
+      "fault_assertion_failures_uncredited": 0,
+      "infrastructure_errors": 0
+    }
+  },
+  {
+    "fixture": "sessions",
+    "reference_summary": {
+      "valid": true,
+      "static_instruction_checks_passed": true,
+      "instruction_review_required": true,
+      "runtime_instruction_mentions": 0,
+      "required_monitors_selected": true,
+      "correct_accepted": 2,
+      "correct_total": 2,
+      "correct_incomplete": 0,
+      "correct_search_complete_count": 2,
+      "correct_all_search_complete": true,
+      "score_qualification": "complete_correct_search",
+      "baseline_faults_detected": 1,
+      "new_faults_detected": 3,
+      "baseline_faults_lost": 0,
+      "faults_detected": 4,
+      "faults_total": 4,
+      "fault_assertion_failures_uncredited": 0,
+      "infrastructure_errors": 0
+    }
+  }
+]

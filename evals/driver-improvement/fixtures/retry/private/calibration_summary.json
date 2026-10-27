@@ -1,0 +1,84 @@
+{
+  "binary_sha256": "b7ea15b06ee99225277adaeeee4dda33b2d2e6a6484b22ec3c13d9973d051fb2",
+  "initial": {
+    "correct": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "correct_alt": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "retry_reapplies": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "rejected_not_memoized": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "retry_reports_current_version": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "new_write_wrong_value": {
+      "exit_code": 1,
+      "status": "tests_failed"
+    }
+  },
+  "reference": {
+    "correct": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "correct_alt": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "retry_reapplies": {
+      "exit_code": 1,
+      "status": "tests_failed"
+    },
+    "rejected_not_memoized": {
+      "exit_code": 1,
+      "status": "tests_failed"
+    },
+    "retry_reports_current_version": {
+      "exit_code": 1,
+      "status": "tests_failed"
+    },
+    "new_write_wrong_value": {
+      "exit_code": 1,
+      "status": "tests_failed"
+    }
+  },
+  "completion_omission_rejected": true,
+  "latent_fault_inventory_selected_before_driver_report": true,
+  "regression_fault_added_after_initial_calibration": true,
+  "invalid_driver_guards": {
+    "changed_retry_expected": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    },
+    "changed_retry_value": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    },
+    "negative_id": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    },
+    "negative_expected": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    },
+    "negative_value": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    },
+    "omitted_finish": {
+      "correct_rejected": true,
+      "correct_alt_rejected": true
+    }
+  }
+}

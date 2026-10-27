@@ -1,0 +1,126 @@
+{
+  "fixture": "priority",
+  "rows": [
+    {
+      "driver": "initial",
+      "variant": "correct",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "correct_alt",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "ties_lifo",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "reprioritize_renumbers",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "readmit_keeps_old_position",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "absolute_priority",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "duplicate_overwrites_priority",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "initial",
+      "variant": "cancel_no_effect",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "correct",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "reference",
+      "variant": "correct_alt",
+      "exit_code": 0,
+      "semantic_assertion": false
+    },
+    {
+      "driver": "reference",
+      "variant": "ties_lifo",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "reprioritize_renumbers",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "readmit_keeps_old_position",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "absolute_priority",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "duplicate_overwrites_priority",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "reference",
+      "variant": "cancel_no_effect",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "negative_id",
+      "variant": "correct",
+      "exit_code": 1,
+      "semantic_assertion": true
+    },
+    {
+      "driver": "negative_id",
+      "variant": "correct_alt",
+      "exit_code": 1,
+      "semantic_assertion": true
+    }
+  ],
+  "initial_faults_detected": 1,
+  "reference_faults_detected": 6,
+  "latent_faults": [
+    "ties_lifo",
+    "reprioritize_renumbers",
+    "readmit_keeps_old_position",
+    "absolute_priority",
+    "duplicate_overwrites_priority"
+  ],
+  "baseline_detected_regression_control": "cancel_no_effect",
+  "correct_variants_accepted": 2,
+  "negative_id_rejected_by_correct_variants": 2,
+  "raw_results": "runs/calibration-priority/results.json"
+}
