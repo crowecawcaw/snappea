@@ -97,7 +97,8 @@ impl Registry {
     /// Rule IDs must be unique and may not use the reserved suppression diagnostic ID.
     pub fn register(&mut self, rule: impl Rule + 'static) {
         assert!(
-            rule.id() != "invalid-suppression" && !self.rules.iter().any(|r| r.id() == rule.id()),
+            !["invalid-suppression", "invalid-directive"].contains(&rule.id())
+                && !self.rules.iter().any(|r| r.id() == rule.id()),
             "duplicate or reserved lint rule ID"
         );
         self.rules.push(Box::new(rule));
@@ -127,6 +128,12 @@ pub fn lint(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
 /// testing, with the ID each allows (`mutation` or `mutation:<kind>`).
 pub fn mutation_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
     Ok(suppression::mutation_suppressions(&Context::parse(sources)?))
+}
+
+/// The machines marked `// snappea: driver` (test code that drives the model), as the
+/// spans of their declarations.
+pub fn driver_machines(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
+    Ok(suppression::driver_machines(&Context::parse(sources)?))
 }
 
 /// The source scopes intentionally omitted from `snappea check` coverage requirements.

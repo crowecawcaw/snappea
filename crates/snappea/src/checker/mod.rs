@@ -13,6 +13,7 @@ pub mod bytecode;
 pub mod code_coverage;
 pub mod compile;
 pub mod coverage;
+pub mod driver_facts;
 pub mod engine;
 pub mod exhaustive;
 pub mod feedback;

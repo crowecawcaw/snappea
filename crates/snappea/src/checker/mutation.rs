@@ -82,8 +82,9 @@ pub struct Mutant {
 }
 
 /// The functions a mutant may change: those of the machines the test cases check (not
-/// spec monitors, nor a test case's main machine), and the functions they call.
-pub fn mutable_funs(prog: &Program, tests: &[TestCase]) -> Vec<bool> {
+/// spec monitors, a test case's main machine, nor the other machines in `drivers`, see
+/// [`crate::checker::driver_facts::driver_machines`]), and the functions they call.
+pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<bool> {
     let mut machines = vec![false; prog.machines.len()];
     let mut mains = vec![false; prog.machines.len()];
     for tc in tests {
@@ -95,7 +96,12 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase]) -> Vec<bool> {
             mains[m.idx()] = true;
         }
     }
-    let is_model = |m: MachineId| machines[m.idx()] && !mains[m.idx()] && prog.machine(m).kind == MachineKind::Impl;
+    let is_model = |m: MachineId| {
+        machines[m.idx()]
+            && !mains[m.idx()]
+            && !drivers.get(m.idx()).copied().unwrap_or(false)
+            && prog.machine(m).kind == MachineKind::Impl
+    };
     let mut funs = vec![false; prog.funs.len()];
     let mut work = Vec::new();
     for (i, f) in prog.funs.iter().enumerate() {
@@ -494,7 +500,7 @@ mod tests {
     #[test]
     fn mutates_the_model_but_not_specs_or_test_drivers() {
         let prog = program();
-        let funs = mutable_funs(&prog, &prog.test_cases());
+        let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
         let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
         let ms = mutants(&prog, &funs, &probes);
         let described: Vec<_> = ms.iter().map(|m| (m.line, m.change.name(), m.description.as_str())).collect();
@@ -521,7 +527,7 @@ mod tests {
         let mut sm = crate::syntax::SourceMap::new();
         sm.add("model.p", src);
         let prog = crate::sema::compile(&sm, &crate::sema::Options::default()).unwrap_or_else(|_| panic!()).program;
-        let funs = mutable_funs(&prog, &prog.test_cases());
+        let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
         let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
         let names: Vec<_> = mutants(&prog, &funs, &probes).iter().map(|m| m.description.clone()).collect();
         assert_eq!(
@@ -547,7 +553,7 @@ mod tests {
     #[test]
     fn applies_one_mutant() {
         let prog = program();
-        let funs = mutable_funs(&prog, &prog.test_cases());
+        let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
         let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
         let ms = mutants(&prog, &funs, &probes);
         let body = |p: &Program, m: &Mutant| format!("{:?}", p.fun(m.fun).body);

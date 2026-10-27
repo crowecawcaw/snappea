@@ -197,13 +197,14 @@ pub fn run(
     cfg: &CheckConfig,
     passed: &[(TestCase, Hits)],
     suppressed: &[(Span, String)],
+    drivers: &[bool],
     time_limit: f64,
 ) -> Report {
     let start = host.now();
     let deadline = start + time_limit;
     let tests: Vec<TestCase> = passed.iter().map(|(tc, _)| tc.clone()).collect();
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
-    let funs = mutation::mutable_funs(prog, &tests);
+    let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
     let mutants: Vec<Mutant> = mutation::mutants(prog, &funs, &probes)
         .into_iter()

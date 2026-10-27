@@ -377,6 +377,8 @@ pub struct Setup<'p> {
     pub xml_trace: Option<u64>,
     /// Accumulate activity coverage.
     pub coverage: Option<Coverage>,
+    /// Record what the test's driver does (see [`crate::checker::driver_facts`]).
+    pub driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
     /// Run spec monitors with the semantics of upstream's Java backend, which PObserve uses:
     /// `MessageFormat` formatting and Java `toString()` (by this formatter), 32-bit floats,
     /// `with` functions before exit actions, and unhandled events reported as exceptions.
@@ -427,6 +429,8 @@ pub struct Runtime<'p> {
     pub(crate) bound_hit_at: Option<usize>,
     /// Activity coverage being accumulated, when enabled.
     pub(crate) coverage: Option<Coverage>,
+    /// What the test's driver does, when recorded.
+    pub(crate) driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
     /// Time tracking (see `design/time/PROPOSAL.md`); `None` when the test does not use it.
     time: Option<Box<crate::checker::time::TimeState>>,
     /// Machine event handlers started (each runs on a fresh .NET task upstream).
@@ -451,7 +455,17 @@ impl<'p> Runtime<'p> {
         strategy: &'p mut dyn Strategy,
         setup: Setup<'p>,
     ) -> Runtime<'p> {
-        let Setup { cancelled, assignment, foreign, time, json_trace, xml_trace, coverage, java_semantics } = setup;
+        let Setup {
+            cancelled,
+            assignment,
+            foreign,
+            time,
+            json_trace,
+            xml_trace,
+            coverage,
+            driver_facts,
+            java_semantics,
+        } = setup;
         let mut globals: Vec<Value> =
             prog.global_params.iter().map(|v| default_value(&prog.var(*v).ty, prog)).collect();
         if let Some(a) = assignment {
@@ -498,6 +512,7 @@ impl<'p> Runtime<'p> {
             logging: config.logging,
             bound_hit_at: None,
             coverage,
+            driver_facts,
             time: time.map(|o| Box::new(crate::checker::time::TimeState::new(o))),
             handler_starts: 0,
             failure: None,
@@ -506,6 +521,12 @@ impl<'p> Runtime<'p> {
             action_names,
             format_buf: String::new(),
         }
+    }
+
+    /// Whether the schedule ran until nothing could run: not stopped by a bug, the step
+    /// bound, cancellation, or the search cutting it at an explored state.
+    pub fn ran_to_end(&self) -> bool {
+        self.fully_explored && self.bug.is_none()
     }
 
     /// Whether spec monitors run with the semantics of upstream's Java backend (see
@@ -1023,6 +1044,9 @@ impl<'p> Runtime<'p> {
         clock: crate::checker::time::Time,
     ) -> (usize, u64) {
         self.cov_declare(decl, false);
+        if let Some(d) = self.driver_facts.as_mut() {
+            d.record_create(decl);
+        }
         let idx = self.machines.len();
         let id = self.next_op_id;
         let display: Rc<str> = Rc::from(format!("{}({})", name, id));
@@ -1067,6 +1091,9 @@ impl<'p> Runtime<'p> {
     pub fn finish_create(&mut self, creator: usize, machine: MachineId, iface: InterfaceId, payload: Value) -> Value {
         let name = self.prog.interface(iface).name.clone();
         let clock = self.machines[creator].clock.clone();
+        if let Some(d) = self.driver_facts.as_mut() {
+            d.record_create_payload(self.prog, self.machines[creator].decl, machine, &payload);
+        }
         let (idx, _) = self.instantiate_machine(machine, iface, &name, payload, clock);
         let created = self.machines[idx].name.clone();
         let creator_name = self.machines[creator].name.clone();
@@ -1105,6 +1132,14 @@ impl<'p> Runtime<'p> {
             if let Some(t) = self.find_machine(target.id) {
                 let decl = self.machines[t].decl;
                 self.cov_send(sender, decl, event.id);
+            }
+        }
+        if self.driver_facts.is_some() {
+            if let Some(t) = self.find_machine(target.id) {
+                let (id, from, to) = (self.machines[sender].id, self.machines[sender].decl, self.machines[t].decl);
+                if let Some(d) = self.driver_facts.as_mut() {
+                    d.record_send(self.prog, id, from, to, event.id, &event.payload);
+                }
             }
         }
         let sender_name = self.machines[sender].name.clone();
