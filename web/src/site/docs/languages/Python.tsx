@@ -333,13 +333,14 @@ def server(tmp_path_factory):
         <h3>Strict checks</h3>
         <p>
           Strict means every selected spec checked at least one relevant event, which catches instrumentation that was
-          removed or never ran. With named specs (<code>check_spec("Name")</code>, <code>[tool.snappea] specs</code>) it
-          defaults to true, and a named spec that saw no relevant event fails the check with a{" "}
-          <code>SetupError</code> of kind <code>"validation"</code>. Pass <code>strict=False</code> (or set{" "}
-          <code>strict = false</code>) where a spec may rightly see no events. (<code>snappea.StrictDefaultWarning</code>,
-          which warned about this change for one release, is no longer emitted.) With every
-          spec selected (the plugin's default) it defaults to false; turn it on with <code>strict = true</code> or{" "}
-          <code>pytest --snappea-strict</code>, and mark uninstrumented tests <code>skip=True</code>.
+          removed or never ran. An explicit check with named specs (<code>check_spec("Name")</code>,{" "}
+          <code>Recorder(specs=[...])</code>) defaults to strict: a named spec that saw no relevant event fails the
+          check with a <code>SetupError</code> of kind <code>"validation"</code>. Pass <code>strict=False</code> where
+          a spec may rightly see no events. (<code>snappea.StrictDefaultWarning</code>, which warned about this change
+          for one release, is no longer emitted.) The plugin checks every test, and most tests emit no events for a
+          given spec, so its checks are not strict unless asked, even with <code>[tool.snappea] specs</code>: set{" "}
+          <code>strict = true</code>, run <code>pytest --snappea-strict</code>, or mark one test{" "}
+          <code>@pytest.mark.snappea(strict=True)</code>. Mark uninstrumented tests <code>skip=True</code>.
         </p>
         <h3>Environment variables</h3>
         <EnvTable lang="python" />

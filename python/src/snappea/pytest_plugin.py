@@ -9,7 +9,11 @@ Configured under ``[tool.snappea]`` in pyproject.toml::
     mode = "auto"             # optional: "auto" (every test) | "marked" | "off"
 
 Per test: ``@pytest.mark.snappea(skip=True)``, ``@pytest.mark.snappea(skip=["DraftSpec"])``,
-``@pytest.mark.snappea(check_hot=True)``. The ``snappea_events`` fixture gives the test's recorder.
+``@pytest.mark.snappea(check_hot=True)``, ``@pytest.mark.snappea(strict=True)``.
+
+Plugin checks are not strict unless asked (``strict = true``, ``--snappea-strict`` or the
+mark): most tests in a suite emit no events for a given spec. Explicit checks
+(``Recorder``, ``check_spec``) with named specs are strict by default. The ``snappea_events`` fixture gives the test's recorder.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ _COVERAGE = pytest.StashKey[list]()
 _COVERAGE_PATH = pytest.StashKey[Optional[Path]]()
 _COVERAGE_SUMMARY = pytest.StashKey[tuple]()
 
-MARK_KEYS = {"skip", "check_hot", "liveness"}
+MARK_KEYS = {"skip", "check_hot", "liveness", "strict"}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -56,8 +60,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "snappea(skip=False, check_hot=False): P spec checking for this test. skip=True turns it off, "
-        "skip=[names] leaves out some specs, check_hot=True also fails on a spec left in a hot state.",
+        "snappea(skip=False, check_hot=False, strict=False): P spec checking for this test. skip=True turns it "
+        "off, skip=[names] leaves out some specs, check_hot=True also fails on a spec left in a hot state, "
+        "strict=True fails when a selected spec saw no relevant event.",
     )
     config.stash[_COVERAGE] = []
     config.stash[_ERROR] = None
@@ -121,10 +126,11 @@ def _settings(item: pytest.Item) -> Optional[dict]:
         return None
     skip: List[str] = []
     check_hot: Optional[bool] = None
+    strict: Optional[bool] = None
     for m in reversed(marks):  # closest mark wins
         unknown = set(m.kwargs) - MARK_KEYS
         if unknown or m.args:
-            raise pytest.UsageError(f"@pytest.mark.snappea takes skip= and check_hot=; got {m.args or ''} {m.kwargs}")
+            raise pytest.UsageError(f"@pytest.mark.snappea takes skip=, check_hot= and strict=; got {m.args or ''} {m.kwargs}")
         s = m.kwargs.get("skip", False)
         if s is True:
             return None
@@ -135,10 +141,23 @@ def _settings(item: pytest.Item) -> Optional[dict]:
             check_hot = bool(m.kwargs["liveness"])
         if "check_hot" in m.kwargs:
             check_hot = bool(m.kwargs["check_hot"])
+        if "strict" in m.kwargs:
+            strict = bool(m.kwargs["strict"])
     specs = [s for s in cfg.specs if s not in skip]
     if cfg.specs and not specs:
         return None  # every configured spec skipped
-    return {"specs": specs, "exclude": [*cfg.exclude, *skip], "check_hot": check_hot, "files": cfg.files(), "config": cfg}
+    if strict is None and cfg.strict is None:
+        # Not strict by default: unlike an explicit check, the plugin checks every test,
+        # and most tests emit no events for a given spec.
+        strict = False
+    return {
+        "specs": specs,
+        "exclude": [*cfg.exclude, *skip],
+        "check_hot": check_hot,
+        "strict": strict,
+        "files": cfg.files(),
+        "config": cfg,
+    }
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -157,7 +176,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         spec_files=settings["files"] if settings else [],
         exclude=settings["exclude"] if settings else (),
         check_hot=settings["check_hot"] if settings else None,
-        strict=True if item.config.getoption("snappea_strict") else None,
+        strict=True if item.config.getoption("snappea_strict") else settings["strict"] if settings else None,
     )
     rec._cfg = settings["config"] if settings else None
     rec._default_artifacts = _output_root(item.config)
