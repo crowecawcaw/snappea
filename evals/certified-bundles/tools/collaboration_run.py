@@ -11,9 +11,12 @@ import run_sonnet as r
 from delegation import prompt as delegation_prompt
 from prompts import VERSION as PROMPT_VERSION, prompt_variant
 from skill_snapshot import verify_snapshot
+import tool_variant
 ROOT=Path(__file__).resolve().parents[1]
 
-def start(run_id,arm,condition='legacy',skill_snapshot=None,model='gpt-6-luna',reasoning_effort='high'):
+def start(run_id,arm,condition='legacy',skill_snapshot=None,model='gpt-6-luna',reasoning_effort='high',tool=None,tool_binary=None):
+    if tool and (condition != 'baseline' or arm != 'p'):
+        raise ValueError('--tool requires --arm p --condition baseline')
     if condition in ('baseline','skill') and arm != 'p':
         raise ValueError('baseline and skill conditions require --arm p')
     if condition == 'skill':
@@ -23,16 +26,21 @@ def start(run_id,arm,condition='legacy',skill_snapshot=None,model='gpt-6-luna',r
     else:
         skill_manifest=None
     run,work,prompt=r.prepare(run_id,arm,condition)
+    if tool:
+        prompt += tool_variant.instruction(tool)
+        (run/'prompt.txt').write_text(prompt)
     for directory in ('public','private','tools'):
         shutil.copytree(ROOT/directory,run/directory,ignore=shutil.ignore_patterns('__pycache__'))
     delegation=delegation_prompt(run_id,arm,condition)
+    if tool:
+        delegation = delegation.replace(r.task_prompt(arm, condition), prompt, 1)
     (run/'delegation.txt').write_text(delegation)
-    result=r.command(r.container_args('snappea-eval-'+run_id,work,arm,condition,skill_snapshot))
+    result=r.command(r.container_args('snappea-eval-'+run_id,work,arm,condition,skill_snapshot,tool,tool_binary))
     if result.returncode: raise RuntimeError(result.stderr)
     preflight=None
     if arm=='p':
         check=r.command(['docker','exec','snappea-eval-'+run_id,'bash','-c',
-            'command -v snappea && snappea version && python -m pytest --version && python -c "import snappea; from importlib.metadata import version; print(version(\'pysnappea\'))"'])
+            f'command -v {tool or "snappea"} && {tool or "snappea"} version && python -m pytest --version && python -c "import snappea; from importlib.metadata import version; print(version(\'pysnappea\'))"'])
         preflight={'exit_code':check.returncode,'stdout':check.stdout,'stderr':check.stderr}
         if condition == 'skill' and check.returncode == 0:
             skill_check=r.command(['docker','exec','snappea-eval-'+run_id,'bash','-c',
@@ -60,12 +68,16 @@ def start(run_id,arm,condition='legacy',skill_snapshot=None,model='gpt-6-luna',r
         binary, source = r.tool_paths()
         revision = r.command(['git','-C',str(source),'rev-parse','HEAD'])
         meta['snappea_binary_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
+        if tool:
+            meta.update(tool_variant.metadata(binary, tool, tool_binary))
+            meta['snappea_on_path'] = tool == 'snappea'
         meta['docs_source_revision'] = revision.stdout.strip() if revision.returncode == 0 else None
     (run/'metadata.json').write_text(json.dumps(meta,indent=2))
     print(json.dumps({'run':run_id,'arm':arm,'container':'snappea-eval-'+run_id}))
 
 def finish(run_id,status,seeds):
     run=ROOT/'runs'/run_id
+    tool_variant.verify(json.loads((run/'metadata.json').read_text()))
     with (run/'bridge.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         state_path=run/'bridge-state.json'
@@ -87,11 +99,13 @@ if __name__=='__main__':
     p.add_argument('--run-id',required=True)
     p.add_argument('--arm',choices=['p','python'])
     p.add_argument('--condition',choices=['legacy','baseline','skill'],default='legacy')
+    p.add_argument('--tool', choices=tool_variant.TOOLS, help='explicit no-skill CLI comparison')
+    p.add_argument('--tool-binary', type=Path, help='chosen CLI binary (defaults beside native checker)')
     p.add_argument('--skill-snapshot',help='content-addressed snapshot from tools/snapshot_skill.py')
     p.add_argument('--model',default='gpt-6-luna')
     p.add_argument('--reasoning-effort',default='high',choices=['low','medium','high','xhigh','max','ultra'])
     p.add_argument('--status',default='agent_finished')
     p.add_argument('--seeds',type=int,default=64)
     a=p.parse_args()
-    if a.action=='start': start(a.run_id,a.arm,a.condition,a.skill_snapshot,a.model,a.reasoning_effort)
+    if a.action=='start': start(a.run_id,a.arm,a.condition,a.skill_snapshot,a.model,a.reasoning_effort,a.tool,a.tool_binary)
     else: finish(a.run_id,a.status,a.seeds)

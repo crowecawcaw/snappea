@@ -17,6 +17,7 @@ P_IMAGE = os.environ.get('SNAPPEA_EVAL_P_IMAGE', IMAGE)
 PUBLIC = ['TASK.md','contract.py','runtime.py','test_public.py']
 from prompts import COMMON, P, CONTROL, VERSION as PROMPT_VERSION, task_prompt, prompt_version, prompt_variant
 from skill_snapshot import verify_snapshot
+import tool_variant
 
 
 def tool_paths():
@@ -49,7 +50,7 @@ def prepare(run_id, arm, condition='legacy'):
     return run,work,prompt
 
 
-def container_args(name,work,arm,condition='legacy',skill_snapshot=None):
+def container_args(name,work,arm,condition='legacy',skill_snapshot=None,tool=None,tool_binary=None):
     args = ['docker','run','-d','--name',name,'--network','none','--cap-drop','ALL',
         '--security-opt','no-new-privileges','--user',f'{os.getuid()}:{os.getgid()}','--memory','768m','--cpus','1',
         '--pids-limit','128','--read-only','--tmpfs','/tmp:rw,size=128m',
@@ -62,6 +63,10 @@ def container_args(name,work,arm,condition='legacy',skill_snapshot=None):
                  '--mount',f'type=bind,src={binary},dst=/opt/snappea,readonly',
                  '--mount',f'type=bind,src={docs},dst=/opt/pdocs,readonly',
                  '--mount',f'type=bind,src={inventory},dst=/opt/inventory,readonly']
+        if tool:
+            slot = args.index(f'type=bind,src={binary},dst=/opt/snappea,readonly')
+            del args[slot-1:slot+1]
+            args += tool_variant.mounts(binary, tool, tool_binary)
         if condition == 'skill':
             if not skill_snapshot:
                 raise ValueError('skill condition requires --skill-snapshot')
@@ -118,6 +123,7 @@ def grade(run,seeds):
     out=run/'grading'
     out.mkdir(exist_ok=True)
     meta=json.loads((run/'metadata.json').read_text())
+    tool_variant.verify(meta)
     for name,want in meta.get('archived_inputs_sha256',{}).items():
         if hashlib.sha256((run/name).read_bytes()).hexdigest()!=want:
             raise ValueError('archived grading input changed: '+name)

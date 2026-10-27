@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent
 TOOLS = ROOT.parents[1] / 'certified-bundles' / 'tools'
 sys.path.insert(0, str(TOOLS))
 from skill_snapshot import create_snapshot, verify_snapshot
+import tool_variant
 
 IMAGE = 'snappea-eval:py312-pytest842-pysnappea-source-0.1.0'
 BINARY = ROOT.parents[2] / 'target/release/snappea'
@@ -35,7 +36,7 @@ def command(args, **kwargs):
     return subprocess.run(args, text=True, capture_output=True, **kwargs)
 
 
-def container_args(work, image=IMAGE, binary=BINARY, name=None, skill=None):
+def container_args(work, image=IMAGE, binary=BINARY, name=None, skill=None, tool=None, tool_binary=None):
     args = ['docker', 'run', '--network', 'none', '--cap-drop', 'ALL',
             '--security-opt', 'no-new-privileges', '--user', f'{os.getuid()}:{os.getgid()}',
             '--memory', '768m', '--cpus', '1', '--pids-limit', '128', '--read-only',
@@ -43,6 +44,12 @@ def container_args(work, image=IMAGE, binary=BINARY, name=None, skill=None):
             '--mount', f'type=bind,src={binary},dst=/opt/snappea,readonly',
             '--env', 'PATH=/opt:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin',
             '--env', 'SNAPPEA_BIN=/opt/snappea', '-w', '/work']
+    if tool:
+        slot = args.index(f'type=bind,src={binary},dst=/opt/snappea,readonly')
+        del args[slot-1:slot+1]
+        slot = args.index('SNAPPEA_BIN=/opt/snappea')
+        del args[slot-1:slot+1]
+        args += tool_variant.mounts(binary, tool, tool_binary)
     if name:
         args += ['-d', '--name', name]
     else:
@@ -56,11 +63,23 @@ def start(args):
     if not re.fullmatch('[a-z0-9-]+', args.run_id):
         raise ValueError('invalid run id')
     binary = args.binary.resolve()
+    tool = getattr(args, 'tool', None)
+    cli_override = getattr(args, 'tool_binary', None)
+    if tool and args.condition != 'baseline':
+        raise ValueError('--tool comparisons require --condition baseline (no skill)')
+    if tool and args.phase != 'flow':
+        raise ValueError('--tool currently supports the flow phase')
     public = ROOT / args.phase / 'public'
     run = ROOT / 'runs' / args.run_id
     run.mkdir(parents=True, exist_ok=False)
     shutil.copytree(public, run/'work')
     shutil.copytree(public, run/'public')
+    if tool:
+        for location in (run/'work/TASK.md', run/'public/TASK.md'):
+            text = location.read_text()
+            native_command = 'snappea check events.p monitor.p model.p tests.p'
+            cli_command = native_command if tool == 'snappea' else 'snappea-compat check --pfiles events.p monitor.p model.p tests.p'
+            location.write_text(text.replace(native_command, cli_command))
     if args.condition=='skill':
         snapshot, skill = create_snapshot(SOURCE/'skills/p-modeling')
     else:
@@ -74,8 +93,12 @@ def start(args):
     harness=['runner.py','bridge.py','grade.py','grade_novel.py']
     (run/'harness').mkdir()
     for name in harness:shutil.copy2(ROOT/name,run/'harness'/name)
+    if tool:
+        shutil.copy2(TOOLS/'tool_variant.py', run/'harness/tool_variant.py')
     prompt = ('Read TASK.md.' + (' Use the P modeling skill at /opt/p-modeling/SKILL.md.'
               if args.condition=='skill' else '') + '\nComplete the requested deliverables.\n')
+    if tool:
+        prompt += tool_variant.instruction(tool)
     bridge = ROOT/'bridge.py'
     seconds, calls = (900,80) if args.phase=='flow' else (600,50)
     delegation = prompt + f'''
@@ -94,19 +117,23 @@ Return when finished; /work files are your submission.
             'model': args.model, 'reasoning_effort': args.reasoning_effort,
             'image': image_id, 'binary_sha256': digest(binary), 'binary': str(binary),
             'skill_sha256': skill['tree_sha256'] if skill else None, 'skill_snapshot': str(snapshot) if snapshot else None,
-            'public_sha256': manifest(public), 'grader_sha256': manifest(private),
+            'public_sha256': manifest(run/'public'), 'grader_sha256': manifest(private),
             'prompt_sha256': hashlib.sha256(delegation.encode()).hexdigest(),
             'harness_sha256': manifest(run/'harness'),
             'limits': {'seconds': seconds, 'calls': calls, 'command_seconds': 90},
             'status': 'running', 'provisioned_unix': time.time()}
+    if tool:
+        meta.update(tool_variant.metadata(binary, tool, cli_override))
+        meta['original_public_sha256'] = manifest(public)
+        meta['public_task_adaptation'] = 'selected CLI command name and file-list syntax only'
     (run/'prompt.txt').write_text(delegation)
     (run/'metadata.json').write_text(json.dumps(meta, indent=2)+'\n')
     result = command(container_args((run/'work').resolve(), image=image_id,
-                                   name='snappea-phase-'+args.run_id, skill=snapshot, binary=binary) + ['sleep', 'infinity'])
+                                   name='snappea-phase-'+args.run_id, skill=snapshot, binary=binary, tool=tool, tool_binary=cli_override) + ['sleep', 'infinity'])
     if result.returncode:
         raise RuntimeError(result.stderr)
     check = command(['docker', 'exec', 'snappea-phase-'+args.run_id, 'bash', '-c',
-                     'snappea version && python -c "import snappea"'+(' && test -r /opt/p-modeling/SKILL.md' if skill else '')])
+                     f'{tool or "snappea"} version && python -c "import snappea"'+(' && test -r /opt/p-modeling/SKILL.md' if skill else '')])
     if check.returncode:
         command(['docker', 'rm', '-f', 'snappea-phase-'+args.run_id])
         raise RuntimeError(check.stdout+check.stderr)
@@ -116,6 +143,7 @@ Return when finished; /work files are your submission.
 def finish(args):
     import fcntl
     run = ROOT/'runs'/args.run_id
+    tool_variant.verify(json.loads((run/'metadata.json').read_text()))
     with (run/'bridge.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state_path = run/'bridge-state.json'
@@ -144,6 +172,8 @@ if __name__ == '__main__':
     p.add_argument('--model', default='gpt-6-luna', help='model used by the delegated solver')
     p.add_argument('--reasoning-effort', default='high', choices=['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
     p.add_argument('--binary', type=Path, default=BINARY, help='checker binary to freeze for this trial')
+    p.add_argument('--tool', choices=tool_variant.TOOLS, help='explicit no-skill CLI comparison')
+    p.add_argument('--tool-binary', type=Path, help='chosen CLI binary (defaults beside --binary)')
     p.add_argument('--condition',choices=['skill','baseline'],default='skill')
     p.add_argument('--status', default='agent_finished')
     a = p.parse_args()

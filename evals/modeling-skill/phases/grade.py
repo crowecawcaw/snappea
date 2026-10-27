@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from runner import ROOT, digest, manifest
+from runner import ROOT, TOOLS, digest, manifest
+import tool_variant
 
 
 def verify(run):
     meta=json.loads((run/'metadata.json').read_text())
+    tool_variant.verify(meta)
     if meta['status']=='running':
         raise ValueError('freeze submission first')
     if manifest(run/'submission')!=json.loads((run/'submission-manifest.json').read_text()):
@@ -18,7 +20,8 @@ def verify(run):
         raise ValueError('binary changed')
     if meta.get('harness_sha256'):
         for name,want in meta['harness_sha256'].items():
-            if digest(ROOT/name)!=want:
+            source = TOOLS/name if name == 'tool_variant.py' else ROOT/name
+            if digest(source)!=want:
                 raise ValueError('grading harness changed since provisioning')
     phase=ROOT/meta['phase']
     grader=run/'private' if (run/'private').exists() else phase/'private'
