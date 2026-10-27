@@ -21,9 +21,12 @@ Separate capabilities before testing an end-to-end flow:
 
 [Feedback revision and priority-queue holdout](FEEDBACK.md) test generated histories, valid value classes, a compact P reference, and clearer check outcomes.
 
+[Terra 6.1 / medium rerun](TERRA_RESULTS.md) repeats the nine feedback-revision trials with the same skill, checker, fixtures, and budgets.
+
 ## Protocol
 
-- Fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.
+- Default: fresh `gpt-6-luna` agents, high thinking, `fork_turns=none`.
+- `runner.py start --model gpt-6.1-terra --reasoning-effort medium` records another solver configuration. These options label metadata; match them when spawning the solver agent.
 - Each gets only the saved prompt and bridge instructions. Skill condition adds one sentence: `Use the P modeling skill at /opt/p-modeling/SKILL.md.`
 - Offline disposable container; pinned checker/image, read-only skill snapshot; no grader/other-run mounts.
 - Model/test: 600 seconds from first bridge call, 50 calls. Combined: 900 seconds, 80 calls. Each command: 90 seconds. No coaching or hidden feedback during a run.

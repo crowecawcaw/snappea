@@ -91,7 +91,7 @@ Budget: {seconds} seconds from first call, {calls} calls, 90 seconds per command
 Return when finished; /work files are your submission.
 '''
     meta = {'run_id': args.run_id, 'phase': args.phase, 'condition': args.condition,
-            'model': 'gpt-6-luna', 'reasoning_effort': 'high',
+            'model': args.model, 'reasoning_effort': args.reasoning_effort,
             'image': image_id, 'binary_sha256': digest(binary), 'binary': str(binary),
             'skill_sha256': skill['tree_sha256'] if skill else None, 'skill_snapshot': str(snapshot) if snapshot else None,
             'public_sha256': manifest(public), 'grader_sha256': manifest(private),
@@ -141,6 +141,8 @@ if __name__ == '__main__':
     p.add_argument('action', choices=['start', 'finish'])
     p.add_argument('--run-id', required=True)
     p.add_argument('--phase', choices=['modeling', 'testing', 'flow', 'migration/model', 'migration/testing', 'streaming/model', 'streaming/testing', 'priority/testing'])
+    p.add_argument('--model', default='gpt-6-luna', help='model used by the delegated solver')
+    p.add_argument('--reasoning-effort', default='high', choices=['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
     p.add_argument('--binary', type=Path, default=BINARY, help='checker binary to freeze for this trial')
     p.add_argument('--condition',choices=['skill','baseline'],default='skill')
     p.add_argument('--status', default='agent_finished')
