@@ -1,0 +1,32 @@
+{
+  "algorithm": "sha256",
+  "phase": "UNBLINDED-TRANSCRIPT",
+  "files": {
+    "/workspace/snappea-skill/evals/prethought/runs/map.json": "64a5a874cded71b3380b920d22deeb28ae407c8dc2226a99c785ecba4e788408",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/prompt.txt": "838676899842dc3f6f9bbf363ec95581ec0d898f212e0707605eeb133be3caba",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/delegation.txt": "07cc48a0bcb70916266c105eae1c70feb6ba0bfe25b5c0a71db475c6092ebb82",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/tool-transcript.jsonl": "7bd58372876a0108a141c172918dc6df179cac5f4bb9ad285a3f8928b46035ba",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/metadata.json": "4f1a21960283c4e47fe9b1fd2023e6a9e70c98695770fc892373b90894aaeaec",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/grading/grade.json": "ad38744cb17d854db93acb19c43af9ad870779c7a688fc4e88526db49a598949",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/supplemental-wide/result.json": "6e128f18276f0067423681436a1acf0583c3c490518fac57cdc451a67818654f",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/prompt.txt": "a849303561b4f566f08d3dcca2cc545bd5535e14a3526ebc7dcee1cdbc586c92",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/delegation.txt": "30c50b6e665226428b21a2a3081a677c019aeac348b84a1594e16d0590627a9a",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/tool-transcript.jsonl": "3fde2ae733ce01283387471cd9ff04da93f7564d11afdb6fa6de2544712928ef",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/metadata.json": "da48f9bdc1cef79fd1affd9a39707f3505f8cf6c4615cf479c3242aa072beb41",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/grading/grade.json": "3460555dc9565b07fc0f364e4150deed842f9cdaf667cd7d43859cfef0aea6ce",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/supplemental-wide/result.json": "891663f92deedc74ef47d8e1702bb663880f4c12bc79828c1cc77dd887237805",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/prompt.txt": "a849303561b4f566f08d3dcca2cc545bd5535e14a3526ebc7dcee1cdbc586c92",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/delegation.txt": "595a2f8b84c88acbd9bb9e41f30253613b540d0c83d933d3a50e8120b96584e4",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/tool-transcript.jsonl": "545d4b85915bc44cb688e75157ffa75fc226d8f5acf5fb92eb62b7252fda5278",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/metadata.json": "a01082efeef124bb61921f4fcf6730b025bc4e0af99c8ac7718dd366e48f7b4f",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/grading/grade.json": "984c6efc1bad644d6a525e9696e799e2a29508898829f63c9fc89f9954f139f4",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/supplemental-wide/result.json": "6e128f18276f0067423681436a1acf0583c3c490518fac57cdc451a67818654f",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/prompt.txt": "838676899842dc3f6f9bbf363ec95581ec0d898f212e0707605eeb133be3caba",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/delegation.txt": "29f57e701f8dfa7e6064cc4d9633899ff563594c62197bc5101790a1aaf836a6",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/tool-transcript.jsonl": "b06e643362f3a9aa9158414b7f5ab75e43ee50de11b2ee915e8d7c785e1ffb36",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/metadata.json": "28ec33754f7d613032c06e963d6e692ed681fa2188bf288e86bc34d69455b28a",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/grading/grade.json": "c172e08b5c44e7b4a99c9b1311fdc882e6946f9cca1ff58fabd23819514ea71b",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/supplemental-wide/result.json": "891663f92deedc74ef47d8e1702bb663880f4c12bc79828c1cc77dd887237805"
+  },
+  "preserved_source_only_notes_sha256": "34b7921a0f17508b6733fac2657e12abff22e46bc60722d87babf2338ec11e03"
+}

@@ -1,0 +1,29 @@
+{
+  "algorithm": "sha256",
+  "sources": {
+    "/workspace/snappea-skill/evals/prethought/runs/map.json": "64a5a874cded71b3380b920d22deeb28ae407c8dc2226a99c785ecba4e788408",
+    "/workspace/snappea-skill/evals/prethought/recheck_model_sources.py": "b7de0059cfdaed236b4e0b71ee6da31028b1a2c79c279c5090387978e819953c",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a01/prompt.txt": "e1305fe5b81802206fba5883f60bca146ca0cbfc01fa3edb3787cc0bceb71132",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a01/tool-transcript.jsonl": "4321406b4a6c883ae8f248c155a4687fd210b43d5d3531a3a2de0d172bb1e4bc",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a01/metadata.json": "5a9696ed8b976cc035dd8f247aa70226a01b715a115fc18c2d499975c5ed5872",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a01/grading/grade.json": "dc5b606cdbbfe77b10ae311643637e612b24065929d2bddc292259bb079d6af0",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a01/supplemental-model-source-v2/result.json": "8d6b71b1bba9454faca37fc2e902c410c51b201d93dd82b9af2c8cfe25f475cc",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/prompt.txt": "83f7a5441f813882e936f23d1192611b078e0ad326bdb8e55325338f9cecf651",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/tool-transcript.jsonl": "939dafee1e4497211ca2a13d19d71d31dffaf2b226c4786d703f1b6c7a03111a",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/metadata.json": "8e140adb3cdff92dccfb06618927b13deadb9139c59edf9ce98e9a8870a35293",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/grading/grade.json": "b9e8baa5ad09589c30ebbd9bdede2dc8cbb0a8cf3124a0e1e59c9ea1fa09d820",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/supplemental-model-source-v2/result.json": "ddd7283406d4636ac73921a1547715d5cd006fc46dfa98b2bac9fb95d43fa165",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a02/prompt.txt": "c32c9c5d55337d15676071908e3cb306217a266d85a04381954d44936612294e",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a02/tool-transcript.jsonl": "42e50d45a1060c5b13a108c5eb7c7aa77342079cbb9b6f6fbd656c448e5fdf15",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a02/metadata.json": "004fa5fafc7810330df26f796cd244184c9ecb39a30931e54b01f3db258b7673",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a02/grading/grade.json": "4cb96153b73cd5c1785c133dccf0daabae9a041f8116b79d3f03f17221343c9d",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-a02/supplemental-model-source-v2/result.json": "0e01b51117a40beb55c84841540147870e7d9ee30776cdbf2abd610347a3f1d1",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b02/prompt.txt": "4342e2d97c105df17fb741b4867dd3c0e9969f972874c1e5664ddccacd6e88a6",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b02/tool-transcript.jsonl": "bc6e9cee32fc1060ac4e343b665c1e45c5588eec40a8a925b5e8225f5d325709",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b02/metadata.json": "698d35f0716c85c204489188b10f0292950aa5a96d49ac81a373352da3217758",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b02/grading/grade.json": "3835a4091ea1da50724e173420db8d3f80de7784647e5a22721b7cc3046a1611",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b02/supplemental-model-source-v2/result.json": "ae1e887e8981efff426fc9ac23b7a526d10e0d36194e5220dc150d8bd5653978",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/private/reference_solution.py": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8",
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/prethought-flow-b01/private/grade.py": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c"
+  }
+}

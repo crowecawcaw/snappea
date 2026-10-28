@@ -1,0 +1,22 @@
+{
+  "algorithm": "sha256",
+  "phase": "SOURCE-ONLY",
+  "files": {
+    "/workspace/snappea-skill/evals/certified-bundles/public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+    "/workspace/snappea-skill/evals/certified-bundles/public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+    "/workspace/snappea-skill/evals/certified-bundles/public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/submission/DESIGN.md": "ca2743e35802958af9e92e5d78028570508e02ed368a24487e06d766640948ee",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/submission/design.p": "d49de962f33d5a581feb384752116e253bab9005e01540730bc9f4b8dc754dc2",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a01/submission/solution.py": "4bd61c02f24319e5da01661572d5bed42eb5d290ca2c5a0f7ca2f1f156f30115",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/submission/DESIGN.md": "05968dea64d91487d86a566262417b0b5f797d901221b5d944e7d345beef67fa",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/submission/model.p": "d224fc626924804c198f5fa64a81150d34d92eee6b27e26f7282e12835cb95e3",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b01/submission/solution.py": "873aee58339bb856b6423156898468b376e94e334288330b3fcd0a6dfb2dec50",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/submission/DESIGN.md": "b31b314b257caa8517c9b542fc142218f943392e4100e0c9c1194ef288436908",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/submission/model.p": "b70071bd49e01091705c876f243022a390c1d0f0bee83c56c627ed598aee5a22",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-b02/submission/solution.py": "f24758abb8d97f1636bd4255fd8534ae3fde7434c7b47e3c50de02d4ea3b710b",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/submission/DESIGN.md": "bbb6c23f160e2264cfc0956be37313c9402308ace75764c3dd6563a3bf4d2690",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/submission/model.p": "778e1a9a5873cf078e6d1da1319fa7fb6f0eadec9e70c6b634f4ab9dec84126f",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/submission/revision_model.p": "1ea45e343aa7052f35853fc767fc3821cca0ddd7cda99f161ba53b722b5b5b5f",
+    "/workspace/snappea-skill/evals/certified-bundles/runs/prethought-vcs-a02/submission/solution.py": "b05593ba78f4aa65de2260132c12b80a16eb21ed0ed37ac36f409d1fb6de18e6"
+  }
+}

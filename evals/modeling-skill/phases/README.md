@@ -76,3 +76,5 @@ python skills/p-modeling/validate.py --binary target/release/snappea
 ```
 
 Calibration suites exercise known-correct and known-bad controls; they never enter solver containers. Inspect implementation, monitor, observation, and audit results separately.
+
+Written failure-scenario prompt experiment: [Luna/high results](../../prethought/RESULTS.md) (native Snappea, no skill, eight fresh FIFO/VCS trials).
