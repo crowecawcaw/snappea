@@ -1,0 +1,447 @@
+{
+  "reviewer": "/root/review_singlefile",
+  "phase": "FIFO-only transcripts/results after source audit preserved and root-authorized unblind",
+  "assignments": {
+    "F1": "onefile-sol-flow-compat-02",
+    "F2": "onefile-luna-flow-multi-01",
+    "F3": "onefile-sol-flow-single-01",
+    "F4": "onefile-sol-flow-compat-01",
+    "F5": "onefile-sol-flow-single-02",
+    "F6": "onefile-luna-flow-single-01"
+  },
+  "records": [
+    {
+      "neutral": "F1",
+      "run_id": "onefile-sol-flow-compat-02",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 7
+      },
+      "monitor_histories": {
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "search_incomplete",
+        "message": "No bugs found; search incomplete for 1 test case",
+        "test_cases": 1,
+        "failed": 0,
+        "incomplete": 1,
+        "coverage_failed": false,
+        "coverage_gaps": 0,
+        "uncovered": [],
+        "uncovered_more": 0,
+        "mutation_time_limit_reached": true
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 7,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F2",
+      "run_id": "onefile-luna-flow-multi-01",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 4
+      },
+      "monitor_histories": {
+        "valid_accepted": 3,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "search_incomplete",
+        "message": "No bugs found; search incomplete for 1 test case",
+        "test_cases": 1,
+        "failed": 0,
+        "incomplete": 1,
+        "coverage_failed": false,
+        "coverage_gaps": 0,
+        "uncovered": [],
+        "uncovered_more": 0,
+        "mutation_time_limit_reached": true
+      },
+      "portable": {
+        "portable_probe_valid": true,
+        "reference_status": "passed",
+        "reference_test_count": 4,
+        "mutation_probes_run": true,
+        "mutations_rejected": 2,
+        "mutations_total": 3
+      }
+    },
+    {
+      "neutral": "F3",
+      "run_id": "onefile-sol-flow-single-01",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 5
+      },
+      "monitor_histories": {
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "search_incomplete",
+        "message": "No bugs found; search incomplete for 1 test case",
+        "test_cases": 3,
+        "failed": 0,
+        "incomplete": 1,
+        "coverage_failed": false,
+        "coverage_gaps": 0,
+        "uncovered": [],
+        "uncovered_more": 0,
+        "mutation_time_limit_reached": false
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 5,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F4",
+      "run_id": "onefile-sol-flow-compat-01",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 5
+      },
+      "monitor_histories": {
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "coverage_failed",
+        "message": "Required coverage is missing (6 points)",
+        "test_cases": 1,
+        "failed": 0,
+        "incomplete": 1,
+        "coverage_failed": true,
+        "coverage_gaps": 6,
+        "uncovered": [
+          {
+            "file": "model.p",
+            "line": 73,
+            "context": "Client.Load, on eLoaded",
+            "what": "if (op.id in record.puts) never true"
+          },
+          {
+            "file": "model.p",
+            "line": 74,
+            "context": "Client.Load, on eLoaded",
+            "what": "not reached: assert record.puts[op.id].item == op.item;"
+          },
+          {
+            "file": "model.p",
+            "line": 75,
+            "context": "Client.Load, on eLoaded",
+            "what": "not reached: accepted = record.puts[op.id].accepted;"
+          },
+          {
+            "file": "model.p",
+            "line": 82,
+            "context": "Client.Load, on eLoaded",
+            "what": "if (op.id in record.takes) never true"
+          },
+          {
+            "file": "model.p",
+            "line": 83,
+            "context": "Client.Load, on eLoaded",
+            "what": "not reached: found = record.takes[op.id].found;"
+          }
+        ],
+        "uncovered_more": 1,
+        "mutation_time_limit_reached": true
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 5,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F5",
+      "run_id": "onefile-sol-flow-single-02",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 6
+      },
+      "monitor_histories": {
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "test_cases": 1,
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 0,
+        "uncovered": [],
+        "uncovered_more": 0,
+        "mutation_time_limit_reached": false
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 6,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F6",
+      "run_id": "onefile-luna-flow-single-01",
+      "submitted_tests": {
+        "status": "passed",
+        "test_count": 4
+      },
+      "monitor_histories": {
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "native_model_summary": {
+        "status": "passed",
+        "message": "All test cases passed",
+        "test_cases": 2,
+        "failed": 0,
+        "incomplete": 0,
+        "coverage_failed": false,
+        "coverage_gaps": 0,
+        "uncovered": [],
+        "uncovered_more": 0,
+        "mutation_time_limit_reached": false
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "infrastructure_error",
+        "reference_test_count": 4,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    }
+  ],
+  "files": {
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/tool-transcript.jsonl": {
+      "sha256": "5bc132b43430f2486f8d97dae61beaf0283f9475bab3e28c0aa95f0b7a2794ef",
+      "bytes": 49730
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/prompt.txt": {
+      "sha256": "6c56933134a3a89f94318174429e0d5e1fc405fa4a64969b6860e7d4fcbe3191",
+      "bytes": 752
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/metadata.json": {
+      "sha256": "a4abd8691bac0fb6562a2c5dd290e6ebd29885b67dafa02c8ef4cb821864a438",
+      "bytes": 3363
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/grading/grade.json": {
+      "sha256": "34ebceb420c2c21bccb7ed39e0d386d670e03e1d2e39adaf99b54cd3fefa5d31",
+      "bytes": 157427
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/supplemental-model-source-v3/result.json": {
+      "sha256": "4eb810056b797e841d8fdb4d048678fce2542719e51141323a52b7afdf840008",
+      "bytes": 4293
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/supplemental-observation-source-v3/result.json": {
+      "sha256": "825609d043b41583e14f6e905410b9cd4eb7b65ffcf171af70057f79ffc2b94c",
+      "bytes": 149497
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-02/submission-manifest.json": {
+      "sha256": "9c7912f36db288452d6e807ae335455b74065cd033a9df4fb9ea675c6e764464",
+      "bytes": 756
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/tool-transcript.jsonl": {
+      "sha256": "dd4891646df54f633667f4ea39f503c0c715abf545b3eaa6504b78a702dd67a4",
+      "bytes": 140557
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/prompt.txt": {
+      "sha256": "f3d6f2282ffacd9a8a727665e9cec771002d261c7989b9381331e9e5909bc3ba",
+      "bytes": 793
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/metadata.json": {
+      "sha256": "d6d795e6e5bf68c195252320b502f07477d54826f89234a7d7f53351bac05170",
+      "bytes": 9450
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/grading/grade.json": {
+      "sha256": "e55a870704a5e7fac76f6ae8b304aad23b188f0dbdd06ead8e771889b87453b8",
+      "bytes": 8772
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/supplemental-model-source-v3/result.json": {
+      "sha256": "d797000bc81b2db8f4fde4120e87d01a5e78211d84f4334c456435567cc29ff0",
+      "bytes": 25343
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "cf4a3aa828fe7fd39ac20fc1fbf5badabc0888a1dcb419b61484e8574802d565",
+      "bytes": 178628
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-multi-01/submission-manifest.json": {
+      "sha256": "2ac10442dde459aa3fab007bbe0650da853131ccc56dacf55e1916a37dd61700",
+      "bytes": 756
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/tool-transcript.jsonl": {
+      "sha256": "b3af9eeb6e7cc6aa8e191a2bbea95a8b3620029119cef9fce738632991db7a92",
+      "bytes": 90972
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/prompt.txt": {
+      "sha256": "a9fde1673cc7d34d9a7fbe72f556b492754179ec24d242978bded367bd07ae9a",
+      "bytes": 793
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/metadata.json": {
+      "sha256": "405cc7a930f3af9b29ef2cfa9ac9489153cd2a07bd32b0319811371295fcd930",
+      "bytes": 8216
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/grading/grade.json": {
+      "sha256": "dc2616dea76f23735b1e7b800dad53aecebc46a665036cdbdb9e24e1981fa1e5",
+      "bytes": 212635
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/supplemental-model-source-v3/result.json": {
+      "sha256": "8fe37476a4068e76e6cf17f94bacd7538e0fef663ceb1041151e114916194805",
+      "bytes": 9255
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "5ae400b7012a30675f5c687c04ef9480e22113a3cc973a64b0ef3b16f6b7ec6d",
+      "bytes": 202515
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-01/submission-manifest.json": {
+      "sha256": "41ee82b256e688b5e4e0179e793b61b7b0b71daaa89b72ef6f6e43a2b9996cd2",
+      "bytes": 1238
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/tool-transcript.jsonl": {
+      "sha256": "fc43c53f8597be02528e87973724159d7b2cea1b033054961a615323af959d38",
+      "bytes": 61527
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/prompt.txt": {
+      "sha256": "b3877c6d01dd7e27a91a074ea3b6ab1be8d8d1886e0e9bd87f7b3f307de60020",
+      "bytes": 752
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/metadata.json": {
+      "sha256": "08bce1ec71df3ac9b27dd9e46ed3fd335ee77ea016bbd179698fcf0c60c26bf0",
+      "bytes": 3364
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/grading/grade.json": {
+      "sha256": "9f2db327dc4a908a0c754617b24d9d5cfba5dc5b476bf50c79459758ff17327c",
+      "bytes": 154822
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/supplemental-model-source-v3/result.json": {
+      "sha256": "8bb9457c689e742c94f28f05245afa4533edf87a2b4500f3ed2eb7371ffbccc2",
+      "bytes": 21370
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "c4ee5d2ae9a15f952263cb3a37317d3505872e47c5c932acfcd3f7597dc8d170",
+      "bytes": 132585
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-compat-01/submission-manifest.json": {
+      "sha256": "29c8a37ac2afae4f3206e38b9b112359cd29ab2158202eea5ad80cac3beeba98",
+      "bytes": 756
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/tool-transcript.jsonl": {
+      "sha256": "1b1d89cf21e72cea262bb07194e9f83998311a8cd54951dc00305b324c0e8414",
+      "bytes": 80609
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/prompt.txt": {
+      "sha256": "d726c5aa05b30520c0439098e3d457067397656d5190f725795c0e97f0ab4d86",
+      "bytes": 793
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/metadata.json": {
+      "sha256": "cbad3eca4d9f789743a0030619d846fbb0545ce910afeacb6b8d4d9651f07c07",
+      "bytes": 8217
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/grading/grade.json": {
+      "sha256": "87e102ce558b6eb880ff2039c8c1dee4cd062f76199ec3a955d220adc632488f",
+      "bytes": 147041
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/supplemental-model-source-v3/result.json": {
+      "sha256": "f56ddb6e42a9172e6a676f8928f9c8c82c93c915f24f9070ae98211928b7fb8e",
+      "bytes": 5319
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/supplemental-observation-source-v3/result.json": {
+      "sha256": "560d19704213c0bea2e9fdfcfb9684124d55aeac4f6aaea77c50dfa75671c32e",
+      "bytes": 140859
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-sol-flow-single-02/submission-manifest.json": {
+      "sha256": "7694a8acfdb2360102a8f3fdf6bd353e6dd96f1da1565d9b25b0e0d6574f6770",
+      "bytes": 846
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/tool-transcript.jsonl": {
+      "sha256": "6f5d7bed0615f9a9038f6ab3ca5f5bf34735b83ca8d2f56028aa6f141e3255bf",
+      "bytes": 227345
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/prompt.txt": {
+      "sha256": "27b89c64b0319d4e263e61bb28a2b04c8ae39465d44bf1e6d4ab47e940473135",
+      "bytes": 795
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/metadata.json": {
+      "sha256": "104dfb6fc984a4bf691fef8f22bd93ce2113e9bd5871fc3d43106118239c7ce0",
+      "bytes": 8216
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/grading/grade.json": {
+      "sha256": "99d644c36f00c9b22c2514dfb40608e3315396ce1895ce077f1d0334df0ae1a6",
+      "bytes": 10457
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/supplemental-model-source-v3/result.json": {
+      "sha256": "d9de01fcc764cc61e9ea75b9f7ea8c63eb5a8c68d1089e9dcddda3ec6ea56277",
+      "bytes": 12442
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "e1f7c7bd3388a999e259e8d162ea4995576e5a822e334bdc820a9b06b6b8df65",
+      "bytes": 225433
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/onefile-luna-flow-single-01/submission-manifest.json": {
+      "sha256": "7e5f9fae08497ed450d77b5cb2ff8fb4f0eb25787c957febb97c1002caddde7a",
+      "bytes": 756
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/bridge.py": {
+      "sha256": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+      "bytes": 2241
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/flow/private/grade.py": {
+      "sha256": "2e22f8f503494218ebf52b34fae7fc18b8cc248218475eed3bbfab36c5977d0c",
+      "bytes": 16456
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/flow/private/reference_solution.py": {
+      "sha256": "4f8cda966cbb07ed38bbe3384a6dc6d09023b310fca4eb28bfb539e1eb215ea8",
+      "bytes": 1622
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/source_assembly.py": {
+      "sha256": "fce380a19318c3a3de1ec773acbe6381376179c74df3d4b916d656351ec48481",
+      "bytes": 3147
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/recheck_observation_sources.py": {
+      "sha256": "eb3dc822d1c592ef415ee27b58efe53856c74205eac82965ba21be2fb84ba078",
+      "bytes": 2700
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/recheck_model_sources.py": {
+      "sha256": "84237f9ffb409ad64bc9b35d6b6cd83f6df674e442be9b1989b1f1d99d10fe9b",
+      "bytes": 3211
+    },
+    "/tmp/single-file-fifo-source-audit.md": {
+      "sha256": "076250df016b946f1dfbdba57fd677c44548fd3028afd84a50a87065265f23c3",
+      "bytes": 20323
+    },
+    "/tmp/single-file-fifo-source-audit.json": {
+      "sha256": "fc880571eb463204e986a38f3388514b3a2d63162dfddcbacf10592f4c9cc978",
+      "bytes": 11317
+    }
+  },
+  "all_hashes_verified": true
+}

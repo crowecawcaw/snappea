@@ -1,0 +1,231 @@
+{
+  "reviewer": "/root/review_singlefile",
+  "scope": "assignment-withheld static FIFO source review; CLI names may self-reveal; no execution, maps, transcripts, grades or hidden fixtures consulted",
+  "completed": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6"
+  ],
+  "files": {
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/DESIGN.md": {
+      "sha256": "d50bd0ea7dcdb683dd1316f0dbbe127f99ab8060436f67d6e5bdf7e0658a9248",
+      "bytes": 3127
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/events.p": {
+      "sha256": "07d91654a523bbcdceaac8a3e8f0209158099768a666ec848c304474e46701bf",
+      "bytes": 169
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/model.p": {
+      "sha256": "01e5dd46036ed6d075b63e5cfeb1d7d0629fd3837e21a29c643051dd01ff895b",
+      "bytes": 7066
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/monitor.p": {
+      "sha256": "68564d7a268d19424c5b6b4a0af5568310217d03936d6da79717b17b54059c97",
+      "bytes": 2439
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/solution.py": {
+      "sha256": "e1857c9ec653dee3414791f55b26ecf86f320e9e59e1aa03825875f414f598bf",
+      "bytes": 2030
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/test_observation.py": {
+      "sha256": "b69f7d316945666c9ee05457c80ce83eb0b3c3902039da687fefdf15ca9bbfaa",
+      "bytes": 3066
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F2/tests.p": {
+      "sha256": "317bbfb562371c511f3907b58423070c39450d8d38c4c487d75fa209a26fe803",
+      "bytes": 89
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/DESIGN.md": {
+      "sha256": "578fbbfe93298ee61f88f042a3a97e9f6aa6606953537faf2e3e05c903b17c8a",
+      "bytes": 6486
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/TASK.md": {
+      "sha256": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+      "bytes": 1867
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/model.p": {
+      "sha256": "b890c62a35d17e9bf655e0447c20ae2147af46e55e44bcade5ed02ee3c739f88",
+      "bytes": 6258
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/monitor.p": {
+      "sha256": "2e4a88a073fea63f7f82dc52c441fcbea5d42e18267369ecef087ed135e26853",
+      "bytes": 1555
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/solution.py": {
+      "sha256": "cdae0af86b9b1ba7e8082946dc1db07a1aa47da87d4f9c6c25d53e96bcfc01ef",
+      "bytes": 1765
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/test_observation.py": {
+      "sha256": "de5bfa3db42c1d6d33c04f634bd03ad0e4a7e023c3657825d0214f14434ad985",
+      "bytes": 8931
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F4/tests.p": {
+      "sha256": "e1c6e36947c7860845c4cf1913b80ac7bee54adaac08625df630210f49a738d1",
+      "bytes": 91
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/DESIGN.md": {
+      "sha256": "db2e700e669bd26f7c0b9300a1778548b27247d8350f869a5b4abf8b3a072ed0",
+      "bytes": 8259
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/model.p": {
+      "sha256": "888d7ea508525b97e1b22ee5a3a3bea1286b5f4ea007e9aa68a8b5bd3937b058",
+      "bytes": 5185
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/monitor.p": {
+      "sha256": "6826ca92425173db1fe2a32dac084e637dc5566f2036b0764871544a0af19788",
+      "bytes": 2290
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/solution.py": {
+      "sha256": "2974d873267f33d05494e199d3d9d612f92e4e9b2f74be19e6bfae77c669f65f",
+      "bytes": 1861
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/test_observation.py": {
+      "sha256": "206bb3a4cab48e54ef070d0a53582eae197676f552849cd09361104f83b6dfe7",
+      "bytes": 9304
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F3/tests.p": {
+      "sha256": "a103411360f9d50f52a4e58b3765f0d89a998271a41e33e96478324978b7b7f6",
+      "bytes": 3336
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/DESIGN.md": {
+      "sha256": "0cb75b6e76dd838ffd036e74029ef51e9dc935e4f18910dd038580ca84a26f5d",
+      "bytes": 7656
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/model.p": {
+      "sha256": "036b1c102f5f08985cb71aa31511444536d0d6ff351f9781dbef621e57a32ea0",
+      "bytes": 3803
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/monitor.p": {
+      "sha256": "879c2bce49c8e4cc11eb64d6dc3f0c586b2dfab8799994df9e070887885e00b4",
+      "bytes": 1490
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/solution.py": {
+      "sha256": "a61bc24725307c6e4cfe472ff43402e3b2508e635de41e02cca71f758d71b2d5",
+      "bytes": 1965
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/test_observation.py": {
+      "sha256": "29df617bf39f17e852c7c3a25260ade6291d3a96054673cfa3d7d8643bbcdcd3",
+      "bytes": 10605
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F5/tests.p": {
+      "sha256": "1039ec146841696dbd85b4d3f29cc5f414d2311a0bf3ab738080a597af500fb8",
+      "bytes": 2243
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/DESIGN.md": {
+      "sha256": "905b37a97d3a3ae7a921e6e16245a09d6ff30559221dcd9e631762af53856ae8",
+      "bytes": 2214
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/events.p": {
+      "sha256": "3b6f5a1f2e2434e9d16ab3bcb82180a40662375fec8db1f651cc75080274516d",
+      "bytes": 363
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/model.p": {
+      "sha256": "ba76cade5220d2582c79eeeb2e7449c05dc2f2ca2fa7c9aec40a953b0aadb2de",
+      "bytes": 8005
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/monitor.p": {
+      "sha256": "02f8f0e726dec666784ec39b3dc63e6a200fcb8bbf7349b8eb4aa98048a8ef8a",
+      "bytes": 2695
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/solution.py": {
+      "sha256": "3c5eff6f87e338e6b20a7e6036e10e3cd750419d373d46abf76d8216637d0dc2",
+      "bytes": 4105
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/test_observation.py": {
+      "sha256": "046db4b5d717cbb76b493a647d4f62efc15628786c686dd3156d83a1eaabd232",
+      "bytes": 3932
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F6/tests.p": {
+      "sha256": "ccc7c5f0c6b6435f546ce7af2a56e266613991c4826259e949a83561420426f1",
+      "bytes": 253
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/DESIGN.md": {
+      "sha256": "7b064e7b34d190bdaf2875de08a108d9217bc2d4512ba0df7191a25756a06424",
+      "bytes": 3214
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/TASK.md": {
+      "sha256": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+      "bytes": 1867
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/model.p": {
+      "sha256": "d7d7852e51fe50d2ee21611c5129f63df244ea9ddb452727ecc049208fe53e00",
+      "bytes": 3756
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/monitor.p": {
+      "sha256": "d9dfef50ac442606c5aa3c890fe7601befc7e99253ef79e3778101e9d3dda5fd",
+      "bytes": 1759
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/solution.py": {
+      "sha256": "a17d5025c4cb5c79fccc8b160aee465e970dc6786026266a198b3bb9e4c45a00",
+      "bytes": 2285
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/test_observation.py": {
+      "sha256": "c9af9d37a808d44395b45dacaee04a1f4cea2df1fe96ed608942d7ff6dc84d7a",
+      "bytes": 8978
+    },
+    "/workspace/snappea-skill/evals/single-file-examples/runs/blind-source/F1/tests.p": {
+      "sha256": "16ae164270a82040075b34a50fbf87c953cc8cabe658075327a36755f392d262",
+      "bytes": 87
+    }
+  },
+  "all_source_hashes_verified": true
+}

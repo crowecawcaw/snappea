@@ -80,3 +80,5 @@ Calibration suites exercise known-correct and known-bad controls; they never ent
 Written failure-scenario prompt experiment: [Luna/high results](../../prethought/RESULTS.md) (native Snappea, no skill, eight fresh FIFO/VCS trials).
 
 Reviewed example revision: [Luna/high old/revised/no-skill comparison](../../skill-examples/RESULTS.md) (twelve fresh trials; reference uptake, setup friction and semantic failures reported separately).
+
+Single-file examples: [Luna format trial and Sol/medium package comparison](../../single-file-examples/RESULTS.md) (twelve fresh trials; actual source visibility, model quality and implementation correctness reported separately).
