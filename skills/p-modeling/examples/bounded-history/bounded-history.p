@@ -1,3 +1,50 @@
+/*
+ * File map (search these names):
+ * CapacityOracle = oracle; Store = atomic primitive; HistoryClient = protocol;
+ * *Main = fixed/generated and sequential/concurrent workloads;
+ * test tc* = positive/negative selections; adjacent JSONL = oracle-only probes.
+ *
+ * Bounded histories: inputs, interleavings, independent state and completion.
+ *
+ * Contract: stock starts at 2; positive purchase succeeds iff affordable; replenish
+ * adds units; rejection changes nothing. IDs are fresh correlation IDs, NOT retries.
+ * CapacityOracle records driver inputs; derives decisions/stock independently;
+ * matches actual replies by ID and actual public snapshots. It never reads Store
+ * fields. The negative state control returns false correctly but changes stock.
+ *
+ * Store check/update is an ACTUAL atomic primitive, not split load/CAS. Observations
+ * at Store decisions/reads precede reply delivery; reply receipt is not commit
+ * order. Other clients may commit before inspection: compare against all intervening
+ * decisions, not the stock immediately after the original operation. Sequential
+ * immediate inspections catch rejection damage before later work masks it.
+ *
+ * Drivers share HistoryClient: fixed three purchases; three competing fixed inputs;
+ * three generated sequential purchase/replenish choices of 1/2; or two concurrent
+ * clients each choosing purchase/replenish of 2. Input choice and schedule choice
+ * are different coverage dimensions. Bounds preserve depletion/exact-fit/excess/
+ * replenishment while keeping complete exploration quick, not arbitrary histories.
+ * Hot completion requires a declared nonzero count and one decision, checked reply,
+ * inspection per ID plus every client done; dropping work cannot pass vacuously.
+ *
+ * Run positive tests TOGETHER to cover shared code (each narrow case can lack coverage):
+ *   snappea check bounded-history.p tcFixedInputHistory tcSchedulerChoosesInterleaving tcGeneratedHistory tcConcurrentGeneratedHistory --no-mutation --timeout 5s
+ * Negative controls (each must fail its intended property, not compile/coverage):
+ *   snappea check bounded-history.p tcBrokenInputHistory --no-mutation
+ *   snappea check bounded-history.p tcBrokenGeneratedHistory --no-mutation
+ *   snappea check bounded-history.p tcRejectedWriteChangesState --no-mutation
+ * First two catch excess acceptance; last catches "public stock 1, expected 0".
+ *   snappea observe bounded-history.p valid-concurrent.jsonl --spec CapacityOracle --strict --check-hot
+ * valid.jsonl also passes; invalid*.jsonl, incomplete.jsonl and zero-work.jsonl must
+ * fail decision/state/reply/progress/nonzero checks. These hand-calculated traces
+ * validate only the oracle; see ../reservation/test_storage.py for real capture.
+ *
+ * Limits: finite lengths above, positive units, fresh IDs, one Store, reliable
+ * messages and live clients. No retries, persistence, crashes, external storage
+ * failures or unbounded fairness. Schedule counts are not semantic coverage.
+ */
+
+// --- Contract declarations and independent oracle ---
+
 type Request = (requester: machine, id: string, replenish: bool, units: int);
 type Decision = (id: string, replenish: bool, units: int, accepted: bool);
 type Inspection = (id: string, remaining: int);
@@ -95,6 +142,8 @@ spec CapacityOracle observes eBegin, eRequested, eDecision, eReturned, eSnapshot
   state Complete { }
 }
 
+// --- Atomic storage primitive ---
+
 machine Store {
   var remaining: int;
   var acceptTooMuch: bool;
@@ -143,6 +192,8 @@ machine Store {
 // The same protocol supports fixed and generated inputs. Every result is matched
 // to its invocation; every command is followed by a real public read and reply.
 // No driver reads Store fields or invents an expected successful result.
+// --- Shared client protocol and bounded scenarios ---
+
 machine HistoryClient {
   start state Start {
     entry (input: (store: Store, name: string, steps: int, generated: bool, chooseUnits: bool)) {
@@ -259,6 +310,8 @@ machine RejectedWriteMain {
     }
   }
 }
+
+// --- Selected positive and negative tests ---
 
 test tcSchedulerChoosesInterleaving [main=ScheduledMain]:
   assert CapacityOracle in { ScheduledMain, Store, HistoryClient };

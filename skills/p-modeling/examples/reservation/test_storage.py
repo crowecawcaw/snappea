@@ -10,7 +10,7 @@ from snappea import SpecViolation, check_spec
 from storage import ReservationStore, assert_inventory_invariant
 
 
-SPEC = str(Path(__file__).with_name("capacity.p"))
+SPEC = str(Path(__file__).with_name("Reservation.p"))
 
 
 class ReservationTests(unittest.TestCase):

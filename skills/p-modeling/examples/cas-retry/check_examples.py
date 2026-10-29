@@ -44,14 +44,14 @@ def run(binary):
         work = Path(tmp)
         shutil.copytree(ROOT, work, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__", "PCheckerOutput"))
-        source = (work / "store.p").read_text()
+        source = (work / "Balance.p").read_text()
         for label, fault in [("correct", None), *FAULTS.items()]:
             text = source
             if fault:
                 old, new, message = fault
                 assert source.count(old) == 1, label
                 text = source.replace(old, new)
-            (work / "store.p").write_text(text)
+            (work / "Balance.p").write_text(text)
             result = subprocess.run(
                 [str(binary), "check", "Balance.pproj", "--no-mutation", "--timeout", "5s", "--json"],
                 cwd=work, capture_output=True, text=True, timeout=30,
@@ -74,7 +74,7 @@ def run(binary):
                   ("unfinished.jsonl", 1, "liveness bug"),
                   ("empty-work.jsonl", 1, "scenario omitted a fresh request")]
         for name, expected, diagnostic in probes:
-            result = subprocess.run([str(binary), "observe", "protocol.p", name,
+            result = subprocess.run([str(binary), "observe", "Balance.p", name,
                                      "--spec", "BalanceContract", "--strict", "--check-hot"],
                                     cwd=work, capture_output=True, text=True, timeout=30)
             assert result.returncode == expected, result.stdout + result.stderr

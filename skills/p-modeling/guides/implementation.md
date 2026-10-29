@@ -15,7 +15,7 @@ from storage import ReservationStore
 def test_competing_reservations():
     with check_spec(
         "Capacity",
-        spec_files=["capacity.p"],
+        spec_files=["Reservation.p"],
         strict=True,
         check_hot=True,
         unknown_events="error",
@@ -30,7 +30,7 @@ def test_competing_reservations():
 - `check_spec` captures application `emit` calls; it does not intercept arbitrary methods. `check_events(events, "Capacity", spec_files=[...])` checks an existing recording.
 - Without application emission, wrap real calls and record actual inputs, results, and public reads. Do not invent internal commits. Hand-written traces test only the monitor.
 - Preserve distinctions: mapping all noninitial heads to one value can hide wrong results.
-- See [reservation](../examples/reservation/README.md) for saved tests, a rejected defective implementation, and an independent Python invariant.
+- See [reservation](../examples/reservation/Reservation.p) for saved tests, a rejected defective implementation, and an independent Python invariant.
 
 ## Evidence limits
 

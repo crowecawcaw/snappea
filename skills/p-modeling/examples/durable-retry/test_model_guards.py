@@ -17,7 +17,7 @@ class ResponseIntegrityTests(unittest.TestCase):
             work = Path(tmp) / 'example'
             shutil.copytree(Path(__file__).parent, work,
                             ignore=shutil.ignore_patterns('__pycache__', 'PCheckerOutput'))
-            source = work / 'PSrc/RetryModel.p'
+            source = work / 'DurableRetry.p'
             before, after = source.read_text().split('machine SplitCommitService {', 1)
             # Corrupt only public reply payloads. Commits/memoized effects remain
             # correct, so rejection must come from observing the actual response.

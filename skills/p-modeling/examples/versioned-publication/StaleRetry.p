@@ -1,3 +1,24 @@
+/*
+ * File map (search these names):
+ * EvidenceMatchesCurrentVersion = oracle; Store = atomic primitives;
+ * Publisher = faulty stale retry; Main/test = two competing clients.
+ *
+ * NEGATIVE CONTROL: stale publication evidence reused after a CAS conflict.
+ *
+ * Read Revalidated.p for the correct design and full assumptions. This variant
+ * changes only expected CAS version after losing; its old prepared record/evidence
+ * remain tied to version 0. Another publisher already advanced the active pointer.
+ * The independent monitor requires evidence/base/generation to match current state,
+ * so version-0 evidence must not publish at version 1.
+ *
+ * Run: snappea check StaleRetry.p
+ * Expected: exit 1 with "was validated for version"; mutation analysis is skipped
+ * after the counterexample. A parse/lint/coverage error is not defect detection.
+ * Both files model two clients, atomic storage reads/CAS, no crashes or message
+ * loss; production needs matching atomic guarantees. See Revalidated.p for progress
+ * obligations and why one retry is sufficient only for this bounded workload.
+ */
+
 event ePublisherStarted: machine;
 event ePublisherDone: machine;
 event eRead: Publisher;

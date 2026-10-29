@@ -1,3 +1,41 @@
+/*
+ * File map (search these names):
+ * EvidenceMatchesCurrentVersion = independent oracle; Store = atomic primitives;
+ * Publisher = read/derive/validate/CAS/retry algorithm; Main/test = two clients.
+ *
+ * Version-bound publication: a losing CAS must rebuild its evidence.
+ *
+ * Two publishers read an active version/record, derive the next generation,
+ * validate against that snapshot and CAS the active pointer. Correct loser rereads,
+ * recomputes AND revalidates: after generation 1 commits, prepare generation 2.
+ * Changing only expected CAS version would publish stale generation-1 evidence.
+ * StaleRetry.p is that deliberate defect.
+ *
+ * EvidenceMatchesCurrentVersion maintains its own version/pointer, independent of
+ * Store fields. It checks evidence version, base record, next-generation relation,
+ * and actual success response. A hot monitor requires two distinct starts, two
+ * commits and two actual completions: silently abandoning the loser must fail.
+ * Observe at commit/reply-send boundaries, never assume client receipt order.
+ *
+ * Run from this directory:
+ *   snappea check Revalidated.p
+ * Must pass lint, complete bounded search and required coverage; inspect mutation
+ * feedback separately. StaleRetry.p must fail "was validated for version".
+ *   python -m unittest -v
+ * The negative control removes completion announcements in a temp copy and requires
+ * a hot-state liveness failure, not parse/coverage failure.
+ *
+ * Atomic boundary: eRead returns one version/pointer snapshot; eTryPublish validates
+ * version and updates version+pointer atomically before response. Real code needs
+ * equivalent transaction/lock/CAS guarantees. Preparation happens outside that
+ * primitive. Immutable contents are abstracted as integer generations; validation
+ * accepts exactly the next generation. Exactly two clients publish once each; one
+ * retry suffices only because the other writer then stops. More clients need a loop.
+ * No crashes, durability, recovery, message loss, external readers, overflow, real
+ * cryptography/validation or unbounded configurations. Passing modeled bounds and
+ * mutations is not a proof of implementation correctness or production fairness.
+ */
+
 event ePublisherStarted: machine;
 event ePublisherDone: machine;
 event eRead: Publisher;

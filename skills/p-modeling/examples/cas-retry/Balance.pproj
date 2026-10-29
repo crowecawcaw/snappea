@@ -1,8 +1,6 @@
 <Project>
   <ProjectName>CASRetryBalance</ProjectName>
   <InputFiles>
-    <PFile>./protocol.p</PFile>
-    <PFile>./store.p</PFile>
-    <PFile>./driver.p</PFile>
+    <PFile>./Balance.p</PFile>
   </InputFiles>
 </Project>

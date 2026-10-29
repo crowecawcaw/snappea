@@ -29,8 +29,8 @@ def validate(binary):
         ('bounded-history', ['check', 'bounded-history.p', 'tcBrokenInputHistory', '--no-mutation', '--timeout', '5s'], 'accepted=True with'),
         ('bounded-history', ['check', 'bounded-history.p', 'tcBrokenGeneratedHistory', '--no-mutation', '--timeout', '5s'], 'accepted=True with'),
         ('bounded-history', ['check', 'bounded-history.p', 'tcRejectedWriteChangesState', '--no-mutation', '--timeout', '5s'], 'public stock 1, expected 0'),
-        ('reservation', ['check', 'Atomic.pproj', '--timeout', '5s'], None),
-        ('reservation', ['check', 'StaleWrite.pproj', '--timeout', '5s'], 'reservations exceed available capacity'),
+        ('reservation', ['check', 'Reservation.p', 'tcAtomicConditionalReserve', 'tcTwoSequentialSuccesses', '--timeout', '5s'], None),
+        ('reservation', ['check', 'Reservation.p', 'tcReadCheckWrite', '--timeout', '5s'], 'reservations exceed available capacity'),
         ('durable-retry', ['check', 'tcDurableRetry', 'tcCompletedReplay', 'tcConcurrentRetries'], None),
         ('durable-retry', ['check', 'tcSplitCommitRetry'], 'one request caused more than one effect'),
         ('durable-retry', ['check', 'tcReappliedReplay'], 'one request caused more than one effect'),
@@ -76,7 +76,7 @@ def validate(binary):
                 ('invalid-reply.jsonl', 'reply disagrees'),
                 ('incomplete.jsonl', 'hot state'),
                 ('zero-work.jsonl', 'scenario must perform real work')]),
-            'durable-retry': ('PSpec/Contract.p', 'RetryContract', [
+            'durable-retry': ('DurableRetry.p', 'RetryContract', [
                 ('valid-concurrent.jsonl', None),
                 ('invalid-duplicate.jsonl', 'one request caused more than one effect'),
                 ('invalid-incomplete.jsonl', 'hot state'),

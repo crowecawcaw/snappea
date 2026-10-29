@@ -16,7 +16,7 @@
 - Split read → decide → write across messages/phases when another actor can intervene. Otherwise the model assumes away the race.
 - Keep preparation, dependency writes, validation, and publication separate when those boundaries matter. Prepared-but-unpublished records are not committed state.
 - A per-resource model cannot check a shared global limit unless it represents the competing resources.
-- See [reservation](../examples/reservation/README.md) for atomic conditional update versus stale read/write.
+- See [reservation](../examples/reservation/Reservation.p) for atomic conditional update versus stale read/write.
 
 ## Compare with implementation
 

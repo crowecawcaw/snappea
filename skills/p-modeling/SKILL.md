@@ -11,11 +11,11 @@ description: Model stateful designs with P/Snappea; validate implementation hist
 
 ## Design
 
-- Start from the [executable syntax reference](reference/p-patterns.md) for a selected monitor/test; use [CAS + generated retries](examples/cas-retry/README.md) for a complete bounded driver/oracle pattern.
+- Start from the [executable syntax reference](reference/p-patterns.md) for a selected monitor/test; use [CAS + generated retries](examples/cas-retry/Balance.p) for a complete bounded driver/oracle pattern.
 
 - State contract, atomic primitives, bounds, assumptions, omissions.
 - Preserve interference: separate reads/later writes unless a real transaction, lock, or CAS makes them atomic. Local assignments do not yield; communication can.
-- Bound generated input histories to contract-relevant choices; let schedule exploration vary interleavings. Keep a few manually calculated valid and invalid oracle probes to check the monitor itself. See the [bounded history generator](examples/bounded-history/README.md).
+- Bound generated input histories to contract-relevant choices; let schedule exploration vary interleavings. Keep a few manually calculated valid and invalid oracle probes to check the monitor itself. See the [bounded history generator](examples/bounded-history/bounded-history.p).
 - Preserve relevant IDs, versions, durable/volatile state, and prepared/committed distinctions.
 - Make competitors share a resource. Retry A after B advances that resource; check A's original result and B's retained state where promised.
 - Model the algorithm, not just atomic API behavior: include reads, failed conditional writes, and retries when those are the design risk.
@@ -38,4 +38,4 @@ description: Model stateful designs with P/Snappea; validate implementation hist
 ## References
 
 - Guides: [modeling](guides/modeling.md), [scenarios/oracles](guides/scenarios-and-oracles.md), [recovery](guides/recovery.md), [P syntax/commands](reference/p-patterns.md).
-- Original correct/broken examples: [CAS + generated retries](examples/cas-retry/README.md), [generated histories](examples/bounded-history/README.md), [reservation + Python tests](examples/reservation/README.md), [durable retry](examples/durable-retry/README.md), [versioned publication](examples/versioned-publication/README.md).
+- Original correct/broken examples: [CAS + generated retries](examples/cas-retry/Balance.p), [generated histories](examples/bounded-history/bounded-history.p), [reservation + Python tests](examples/reservation/Reservation.p), [durable retry](examples/durable-retry/DurableRetry.p), [versioned publication](examples/versioned-publication/Revalidated.p).
