@@ -25,11 +25,13 @@ def validate(binary):
                 raise RuntimeError(f'{page.relative_to(ROOT)}: broken or external local link: {link}')
     print('Local links: PASS')
     checks = [
-        ('bounded-history', ['check', 'bounded-history.p', 'tcGeneratedHistory', '--no-mutation', '--timeout', '5s'], None),
+        ('bounded-history', ['check', 'bounded-history.p', 'tcFixedInputHistory', 'tcSchedulerChoosesInterleaving', 'tcGeneratedHistory', 'tcConcurrentGeneratedHistory', '--no-mutation', '--timeout', '5s'], None),
+        ('bounded-history', ['check', 'bounded-history.p', 'tcBrokenInputHistory', '--no-mutation', '--timeout', '5s'], 'accepted=True with'),
         ('bounded-history', ['check', 'bounded-history.p', 'tcBrokenGeneratedHistory', '--no-mutation', '--timeout', '5s'], 'accepted=True with'),
+        ('bounded-history', ['check', 'bounded-history.p', 'tcRejectedWriteChangesState', '--no-mutation', '--timeout', '5s'], 'public stock 1, expected 0'),
         ('reservation', ['check', 'Atomic.pproj', '--timeout', '5s'], None),
         ('reservation', ['check', 'StaleWrite.pproj', '--timeout', '5s'], 'reservations exceed available capacity'),
-        ('durable-retry', ['check', 'tcDurableRetry', 'tcCompletedReplay'], None),
+        ('durable-retry', ['check', 'tcDurableRetry', 'tcCompletedReplay', 'tcConcurrentRetries'], None),
         ('durable-retry', ['check', 'tcSplitCommitRetry'], 'one request caused more than one effect'),
         ('durable-retry', ['check', 'tcReappliedReplay'], 'one request caused more than one effect'),
         ('versioned-publication', ['check', 'Revalidated.p'], None),
@@ -46,6 +48,16 @@ def validate(binary):
         if r.returncode:
             raise RuntimeError(f'P reference snippet: {r.stdout}{r.stderr}')
         print('P reference snippet: PASS')
+        broken = snippet.group(1).replace('total = total + p.units;', 'total = total;')
+        if broken == snippet.group(1):
+            raise RuntimeError('reference negative control did not change the modeled effect')
+        reference.write_text(broken)
+        r = subprocess.run([str(binary), 'check', reference.name, 'tcRequest',
+                            '--no-mutation', '--timeout', '5s'], cwd=tmp, env=env,
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 1 or 'reply disagrees with requested additions' not in r.stdout + r.stderr:
+            raise RuntimeError(f'P reference failed to reject a missing effect: {r.stdout}{r.stderr}')
+        print('P reference missing-effect control: PASS')
         examples = Path(tmp) / 'examples'
         shutil.copytree(ROOT / 'examples', examples, ignore=shutil.ignore_patterns('PCheckerOutput', '__pycache__', '*.log'))
         for name, args, expected_error in checks:
@@ -56,14 +68,46 @@ def validate(binary):
             if r.returncode != expected_code or (expected_error and expected_error not in output):
                 raise RuntimeError(f'{name} {args}: expected {expected_code}/{expected_error}\n{output}')
             print(f'{name} {args}: PASS ({"expected counterexample" if expected_error else "correct model"})')
-        for trace, expected_code in [('valid.jsonl', 0), ('invalid.jsonl', 1)]:
-            r = subprocess.run([str(binary), 'observe', 'bounded-history.p', trace,
-                                '--spec', 'CapacityOracle', '--strict'],
-                               cwd=examples/'bounded-history', env=env,
-                               capture_output=True, text=True, timeout=30)
-            if r.returncode != expected_code or (expected_code and 'accepted=true with' not in (r.stdout + r.stderr).lower()):
-                raise RuntimeError(f'oracle probe {trace}: {r.stdout}{r.stderr}')
-            print(f'Independent oracle probe {trace}: PASS')
+        probes = {
+            'bounded-history': ('bounded-history.p', 'CapacityOracle', [
+                ('valid.jsonl', None), ('valid-concurrent.jsonl', None),
+                ('invalid.jsonl', 'accepted=true with'),
+                ('invalid-state.jsonl', 'public stock'),
+                ('invalid-reply.jsonl', 'reply disagrees'),
+                ('incomplete.jsonl', 'hot state'),
+                ('zero-work.jsonl', 'scenario must perform real work')]),
+            'durable-retry': ('PSpec/Contract.p', 'RetryContract', [
+                ('valid-concurrent.jsonl', None),
+                ('invalid-duplicate.jsonl', 'one request caused more than one effect'),
+                ('invalid-incomplete.jsonl', 'hot state'),
+                ('invalid-premature-done.jsonl', 'some requested effects never committed'),
+                ('invalid-reverted-total.jsonl', 'expected current effect total'),
+                ('invalid-zero-work.jsonl', 'scenario completed without any requests')]),
+        }
+        for name, (spec_file, spec, traces) in probes.items():
+            for trace, expected_error in traces:
+                r = subprocess.run([str(binary), 'observe', spec_file, trace,
+                                    '--spec', spec, '--strict', '--check-hot'],
+                                   cwd=examples/name, env=env,
+                                   capture_output=True, text=True, timeout=30)
+                output = (r.stdout + r.stderr).lower()
+                expected_code = 1 if expected_error else 0
+                if r.returncode != expected_code or (expected_error and expected_error.lower() not in output):
+                    raise RuntimeError(f'oracle probe {name}/{trace}: {r.stdout}{r.stderr}')
+                print(f'Independent oracle probe {name}/{trace}: PASS')
+        r = subprocess.run([sys.executable, str(examples/'cas-retry/check_examples.py'),
+                            '--binary', str(binary)], env=env,
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode:
+            raise RuntimeError(r.stdout + r.stderr)
+        print(r.stdout, end='')
+        for name in ['versioned-publication', 'durable-retry']:
+            r = subprocess.run([sys.executable, '-m', 'unittest', '-v'],
+                               cwd=examples/name, env=env,
+                               capture_output=True, text=True, timeout=120)
+            if r.returncode:
+                raise RuntimeError(r.stdout + r.stderr)
+            print(f'{name} property negative controls: PASS')
         r = subprocess.run([sys.executable, '-m', 'unittest', '-v'], cwd=examples/'reservation',
                            env=env, capture_output=True, text=True, timeout=120)
         if r.returncode:

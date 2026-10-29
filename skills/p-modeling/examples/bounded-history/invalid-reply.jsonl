@@ -1,0 +1,11 @@
+{"event":"eBegin","payload":{"clients":2,"commands":2}}
+{"event":"eRequested","payload":{"id":"left","replenish":false,"units":2}}
+{"event":"eRequested","payload":{"id":"right","replenish":false,"units":2}}
+{"event":"eDecision","payload":{"id":"left","replenish":false,"units":2,"accepted":true}}
+{"event":"eReturned","payload":{"id":"left","replenish":false,"units":2,"accepted":true}}
+{"event":"eDecision","payload":{"id":"right","replenish":false,"units":2,"accepted":false}}
+{"event":"eReturned","payload":{"id":"right","replenish":false,"units":2,"accepted":true}}
+{"event":"eSnapshot","payload":{"id":"right","remaining":0}}
+{"event":"eSnapshot","payload":{"id":"left","remaining":0}}
+{"event":"eClientFinished","payload":"right"}
+{"event":"eClientFinished","payload":"left"}

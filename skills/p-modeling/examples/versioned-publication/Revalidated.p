@@ -1,3 +1,5 @@
+event ePublisherStarted: machine;
+event ePublisherDone: machine;
 event eRead: Publisher;
 event eVersion: (version: int, record: int);
 event eTryPublish: (requester: Publisher, expected: int, evidence: int, baseRecord: int, record: int);
@@ -6,13 +8,34 @@ event ePublished: (version: int, record: int);
 event eRecorded: (version: int, evidence: int, baseRecord: int, record: int);
 
 // The monitor tracks the committed version and record independently of Store.
-spec EvidenceMatchesCurrentVersion observes eRecorded, ePublished {
+// ePublished is observed at send, before arbitrary client delivery delay.
+// Each eRecorded is a real storage transition; a client-supplied valid flag
+// would merely repeat the implementation decision instead of checking it.
+spec EvidenceMatchesCurrentVersion observes eRecorded, ePublished, ePublisherStarted, ePublisherDone {
   var currentVersion: int;
   var currentRecord: int;
-  start state Watching {
+  var started: set[machine];
+  var finished: set[machine];
+  // Safety alone permits all publishers to stop. This bounded experiment also
+  // requires two real clients to return: no failures, two one-shot writers.
+  start hot state Watching {
     entry {
       currentVersion = 0;
       currentRecord = 0;
+    }
+    on ePublisherStarted do (client: machine) {
+      assert !(client in started), "publisher started twice";
+      started += (client);
+      assert sizeof(started) <= 2, "driver exceeds the two-publisher bound";
+    }
+    on ePublisherDone do (client: machine) {
+      assert client in started, "completion without a started publisher";
+      assert !(client in finished), "publisher completed twice";
+      finished += (client);
+      if (sizeof(finished) == 2) {
+        assert currentVersion == 2, "both successful publications must be visible";
+        goto Complete;
+      }
     }
     on eRecorded do (p: (version: int, evidence: int, baseRecord: int, record: int)) {
       assert p.version == currentVersion, "publication version does not match monitor";
@@ -32,6 +55,7 @@ spec EvidenceMatchesCurrentVersion observes eRecorded, ePublished {
       assert p.record == currentRecord, "published pointer does not name the announced record";
     }
   }
+  state Complete { }
 }
 
 machine Store {
@@ -71,6 +95,7 @@ machine Publisher {
       var candidate: int;
       var snapshot: (version: int, record: int);
 
+      announce ePublisherStarted, this;
       send input.store, eRead, this;
       receive { case eVersion: (initial: (version: int, record: int)) {
         snapshot = initial;
@@ -89,6 +114,9 @@ machine Publisher {
         case eConflict: {
           // The failed CAS invalidates this snapshot. Re-read, recompute the
           // candidate from the new active record, and validate that candidate.
+          // One retry suffices here only because there are exactly two one-shot
+          // publishers: the winner has no further write. More writers require
+          // a retry loop and a stated contention/fairness assumption.
           send input.store, eRead, this;
           receive { case eVersion: (fresh: (version: int, record: int)) {
             snapshot = fresh;
@@ -105,7 +133,9 @@ machine Publisher {
       }
     }
   }
-  state Done {}
+  state Done {
+    entry { announce ePublisherDone, this; }
+  }
 }
 
 machine Main {

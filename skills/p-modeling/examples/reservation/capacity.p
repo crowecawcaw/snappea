@@ -3,6 +3,10 @@ event eReserved: (order: string, units: int);
 
 // The monitor is an independent contract: each committed reservation consumes
 // capacity. It does not trust an application-supplied `valid` result.
+// This is a committed-effect safety oracle, not a complete acceptance contract:
+// Python tests separately require useful success and check rejected calls leave
+// actual stock/records unchanged. Post-lock events may reorder across threads;
+// subtracting positive reservations is order-independent for this invariant.
 spec Capacity observes eOpened, eReserved {
   var available: int;
   var orders: set[string];

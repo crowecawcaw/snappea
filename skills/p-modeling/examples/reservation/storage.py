@@ -25,7 +25,10 @@ class ReservationStore:
 
     def read(self):
         """Read stock and its version. This operation does not reserve anything."""
-        return Snapshot(self.available, self.version)
+        # A snapshot must pair values from one atomic read. The later reserve
+        # still needs a conditional write: releasing this lock permits races.
+        with self._lock:
+            return Snapshot(self.available, self.version)
 
     def reserve_if_unchanged(self, order, units, snapshot):
         """A database-style conditional write: check and update are one operation."""

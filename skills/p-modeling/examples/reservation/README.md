@@ -5,7 +5,8 @@
 - **Broken:** both clients read the last unit, check stale snapshots, then independently write zero stock and a reservation. Locking only the final writes still oversells and loses a decrement.
 - **Model:** `atomic.p` represents one conditional storage primitive; `stale-write.p` separates reads from writes so clients can interfere.
 - **Oracle:** `capacity.p` subtracts committed reservation events independently; negative capacity fails. Hot `Open` requires a reservation in these bounded cases.
-- **Implementation tests:** call real `storage.py` methods under `check_spec`, check emitted source locations, and independently compare actual records with initial/remaining stock. The broken implementation fails both checks.
+- **Driver bounds:** fixed one-/two-unit stocks and competing clients, not generated histories. See [CAS + generated retries](../cas-retry/README.md) for client-side candidates and failed-CAS recomputation.
+- **Implementation tests:** call real `storage.py` methods under `check_spec`, check emitted source locations, and independently compare actual records with initial/remaining stock. The broken implementation fails both checks. Forced shared-read races use a barrier; rejection tests isolate stale-version, capacity and duplicate-order guards and read state immediately after each rejection.
 
 ## Run
 
@@ -32,7 +33,7 @@ snappea check StaleWrite.pproj --timeout 5s
 ## Boundaries
 
 - Python `Lock` protects threads using this object, not other processes. Real storage must supply equivalent atomicity.
-- Omits crashes, retries, idempotency, timeouts, persistence, and multiple processes.
+- Omits crashes, retries, idempotency, timeouts, persistence, and multiple processes. The P atomic model abstracts a conditional capacity primitive; Python additionally rejects stale versions, checked in ordinary tests. It does not model a client-side CAS loop.
 - P explores finite event-level abstractions, not database semantics or every implementation path.
 - Events are emitted after successful changes. Explicit recorder validation can fail tests; runtime emission must not alter application control flow.
 - `strict=True` requires relevant events; `check_hot=True` checks outstanding progress. Neither proves complete instrumentation.

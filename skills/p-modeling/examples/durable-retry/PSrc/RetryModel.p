@@ -8,7 +8,6 @@ event eCrash;
 event eRestart;
 event eRemember: (client: machine, id: int);
 event eCommitted: int;
-event eReply: (id: int, result: int, currentTotal: int);
 
 machine DurableService {
   var durableTotal: int;
@@ -17,6 +16,7 @@ machine DurableService {
   start state Serving {
     on eInvoke do (call: (client: machine, id: int, dropReply: bool)) {
       if (call.id in durableOutcomes) {
+
         send call.client, eReply,
           (id = call.id, result = durableOutcomes[call.id], currentTotal = durableTotal);
       } else {
@@ -27,6 +27,7 @@ machine DurableService {
         if (call.dropReply) {
           send call.client, eCommitted, call.id;
         } else {
+
           send call.client, eReply,
             (id = call.id, result = durableOutcomes[call.id], currentTotal = durableTotal);
         }
@@ -50,6 +51,7 @@ machine SplitCommitService {
   start state Serving {
     on eInvoke do (call: (client: machine, id: int, dropReply: bool)) {
       if (call.id in volatileMemo) {
+
         send call.client, eReply,
           (id = call.id, result = volatileMemo[call.id], currentTotal = durableTotal);
       } else {
@@ -69,6 +71,7 @@ machine SplitCommitService {
   state MemoPending {
     on eRemember do (call: (client: machine, id: int)) {
       volatileMemo[call.id] = durableTotal;
+
       send call.client, eReply,
         (id = call.id, result = durableTotal, currentTotal = durableTotal);
       goto Serving;
@@ -98,6 +101,7 @@ machine ReapplyReplayService {
         if (call.dropReply) {
           send call.client, eCommitted, call.id;
         } else {
+
           send call.client, eReply,
             (id = call.id, result = durableOutcomes[call.id], currentTotal = durableTotal);
         }
@@ -108,6 +112,7 @@ machine ReapplyReplayService {
         if (call.dropReply) {
           send call.client, eCommitted, call.id;
         } else {
+
           send call.client, eReply,
             (id = call.id, result = durableOutcomes[call.id], currentTotal = durableTotal);
         }

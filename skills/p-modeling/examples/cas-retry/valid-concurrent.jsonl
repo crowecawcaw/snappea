@@ -1,0 +1,9 @@
+{"event": "eObserved", "payload": {"command": {"id": 0, "credit": false, "units": 3}, "accepted": false, "balance": 2}}
+{"event": "eObserved", "payload": {"command": {"id": 1, "credit": true, "units": 3}, "accepted": true, "balance": 5}}
+{"event": "eReturned", "payload": {"id": 1, "accepted": true}}
+{"event": "eReturned", "payload": {"id": 0, "accepted": false}}
+{"event": "eObserved", "payload": {"command": {"id": 0, "credit": false, "units": 3}, "accepted": false, "balance": 5}}
+{"event": "eReturned", "payload": {"id": 0, "accepted": false}}
+{"event": "eObserved", "payload": {"command": {"id": 1, "credit": true, "units": 3}, "accepted": true, "balance": 5}}
+{"event": "eReturned", "payload": {"id": 1, "accepted": true}}
+{"event": "eDone"}

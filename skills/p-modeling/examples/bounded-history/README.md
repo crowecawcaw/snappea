@@ -1,40 +1,74 @@
-# Bounded histories: inputs and schedules
+# Bounded histories: inputs, interleavings, state, completion
 
-This tiny stock example separates three choices that are easy to mix up:
+## Contract and invariants
 
-- **Fixed input history:** `FixedHistory` sends purchases `a`, `b`, then `c`, waiting for each result before sending the next. That order and each request's units are fixed.
-- **Schedule exploration:** `ScheduledMain` gives three buyers fixed purchase inputs, then Snappea chooses how their sends and the store's handler steps interleave. Request values stay fixed while the schedule varies.
-- **Generated input histories:** `GeneratedHistory` makes three sequential choices. At each step it chooses purchase or replenishment with `$`, and quantity 1 or 2 with `choose(2) + 1`. Each action is applied to the current stock produced by earlier history steps; Snappea explores the resulting input sequences and their enabled scheduling steps.
+- Initial stock is 2. Purchase succeeds iff its positive quantity fits; successful purchases subtract it. Replenishment succeeds and adds its quantity. Rejection changes no stock.
+- Each command has a **fresh correlation ID**. IDs do not imply retry/idempotency semantics here; see [durable retry](../durable-retry/README.md).
+- `CapacityOracle` records driver inputs, checks each decision against its own stock, matches each returned result by ID, then compares an actual public snapshot against that stock. It never reads `Store.remaining`.
+- A correct rejection alone is insufficient: `tcRejectedWriteChangesState` returns the correct rejection while silently adding stock. The subsequent public inspection exposes it.
+- Every client waits for each command's reply and inspection before its next command. Completion requires the declared, nonzero command count, one decision/checked reply/inspection per ID, and every client finishing. A hot monitor detects missing work or replies.
 
-All cases check the same independent `CapacityOracle`. It starts with two units, requires every replenishment to succeed, and derives whether each purchase must be accepted from its own remaining-stock state. It does not read `Store.remaining` or trust the store's decision. The hand-calculated histories below check this monitor directly; they are not evidence from an application.
+## Why these boundaries?
 
-## Check the models
+- Store check/update is one non-yielding region modeling an **actual atomic storage primitive**. This example tests history generation, not an implementation's split read/CAS algorithm. If those steps can interfere, model them separately as in [versioned publication](../versioned-publication/README.md).
+- Decision and snapshot observations occur at the Store, before delayed replies. Client receipt order is not used as a linearization witness.
+- Other clients may commit between a command and its inspection. The oracle includes those intervening decisions; it does not incorrectly demand the stock immediately after the earlier command.
+- Reads after rejection prevent later work from masking its effect in sequential histories. The concurrent case additionally varies where other clients intervene; it does not guarantee isolation between rejection and inspection.
 
-From this directory, with the repository's `target/release` directory on `PATH`:
+## Drivers
+
+All reuse `HistoryClient`; each preserves the same request/reply/inspection protocol.
+
+| Test | Inputs | Scheduling |
+| --- | --- | --- |
+| `tcFixedInputHistory` | One client, three one-unit purchases | Sequential; third purchase must reject |
+| `tcSchedulerChoosesInterleaving` | Three clients, one one-unit purchase each | Inputs fixed, independent clients compete |
+| `tcGeneratedHistory` | One client, three choices of purchase/replenish and quantity 1/2 | Sequential generated histories |
+| `tcConcurrentGeneratedHistory` | Two clients, each chooses purchase/replenish of 2 units | Generated inputs **and** competing clients |
+
+Small bounds preserve depletion, exact-fit, excess, replenishment, and conflicting purchases. Concurrent quantities stay fixed at 2 to keep complete exploration quick; sequential generation covers quantity variation. These are deliberate partitions, not an argument that longer histories are unnecessary.
+
+## Run the positive suite
 
 ```sh
-snappea check bounded-history.p tcSchedulerChoosesInterleaving --no-mutation
-snappea check bounded-history.p tcFixedInputHistory --no-mutation
+snappea check bounded-history.p tcFixedInputHistory tcSchedulerChoosesInterleaving tcGeneratedHistory tcConcurrentGeneratedHistory --no-mutation --timeout 5s
+```
+
+All four searches complete and the suite covers required statements/branches/handlers. Run together: each intentionally narrow test need not cover every branch of shared driver/oracle code. The checker reports those individual coverage gaps rather than silently suppressing them. `--no-mutation` keeps this input/scheduling lesson focused; ordinary checks can additionally inspect mutation feedback.
+
+## Negative controls
+
+```sh
 snappea check bounded-history.p tcBrokenInputHistory --no-mutation
-snappea check bounded-history.p tcGeneratedHistory --no-mutation
 snappea check bounded-history.p tcBrokenGeneratedHistory --no-mutation
+snappea check bounded-history.p tcRejectedWriteChangesState --no-mutation
 ```
 
-The scheduler, fixed-history, and generated-history checks exit 0. The fixed history's first two purchases consume the stock, so the third must be denied. The broken fixed and generated controls exit 1 with the oracle's purchase/stock diagnostic. The generated control accepts every purchase; generation finds a purchase of 2 when only 1 remains.
+- First two exit 1 because a purchase was accepted without enough stock.
+- Third exits 1 with `public stock 1, expected 0`: rejection was reported correctly but changed state.
+- Fault parameters are only negative controls to demonstrate that assertions distinguish incorrect behavior.
 
-Three actions and quantities in `{1, 2}` keep the input tree small while preserving the relevant boundary: purchases can fit or exceed current stock, and replenishment can change what later purchases are legal. Extending the history or quantity range increases histories and schedules; choose the smallest bounds that still exercise the contract cases you need.
+## Independent monitor probes
 
-## Check hand-calculated histories
-
-The monitor's initial stock is 2. In `valid.jsonl`, two accepted one-unit purchases leave zero, so the third one-unit purchase must be denied. `invalid.jsonl` differs only in that third result; acceptance would overdraw stock.
+These are hand-calculated histories, **not** captured implementation evidence.
 
 ```sh
-snappea observe bounded-history.p valid.jsonl --spec CapacityOracle --strict
-snappea observe bounded-history.p invalid.jsonl --spec CapacityOracle --strict
+snappea observe bounded-history.p valid.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p valid-concurrent.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p invalid.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p invalid-state.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p invalid-reply.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p incomplete.jsonl --spec CapacityOracle --strict --check-hot
+snappea observe bounded-history.p zero-work.jsonl --spec CapacityOracle --strict --check-hot
 ```
 
-The valid trace exits 0; the invalid trace exits 1 and reports that request `c` was accepted with zero remaining. These hand-written traces validate the monitor behavior only. To validate an implementation, record decisions from its real calls and pass those events to `snappea observe`.
+- Valid serial/concurrent traces exit 0. Concurrent requests can both be outstanding; later public reads include all earlier committed decisions.
+- Invalid decision/state/reply traces exit 1 for the intended capacity/snapshot/returned-result assertion.
+- Incomplete trace omits client completion and exits 1 for the remaining hot state; zero-work trace fails the explicit nonzero-work assertion.
+- Implementation validation needs real recorded calls/results and a justified observation order; see [reservation's Python tests](../reservation/README.md).
 
-## Bounds
+## Assumptions and omissions
 
-The model has initial stock 2, one process-local store, generated histories of exactly three actions, and quantities 1 or 2. The handler's stock check and update are one atomic transition. It omits crashes, persistence, concurrent stores, request retries, non-positive quantities, and unbounded histories. Search covers the stated finite model, not every production execution.
+- Finite history lengths above; one process-local Store; positive quantities; fresh command IDs; reliable delivery and clients that continue running.
+- No crashes, persistence, request retries, conflicting ID reuse, storage failures, or unbounded recovery/fairness claims.
+- A completed finite search establishes only these modeled bounds. Broaden relationships and properties deliberately; schedule count is not semantic coverage.

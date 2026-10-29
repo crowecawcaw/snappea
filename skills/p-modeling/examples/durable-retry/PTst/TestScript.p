@@ -9,3 +9,7 @@ test tcCompletedReplay [main=CompletedReplayDriver]:
 
 test tcReappliedReplay [main=ReappliedReplayDriver]:
   assert RetryContract in { ReappliedReplayDriver, ReapplyReplayService };
+
+// Selected properties apply to every generated scheduler interleaving.
+test tcConcurrentRetries [main=ConcurrentRetryDriver]:
+  assert RetryContract in { ConcurrentRetryDriver, ConcurrentCaller, DurableService };
