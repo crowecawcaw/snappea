@@ -1,0 +1,23 @@
+{
+  "evals/certified-bundles/public/TASK.md": "b38d9c729348e08f30e299be314b64e9a3426bfdd2254b3a80da770f50f473ab",
+  "evals/certified-bundles/public/contract.py": "1a175d41273cd37535ca9836429c3b7860480daa43578d791b15e655ecab9b02",
+  "evals/certified-bundles/public/runtime.py": "c8b0caf9a74f01b5dbf2e529b2e568a37189104934fa67918ef6a10c88a495e8",
+  "evals/certified-bundles/runs/examples-vcs-a01/submission/DESIGN.md": "3b1e6fbf723f5068636ed92159922b8d4f4a3796009176b3e8f2e730535d3ad1",
+  "evals/certified-bundles/runs/examples-vcs-a01/submission/design.p": "1d189ea85ae9522dbd10c5577f58a7ffbe2892b69caaddedddbf7635376d1ff2",
+  "evals/certified-bundles/runs/examples-vcs-a01/submission/solution.py": "6f6a95e6ec782583408fb5ae9ea96057abd3b33cbd96b58677a29c01489be00d",
+  "evals/certified-bundles/runs/examples-vcs-b01/submission/Bundle.p": "5a4b1a21b38877e7bbde1910aae50e89b30ffe183b5dcd8cccca4cf7c4e0d0f6",
+  "evals/certified-bundles/runs/examples-vcs-b01/submission/DESIGN.md": "45095ba0f657017aaceb0033053331d084a869217e78fde87cc4ea177ad5f4d5",
+  "evals/certified-bundles/runs/examples-vcs-b01/submission/solution.py": "4f4d8ca80b90cb8bfabbf1ddbe2942514779da87a07837dae28256cca37600ad",
+  "evals/certified-bundles/runs/examples-vcs-c01/submission/DESIGN.md": "497687df94aa42eba7a87e1554e622554c15798674432b3a425886f3f984a763",
+  "evals/certified-bundles/runs/examples-vcs-c01/submission/design_model.p": "9f479f293225b1c0a2ea40dd0c2898607d4e11556dc8566a0c23b36346a81224",
+  "evals/certified-bundles/runs/examples-vcs-c01/submission/solution.py": "d3b3ac8edea8091fa3fa6a90b1217c1302d7148f080fd2a7351b8554ffe6d803",
+  "evals/certified-bundles/runs/examples-vcs-a02/submission/DESIGN.md": "47e6e2fe9c6a6f8f124dd60075e526f3257ae7417077812cb6118a2d5fc0ba28",
+  "evals/certified-bundles/runs/examples-vcs-a02/submission/bundle_model.p": "d81f5b9e6d725feb0ae4a455f065603ec555a98789c26d743a6ced576c93d7aa",
+  "evals/certified-bundles/runs/examples-vcs-a02/submission/solution.py": "fd10ac5bdfbd2938900ebf383d98c45bd9997f71646f54a3c071b300b2ed3ee1",
+  "evals/certified-bundles/runs/examples-vcs-c02/submission/DESIGN.md": "d640b0bf6bc14d25c2eddecdf10591178a2f546e20b5f74d1a0c41cdf1a3b250",
+  "evals/certified-bundles/runs/examples-vcs-c02/submission/model.p": "4cc8ac0126b7fa5c57d9b04e8e3323dc7bd670a97c63c8961bd5dd33310ac748",
+  "evals/certified-bundles/runs/examples-vcs-c02/submission/solution.py": "1d2d6db70396f536c3f3345819f7169c28ff11c0c19400fa7937cc6c1d886dfd",
+  "evals/certified-bundles/runs/examples-vcs-b02/submission/DESIGN.md": "15ac82f27024810e7530bc252a9ecd751bbef0d65426bb954b4d66ee2c93cb8d",
+  "evals/certified-bundles/runs/examples-vcs-b02/submission/design.p": "519e853c6c32ca6a19e619a28841b037d3ca2340ad67859e81f0f47fa59500f5",
+  "evals/certified-bundles/runs/examples-vcs-b02/submission/solution.py": "c3e0a3ae707d0a20e3bdcba8ab113adc814901eec86dcedfc75c022de7ff2754"
+}

@@ -1,0 +1,921 @@
+[
+  {
+    "run_id": "examples-flow-a01",
+    "task": "flow",
+    "repetition": 1,
+    "condition": "none",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-a01",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-a01/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 64,
+    "seconds": 260.10041666030884,
+    "metadata_sha256": "a904875acbddb81a4614b7e50ba530fb2b37caaf9d9ed6ddc5833109273b8ad3",
+    "submission_manifest_sha256": "fa7bd063ae381507e76594c67c866a881e9ad0a7fc83685083eb2d4b5800ac5d",
+    "grade_sha256": "f11f563c35948c692839d1302420205b9f54eef327f95063350819ecdc9763c9",
+    "skill_sha256": null,
+    "public_unchanged": true,
+    "references_requested": [],
+    "checker_exit2_calls": [
+      7,
+      8,
+      9,
+      11,
+      12,
+      13,
+      14,
+      15,
+      17,
+      18,
+      20,
+      23,
+      24,
+      25,
+      26,
+      27,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      37,
+      38,
+      39,
+      40,
+      41,
+      47,
+      48,
+      49,
+      52
+    ],
+    "primary": {
+      "implementation_passed": true,
+      "submitted_tests_passed": true,
+      "model_check_passed": true,
+      "model_search_complete": true,
+      "model_selected_tests": 3,
+      "monitor_valid_accepted": 4,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 4,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": true,
+      "portable_probe_valid": true,
+      "portable_probe_reference_status": "passed",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "portable_probe_mutations_rejected": 2,
+      "portable_probe_mutations_total": 3,
+      "valid": true
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... ok\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.003s\n\nOK\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": true,
+      "reference_status": "passed",
+      "reference_test_count": 3,
+      "mutation_probes_run": true,
+      "mutation_results": [
+        {
+          "case": "probe-01",
+          "status": "tests_rejected",
+          "test_count": 3,
+          "output": "test_concurrent_capacity_never_exceeded (test_observation.QueueObservation.test_concurrent_capacity_never_exceeded) ... ok\ntest_serial_history_in_invocation_order (test_observation.QueueObservation.test_serial_history_in_invocation_order) ... FAIL\ntest_shared_state_and_idempotent_retry (test_observation.QueueObservation.test_shared_state_and_idempotent_retry) ... ok\n\n======================================================================\nFAIL: test_serial_history_in_invocation_order (test_observation.QueueObservation.test_serial_history_in_invocation_order)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 21, in test_serial_history_in_invocation_order\n    self.assertEqual(observed, [\nAssertionError: Lists differ: [('pu[106 chars]t1', 20), ('take', 't2', 10), ('take', 't3', N[18 chars] [])] != [('pu[106 chars]t1', 10), ('take', 't2', 20), ('take', 't3', N[18 chars] [])]\n\nFirst differing element 4:\n('take', 't1', 20)\n('take', 't1', 10)\n\n  [('put', 'p1', 10, True),\n   ('put', 'p2', 20, True),\n   ('put', 'p3', 30, False),\n   ('snapshot', [10, 20]),\n-  ('take', 't1', 20),\n?                 ^\n\n+  ('take', 't1', 10),\n?                 ^\n\n-  ('take', 't2', 10),\n?                 ^\n\n+  ('take', 't2', 20),\n?                 ^\n\n   ('take', 't3', None),\n   ('snapshot', [])]\n\n----------------------------------------------------------------------\nRan 3 tests in 0.004s\n\nFAILED (failures=1)\n"
+        },
+        {
+          "case": "probe-02",
+          "status": "tests_rejected",
+          "test_count": 3,
+          "output": "test_concurrent_capacity_never_exceeded (test_observation.QueueObservation.test_concurrent_capacity_never_exceeded) ... ok\ntest_serial_history_in_invocation_order (test_observation.QueueObservation.test_serial_history_in_invocation_order) ... ok\ntest_shared_state_and_idempotent_retry (test_observation.QueueObservation.test_shared_state_and_idempotent_retry) ... FAIL\n\n======================================================================\nFAIL: test_shared_state_and_idempotent_retry (test_observation.QueueObservation.test_shared_state_and_idempotent_retry)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 56, in test_shared_state_and_idempotent_retry\n    self.assertIsNone(a.take(\"empty\"))\nAssertionError: 8 is not None\n\n----------------------------------------------------------------------\nRan 3 tests in 0.004s\n\nFAILED (failures=1)\n"
+        },
+        {
+          "case": "probe-03",
+          "status": "passed",
+          "test_count": 3,
+          "output": "test_concurrent_capacity_never_exceeded (test_observation.QueueObservation.test_concurrent_capacity_never_exceeded) ... ok\ntest_serial_history_in_invocation_order (test_observation.QueueObservation.test_serial_history_in_invocation_order) ... ok\ntest_shared_state_and_idempotent_retry (test_observation.QueueObservation.test_shared_state_and_idempotent_retry) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.003s\n\nOK\n"
+        }
+      ],
+      "mutations_rejected": 2,
+      "mutations_total": 3
+    },
+    "supplemental_model": {
+      "result_sha256": "e8f9c8de1b67b579efcf087f3160b56a229f3510af63a2950415ee8e3e7cd139",
+      "source_assembly_changed": false,
+      "checker_exit_code": 0,
+      "selected_tests": 3,
+      "model_search_complete": true,
+      "model_check_passed": true
+    }
+  },
+  {
+    "run_id": "examples-vcs-a01",
+    "task": "vcs",
+    "repetition": 1,
+    "condition": "old",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-a01",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-a01/delegation.txt",
+    "run_status": "agent_finished",
+    "calls": 18,
+    "seconds": 107.254,
+    "metadata_sha256": "62b9f5a44138d27c621911bb4854d072fb4284db83a737cb1433ae2476425a08",
+    "submission_manifest_sha256": "426f74a2b8bc78e0e3c47598327691dfc02a09dc34f131999ee5a0b97e1558a0",
+    "grade_sha256": "fbabf79b5e5ad5454bb32ff7770b8d41e69c372c4ef3db7a17621c7d61ba17c7",
+    "skill_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md TASK.md contract.py\n",
+        "elapsed": 0.0
+      },
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/guides/modeling.md /opt/p-modeling/reference/p-patterns.md\nls -la\n",
+        "elapsed": 1.711
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/examples/versioned-publication/README.md /opt/p-modeling/examples/durable-retry/README.md\ncat runtime.py test_public.py\n",
+        "elapsed": 3.275
+      },
+      {
+        "call": 4,
+        "command": "ls -R /opt/p-modeling/examples/versioned-publication\ncat /opt/p-modeling/examples/versioned-publication/Revalidated.p\n",
+        "elapsed": 10.731
+      }
+    ],
+    "checker_exit2_calls": [
+      5,
+      6,
+      7,
+      9
+    ],
+    "primary": {
+      "passed": 20,
+      "total": 20,
+      "status": "completed",
+      "failed_cases": []
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "branches": 64,
+      "update_map_bytes": 27565,
+      "supplemental": true,
+      "passed": false,
+      "error": "ValueError: record exceeds 16384 bytes",
+      "execution_status": "completed",
+      "timeout_seconds": 10.0,
+      "result_sha256": "1c567587a2b260d0edee6bcc1c1483f79861f6d1199194a35e8cf305063ded9c"
+    }
+  },
+  {
+    "run_id": "examples-flow-b01",
+    "task": "flow",
+    "repetition": 1,
+    "condition": "old",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-b01",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-b01/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 23,
+    "seconds": 155.8421823978424,
+    "metadata_sha256": "f7b8c789c4b096cd618eabb7e1ce8595abda42885de842a4851b6332399a3fd7",
+    "submission_manifest_sha256": "f60eedc2e705b9b3c0a5c162d6d38dd24f5a4316b3ba3b2960e6afde97410eb1",
+    "grade_sha256": "c78e59cda5e67695cf14e6ef09a07c660ab4d2771911cb02b996291285e7d8ad",
+    "skill_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md\nprintf '\\n---TASK---\\n'\ncat TASK.md\n",
+        "elapsed": 1.9073486328125e-06
+      },
+      {
+        "call": 3,
+        "command": "pwd\nls -la\ncat /opt/p-modeling/reference/p-patterns.md\n",
+        "elapsed": 3.718113422393799
+      },
+      {
+        "call": 4,
+        "command": "cat /opt/p-modeling/guides/implementation.md\n",
+        "elapsed": 5.285784721374512
+      },
+      {
+        "call": 8,
+        "command": "rg -n \"\\+=|sizeof\\(|\\[1\\.\\.\\]|seq\\[\" /opt/p-modeling/examples /opt/p-modeling/guides\n",
+        "elapsed": 30.25449824333191
+      },
+      {
+        "call": 10,
+        "command": "cat /opt/p-modeling/guides/modeling.md\n",
+        "elapsed": 34.29603147506714
+      },
+      {
+        "call": 11,
+        "command": "python - <<'PY'\nfrom pathlib import Path\nfor f in Path('/opt/p-modeling').rglob('*.p'):\n s=f.read_text(errors='ignore')\n if 'items[1..]' in s or 'remove(' in s or 'tail(' in s:\n  print(f)\n  for line in s.splitlines():\n   if 'items[1..]' in line or 'remove(' in line or 'tail(' in line: print(line)\nPY\n",
+        "elapsed": 36.641937255859375
+      },
+      {
+        "call": 15,
+        "command": "python - <<'PY'\nfrom pathlib import Path\nfor f in Path('/opt/p-modeling').rglob('test*.py'):\n s=f.read_text(errors='ignore')\n if 'check_spec' in s:\n  print(str(f)); print(s[:3000]); break\nPY\n",
+        "elapsed": 80.87498068809509
+      },
+      {
+        "call": 16,
+        "command": "cat /opt/p-modeling/examples/reservation/test_observation.py\n",
+        "elapsed": 80.99153113365173
+      },
+      {
+        "call": 17,
+        "command": "ls -R /opt/p-modeling/examples/reservation\n",
+        "elapsed": 82.29655694961548
+      },
+      {
+        "call": 18,
+        "command": "cat /opt/p-modeling/examples/reservation/test_storage.py\n",
+        "elapsed": 83.52296495437622
+      }
+    ],
+    "checker_exit2_calls": [
+      7,
+      9,
+      12,
+      13
+    ],
+    "primary": {
+      "implementation_passed": false,
+      "submitted_tests_passed": true,
+      "model_check_passed": false,
+      "model_search_complete": true,
+      "model_selected_tests": 1,
+      "monitor_valid_accepted": 4,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 4,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": true,
+      "portable_probe_valid": false,
+      "portable_probe_reference_status": "tests_rejected",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "valid": false
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... FAIL\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n======================================================================\nFAIL: test_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_hidden_contract.py\", line 86, in test_empty_take_result_stays_memoized_after_later_put\n    self.assertIsNone(q.take(\"empty-take\"))\nAssertionError: 8 is not None\n\n----------------------------------------------------------------------\nRan 8 tests in 0.002s\n\nFAILED (failures=1)\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": false,
+      "reference_status": "tests_rejected",
+      "reference_test_count": 2,
+      "mutation_probes_run": false,
+      "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+    },
+    "supplemental_model": {
+      "result_sha256": "1ffb023cac3f1e5173d0b6f5ce150825750d708840fef0994959c247d5dfeb22",
+      "source_assembly_changed": false,
+      "checker_exit_code": 1,
+      "selected_tests": 1,
+      "model_search_complete": true,
+      "model_check_passed": false
+    }
+  },
+  {
+    "run_id": "examples-vcs-b01",
+    "task": "vcs",
+    "repetition": 1,
+    "condition": "revised",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-b01",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-b01/delegation.txt",
+    "run_status": "agent_finished",
+    "calls": 20,
+    "seconds": 149.856,
+    "metadata_sha256": "fa8720439861900272acad1eb5b3ba88eb1d8be0807f697c92fc41156b948c91",
+    "submission_manifest_sha256": "b2680366cd939561511067759900410f34a36d0d246e9619f8c4baaffdb9df12",
+    "grade_sha256": "a2ece4e4ffdb8bc9ef2609afccad4ebbaed9364f11d9e0715862a92504bdcf1f",
+    "skill_sha256": "827079afa5ecc92094b1aef194cbcf1392cc8cfe358a8cb27b9af60e1a7d2fec",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/SKILL.md\n",
+        "elapsed": 1.597
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/reference/p-patterns.md /opt/p-modeling/examples/versioned-publication/README.md /opt/p-modeling/guides/recovery.md\n",
+        "elapsed": 3.036
+      },
+      {
+        "call": 8,
+        "command": "cat /opt/p-modeling/examples/cas-retry/README.md\n",
+        "elapsed": 42.69
+      },
+      {
+        "call": 9,
+        "command": "ls /opt/p-modeling/examples/cas-retry\n",
+        "elapsed": 44.038
+      },
+      {
+        "call": 10,
+        "command": "cat /opt/p-modeling/examples/cas-retry/protocol.p /opt/p-modeling/examples/cas-retry/store.p\n",
+        "elapsed": 48.298
+      }
+    ],
+    "checker_exit2_calls": [
+      11,
+      12
+    ],
+    "primary": {
+      "passed": 19,
+      "total": 20,
+      "status": "completed",
+      "failed_cases": [
+        "test_published_bundle_cannot_reapply"
+      ]
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "branches": 64,
+      "update_map_bytes": 27565,
+      "supplemental": true,
+      "passed": false,
+      "error": "ValueError: record exceeds 16384 bytes",
+      "execution_status": "completed",
+      "timeout_seconds": 10.0,
+      "result_sha256": "1c567587a2b260d0edee6bcc1c1483f79861f6d1199194a35e8cf305063ded9c"
+    }
+  },
+  {
+    "run_id": "examples-flow-c01",
+    "task": "flow",
+    "repetition": 1,
+    "condition": "revised",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-c01",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-c01/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 16,
+    "seconds": 117.99109840393066,
+    "metadata_sha256": "fc767d9f0bbf36799beb02049a2aebee9a0d6e1e53f76b7eb21c251ac6271a70",
+    "submission_manifest_sha256": "52dcd3789c1a312027e37314064a20699f522da3932b80b1948efefffaf32e33",
+    "grade_sha256": "72139b4bbea3679df892fad61fdfd53a16d67333303f6b20e0b2f815dce9dfd0",
+    "skill_sha256": "827079afa5ecc92094b1aef194cbcf1392cc8cfe358a8cb27b9af60e1a7d2fec",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md\ncat TASK.md\n",
+        "elapsed": 2.1457672119140625e-06
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/reference/p-patterns.md\ncat /opt/p-modeling/examples/cas-retry/README.md\n",
+        "elapsed": 4.771901845932007
+      },
+      {
+        "call": 15,
+        "command": "rg -n 'coverage .*ignore|coverage ignore|suppress|uncovered' /opt/p-modeling\n",
+        "elapsed": 87.69232368469238
+      }
+    ],
+    "checker_exit2_calls": [
+      6,
+      7,
+      12
+    ],
+    "primary": {
+      "implementation_passed": true,
+      "submitted_tests_passed": true,
+      "model_check_passed": false,
+      "model_search_complete": true,
+      "model_selected_tests": 1,
+      "monitor_valid_accepted": 4,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 4,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": true,
+      "portable_probe_valid": false,
+      "portable_probe_reference_status": "tests_rejected",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "valid": false
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... ok\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.002s\n\nOK\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": false,
+      "reference_status": "tests_rejected",
+      "reference_test_count": 2,
+      "mutation_probes_run": false,
+      "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+    },
+    "supplemental_model": {
+      "result_sha256": "28f102e7c0bef4dde0ed656ae45ab3df27adb2aab7d6fe7242538021ab0358af",
+      "source_assembly_changed": false,
+      "checker_exit_code": 1,
+      "selected_tests": 1,
+      "model_search_complete": true,
+      "model_check_passed": false
+    }
+  },
+  {
+    "run_id": "examples-vcs-c01",
+    "task": "vcs",
+    "repetition": 1,
+    "condition": "none",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-c01",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-c01/delegation.txt",
+    "run_status": "agent_finished",
+    "calls": 17,
+    "seconds": 111.489,
+    "metadata_sha256": "04c82e92abda420bf2db9bbe345c06bbf019da39f7217b1af595bb0d50b57f5a",
+    "submission_manifest_sha256": "a6b3a3ceb7f65b08adbcf1347f1bc9c952338afee8b7a35ea0cf2da8e30fdd35",
+    "grade_sha256": "131af7cb6ee9957d44aef630d7c3c479ba401cbd3b9f890a3c84f8a48f1542e7",
+    "skill_sha256": null,
+    "public_unchanged": true,
+    "references_requested": [],
+    "checker_exit2_calls": [
+      13,
+      15
+    ],
+    "primary": {
+      "passed": 20,
+      "total": 20,
+      "status": "completed",
+      "failed_cases": []
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "branches": 64,
+      "update_map_bytes": 27565,
+      "supplemental": true,
+      "passed": false,
+      "error": "ValueError: record exceeds 16384 bytes",
+      "execution_status": "completed",
+      "timeout_seconds": 10.0,
+      "result_sha256": "1c567587a2b260d0edee6bcc1c1483f79861f6d1199194a35e8cf305063ded9c"
+    }
+  },
+  {
+    "run_id": "examples-flow-a02",
+    "task": "flow",
+    "repetition": 2,
+    "condition": "revised",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-a02",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-a02/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 28,
+    "seconds": 258.9712436199188,
+    "metadata_sha256": "7f8fb29b6aae6ac1c64bb4d59fd03b741e3e9da43b5996d7c1fa4c0d6624b34d",
+    "submission_manifest_sha256": "15b79b38f96032ffd6a3b87b46ce6ac276c84f3feeb99203f694140a267318af",
+    "grade_sha256": "93904dbfe77371e22de6c34d8e9968d7c0d073f8ffee1fbc4c0f390a51c217a4",
+    "skill_sha256": "827079afa5ecc92094b1aef194cbcf1392cc8cfe358a8cb27b9af60e1a7d2fec",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md\ncat TASK.md\n",
+        "elapsed": 2.1457672119140625e-06
+      },
+      {
+        "call": 2,
+        "command": "cat runtime.py\ncat events.p\ncat /opt/p-modeling/reference/p-patterns.md\n",
+        "elapsed": 1.6101109981536865
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/guides/implementation.md\ncat /opt/p-modeling/examples/cas-retry/README.md\n",
+        "elapsed": 2.9578397274017334
+      },
+      {
+        "call": 16,
+        "command": "cat /opt/p-modeling/examples/reservation/README.md\n",
+        "elapsed": 89.7255494594574
+      },
+      {
+        "call": 18,
+        "command": "rg 'check_events\\(' /opt/p-modeling/examples -n\n",
+        "elapsed": 95.17067527770996
+      }
+    ],
+    "checker_exit2_calls": [
+      7,
+      8,
+      9,
+      11
+    ],
+    "primary": {
+      "implementation_passed": true,
+      "submitted_tests_passed": true,
+      "model_check_passed": true,
+      "model_search_complete": true,
+      "model_selected_tests": 1,
+      "monitor_valid_accepted": 3,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 3,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": false,
+      "portable_probe_valid": false,
+      "portable_probe_reference_status": "tests_rejected",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "valid": false
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... ok\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.004s\n\nOK\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": false,
+      "reference_status": "tests_rejected",
+      "reference_test_count": 2,
+      "mutation_probes_run": false,
+      "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+    },
+    "supplemental_model": {
+      "result_sha256": "dca44ab461d89fa8ebbf85f55a213f0a930541720b5bc44947bcac48289b8529",
+      "source_assembly_changed": false,
+      "checker_exit_code": 0,
+      "selected_tests": 1,
+      "model_search_complete": true,
+      "model_check_passed": true
+    }
+  },
+  {
+    "run_id": "examples-vcs-a02",
+    "task": "vcs",
+    "repetition": 2,
+    "condition": "none",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-a02",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-a02/delegation.txt",
+    "run_status": "agent_finished",
+    "calls": 33,
+    "seconds": 158.855,
+    "metadata_sha256": "4e6f4291a2deff0cd00878e2cd72e838468123552c4821916090ccc3c8b18f53",
+    "submission_manifest_sha256": "b16a5e3c7ba4eb78981dd40aa9016bc91c7fb3518f3764f2fb1c7873098d65b7",
+    "grade_sha256": "44520106485e6ce7cd2a570329022cf99ebde716a30c93a21ec37496905fde69",
+    "skill_sha256": null,
+    "public_unchanged": true,
+    "references_requested": [],
+    "checker_exit2_calls": [
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      29
+    ],
+    "primary": {
+      "passed": 20,
+      "total": 20,
+      "status": "completed",
+      "failed_cases": []
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "branches": 64,
+      "update_map_bytes": 27565,
+      "supplemental": true,
+      "passed": true,
+      "execution_status": "completed",
+      "timeout_seconds": 10.0,
+      "result_sha256": "2fb6b65d0d300eb5444071ddf04b91ee6c86af74134782be847a85f553b5652e"
+    }
+  },
+  {
+    "run_id": "examples-flow-b02",
+    "task": "flow",
+    "repetition": 2,
+    "condition": "none",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-b02",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-b02/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 50,
+    "seconds": 270.03263783454895,
+    "metadata_sha256": "32ec38181da5d87152a111d50619ca7a227c97efdc615c6b60e048d33575ed38",
+    "submission_manifest_sha256": "9c436830d5900aac1462749e57de4bd3f8f9f5280e900540f446c0abc3befd2e",
+    "grade_sha256": "a710cf624d8917100007bfa40b1e3e1e1883af40295cc347131e70c6fdc4c6f7",
+    "skill_sha256": null,
+    "public_unchanged": true,
+    "references_requested": [],
+    "checker_exit2_calls": [
+      7,
+      8,
+      9,
+      10,
+      11,
+      13,
+      14,
+      15,
+      16,
+      17,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      31,
+      32,
+      33
+    ],
+    "primary": {
+      "implementation_passed": true,
+      "submitted_tests_passed": true,
+      "model_check_passed": false,
+      "model_search_complete": false,
+      "model_selected_tests": 1,
+      "monitor_valid_accepted": 3,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 4,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": false,
+      "portable_probe_valid": true,
+      "portable_probe_reference_status": "passed",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "portable_probe_mutations_rejected": 2,
+      "portable_probe_mutations_total": 3,
+      "valid": false
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... ok\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.003s\n\nOK\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": true,
+      "reference_status": "passed",
+      "reference_test_count": 5,
+      "mutation_probes_run": true,
+      "mutation_results": [
+        {
+          "case": "probe-01",
+          "status": "tests_rejected",
+          "test_count": 5,
+          "output": "test_calls_match_queue_contract_monitor (test_observation.QueueObservationTests.test_calls_match_queue_contract_monitor) ... FAIL\ntest_concurrent_instances_share_atomic_store_state (test_observation.QueueObservationTests.test_concurrent_instances_share_atomic_store_state) ... ok\ntest_put_and_take_ids_are_separate (test_observation.QueueObservationTests.test_put_and_take_ids_are_separate) ... ok\ntest_retries_do_not_repeat_effects (test_observation.QueueObservationTests.test_retries_do_not_repeat_effects) ... FAIL\ntest_state_is_shared_and_capacity_is_store_wide (test_observation.QueueObservationTests.test_state_is_shared_and_capacity_is_store_wide) ... FAIL\n\n======================================================================\nFAIL: test_calls_match_queue_contract_monitor (test_observation.QueueObservationTests.test_calls_match_queue_contract_monitor)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 52, in test_calls_match_queue_contract_monitor\n    self.assertEqual(record_take(\"t1\"), 10)\nAssertionError: 20 != 10\n\n======================================================================\nFAIL: test_retries_do_not_repeat_effects (test_observation.QueueObservationTests.test_retries_do_not_repeat_effects)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 98, in test_retries_do_not_repeat_effects\n    self.assertEqual(queue.take(\"t\",), 1)\nAssertionError: 2 != 1\n\n======================================================================\nFAIL: test_state_is_shared_and_capacity_is_store_wide (test_observation.QueueObservationTests.test_state_is_shared_and_capacity_is_store_wide)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 81, in test_state_is_shared_and_capacity_is_store_wide\n    self.assertEqual(first.take(\"x\"), 1)\nAssertionError: 3 != 1\n\n----------------------------------------------------------------------\nRan 5 tests in 0.024s\n\nFAILED (failures=3)\n"
+        },
+        {
+          "case": "probe-02",
+          "status": "tests_rejected",
+          "test_count": 5,
+          "output": "test_calls_match_queue_contract_monitor (test_observation.QueueObservationTests.test_calls_match_queue_contract_monitor) ... FAIL\ntest_concurrent_instances_share_atomic_store_state (test_observation.QueueObservationTests.test_concurrent_instances_share_atomic_store_state) ... FAIL\ntest_put_and_take_ids_are_separate (test_observation.QueueObservationTests.test_put_and_take_ids_are_separate) ... ok\ntest_retries_do_not_repeat_effects (test_observation.QueueObservationTests.test_retries_do_not_repeat_effects) ... FAIL\ntest_state_is_shared_and_capacity_is_store_wide (test_observation.QueueObservationTests.test_state_is_shared_and_capacity_is_store_wide) ... ok\n\n======================================================================\nFAIL: test_calls_match_queue_contract_monitor (test_observation.QueueObservationTests.test_calls_match_queue_contract_monitor)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 49, in test_calls_match_queue_contract_monitor\n    self.assertTrue(record_put(\"p2\", 20))\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_concurrent_instances_share_atomic_store_state (test_observation.QueueObservationTests.test_concurrent_instances_share_atomic_store_state)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 114, in test_concurrent_instances_share_atomic_store_state\n    self.assertTrue(all(retries))\nAssertionError: False is not true\n\n======================================================================\nFAIL: test_retries_do_not_repeat_effects (test_observation.QueueObservationTests.test_retries_do_not_repeat_effects)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 94, in test_retries_do_not_repeat_effects\n    self.assertIsNone(queue.take(\"empty\"))\nAssertionError: 1 is not None\n\n----------------------------------------------------------------------\nRan 5 tests in 0.008s\n\nFAILED (failures=3)\n"
+        },
+        {
+          "case": "probe-03",
+          "status": "passed",
+          "test_count": 5,
+          "output": "test_calls_match_queue_contract_monitor (test_observation.QueueObservationTests.test_calls_match_queue_contract_monitor) ... ok\ntest_concurrent_instances_share_atomic_store_state (test_observation.QueueObservationTests.test_concurrent_instances_share_atomic_store_state) ... ok\ntest_put_and_take_ids_are_separate (test_observation.QueueObservationTests.test_put_and_take_ids_are_separate) ... ok\ntest_retries_do_not_repeat_effects (test_observation.QueueObservationTests.test_retries_do_not_repeat_effects) ... ok\ntest_state_is_shared_and_capacity_is_store_wide (test_observation.QueueObservationTests.test_state_is_shared_and_capacity_is_store_wide) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.020s\n\nOK\n"
+        }
+      ],
+      "mutations_rejected": 2,
+      "mutations_total": 3
+    },
+    "supplemental_model": {
+      "result_sha256": "05d3d12b5d0002276ae9d00e47a7163b65739377549190ad7d0b55ce71e4b317",
+      "source_assembly_changed": false,
+      "checker_exit_code": 0,
+      "selected_tests": 1,
+      "model_search_complete": true,
+      "model_check_passed": true
+    }
+  },
+  {
+    "run_id": "examples-vcs-b02",
+    "task": "vcs",
+    "repetition": 2,
+    "condition": "old",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-b02",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-b02/delegation.txt",
+    "run_status": "command_timeout",
+    "calls": 16,
+    "seconds": 275.583,
+    "metadata_sha256": "1d233f745f1dc6341c73c1d99cc8eadeded76b4ce02409ca2c060c331b257eba",
+    "submission_manifest_sha256": "99698811d7cf3970f11602e0ec045978d2c65398bc939916a6308d9bfe179e7a",
+    "grade_sha256": null,
+    "skill_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/SKILL.md\n",
+        "elapsed": 1.524
+      },
+      {
+        "call": 3,
+        "command": "ls -la\nls /opt/snappea\ncat /opt/p-modeling/guides/modeling.md\n",
+        "elapsed": 3.715
+      },
+      {
+        "call": 6,
+        "command": "cat /opt/p-modeling/reference/p-patterns.md\nls /opt/p-modeling/examples/versioned-publication\n",
+        "elapsed": 15.334
+      },
+      {
+        "call": 7,
+        "command": "cat /opt/p-modeling/examples/versioned-publication/README.md /opt/p-modeling/examples/versioned-publication/Revalidated.p\n",
+        "elapsed": 16.708
+      }
+    ],
+    "checker_exit2_calls": [
+      8,
+      9
+    ],
+    "primary": {
+      "passed": null,
+      "total": 20,
+      "status": "grader_resource_failure",
+      "reason": "candidate quiescent-write loop exhausted grader memory; no case score produced",
+      "docker_events_sha256": "93944dade17f854873f2cccddcf26d737b83d42fa9d3e63d9323cb0c24321cde"
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "supplemental": true,
+      "passed": false,
+      "execution_status": "timeout",
+      "error": "probe did not finish within execution deadline",
+      "timeout_seconds": 10.0,
+      "result_sha256": "a46c3b13c7bf811cb9dcce0431ed238e3b188d7026a949e2418d8cfd0ca6b0c5"
+    }
+  },
+  {
+    "run_id": "examples-flow-c02",
+    "task": "flow",
+    "repetition": 2,
+    "condition": "old",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-c02",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/examples-flow-c02/prompt.txt",
+    "run_status": "agent_finished",
+    "calls": 33,
+    "seconds": 150.00782108306885,
+    "metadata_sha256": "580016e3ae63f566d1bd280ae70098f2af5f7a2ac2e47cb38b11dd2767adfb89",
+    "submission_manifest_sha256": "5c12132ca89199b969e68b0b05d2735d1e287ecf569fe2b905bd47a3d319aa0d",
+    "grade_sha256": "8e6151bf214820ce3f94f80b555c4694aeb96e5005dfbe30a62f4b25d4302ef7",
+    "skill_sha256": "75cb6bc852fb31b9d88dc026d12300f26dd307b5d32f62dae09fa31b64beaaae",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md\ncat TASK.md\n",
+        "elapsed": 1.9073486328125e-06
+      },
+      {
+        "call": 3,
+        "command": "snappea --help\ncat /opt/p-modeling/examples/reservation/README.md\ncat /opt/p-modeling/guides/modeling.md\ncat /opt/p-modeling/guides/implementation.md\n",
+        "elapsed": 9.262840032577515
+      },
+      {
+        "call": 4,
+        "command": "ls -R /opt/p-modeling/examples/durable-retry\ncat /opt/p-modeling/examples/durable-retry/*.p\ncat /opt/p-modeling/reference/p-patterns.md\n",
+        "elapsed": 11.031872510910034
+      },
+      {
+        "call": 5,
+        "command": "cat /opt/p-modeling/examples/durable-retry/PSpec/Contract.p\ncat /opt/p-modeling/examples/durable-retry/PSrc/RetryModel.p\ncat /opt/p-modeling/examples/durable-retry/PTst/Driver.p\ncat /opt/p-modeling/examples/durable-retry/PTst/TestScript.p\n",
+        "elapsed": 17.110323429107666
+      },
+      {
+        "call": 6,
+        "command": "find /opt/p-modeling/examples/reservation -type f -maxdepth 3\ncat /opt/p-modeling/examples/reservation/test_observation.py\n",
+        "elapsed": 21.44340181350708
+      },
+      {
+        "call": 10,
+        "command": "rg 'items\\[1|seq\\[|sizeof\\(.*\\)' /opt/p-modeling/examples -g '*.p' | head -30\n",
+        "elapsed": 38.896613359451294
+      },
+      {
+        "call": 15,
+        "command": "find /opt/p-modeling -name '*.p' -print0 | xargs -0 grep -n '+=\\|sizeof(\\|seq\\[' | head -30\n",
+        "elapsed": 59.028024196624756
+      }
+    ],
+    "checker_exit2_calls": [
+      12,
+      14,
+      16,
+      17,
+      19,
+      20,
+      21,
+      28,
+      31
+    ],
+    "primary": {
+      "implementation_passed": true,
+      "submitted_tests_passed": true,
+      "model_check_passed": true,
+      "model_search_complete": true,
+      "model_selected_tests": 1,
+      "monitor_valid_accepted": 4,
+      "monitor_valid_total": 4,
+      "monitor_invalid_rejected": 3,
+      "monitor_invalid_total": 4,
+      "monitor_traces_passed": false,
+      "portable_probe_valid": true,
+      "portable_probe_reference_status": "passed",
+      "timeouts": 0,
+      "missing_deliverables": [],
+      "portable_probe_mutations_rejected": 2,
+      "portable_probe_mutations_total": 3,
+      "valid": false
+    },
+    "implementation_output": "test_capacity_one_is_enforced (test_hidden_contract.QueueContractTests.test_capacity_one_is_enforced) ... ok\ntest_empty_take_result_stays_memoized_after_later_put (test_hidden_contract.QueueContractTests.test_empty_take_result_stays_memoized_after_later_put) ... ok\ntest_fifo_capacity_and_rejection (test_hidden_contract.QueueContractTests.test_fifo_capacity_and_rejection) ... ok\ntest_put_and_take_id_namespaces_are_separate (test_hidden_contract.QueueContractTests.test_put_and_take_id_namespaces_are_separate) ... ok\ntest_rejected_put_stays_false_after_space_frees (test_hidden_contract.QueueContractTests.test_rejected_put_stays_false_after_space_frees) ... ok\ntest_request_memos_are_shared_across_instances (test_hidden_contract.QueueContractTests.test_request_memos_are_shared_across_instances) ... ok\ntest_retried_put_does_not_append_again_after_dequeue (test_hidden_contract.QueueContractTests.test_retried_put_does_not_append_again_after_dequeue) ... ok\ntest_simultaneous_puts_retry_after_compare_swap_conflict (test_hidden_contract.QueueContractTests.test_simultaneous_puts_retry_after_compare_swap_conflict) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.004s\n\nOK\nQUEUE_RACE_FORCED=1\n",
+    "portable_probes": {
+      "portable_probe_valid": true,
+      "reference_status": "passed",
+      "reference_test_count": 1,
+      "mutation_probes_run": true,
+      "mutation_results": [
+        {
+          "case": "probe-01",
+          "status": "tests_rejected",
+          "test_count": 1,
+          "output": "test_calls_and_public_results_match_contract (test_observation.QueueObservation.test_calls_and_public_results_match_contract) ... FAIL\n\n======================================================================\nFAIL: test_calls_and_public_results_match_contract (test_observation.QueueObservation.test_calls_and_public_results_match_contract)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 33, in test_calls_and_public_results_match_contract\n    self.assertEqual(take(\"t1\"), 11)\nAssertionError: 22 != 11\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+        },
+        {
+          "case": "probe-02",
+          "status": "tests_rejected",
+          "test_count": 1,
+          "output": "test_calls_and_public_results_match_contract (test_observation.QueueObservation.test_calls_and_public_results_match_contract) ... FAIL\n\n======================================================================\nFAIL: test_calls_and_public_results_match_contract (test_observation.QueueObservation.test_calls_and_public_results_match_contract)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/work/test_observation.py\", line 34, in test_calls_and_public_results_match_contract\n    self.assertEqual(take(\"t1\"), 11)\nAssertionError: 22 != 11\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+        },
+        {
+          "case": "probe-03",
+          "status": "passed",
+          "test_count": 1,
+          "output": "test_calls_and_public_results_match_contract (test_observation.QueueObservation.test_calls_and_public_results_match_contract) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nOK\n"
+        }
+      ],
+      "mutations_rejected": 2,
+      "mutations_total": 3
+    },
+    "supplemental_model": {
+      "result_sha256": "9ca7570496de0d09d10f970e63d22bceed346c704d274ac665999fc05b2afe22",
+      "source_assembly_changed": false,
+      "checker_exit_code": 0,
+      "selected_tests": 1,
+      "model_search_complete": true,
+      "model_check_passed": true
+    }
+  },
+  {
+    "run_id": "examples-vcs-c02",
+    "task": "vcs",
+    "repetition": 2,
+    "condition": "revised",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-c02",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/examples-vcs-c02/delegation.txt",
+    "run_status": "agent_finished",
+    "calls": 10,
+    "seconds": 114.125,
+    "metadata_sha256": "1dcafe59e92ceb553af88842a6c3d430061923279f6e98b73c9c8241fb6e44ec",
+    "submission_manifest_sha256": "8be692041479b5bfcd06d1624605630c698a7bc4f7d4bb3181120d98e70bbb0d",
+    "grade_sha256": "3d9010fa3f135b68704d2bfabe6da990de18aa311acd68c034c820789c357225",
+    "skill_sha256": "827079afa5ecc92094b1aef194cbcf1392cc8cfe358a8cb27b9af60e1a7d2fec",
+    "public_unchanged": true,
+    "references_requested": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md TASK.md contract.py\n",
+        "elapsed": 0.0
+      },
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/guides/modeling.md /opt/p-modeling/reference/p-patterns.md\nls -la\n",
+        "elapsed": 2.416
+      },
+      {
+        "call": 3,
+        "command": "cat runtime.py test_public.py\ncat /opt/p-modeling/examples/versioned-publication/README.md\n",
+        "elapsed": 3.973
+      },
+      {
+        "call": 4,
+        "command": "ls /opt/p-modeling/examples/cas-retry\ncat /opt/p-modeling/examples/cas-retry/README.md\ncat /opt/p-modeling/examples/cas-retry/*.p\n",
+        "elapsed": 5.623
+      }
+    ],
+    "checker_exit2_calls": [],
+    "primary": {
+      "passed": 19,
+      "total": 20,
+      "status": "completed",
+      "failed_cases": [
+        "test_published_bundle_cannot_reapply"
+      ]
+    },
+    "supplemental_wide": {
+      "solution": "/submission/solution.py",
+      "branches": 64,
+      "update_map_bytes": 27565,
+      "supplemental": true,
+      "passed": true,
+      "execution_status": "completed",
+      "timeout_seconds": 10.0,
+      "result_sha256": "2fb6b65d0d300eb5444071ddf04b91ee6c86af74134782be847a85f553b5652e"
+    }
+  }
+]
