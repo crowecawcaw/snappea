@@ -312,6 +312,76 @@ def grade_own_mutation(sub: Path, limit: int = 40) -> dict:
     return result
 
 
+TRANSPLANT_PROMPT = """You are helping grade a test suite. Directory {dir} holds `solution.py`, an
+implementation of the task in `TASK.md`. For each defect listed in `defects.json`, write
+`mutant_<name>.py`: a copy of `solution.py` with exactly that defect introduced, in the
+way this code is written. Keep everything else unchanged, including any `emit`, logging
+or event-recording calls, imports and public names. If a defect cannot be expressed in
+this code, write `mutant_<name>.skip` with one line saying why. Do not run or change
+anything else, and do not read files outside {dir}. Reply "done" when finished."""
+
+
+def cmd_transplant(a):
+    """Prepare a directory for a helper agent to write the task's defects into the
+    agent's own solution, and print its prompt."""
+    run = RUNS / a.run_id
+    meta = json.loads((run / "meta.json").read_text())
+    mutants = load_module(HERE / "tasks" / meta["task"] / "private" / "mutants.py")
+    out = run / "transplant"
+    out.mkdir(exist_ok=True)
+    shutil.copy2(run / "submission" / "solution.py", out / "solution.py")
+    shutil.copy2(HERE / "tasks" / meta["task"] / "public" / "TASK.md", out / "TASK.md")
+    (out / "defects.json").write_text(json.dumps({n: d for n, d, _ in mutants.MUTANTS}, indent=2))
+    print(TRANSPLANT_PROMPT.format(dir=out))
+
+
+def grade_transplant(run: Path, sub: Path, private: Path) -> dict:
+    """Score the agent's full test suite on its own solution with each defect transplanted.
+    A transplanted mutant counts only if it fails the hidden suite (it is a real defect)."""
+    out = run / "transplant"
+    if not out.exists():
+        return {"status": "not prepared"}
+    mutants = load_module(private / "mutants.py")
+    runs = [run_in_sandbox(submission_files(sub), PYTEST) for _ in range(2)]
+    stable = {c for c, s in runs[0]["cases"].items() if s == "passed" and runs[1]["cases"].get(c) == "passed"}
+    obs_modules = observation_files(sub)
+    base = {"runtime.py": private.parent / "public" / "runtime.py", "test_hidden.py": private / "test_hidden.py"}
+    for p in sub.glob("*.py"):
+        if p.name not in base and p.name not in ("solution.py", "conftest.py") and not p.name.startswith("test"):
+            base[p.name] = p
+    names = [n for n, _, _ in mutants.MUTANTS if (out / f"mutant_{n}.py").exists()]
+    sources = {n: (out / f"mutant_{n}.py").read_text() for n in names}
+    hidden = parallel(lambda n: run_in_sandbox({**base, "solution.py": sources[n]}, PYTEST + ["test_hidden.py"],
+                                               timeout=60), names)
+    # a real defect: fails some hidden tests but still imports and passes others
+    valid = [n for n, h in zip(names, hidden)
+             if any(s != "passed" for s in h["cases"].values()) and any(s == "passed" for s in h["cases"].values())]
+    suites = parallel(lambda n: run_in_sandbox(submission_files(sub, sources[n]), PYTEST, timeout=120), valid)
+    result = {"stable_tests": len(stable), "written": len(names),
+              "skipped": sorted(p.stem[len("mutant_"):] for p in out.glob("mutant_*.skip")),
+              "invalid": sorted(set(names) - set(valid)), "mutants": {}}
+    for n, r in zip(valid, suites):
+        killers = sorted(c for c in stable if r["cases"].get(c, "failed") != "passed")
+        result["mutants"][n] = {"killed": bool(stable) and (r["timed_out"] or bool(killers)),
+                                "killed_by_observation": any(in_files(c, obs_modules) for c in killers)}
+    m = result["mutants"].values()
+    result.update(valid=len(valid), killed=sum(x["killed"] for x in m),
+                  killed_by_observation=sum(x["killed_by_observation"] for x in m))
+    return result
+
+
+def cmd_grade_transplant(a):
+    run = RUNS / a.run_id
+    meta = json.loads((run / "meta.json").read_text())
+    path = run / "grade.json"
+    grade = json.loads(path.read_text())
+    grade["transplant"] = grade_transplant(run, run / "submission", HERE / "tasks" / meta["task"] / "private")
+    path.write_text(json.dumps(grade, indent=2))
+    t = grade["transplant"]
+    print(f"{a.run_id}: transplanted defects killed {t.get('killed')}/{t.get('valid')} "
+          f"(observation {t.get('killed_by_observation')}; invalid {t.get('invalid')}; skipped {t.get('skipped')})")
+
+
 def grade_model(sub: Path) -> dict:
     p_files = [p for p in sub.rglob("*.p")] + [p for p in sub.rglob("*.pproj")]
     if not p_files:
@@ -400,13 +470,15 @@ def cmd_summary(a):
         d = json.loads(g.read_text())
         h, t, m, p = d["hidden"], d["tests"], d["model_check"], d["process"]
         o = d.get("own_mutation", {})
+        tr = d.get("transplant", {})
         rows.append([d["run_id"], d["task"], d["skill"], f"{h['passed']}/{h['total']}",
                      f"{t['killed']}/{t['total_mutants']}", str(t["killed_by_observation"]),
                      f"{o.get('killed')}/{o.get('total')}", str(o.get("killed_by_observation")),
+                     f"{tr.get('killed')}/{tr.get('valid')}",
                      f"{t['reference_passing']}/{t['agent_tests']}", str(m.get("spec_monitors", 0)),
                      str(m.get("exit_code")), str(p.get("model_first")), str(p.get("check_runs")),
                      str(p.get("calls"))])
-    head = ["run", "task", "skill", "hidden", "killed", "obs-kill", "own-killed", "own-obs", "ref-ok tests", "specs",
+    head = ["run", "task", "skill", "hidden", "killed", "obs-kill", "own-killed", "own-obs", "transplant", "ref-ok tests", "specs",
             "check-exit", "model-first", "checks", "calls"]
     print("| " + " | ".join(head) + " |\n|" + "---|" * len(head))
     for r in rows:
@@ -425,7 +497,7 @@ def main():
     s.add_argument("--calls", type=int, default=60)
     s.add_argument("--minutes", type=int, default=40)
     s.add_argument("--command-seconds", type=int, default=120)
-    for name in ("bridge", "finish", "grade"):
+    for name in ("bridge", "finish", "grade", "transplant", "grade_transplant"):
         p = sub.add_parser(name)
         p.add_argument("run_id")
         if name == "finish":
