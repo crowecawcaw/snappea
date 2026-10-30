@@ -1,0 +1,5 @@
+<Project>
+  <ProjectName>Names</ProjectName>
+  <InputFiles><PFile>Names.p</PFile></InputFiles>
+  <OutputDir>./PGenerated</OutputDir>
+</Project>
