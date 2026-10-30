@@ -267,19 +267,6 @@ fn report_native(
     false
 }
 
-#[cfg(test)]
-mod parse_help_tests {
-    use super::parse_help;
-
-    #[test]
-    fn one_field_named_tuple_suggests_trailing_comma() {
-        let help = parse_help("no viable alternative at input 'items=items)'");
-        assert!(help.contains("trailing comma"), "{help}");
-        let other = parse_help("no viable alternative at input 'x==y)'");
-        assert!(!other.contains("trailing comma"), "{other}");
-    }
-}
-
 /// A suggested fix for a syntax error, from its message.
 pub(crate) fn parse_help(detail: &str) -> String {
     if let Some(rest) = detail.strip_prefix("missing ") {
@@ -313,4 +300,17 @@ pub(crate) fn parse_help(detail: &str) -> String {
         return "remove this token, or look for an extra or missing symbol just before it".into();
     }
     "look for a missing ';', ')' or '}', or a misspelled keyword, here or on the line before".into()
+}
+
+#[cfg(test)]
+mod parse_help_tests {
+    use super::parse_help;
+
+    #[test]
+    fn one_field_named_tuple_suggests_trailing_comma() {
+        let help = parse_help("no viable alternative at input 'items=items)'");
+        assert!(help.contains("trailing comma"), "{help}");
+        let other = parse_help("no viable alternative at input 'x==y)'");
+        assert!(!other.contains("trailing comma"), "{other}");
+    }
 }
