@@ -75,7 +75,7 @@ def run(binary):
                   ("empty-work.jsonl", 1, "scenario omitted a fresh request")]
         for name, expected, diagnostic in probes:
             result = subprocess.run([str(binary), "observe", "Balance.p", name,
-                                     "--spec", "BalanceContract", "--strict", "--check-hot"],
+                                     "--spec", "BalanceContract", "--strict", "--check-hot", "--json"],
                                     cwd=work, capture_output=True, text=True, timeout=30)
             assert result.returncode == expected, result.stdout + result.stderr
             if expected:
