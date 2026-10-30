@@ -29,6 +29,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 RUNS = HERE / "runs"
@@ -42,7 +44,8 @@ PROMPT = """You are working in a sandbox. Your only tool is a shell inside it: r
     <your shell command>
     CMD
 
-Do not use any other tool, and do not read or write files outside the sandbox. The sandbox
+Do not use any other tool, and do not read or write files outside the sandbox: create
+files from inside the command (for example `cat > file <<'EOF'`). The sandbox
 has no network. You have {calls} commands and {minutes} minutes; each command may run for
 {command_seconds} seconds.
 
@@ -203,6 +206,12 @@ def parse_junit(path: Path) -> dict[str, str]:
 PYTEST = ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--junitxml=report.xml"]
 
 
+def parallel(fn, items, workers=6):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(workers) as pool:
+        return list(pool.map(fn, items))
+
+
 def submission_files(sub: Path, solution: str | None = None) -> dict:
     files = {str(p.relative_to(sub)): p for p in sub.rglob("*") if p.is_file()}
     if solution is not None:
@@ -263,9 +272,10 @@ def grade_tests(sub: Path, private: Path) -> dict:
         "observation_tests": sum(in_files(c, obs_modules) for c in stable),
         "mutants": {},
     }
-    for name, defect, edits in mutants.MUTANTS:
-        source = mutants.apply(reference, edits)
-        r = run_in_sandbox(submission_files(sub, source), PYTEST, timeout=120)
+    sources = [(name, mutants.apply(reference, edits)) for name, _, edits in mutants.MUTANTS]
+    outcomes = parallel(lambda src: run_in_sandbox(submission_files(sub, src), PYTEST, timeout=120),
+                        [src for _, src in sources])
+    for (name, _), r in zip(sources, outcomes):
         killers = sorted(c for c in stable if r["cases"].get(c, "failed" if r["timed_out"] else None) == "failed")
         result["mutants"][name] = {
             "killed": bool(killers) or (r["timed_out"] and bool(stable)),
@@ -275,6 +285,30 @@ def grade_tests(sub: Path, private: Path) -> dict:
     result["killed"] = sum(x["killed"] for x in m)
     result["killed_by_observation"] = sum(x["killed_by_observation"] for x in m)
     result["total_mutants"] = len(result["mutants"])
+    return result
+
+
+def grade_own_mutation(sub: Path, limit: int = 40) -> dict:
+    """Standard mutation testing on the agent's own solution.py with all its tests,
+    including tests that rely on its own emit() calls."""
+    import ast_mutants
+    if not (sub / "solution.py").exists():
+        return {"total": 0}
+    runs = [run_in_sandbox(submission_files(sub), PYTEST) for _ in range(2)]
+    stable = {c for c, s in runs[0]["cases"].items() if s == "passed" and runs[1]["cases"].get(c) == "passed"}
+    obs_modules = observation_files(sub)
+    result = {"stable_tests": len(stable), "mutants": {}}
+    generated = ast_mutants.mutants((sub / "solution.py").read_text(), limit=limit)
+    outcomes = parallel(lambda src: run_in_sandbox(submission_files(sub, src), PYTEST, timeout=60),
+                        [src for _, src in generated])
+    for (label, _), r in zip(generated, outcomes):
+        killers = sorted(c for c in stable if r["cases"].get(c, "failed") != "passed")
+        killed = bool(stable) and (r["timed_out"] or bool(killers))
+        result["mutants"][label] = {"killed": killed, "timed_out": r["timed_out"],
+                                    "killed_by_observation": any(in_files(c, obs_modules) for c in killers)}
+    m = result["mutants"].values()
+    result.update(total=len(result["mutants"]), killed=sum(x["killed"] for x in m),
+                  killed_by_observation=sum(x["killed_by_observation"] for x in m))
     return result
 
 
@@ -338,11 +372,13 @@ def cmd_grade(a):
              "skill": meta["skill"]["label"] if meta["skill"] else "none",
              "model": meta.get("model"),
              "hidden": grade_hidden(sub, private), "tests": grade_tests(sub, private),
+             "own_mutation": grade_own_mutation(sub),
              "model_check": grade_model(sub), "process": grade_process(run)}
     (run / "grade.json").write_text(json.dumps(grade, indent=2))
-    h, t = grade["hidden"], grade["tests"]
+    h, t, o = grade["hidden"], grade["tests"], grade["own_mutation"]
     print(f"{a.run_id}: hidden {h['passed']}/{h['total']}  mutants killed {t['killed']}/{t['total_mutants']} "
-          f"(observation {t['killed_by_observation']})  ref-passing tests {t['reference_passing']}/{t['agent_tests']}")
+          f"(observation {t['killed_by_observation']})  ref-passing tests {t['reference_passing']}/{t['agent_tests']}"
+          f"  own-mutants killed {o.get('killed')}/{o.get('total')} (observation {o.get('killed_by_observation')})")
 
 
 def cmd_calibrate(a):
@@ -363,12 +399,14 @@ def cmd_summary(a):
     for g in sorted(RUNS.glob("*/grade.json")):
         d = json.loads(g.read_text())
         h, t, m, p = d["hidden"], d["tests"], d["model_check"], d["process"]
+        o = d.get("own_mutation", {})
         rows.append([d["run_id"], d["task"], d["skill"], f"{h['passed']}/{h['total']}",
                      f"{t['killed']}/{t['total_mutants']}", str(t["killed_by_observation"]),
+                     f"{o.get('killed')}/{o.get('total')}", str(o.get("killed_by_observation")),
                      f"{t['reference_passing']}/{t['agent_tests']}", str(m.get("spec_monitors", 0)),
                      str(m.get("exit_code")), str(p.get("model_first")), str(p.get("check_runs")),
                      str(p.get("calls"))])
-    head = ["run", "task", "skill", "hidden", "killed", "obs-kill", "ref-ok tests", "specs",
+    head = ["run", "task", "skill", "hidden", "killed", "obs-kill", "own-killed", "own-obs", "ref-ok tests", "specs",
             "check-exit", "model-first", "checks", "calls"]
     print("| " + " | ".join(head) + " |\n|" + "---|" * len(head))
     for r in rows:
