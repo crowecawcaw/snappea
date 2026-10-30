@@ -5,7 +5,7 @@ VALID = re.compile(r"[a-z0-9-]{1,16}")
 
 
 def norm(name):
-    if not isinstance(name, str):
+    if not isinstance(name, str) or not name.isascii():
         return None
     name = name.lower()
     return name if VALID.fullmatch(name) else None
