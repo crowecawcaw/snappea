@@ -1,0 +1,45 @@
+Checking Fencing: 3 test cases
+ok    tcTwoLocks (all 23483 schedules, 2 workers, 1.24s)
+      Coverage: 119/190 statements, 27/46 branches, 8/12 event handlers, 41/70 condition outcomes
+      Driver limits (held in all 23483 schedules):
+        creates 1 Store, 2 LockClient and 1 Scenario, never more
+        Scenario is always created with locks = 2, writers = 0, writes = 0, long = false
+      hint: if the real environment can do more, extend the driver to try it
+ok    tcOneLockTwoWriters (all 173661 schedules, 2 workers, 10.5s)
+      Coverage: 171/190 statements, 34/46 branches, 12/12 event handlers, 52/70 condition outcomes
+      Driver limits (held in all 173661 schedules):
+        creates 1 Store, 1 LockClient, 2 Writer and 1 Scenario, never more
+        Scenario is always created with locks = 1, writers = 2, writes = 1, long = false
+      hint: if the real environment can do more, extend the driver to try it
+ok    tcOneLongLockOneWriter (all 76971 schedules, 2 workers, 10.1s)
+      Coverage: 182/190 statements, 38/46 branches, 12/12 event handlers, 60/70 condition outcomes
+      Driver limits (held in all 76971 schedules):
+        creates 1 Store, 1 LockClient, 1 Writer and 1 Scenario, never more
+        Scenario is always created with locks = 1, writers = 1, writes = 2, long = true
+      hint: if the real environment can do more, extend the driver to try it
+Coverage of all test cases: 192/192 statements, 46/46 branches, 12/12 event handlers, 70/70 condition outcomes
+Mutation testing: 137 of 166 mutants detected (18.2s)
+Not detected by any test case (every test case still passes with the change):
+  Fencing.p:150  Store.Ready entry: removed `holder = -1;`
+  Fencing.p:174  Store.Ready, on eCasRes: `p.snap.ver == rver` replaced by `true`
+  Fencing.p:181  Store.Ready, on eCasRes: removed `send p.client, eCasOk, false;`
+  Fencing.p:181  Store.Ready, on eCasRes: `false` → `true`
+  Fencing.p:197  LockClient.Run entry: `held == 0` replaced by `true`
+  Fencing.p:197  LockClient.Run entry: `held == 0` replaced by `false`
+  Fencing.p:197  LockClient.Run entry: `held == 0` → `held != 0`
+  Fencing.p:197  LockClient.Run entry: removed `held = choose(3);`
+  Fencing.p:203  LockClient.Run entry: `1 + choose(2)` → `1 - choose(2)`
+  Fencing.p:217  LockClient.acquireInner: removed `tries = tries + 1;`
+  Fencing.p:217  LockClient.acquireInner: `tries + 1` → `tries - 1`
+  Fencing.p:243  LockClient.releaseInner: removed `tries = tries + 1;`
+  Fencing.p:243  LockClient.releaseInner: `tries + 1` → `tries - 1`
+  Fencing.p:246  LockClient.releaseInner: removed `s = x;`
+  Fencing.p:267  Writer.Run entry: removed `id = cfg.id;`
+  Fencing.p:275  Writer.write: removed `l = x;`
+  Fencing.p:282  Writer.write: removed `tries = tries + 1;`
+  Fencing.p:282  Writer.write: `tries + 1` → `tries - 1`
+  Fencing.p:285  Writer.write: removed `r = x;`
+  Fencing.p:286  Writer.write: `t < r.maxUsed` replaced by `false`
+  ... 9 more (--json lists all)
+🫛 All 3 test cases passed in 40.2s, peak memory 56 MB. Output: PCheckerOutput/
+29 mutants not detected: the model ran the changed code but no assertion failed. Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.

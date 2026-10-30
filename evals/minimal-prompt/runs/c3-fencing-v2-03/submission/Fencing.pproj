@@ -1,0 +1,6 @@
+<Project>
+  <ProjectName>Fencing</ProjectName>
+  <InputFiles>
+    <PFile>./Fencing.p</PFile>
+  </InputFiles>
+</Project>
