@@ -90,7 +90,7 @@ def cmd_start(a):
         shutil.copytree(Path(a.skill), skill, ignore=shutil.ignore_patterns("__pycache__"))
         os.chmod(skill, 0o755)
         extra = ["--mount", f"type=bind,src={skill},dst=/opt/skill,readonly"]
-        meta["skill"] = {"source": str(Path(a.skill).resolve().relative_to(ROOT)),
+        meta["skill"] = {"source": str(Path(a.skill).resolve()),
                          "label": a.skill_label or Path(a.skill).name, "tree_hash": tree_hash(skill)}
     os.chmod(work, 0o777)
     for p in work.rglob("*"):
@@ -206,7 +206,7 @@ def parse_junit(path: Path) -> dict[str, str]:
 PYTEST = ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--junitxml=report.xml"]
 
 
-def parallel(fn, items, workers=6):
+def parallel(fn, items, workers=3):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(workers) as pool:
         return list(pool.map(fn, items))

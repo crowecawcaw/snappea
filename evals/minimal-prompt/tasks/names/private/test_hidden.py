@@ -127,7 +127,7 @@ def test_rename_without_name():
 
 
 def test_racing_registers_one_winner():
-    store = SameVersionStore(Store(), "name:")
+    store = SameVersionStore(Store(), "x")
     a, b = Registry(store), Registry(store)
     with ThreadPoolExecutor(2) as pool:
         fa, fb = pool.submit(a.register, "ann", "x"), pool.submit(b.register, "bob", "x")
@@ -141,7 +141,7 @@ def test_racing_registers_one_winner():
 def test_register_wins_between_rename_read_and_write():
     inner = Store()
     Registry(inner).register("ann", "a")
-    sneaky = InterferingStore(inner, "name:x", lambda: Registry(inner).register("bob", "x"))
+    sneaky = InterferingStore(inner, "x", lambda: Registry(inner).register("bob", "x"))
     assert Registry(sneaky).rename("ann", "x") is False
     reg = Registry(inner)
     assert reg.owner("x") == "bob" and reg.name_of("ann") == "a" and reg.owner("a") == "ann"
