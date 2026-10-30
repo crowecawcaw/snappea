@@ -434,6 +434,9 @@ impl Args {
     }
 }
 
+/// Options that were removed in favor of another spelling, and that spelling.
+const RENAMED: &[(&str, &str)] = &[("--time", "--timeout"), ("--allow-incomplete-coverage", "--warn coverage")];
+
 pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> {
     let mut out = Args::default();
     let mut it = args.iter();
@@ -467,7 +470,11 @@ pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> 
             (opt, (!rest.is_empty()).then(|| rest.to_string()))
         };
         let Some(opt) = opt else {
-            return Err(format!("unknown option '{}'", a));
+            let name = a.split('=').next().unwrap_or(a);
+            return Err(match RENAMED.iter().find(|(old, _)| *old == name) {
+                Some((_, new)) => format!("unknown option '{}': it was renamed, use '{}'", name, new),
+                None => format!("unknown option '{}'", a),
+            });
         };
         let v = match (opt.takes_value, inline) {
             (true, Some(v)) => v,
@@ -775,7 +782,6 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
 
 const CHECK_OPTS: &[Opt] = &[
     value("timeout", None),
-    value("time", None), // Existing spelling remains an unadvertised alias.
     value("workers", Some('j')),
     value("seed", None),
     value("latency", None),
@@ -786,7 +792,6 @@ const CHECK_OPTS: &[Opt] = &[
     flag("no-mutation", None),
     value("warn", None),
     value("deny", None),
-    flag("allow-incomplete-coverage", None), // Unadvertised alias of `--warn coverage`.
     flag("no-driver-facts", None),
     flag("ignore-foreign-files", None),
     value("progress", None),
@@ -884,10 +889,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     cfg.strategy = StrategyKind::Auto;
     cfg.iterations = 0;
     cfg.user_set_iterations = false;
-    if a.get("timeout").is_some() && a.get("time").is_some() {
-        return Err("use only '--timeout' ('--time' is an alias)".into());
-    }
-    if let Some(t) = a.get("timeout").or_else(|| a.get("time")) {
+    if let Some(t) = a.get("timeout") {
         cfg.timeout =
             Some(parse_duration(t).ok_or_else(|| format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t))?);
     }
@@ -919,9 +921,6 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
 /// first, then single checks, so `--warn all --deny mutation` warns on all but mutation.
 fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
     let mut named: Vec<(&str, Gate)> = Vec::new();
-    if a.has("allow-incomplete-coverage") {
-        named.push(("coverage", Gate::Warn));
-    }
     for (option, gate) in [("warn", Gate::Warn), ("deny", Gate::Deny)] {
         for name in a.all(option).into_iter().flat_map(|v| v.split(',')).map(str::trim) {
             if name != "all" && !check::Gates::CHECKS.contains(&name) {

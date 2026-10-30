@@ -63,7 +63,7 @@ monitors also continue through fair feedback: closing a repeated state is not a
 liveness proof. Stalling changes strategy; it never certifies a model as safe.
 
 The default is a fixed **10-second limit per test**, with no automatic extensions.
-`--timeout` overrides it; the previous spelling `--time` remains an alias. A timeout
+`--timeout` overrides it. A timeout
 means the search is incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
 coverage was not reached within the run budget. Exit status is 0 when no bug or
@@ -94,8 +94,7 @@ snappea check --deny mutation    # CI: also fail on undetected mutants
 
 A warned finding is still printed, labelled `warning`, and the final line says
 `with warnings: ...`; the JSON result counts them under `warnings`. Fix or suppress
-warnings before relying on a passing result. `--allow-incomplete-coverage` remains an
-alias of `--warn coverage`. The [playground](../web/README.md) warns on all three
+warnings before relying on a passing result. The [playground](../web/README.md) warns on all three
 unless "Strict checks" is ticked.
 
 Workers run in parallel, one per available CPU core by default; `-j N` limits resource

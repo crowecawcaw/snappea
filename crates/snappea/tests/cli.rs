@@ -632,7 +632,7 @@ fn check_reports_what_never_ran() {
     let mut h = host();
     h.add_file("ping.p", PING);
     assert_eq!(
-        snappea(&mut h, &["check", "ping.p", "--allow-incomplete-coverage", "--json-report", "result.json"]),
+        snappea(&mut h, &["check", "ping.p", "--warn", "coverage", "--json-report", "result.json"]),
         0,
         "{}",
         h.stdout
@@ -688,11 +688,6 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--warn", "coverage", "--format", "text"]), 0);
     assert!(h.stdout.contains("Warning: required coverage was not reached"), "{}", h.stdout);
     assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 2 coverage gaps."), "{}", h.stdout);
-    // the earlier spelling still works
-    assert_eq!(
-        snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--allow-incomplete-coverage", "--format", "text"]),
-        0
-    );
 
     h.add_file(
         "coverage.p",
