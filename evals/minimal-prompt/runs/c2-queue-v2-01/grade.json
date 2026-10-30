@@ -292,5 +292,58 @@
     "check_runs": 9,
     "check_runs_exit1": 2,
     "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 19,
+    "written": 11,
+    "skipped": [],
+    "invalid": [
+      "memo-in-instance"
+    ],
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true
+      }
+    },
+    "valid": 10,
+    "killed": 10,
+    "killed_by_observation": 10
   }
 }

@@ -1,0 +1,408 @@
+{
+  "run_id": "c2-fencing-v1-02",
+  "task": "fencing",
+  "skill": "v1",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 14,
+    "total": 14,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 8,
+    "agent_tests_pass_own_solution": 8,
+    "reference_passing": 8,
+    "reference_rejecting": [],
+    "observation_tests": 0,
+    "mutants": {
+      "token-reset-on-release": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_release_preconditions",
+          "test_solution::test_tokens_increase_with_out_of_order_times"
+        ]
+      },
+      "expiry-inclusive": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_acquire_basics_and_expiry_boundary",
+          "test_solution::test_fencing",
+          "test_solution::test_resources_independent",
+          "test_solution::test_stale_release_does_not_free_new_lease"
+        ]
+      },
+      "reacquire-new-token": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_acquire_basics_and_expiry_boundary"
+        ]
+      },
+      "expired-holder-keeps-token": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_stale_release_does_not_free_new_lease"
+        ]
+      },
+      "acquire-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "release-ignores-token": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_release_preconditions",
+          "test_solution::test_stale_release_does_not_free_new_lease"
+        ]
+      },
+      "release-ignores-expiry": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_release_preconditions"
+        ]
+      },
+      "fence-rejects-equal": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_fencing"
+        ]
+      },
+      "no-issued-check": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_fencing"
+        ]
+      },
+      "fence-is-current-holder": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_resources_independent"
+        ]
+      },
+      "write-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "write-stale-retry": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "shared-fence": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_resources_independent"
+        ]
+      }
+    },
+    "killed": 10,
+    "killed_by_observation": 0,
+    "total_mutants": 13
+  },
+  "own_mutation": {
+    "stable_tests": 8,
+    "mutants": {
+      "negate@28": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@14": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@47": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@48": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@54": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": false
+      },
+      "true@47": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@52": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@34": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@31": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@54": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@54": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": false
+      },
+      "flip@52": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@34": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@34": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@47": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@54": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": false
+      },
+      "negate@47": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@52": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      }
+    },
+    "total": 36,
+    "killed": 31,
+    "killed_by_observation": 0
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "search_incomplete",
+    "test_cases": 1,
+    "failed": 0,
+    "incomplete": 1,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcFencing",
+        "result": "ok",
+        "complete": false,
+        "schedules": 647074
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 1,
+    "hot_states": 0,
+    "design_doc_chars": 0
+  },
+  "process": {
+    "calls": 7,
+    "minutes": 2.5,
+    "read_skill": true,
+    "first_check_call": 3,
+    "first_solution_write_call": 3,
+    "model_first": false,
+    "check_runs": 3,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 8,
+    "written": 13,
+    "skipped": [],
+    "invalid": [
+      "write-stale-retry"
+    ],
+    "mutants": {
+      "token-reset-on-release": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "expiry-inclusive": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "reacquire-new-token": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "expired-holder-keeps-token": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "acquire-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "release-ignores-token": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "release-ignores-expiry": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "fence-rejects-equal": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "no-issued-check": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "fence-is-current-holder": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "write-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "shared-fence": {
+        "killed": true,
+        "killed_by_observation": false
+      }
+    },
+    "valid": 12,
+    "killed": 10,
+    "killed_by_observation": 0
+  }
+}

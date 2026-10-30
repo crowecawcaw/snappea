@@ -1,0 +1,445 @@
+{
+  "run_id": "c2-queue-v2-02",
+  "task": "queue",
+  "skill": "v2",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 26,
+    "agent_tests_pass_own_solution": 26,
+    "reference_passing": 26,
+    "reference_rejecting": [],
+    "observation_tests": 26,
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_accepted_take_retry_returns_same_item_after_more_changes",
+          "test_queue::test_capacity_boundary_and_fifo[2]",
+          "test_queue::test_capacity_boundary_and_fifo[3]",
+          "test_queue::test_capacity_boundary_and_fifo[5]",
+          "test_queue::test_competitor_takes_one_of_two_between_load_and_cas"
+        ]
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_capacity_boundary_and_fifo[1]",
+          "test_queue::test_capacity_boundary_and_fifo[2]",
+          "test_queue::test_capacity_boundary_and_fifo[3]",
+          "test_queue::test_capacity_boundary_and_fifo[5]",
+          "test_queue::test_competitor_fills_queue_between_load_and_cas"
+        ]
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_accepted_put_retry_after_item_taken_has_no_second_effect",
+          "test_queue::test_observe_competitor_between_load_and_cas",
+          "test_queue::test_observe_empty_take_then_put_then_retries",
+          "test_queue::test_observe_full_rejected_then_take_then_retries",
+          "test_queue::test_observe_same_id_different_kinds"
+        ]
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_accepted_take_retry_returns_same_item_after_more_changes",
+          "test_queue::test_empty_take_retry_stays_empty_after_put",
+          "test_queue::test_observe_empty_take_then_put_then_retries",
+          "test_queue::test_observe_full_rejected_then_take_then_retries",
+          "test_queue::test_observe_same_id_different_kinds"
+        ]
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_observe_competitor_between_load_and_cas",
+          "test_queue::test_observe_full_rejected_then_take_then_retries",
+          "test_queue::test_rejected_put_retry_stays_rejected_after_space_freed"
+        ]
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_empty_take_retry_stays_empty_after_put",
+          "test_queue::test_observe_empty_take_then_put_then_retries"
+        ]
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_empty_take_with_id_shared_by_put",
+          "test_queue::test_observe_same_id_different_kinds",
+          "test_queue::test_put_and_take_with_same_request_id_are_different_requests"
+        ]
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": true,
+        "killers": [
+          "test_queue::test_accepted_put_retry_after_item_taken_has_no_second_effect",
+          "test_queue::test_accepted_take_retry_returns_same_item_after_more_changes",
+          "test_queue::test_capacity_boundary_and_fifo[1]",
+          "test_queue::test_capacity_boundary_and_fifo[2]",
+          "test_queue::test_capacity_boundary_and_fifo[3]"
+        ]
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": true,
+        "killers": [
+          "test_queue::test_competitor_empties_queue_between_load_and_cas",
+          "test_queue::test_competitor_takes_one_of_two_between_load_and_cas",
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "memo-in-instance": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_accepted_put_retry_after_item_taken_has_no_second_effect",
+          "test_queue::test_observe_competitor_between_load_and_cas",
+          "test_queue::test_rejected_put_retry_stays_rejected_after_space_freed",
+          "test_queue::test_same_request_raced_by_two_clients_applies_once"
+        ]
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": true,
+        "killers": [
+          "test_queue::test_competitor_empties_queue_between_load_and_cas",
+          "test_queue::test_competitor_takes_one_of_two_between_load_and_cas",
+          "test_queue::test_threads_conserve_items"
+        ]
+      }
+    },
+    "killed": 11,
+    "killed_by_observation": 11,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 26,
+    "mutants": {
+      "negate@24": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@12": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@44": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@33": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@33": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@12": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@30": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "flip@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@40": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "true@40": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "pop-end@42": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@27": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@33": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "flip@40": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "true@19": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "drop-return@44": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@33": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@27": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "false@44": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@12": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@40": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@27": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@30": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "true@30": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@37": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "false@12": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@44": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@40": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      }
+    },
+    "total": 34,
+    "killed": 30,
+    "killed_by_observation": 30
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 7,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcGenerated",
+        "result": "ok",
+        "complete": true,
+        "schedules": 30431
+      },
+      {
+        "name": "tcTwoPuts",
+        "result": "ok",
+        "complete": true,
+        "schedules": 869
+      },
+      {
+        "name": "tcTwoTakes",
+        "result": "ok",
+        "complete": true,
+        "schedules": 868
+      },
+      {
+        "name": "tcSameId",
+        "result": "ok",
+        "complete": true,
+        "schedules": 915
+      },
+      {
+        "name": "tcFullRejected",
+        "result": "ok",
+        "complete": true,
+        "schedules": 899
+      },
+      {
+        "name": "tcEmptyTake",
+        "result": "ok",
+        "complete": true,
+        "schedules": 940
+      },
+      {
+        "name": "tcDuplicate",
+        "result": "ok",
+        "complete": true,
+        "schedules": 574
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 7,
+    "hot_states": 1,
+    "design_doc_chars": 3733
+  },
+  "process": {
+    "calls": 18,
+    "minutes": 10.6,
+    "read_skill": true,
+    "first_check_call": 4,
+    "first_solution_write_call": 13,
+    "model_first": true,
+    "check_runs": 7,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 26,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "memo-in-instance": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true
+      }
+    },
+    "valid": 11,
+    "killed": 11,
+    "killed_by_observation": 11
+  }
+}

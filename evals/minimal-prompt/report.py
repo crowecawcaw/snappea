@@ -8,6 +8,9 @@ from collections import defaultdict
 from pathlib import Path
 
 RUNS = Path(__file__).resolve().parent / "runs"
+# defects that only show when two calls interleave between a load and a compare-and-swap
+RACE = {"ignore-cas-put", "ignore-cas-take", "stale-retry", "acquire-ignores-cas", "write-ignores-cas",
+        "write-stale-retry", "claim-ignores-cas"}
 
 
 def signals(run: Path) -> dict:
@@ -45,12 +48,14 @@ def main():
             "ref_kill": frac(t["killed"], t["total_mutants"]),
             "transplant_kill": frac(tr.get("killed", 0), tr.get("valid")) if tr.get("valid") else None,
             "own_kill": frac(o.get("killed", 0), o.get("total")),
+            "race_kill": frac(sum(v["killed"] for k, v in tr.get("mutants", {}).items() if k in RACE),
+                              sum(k in RACE for k in tr.get("mutants", {}))),
             "check_passed": m.get("status") == "passed",
             "model_first": p.get("model_first"), "calls": p.get("calls"), **s,
         }
         by[d["skill"]].append(row)
 
-    cols = ["hidden", "transplant_kill", "ref_kill", "own_kill"]
+    cols = ["hidden", "transplant_kill", "race_kill", "ref_kill", "own_kill"]
     flags = ["check_passed", "model_first", "forced_interleaving", "observation", "design_doc",
              "final_check_bypass"]
     print(f"| condition | n | " + " | ".join(cols) + " | " + " | ".join(flags) + " | calls | minutes |")
