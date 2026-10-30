@@ -16,6 +16,8 @@ export interface CheckRequest {
   testCase: string;
   timeout: number;
   seed: number;
+  /** Fail on lint findings and coverage gaps, as the CLI does; otherwise report them as warnings. */
+  strict: boolean;
   extraArgs: string[];
 }
 

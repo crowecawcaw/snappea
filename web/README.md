@@ -22,6 +22,8 @@ the browser; the playground remains a client application.
   The URL tracks the project so links can be shared: `?demo=<id>&file=<path>` for an
   unedited demo, otherwise the files, open file and checker settings are deflated into
   `#s=...` (`src/share.ts`). Projects over 32k encoded characters are not put in the URL.
+  Checks pass `--warn all`, so lint findings and coverage gaps show as warnings, unless
+  Options > "Strict checks" is ticked (the CLI's defaults). The setting is in the link.
 
 The docs diagrams are React components driven by scripted data
 (`src/site/docs/diagrams/`). `build/static-pages.ts` renders `src/site/render.tsx`

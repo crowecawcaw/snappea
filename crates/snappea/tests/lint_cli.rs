@@ -56,9 +56,62 @@ fn lint_and_check_fail_with_same_findings_before_any_output_is_written() {
     let lint = h.stderr.clone();
     assert!(lint.contains("error[permissive-monitor]: ") && lint.contains(" --> model.p:2:6\n"), "{lint}");
     assert_eq!(run(&mut h, &["check", "model.p"]), 2);
-    assert_eq!(h.stderr, lint);
+    // the same findings, then how to check anyway
+    assert!(h.stderr.starts_with(&lint), "{}", h.stderr);
+    assert!(h.stderr.ends_with("hint: to look for bugs before addressing these, pass --warn lint; the findings are then reported as warnings\n"), "{}", h.stderr);
     assert!(!h.stdout.contains("Checking "), "{}", h.stdout);
     assert!(h.files_under("PCheckerOutput").is_empty());
+}
+
+#[test]
+fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", MODEL);
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint,coverage"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(h.stderr.contains("warning[permissive-monitor]: ") && !h.stderr.contains("error["), "{}", h.stderr);
+    assert!(
+        h.stderr.contains("Lint: 1 finding(s) reported as warnings (--warn lint); checking anyway."),
+        "{}",
+        h.stderr
+    );
+    assert!(h.stdout.contains("Checking "), "{}", h.stdout);
+    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 1 lint finding, "), "{}", h.stdout);
+    // `all` warns on every check; JSON counts what was only warned about
+    h.terminal = false;
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["warnings"]["lint"], 1, "{}", result);
+    assert!(result["warnings"]["coverage"].as_u64().unwrap() > 0, "{}", result);
+    h.terminal = true;
+    // other checks keep their defaults, and a single check overrides `all`
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint"]), 1, "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("Coverage requirements were not met"), "{}", h.stdout);
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all", "--deny", "lint"]), 2);
+    assert!(h.stderr.contains("error[permissive-monitor]"), "{}", h.stderr);
+    // bugs still fail
+    h.add_file(
+        "model.p",
+        &MODEL
+            .replace("machine Main { start state S {} }", "machine Main { start state S { entry { assert false; } } }"),
+    );
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all"]), 1, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stdout.contains("with warnings"), "{}", h.stdout);
+}
+
+#[test]
+fn warn_and_deny_reject_unknown_and_conflicting_checks() {
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", MODEL);
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lints"]), 2);
+    assert!(
+        h.stderr.contains("unknown check 'lints' for '--warn': use lint, coverage, mutation or all"),
+        "{}",
+        h.stderr
+    );
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint", "--deny", "lint"]), 2);
+    assert!(h.stderr.contains("'--warn lint' and '--deny lint' conflict: use one"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation", "--deny", "mutation"]), 2);
+    assert!(h.stderr.contains("use only one of '--no-mutation' and '--deny mutation'"), "{}", h.stderr);
 }
 
 #[test]

@@ -120,6 +120,60 @@ pub struct CheckConfig {
     /// Send progress snapshots to [`Host::progress`] while checking, for the test case at
     /// this position of the run (and during mutation testing). `None` sends none.
     pub progress: Option<Position>,
+    /// Whether lint findings, coverage gaps and undetected mutants fail the check.
+    pub gates: Gates,
+}
+
+/// What a check does with what it finds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    /// Report the findings and fail the check.
+    Deny,
+    /// Report the findings as warnings; the check goes on and they do not change the
+    /// exit status.
+    Warn,
+}
+
+/// The [`Gate`] for each check that runs alongside schedule exploration. The CLI sets
+/// them with `--warn <check>` and `--deny <check>`.
+///
+/// ```
+/// use snappea::driver::check::{Gate, Gates};
+/// let mut gates = Gates::default();
+/// gates.set("lint", Gate::Warn).unwrap(); // explore a model before fixing its lints
+/// assert_eq!(gates.lint, Gate::Warn);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gates {
+    /// Lint findings (default: deny). Suppress intended ones in the source.
+    pub lint: Gate,
+    /// Required coverage not reached (default: deny).
+    pub coverage: Gate,
+    /// Mutants no test case detects (default: warn; deny in `snappea check mutation`).
+    pub mutation: Gate,
+}
+
+impl Default for Gates {
+    fn default() -> Gates {
+        Gates { lint: Gate::Deny, coverage: Gate::Deny, mutation: Gate::Warn }
+    }
+}
+
+impl Gates {
+    /// The check names [`Gates::set`] accepts, besides `all`.
+    pub const CHECKS: [&'static str; 3] = ["lint", "coverage", "mutation"];
+
+    /// Sets the gate of the check called `name`, or of every check for `all`.
+    pub fn set(&mut self, name: &str, gate: Gate) -> Result<(), String> {
+        match name {
+            "lint" => self.lint = gate,
+            "coverage" => self.coverage = gate,
+            "mutation" => self.mutation = gate,
+            "all" => *self = Gates { lint: gate, coverage: gate, mutation: gate },
+            _ => return Err(format!("unknown check '{}': use lint, coverage, mutation or all", name)),
+        }
+        Ok(())
+    }
 }
 
 impl Default for CheckConfig {
@@ -159,6 +213,7 @@ impl Default for CheckConfig {
             code_coverage: false,
             driver_facts: false,
             progress: None,
+            gates: Gates::default(),
         }
     }
 }

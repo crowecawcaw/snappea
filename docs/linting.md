@@ -3,6 +3,9 @@
 `snappea check` type-checks and lints all loaded sources before exploring schedules.
 An unsuppressed lint finding stops the command with exit status **2**, before it
 creates checker output. A model bug found during exploration still exits with 1.
+`snappea check --warn lint` reports the findings as warnings and checks anyway, e.g.
+to see whether a model written for upstream P finds bugs before you address its lints
+(see [what fails a check](checking-models.md#what-fails-a-check)).
 
 To run linting alone:
 

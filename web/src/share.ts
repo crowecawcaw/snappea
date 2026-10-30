@@ -12,6 +12,8 @@ export interface Shared {
   testCase?: string;
   timeout?: number;
   extraArgs?: string;
+  /** "Strict checks": fail on lint findings and coverage gaps. Absent means off. */
+  strict?: boolean;
 }
 
 /** Longest encoded project put in a URL. Links much past this get cut off by chat apps and some browsers. */
@@ -49,6 +51,7 @@ export function decodeShared(encoded: string): Shared {
     timeout: typeof s.timeout === "number" && Number.isFinite(s.timeout)
       ? Math.min(3600, Math.max(1, Math.trunc(s.timeout))) : undefined,
     extraArgs: typeof s.extraArgs === "string" ? s.extraArgs : undefined,
+    strict: s.strict === true ? true : undefined,
   };
 }
 
