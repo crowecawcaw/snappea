@@ -353,5 +353,60 @@
     "check_runs": 7,
     "check_runs_exit1": 1,
     "observe_runs": 1
+  },
+  "transplant": {
+    "stable_tests": 4,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "case-sensitive": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "length-17": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "empty-name": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "claim-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "claim-steals": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "free-before-claim": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "rename-keeps-old": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "register-same-false": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "rename-same-frees": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "register-second-name": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "rename-without-name": {
+        "killed": true,
+        "killed_by_observation": false
+      }
+    },
+    "valid": 11,
+    "killed": 10,
+    "killed_by_observation": 0
   }
 }

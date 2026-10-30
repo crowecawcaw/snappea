@@ -1,0 +1,950 @@
+{
+  "summary": {
+    "status": "passed",
+    "message": "All test cases passed",
+    "test_cases": 12,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_failed": false,
+    "coverage_gaps": 0,
+    "uncovered": [],
+    "uncovered_more": 0,
+    "mutation_time_limit_reached": false
+  },
+  "project": "Fencing",
+  "test_cases": [
+    {
+      "name": "tcGenerated",
+      "result": "ok",
+      "schedules": 1532,
+      "workers": 2,
+      "seconds": 0.104,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 92,
+          "total": 150
+        },
+        "branches": {
+          "covered": 25,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 33,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Generated"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcContention",
+      "result": "ok",
+      "schedules": 96314,
+      "workers": 2,
+      "seconds": 14.834,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 99,
+          "total": 143
+        },
+        "branches": {
+          "covered": 27,
+          "total": 42
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 41,
+          "total": 64
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Contention"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 3 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1, 2 or 3",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcStale",
+      "result": "ok",
+      "schedules": 6576,
+      "workers": 2,
+      "seconds": 1.006,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 142,
+          "total": 144
+        },
+        "branches": {
+          "covered": 40,
+          "total": 42
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 61,
+          "total": 64
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "StaleHolder"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcFencing",
+      "result": "ok",
+      "schedules": 2905,
+      "workers": 2,
+      "seconds": 0.483,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 132,
+          "total": 144
+        },
+        "branches": {
+          "covered": 32,
+          "total": 42
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 46,
+          "total": 64
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Fencing"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenAA",
+      "result": "ok",
+      "schedules": 463,
+      "workers": 2,
+      "seconds": 0.042,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 96,
+          "total": 150
+        },
+        "branches": {
+          "covered": 24,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 34,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenAA"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenAR",
+      "result": "ok",
+      "schedules": 915,
+      "workers": 2,
+      "seconds": 0.035,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 96,
+          "total": 150
+        },
+        "branches": {
+          "covered": 24,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 33,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenAR"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenRR",
+      "result": "ok",
+      "schedules": 375,
+      "workers": 2,
+      "seconds": 0.032,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 99,
+          "total": 150
+        },
+        "branches": {
+          "covered": 22,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 32,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenRR"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenRA",
+      "result": "ok",
+      "schedules": 680,
+      "workers": 2,
+      "seconds": 0.067,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 103,
+          "total": 150
+        },
+        "branches": {
+          "covered": 28,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 44,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenRA"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenAW",
+      "result": "ok",
+      "schedules": 994,
+      "workers": 2,
+      "seconds": 0.184,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 134,
+          "total": 150
+        },
+        "branches": {
+          "covered": 32,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 44,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenAW"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenWA",
+      "result": "ok",
+      "schedules": 2398,
+      "workers": 2,
+      "seconds": 0.272,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 134,
+          "total": 150
+        },
+        "branches": {
+          "covered": 34,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 48,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenWA"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenWW",
+      "result": "ok",
+      "schedules": 629,
+      "workers": 2,
+      "seconds": 0.053,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 130,
+          "total": 150
+        },
+        "branches": {
+          "covered": 28,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 37,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenWW"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenRW",
+      "result": "ok",
+      "schedules": 1213,
+      "workers": 2,
+      "seconds": 0.146,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 139,
+          "total": 150
+        },
+        "branches": {
+          "covered": 34,
+          "total": 48
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 49,
+          "total": 74
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenRW"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store and 2 Client, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with me = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    }
+  ],
+  "failed": 0,
+  "incomplete": 0,
+  "seconds": 21.192,
+  "output": "PCheckerOutput/",
+  "coverage": {
+    "statements": {
+      "covered": 187,
+      "total": 187
+    },
+    "branches": {
+      "covered": 48,
+      "total": 48
+    },
+    "handlers": {
+      "covered": 9,
+      "total": 9
+    },
+    "conditions": {
+      "covered": 74,
+      "total": 74
+    },
+    "transition_pairs": {
+      "covered": 0,
+      "total": 0
+    },
+    "uncovered": [],
+    "excluded_components": [],
+    "partial": false,
+    "required": {
+      "statements": {
+        "covered": 187,
+        "total": 187
+      },
+      "branches": {
+        "covered": 48,
+        "total": 48
+      },
+      "handlers": {
+        "covered": 9,
+        "total": 9
+      },
+      "conditions": {
+        "covered": 0,
+        "total": 0
+      },
+      "transition_pairs": {
+        "covered": 0,
+        "total": 0
+      }
+    },
+    "uncovered_required": [],
+    "gate_bypassed": false,
+    "failure": null
+  },
+  "coverage_failed": false,
+  "mutation": {
+    "mutants": 129,
+    "detected": 117,
+    "undetected": [
+      {
+        "file": "Fencing.p",
+        "line": 114,
+        "context": "Store.Ready entry",
+        "mutation": "remove-statement",
+        "change": "removed `lock = (ver = 0, holder = -1, tok = 0, last = 0, exp = 0);`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 128,
+        "context": "Store.Ready, on eCasRes",
+        "mutation": "condition-false",
+        "change": "`p.expected == res[p.name].ver` replaced by `false`",
+        "test_cases": [
+          "tcStale",
+          "tcFencing",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 128,
+        "context": "Store.Ready, on eCasRes",
+        "mutation": "swap-operator",
+        "change": "`p.expected == res[p.name].ver` → `p.expected != res[p.name].ver`",
+        "test_cases": [
+          "tcStale",
+          "tcFencing",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 147,
+        "context": "Client.Run entry",
+        "mutation": "swap-operator",
+        "change": "`me * 10 + i` → `me * 10 - i`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 152,
+        "context": "Client.doOp",
+        "mutation": "condition-true",
+        "change": "`o.kind == 2` replaced by `true`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 152,
+        "context": "Client.doOp",
+        "mutation": "condition-false",
+        "change": "`o.kind == 2` replaced by `false`",
+        "test_cases": [
+          "tcStale",
+          "tcFencing",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 152,
+        "context": "Client.doOp",
+        "mutation": "swap-operator",
+        "change": "`o.kind == 2` → `o.kind != 2`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 164,
+        "context": "Client.doLock",
+        "mutation": "remove-statement",
+        "change": "removed `after = r;`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 166,
+        "context": "Client.doLock",
+        "mutation": "swap-operator",
+        "change": "`o.now < r.exp` → `o.now <= r.exp`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcFencing",
+          "tcGenAA",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1200,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 173,
+        "context": "Client.doLock",
+        "mutation": "swap-operator",
+        "change": "`o.now < r.exp` → `o.now <= r.exp`",
+        "test_cases": [
+          "tcGenerated",
+          "tcContention",
+          "tcStale",
+          "tcGenAR",
+          "tcGenRR",
+          "tcGenRA",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 197,
+        "context": "Client.doWrite",
+        "mutation": "remove-statement",
+        "change": "removed `l = x;`",
+        "test_cases": [
+          "tcStale",
+          "tcFencing",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fencing.p",
+        "line": 203,
+        "context": "Client.doWrite",
+        "mutation": "remove-statement",
+        "change": "removed `rs = x;`",
+        "test_cases": [
+          "tcStale",
+          "tcFencing",
+          "tcGenAW",
+          "tcGenWA",
+          "tcGenWW",
+          "tcGenRW"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      }
+    ],
+    "suppressed": 0,
+    "not_tested": 0,
+    "time_limit_reached": false,
+    "schedules_per_mutant": 1000,
+    "seconds": 3.918
+  },
+  "scenarios": [],
+  "exit_code": 0
+}

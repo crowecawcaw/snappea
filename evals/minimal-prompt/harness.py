@@ -38,7 +38,9 @@ IMAGE = "snappea-min-eval"
 BINARY = Path(os.environ.get("SNAPPEA_EVAL_BINARY", ROOT / "target/release/snappea"))
 OUTPUT_LIMIT = 16000
 
-PROMPT = """You are working in a sandbox. Your only tool is a shell inside it: run each command with
+PROMPT = """You are working in a sandbox. Your only tool is a shell inside it. Every command,
+including the first, must go through this bridge; a bare command runs on a different
+machine where /work and /opt do not exist. Run each command with
 
     python3 {harness} bridge {run_id} <<'CMD'
     <your shell command>

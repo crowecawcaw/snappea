@@ -1,0 +1,424 @@
+{
+  "run_id": "c2-names-v2-02",
+  "task": "names",
+  "skill": "v2",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 10,
+    "total": 10,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 17,
+    "agent_tests_pass_own_solution": 17,
+    "reference_passing": 11,
+    "reference_rejecting": [
+      "test_registry::test_competitor_takes_name_between_read_and_claim",
+      "test_registry::test_name_freed_and_retaken_between_read_and_cas",
+      "test_registry::test_observation_register_rename",
+      "test_registry::test_observation_rejections",
+      "test_registry::test_observation_spec_rejects_bad_history",
+      "test_registry::test_rename_loses_race_for_new_name"
+    ],
+    "observation_tests": 11,
+    "mutants": {
+      "case-sensitive": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_basic_and_case",
+          "test_registry::test_rename",
+          "test_registry::test_two_registries_share_store"
+        ]
+      },
+      "length-17": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_validation_boundaries"
+        ]
+      },
+      "empty-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_validation_boundaries"
+        ]
+      },
+      "claim-ignores-cas": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "claim-steals": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_basic_and_case",
+          "test_registry::test_concurrent_stress_invariant",
+          "test_registry::test_name_freed_while_claiming_is_taken",
+          "test_registry::test_rename",
+          "test_registry::test_rename_chain_frees_old_name_for_another"
+        ]
+      },
+      "free-before-claim": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_concurrent_stress_invariant",
+          "test_registry::test_rename",
+          "test_registry::test_rename_chain_frees_old_name_for_another",
+          "test_registry::test_two_renames_to_each_others_old_names"
+        ]
+      },
+      "rename-keeps-old": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_name_freed_while_claiming_is_taken",
+          "test_registry::test_rename",
+          "test_registry::test_rename_chain_frees_old_name_for_another",
+          "test_registry::test_two_registries_share_store"
+        ]
+      },
+      "register-same-false": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_basic_and_case"
+        ]
+      },
+      "rename-same-frees": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_concurrent_stress_invariant"
+        ]
+      },
+      "register-second-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_basic_and_case"
+        ]
+      },
+      "rename-without-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_registry::test_rename"
+        ]
+      }
+    },
+    "killed": 10,
+    "killed_by_observation": 10,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 17,
+    "mutants": {
+      "true@70": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@56": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@46": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@70": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@80": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@48": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@46": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@72": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@68": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@46": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@56": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@68": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@53": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@53": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@58": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@68": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@56": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@58": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@68": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@68": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@32": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@32": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@56": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@32": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@46": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@65": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@70": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@48": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@30": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@80": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@70": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@65": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      }
+    },
+    "total": 40,
+    "killed": 34,
+    "killed_by_observation": 34
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 1,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcNames",
+        "result": "ok",
+        "complete": true,
+        "schedules": 101341
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 1,
+    "hot_states": 2,
+    "design_doc_chars": 4884
+  },
+  "process": {
+    "calls": 36,
+    "minutes": 7.8,
+    "read_skill": true,
+    "first_check_call": 4,
+    "first_solution_write_call": 25,
+    "model_first": true,
+    "check_runs": 19,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 17,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "case-sensitive": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "length-17": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "empty-name": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "claim-ignores-cas": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "claim-steals": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "free-before-claim": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-keeps-old": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "register-same-false": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-same-frees": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "register-second-name": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-without-name": {
+        "killed": true,
+        "killed_by_observation": true
+      }
+    },
+    "valid": 11,
+    "killed": 11,
+    "killed_by_observation": 11
+  }
+}
