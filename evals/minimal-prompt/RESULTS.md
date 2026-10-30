@@ -1,5 +1,44 @@
 # Minimal-prompt eval: results
 
+## Cohort 3: the CLI's built-in guide carries most of the gain
+
+**With no skill at all, an agent told only "use P; snappea is installed" now writes
+tests that catch every race defect.** It finds `snappea guide` from `snappea --help`
+and follows it. On fencing and names, no-skill runs killed 0 of 4 race defects in
+cohort 2 and 4 of 4 in cohort 3, and took about 4 minutes against 13 for skill v2.
+
+8 fresh Sonnet runs, fencing and names × {no skill, skill v2} × 2, new binary (sha256
+`00bffa70…`: `snappea guide`, the check-summary notes, the tuple hint). Three v2 runs
+stopped by an account usage limit were rerun under new IDs and are excluded
+(`runs/*/TRUNCATED`). Tables: `python report.py c3-`.
+
+| condition | runs | hidden tests | defects killed | race defects killed | final check passed | forced interleavings | observation tests | DESIGN.md | final check skipped mutation/coverage | commands | minutes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| no skill, cohort 2 (old CLI) | 4 | 100% | 81% | 0/4 runs | 1/4 | 0/4 | 3/4 | 0/4 | 2/4 | 14 | 2 |
+| no skill, cohort 3 (`snappea guide`) | 4 | 100% | 100% | 4/4 runs | 2/4 | 4/4 | 4/4 | 3/4 | 3/4 | 14 | 4 |
+| skill v2, cohort 3 | 4 | 100% | 100% | 4/4 runs | 4/4 | 4/4 | 4/4 | 4/4 | 0/4 | 27 | 13 |
+
+(The cohort-2 row is its fencing and names runs only, to compare like with like.)
+
+- All four no-skill agents ran `snappea --help`, then `snappea guide`, `guide testing`
+  and `guide syntax` within their first four commands.
+- What v2 still adds: a finished model check. Guide-only agents often end on
+  `--no-mutation` after mutation testing hits its time limit. The CLI now says how to
+  finish untested mutants separately (`snappea check mutation --mutation-timeout 5m`);
+  that change came after this cohort.
+- The tests in these tasks are now at ceiling in both arms. The next cohort needs harder
+  tasks (crash recovery, multi-step publication) to separate them.
+- Caveats: cohort 2 and 3 differ in binary, in time and slightly in bridge wording (the
+  bridge wording only tells the agent to send every command through it). Two runs per
+  task and condition.
+
+Library changes from cohort 3 evidence: coverage no longer requires a `return` after
+`while (true)` (P requires it, but it can never run; one agent was stuck on it), and the
+check summary counts `mutants_not_tested`.
+
+## Cohort 2: skill v2 vs v1 vs none
+
+
 **Skill v2 closes the gap the pilot found.** With v2, every run's tests caught every
 race defect (a lost compare-and-swap, a stale retry), including on a held-out task
 written before v2 was run. Without a skill, or with v1, at least one survived in 9
