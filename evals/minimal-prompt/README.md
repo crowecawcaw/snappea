@@ -58,9 +58,9 @@ Needs Docker, a release build and the image:
 
 ```sh
 cargo build --release -p snappea --bin snappea
-cp -r python/src/snappea evals/minimal-prompt/image/snappea
-pip download --only-binary=:all: --python-version 3.12 --dest evals/minimal-prompt/image/wheels pytest==8.4.2
-docker build -t snappea-min-eval evals/minimal-prompt/image
+evals/minimal-prompt/image/build.sh
+mkdir -p evals/minimal-prompt/bin && cp target/release/snappea evals/minimal-prompt/bin/snappea-c3
+export SNAPPEA_EVAL_BINARY=$PWD/evals/minimal-prompt/bin/snappea-c3   # pin it for the cohort
 ```
 
 Then, from `evals/minimal-prompt`:
