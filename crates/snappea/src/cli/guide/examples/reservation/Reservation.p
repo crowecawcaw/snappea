@@ -17,7 +17,7 @@
  * then each reserve it. Locking only final writes still oversells/loses a decrement.
  * The real implementation needs a transaction, conditional update, or one lock
  * covering validation + stock + reservation. This is NOT a client-side CAS loop;
- * see ../cas-retry/Balance.p for candidates, failed CAS, reload and recomputation.
+ * see Balance.p in `snappea guide example cas-retry` for candidates, failed CAS, reload and recomputation.
  *
  * Run from this directory:
  *   snappea check Reservation.p tcAtomicConditionalReserve tcTwoSequentialSuccesses --timeout 5s

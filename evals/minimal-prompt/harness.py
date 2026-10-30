@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal-prompt agent eval: provision a sandbox, relay solver commands, grade the result.
 
-    python harness.py start --task queue --run-id q-none-01 [--skill ../../skills/p-modeling]
+    python harness.py start --task queue --run-id q-none-01 [--skill DIR]
     python harness.py bridge q-none-01 <<'EOF'      # the solver's only tool
     ls
     EOF

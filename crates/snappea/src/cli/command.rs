@@ -37,8 +37,8 @@ Commands:
   observe    Check logs of a real system against the model's spec monitors.
              Use to test that an implementation matches the model.
   coverage   Merge coverage from several runs (CI shards, processes)
-  guide      How to model a design and test code against it. Start here:
-             `snappea guide`, then `snappea guide testing` or `snappea guide syntax`.
+  guide      How to model a design and test code against it, with runnable
+             examples. Start here: `snappea guide`.
   version    Print the version
 
 Typical loop:
@@ -330,7 +330,7 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
         "tests" => tests(rest, host),
         "observe" => super::observe::observe(rest, host),
         "coverage" => coverage(rest, host),
-        "guide" => guide(rest, host),
+        "guide" => super::guide::guide(rest, host),
         "version" | "--version" | "-V" => {
             let a = match parse_args(rest, &[]) {
                 Ok(a) => a,
@@ -352,54 +352,6 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
             Some(c) => usage_error(host, &format!("unknown command '{}'", c), None),
         },
         c => usage_error(host, &format!("unknown command '{}'", c), None),
-    }
-}
-
-const GUIDE_TOPICS: &[(&str, &str)] = &[
-    ("workflow", include_str!("guide/workflow.md")),
-    ("testing", include_str!("guide/testing.md")),
-    ("syntax", include_str!("guide/syntax.md")),
-];
-
-const GUIDE_HELP: &str = "\
-Usage: snappea guide [TOPIC]
-
-Prints a short guide, as Markdown. Topics:
-  workflow   (default) Model the design, check it, then test the code against it
-  testing    Force the interleavings the model found in implementation tests, and check
-             real calls against the P spec
-  syntax     P syntax and a complete small model
-
-Example:
-  snappea guide testing
-";
-
-/// `snappea guide [topic]`: the modeling workflow, for people and agents new to snappea.
-fn guide(args: &[String], host: &mut dyn Host) -> i32 {
-    match args {
-        [] => {
-            host.write(Stream::Out, GUIDE_TOPICS[0].1, None);
-            OK
-        }
-        [h] if h == "--help" || h == "-h" => {
-            host.write(Stream::Out, GUIDE_HELP, None);
-            OK
-        }
-        [topic] => match GUIDE_TOPICS.iter().find(|(name, _)| name == topic) {
-            Some((_, text)) => {
-                host.write(Stream::Out, text, None);
-                OK
-            }
-            None => {
-                let names: Vec<&str> = GUIDE_TOPICS.iter().map(|(n, _)| *n).collect();
-                usage_error(
-                    host,
-                    &format!("unknown guide topic '{}'; topics: {}", topic, names.join(", ")),
-                    Some("guide"),
-                )
-            }
-        },
-        _ => usage_error(host, "`snappea guide` takes at most one topic", Some("guide")),
     }
 }
 

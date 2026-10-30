@@ -5,6 +5,7 @@
 //! what upstream lacks (parallel workers, time tracking) and options named for how snappea works.
 
 mod command;
+mod guide;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 mod observe;

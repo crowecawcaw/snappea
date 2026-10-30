@@ -35,7 +35,7 @@
  *
  * Limits: two clients/IDs, one delayed retry each, small positive units, no crashes,
  * lost replies, memo expiry, conflicting ID reuse, external writers or overflow.
- * See ../durable-retry/DurableRetry.p for recovery; ../reservation/test_storage.py
+ * See DurableRetry.p in `snappea guide example durable-retry` for recovery; test_storage.py in `snappea guide example reservation`
  * for real Python capture. Passing P proves only these modeled bounds.
  */
 

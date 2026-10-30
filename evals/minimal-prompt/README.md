@@ -66,7 +66,10 @@ export SNAPPEA_EVAL_BINARY=$PWD/evals/minimal-prompt/bin/snappea-c3   # pin it f
 Then, from `evals/minimal-prompt`:
 
 ```sh
-python harness.py start --task queue --run-id queue-v2-01 --skill ../../skills/p-modeling --model sonnet
+python harness.py start --task queue --run-id queue-cli-01 --model sonnet
+# or, to compare against an old skill (removed from the repo; its text is now `snappea guide`):
+#   git archive 0930237 skills/p-modeling | tar -x -C /tmp/v2
+#   python harness.py start ... --skill /tmp/v2/skills/p-modeling --skill-label v2
 # give the printed prompt, unchanged, to a fresh agent; its only tool is `harness.py bridge`
 python harness.py finish queue-v2-01
 python harness.py grade queue-v2-01

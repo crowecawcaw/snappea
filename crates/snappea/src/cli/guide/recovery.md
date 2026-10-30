@@ -13,14 +13,14 @@
 - Complete A → B advances the same state → retry A. If promised, return A's original result without reapplying A over B.
 - Track original per-request responses separately from current state; they can legitimately differ.
 - Distinguish replay/no-op log records from new state-changing effects.
-- See [durable retry](../examples/durable-retry/DurableRetry.p) for correct and split-commit/reapplied-effect variants.
+- See durable retry (`snappea guide example durable-retry`) for correct and split-commit/reapplied-effect variants.
 
 ## Stale evidence
 
 - Keep the old version, concurrent update, and stale retry explicit.
 - Version/lease checks protect writes only when enforced at the atomic update.
 - After CAS conflict, reread, recompute, and revalidate version-dependent work; changing only the expected version may publish stale evidence.
-- See [versioned publication](../examples/versioned-publication/Revalidated.p).
+- See versioned publication (`snappea guide example versioned-publication`).
 
 ## Bounds and progress
 

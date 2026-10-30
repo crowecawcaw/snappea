@@ -4,7 +4,7 @@
 
 - Assert only promised constraints; allow contract-valid alternatives to incidental implementation choices. Keep algorithm-specific invariants distinct from the external contract.
 - Derive expected state from the external contract, inputs, and history; do not trust an implementation's `valid` flag.
-- Example: subtract committed reservations from initial stock; reject negative capacity independently of storage's decision logic. See [reservation](../examples/reservation/Reservation.p).
+- Example: subtract committed reservations from initial stock; reject negative capacity independently of storage's decision logic. See reservation (`snappea guide example reservation`).
 - Check later public reads when an announcement alone cannot establish that state changed.
 - A broken variant validates the oracle only if it fails for the intended property, not a syntax error or unrelated assertion.
 
@@ -19,7 +19,7 @@
 - Exercise stale operations against a successor's live state, not only empty/expired state.
 - Include stale/rejected operations and useful success. Always rejecting can satisfy safety while violating the contract.
 - Use bounded choices that preserve these relationships; schedule count alone says little.
-- Bound a history generator's input IDs and values to preserve contract-relevant cases; let the checker explore schedules independently. Check a few manually calculated valid and invalid histories against the oracle before relying on generated histories. See the [bounded history generator](../examples/bounded-history/bounded-history.p).
+- Bound a history generator's input IDs and values to preserve contract-relevant cases; let the checker explore schedules independently. Check a few manually calculated valid and invalid histories against the oracle before relying on generated histories. See the bounded history generator (`snappea guide example bounded-history`).
 
 ## Choose discriminating tests
 

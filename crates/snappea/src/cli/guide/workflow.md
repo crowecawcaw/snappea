@@ -7,7 +7,8 @@ ordinary tests.
 
 The model is worth what it changes in the code and tests. Follow these steps in order.
 More: `snappea guide testing` (testing the implementation), `snappea guide syntax`
-(P syntax and a complete small model).
+(P syntax and a complete small model), `snappea guide examples` (runnable models), and
+`snappea guide --help` for every topic.
 
 ## 1. List the risks (before any code)
 
@@ -34,7 +35,8 @@ Write down, in DESIGN.md:
   requests, independently of the algorithm, and asserts each actual result. Announce
   events at the store's commit, not after a reply, or the monitor sees them out of order.
 - Drive it with 2-3 clients and small `choose(n)` inputs, plus fixed tests for the
-  scenarios from step 1.
+  scenarios from step 1. `snappea guide example cas-retry` is a complete model of
+  this shape.
 
 ## 3. Check until it passes for real
 

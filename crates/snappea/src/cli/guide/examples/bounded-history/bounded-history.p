@@ -36,7 +36,7 @@
  *   snappea observe bounded-history.p valid-concurrent.jsonl --spec CapacityOracle --strict --check-hot
  * valid.jsonl also passes; invalid*.jsonl, incomplete.jsonl and zero-work.jsonl must
  * fail decision/state/reply/progress/nonzero checks. These hand-calculated traces
- * validate only the oracle; see ../reservation/test_storage.py for real capture.
+ * validate only the oracle; see test_storage.py in `snappea guide example reservation` for real capture.
  *
  * Limits: finite lengths above, positive units, fresh IDs, one Store, reliable
  * messages and live clients. No retries, persistence, crashes, external storage

@@ -44,7 +44,9 @@ also used by the application examples in all four languages.
 
 You or an AI agent can write the model from a design document, rerun the checker after
 changes, and carry the specs into implementation tests. Review the specs closely:
-they state what the system must get right.
+they state what the system must get right. `snappea guide` walks through that workflow,
+with runnable examples (`snappea guide examples`); telling an agent "use P, snappea is
+installed" is enough for it to find.
 
 ## Get started
 

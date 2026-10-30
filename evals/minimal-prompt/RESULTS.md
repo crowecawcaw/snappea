@@ -1,5 +1,9 @@
 # Minimal-prompt eval: results
 
+Since these cohorts, the skill has been removed: its workflow, guides and examples are
+now `snappea guide` topics and `snappea guide example NAME`, so there is nothing to
+install. Skill versions used here: v1 = commit `0930237~1`, v2 = `0930237` and `fd2c219`.
+
 ## Cohort 3: the CLI's built-in guide carries most of the gain
 
 **With no skill at all, an agent told only "use P; snappea is installed" now writes
