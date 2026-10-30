@@ -1112,6 +1112,7 @@ fn run_check(
     let seconds = con.inner.now() - start;
     let (elapsed, memory) = (duration(seconds), memory(con.inner));
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
+    let not_tested = mutation.get("not_tested").and_then(Value::as_u64).unwrap_or(0) as usize;
     let summary = check_summary(
         failed,
         n,
@@ -1121,6 +1122,7 @@ fn run_check(
         &required_uncovered,
         mutation_time_limit_reached,
         undetected,
+        not_tested,
         &skipped,
     );
     let out = match cfg.output_path.trim_end_matches('/') {
@@ -1194,6 +1196,7 @@ fn check_summary(
     uncovered: &[crate::checker::code_coverage::Uncovered],
     mutation_time_limit_reached: bool,
     mutants_undetected: usize,
+    mutants_not_tested: usize,
     skipped: &[&str],
 ) -> Value {
     // What a pass does not cover, so a partial check is not read as a full one.
@@ -1207,6 +1210,14 @@ fn check_summary(
              Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
             mutants_undetected,
             plural(mutants_undetected)
+        ));
+    }
+    if failed == 0 && mutants_not_tested > 0 {
+        notes.push(format!(
+            "Mutation testing reached its time limit with {} mutant{} not tested. Finish them \
+             separately, e.g. `snappea check mutation --mutation-timeout 5m`, or name fewer test cases.",
+            mutants_not_tested,
+            plural(mutants_not_tested)
         ));
     }
     let (status, message) = if failed > 0 {
@@ -1238,6 +1249,7 @@ fn check_summary(
         "uncovered_more": uncovered.len().saturating_sub(5),
         "mutation_time_limit_reached": mutation_time_limit_reached,
         "mutants_undetected": mutants_undetected,
+        "mutants_not_tested": mutants_not_tested,
         "skipped": skipped,
         "note": if notes.is_empty() { Value::Null } else { json!(notes.join(" ")) },
     })
@@ -1665,31 +1677,35 @@ mod tests {
             context: "Main.S, on ePing".into(),
             what: "if (x) never true".into(),
         };
-        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, 0, &[]);
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, 0, 0, &[]);
         assert_eq!(coverage["status"], "coverage_failed");
         assert_eq!(coverage["message"], "Required coverage is missing (3 points)");
         assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
         assert_eq!(coverage["mutation_time_limit_reached"], true);
 
-        let failed = check_summary(1, 2, 0, false, 0, &[], false, 0, &[]);
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, 0, 0, &[]);
         assert_eq!(failed["status"], "tests_failed");
 
-        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, 0, &[]);
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, 0, 0, &[]);
         assert_eq!(incomplete["status"], "search_incomplete");
 
-        let passed = check_summary(0, 2, 0, false, 0, &[], false, 0, &[]);
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, 0, 0, &[]);
         assert_eq!(passed["status"], "passed");
         assert!(passed["note"].is_null());
     }
 
     #[test]
     fn check_summary_notes_skipped_checks_and_undetected_mutants() {
-        let partial = check_summary(0, 1, 0, false, 0, &[], false, 0, &["mutation testing (--no-mutation)"]);
+        let partial = check_summary(0, 1, 0, false, 0, &[], false, 0, 0, &["mutation testing (--no-mutation)"]);
         assert_eq!(partial["status"], "passed");
         assert!(partial["note"].as_str().unwrap().starts_with("Skipped: mutation testing (--no-mutation)."));
 
-        let weak = check_summary(0, 1, 0, false, 0, &[], false, 4, &[]);
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, 4, 0, &[]);
         assert_eq!(weak["mutants_undetected"], 4);
         assert!(weak["note"].as_str().unwrap().starts_with("4 mutants not detected"));
+
+        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, 0, 17, &[]);
+        assert_eq!(unfinished["mutants_not_tested"], 17);
+        assert!(unfinished["note"].as_str().unwrap().contains("17 mutants not tested"));
     }
 }
