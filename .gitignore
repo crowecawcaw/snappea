@@ -33,3 +33,6 @@ examples/model/PCheckerOutput/
 
 # Checker binaries staged for the Java natives profile
 java/natives/
+
+# Checker output from running `snappea guide` examples in place
+crates/snappea/src/cli/guide/examples/**/PCheckerOutput/

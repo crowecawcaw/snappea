@@ -206,6 +206,10 @@ struct Compiler<'a> {
     fun: FunId,
     /// The probe enclosing the code being compiled (see [`Probe::parent`]).
     parent_probe: Option<u32>,
+    /// Inside code that can never run: no probes, so coverage does not require it.
+    unreachable: u32,
+    /// The statement just compiled never finishes: a `while (true)` without `break`.
+    diverged: bool,
 }
 
 fn compile_fun(
@@ -227,13 +231,13 @@ fn compile_fun(
         probes,
         fun: id,
         parent_probe: None,
+        unreachable: 0,
+        diverged: false,
     };
     c.init_locals(f);
     c.parent_probe = c.probe(ProbeKind::Entry, f.span);
     if let Some(body) = &f.body {
-        for s in &body.stmts {
-            c.stmt(s);
-        }
+        c.stmts(&body.stmts);
     }
     c.emit(Op::PushNull);
     c.emit(Op::Return);
@@ -245,6 +249,9 @@ fn compile_fun(
 impl<'a> Compiler<'a> {
     /// Emits a code coverage probe when compiling with them; returns its id.
     fn probe(&mut self, kind: ProbeKind, span: crate::syntax::Span) -> Option<u32> {
+        if self.unreachable > 0 {
+            return None;
+        }
         let probes = self.probes.as_mut()?;
         let id = probes.len() as u32;
         probes.push(Probe { kind, fun: self.fun, span, parent: self.parent_probe, asserts_false: false });
@@ -369,6 +376,20 @@ impl<'a> Compiler<'a> {
 
     // ---- statements -------------------------------------------------------
 
+    /// Compiles a statement list. Statements after a `while (true)` without `break` can
+    /// never run (P still requires a `return` there), so they get no coverage probes.
+    fn stmts(&mut self, list: &[Stmt]) {
+        let mut dead = false;
+        for s in list {
+            self.unreachable += u32::from(dead);
+            self.diverged = false;
+            self.stmt(s);
+            self.unreachable -= u32::from(dead);
+            dead |= self.diverged && matches!(s.kind, StmtKind::While { .. } | StmtKind::Block(_));
+        }
+        self.diverged = dead;
+    }
+
     fn stmt(&mut self, s: &Stmt) {
         let probe = match s.kind {
             StmtKind::Block(_) | StmtKind::Nop => None,
@@ -382,11 +403,7 @@ impl<'a> Compiler<'a> {
             }
         }
         match &s.kind {
-            StmtKind::Block(b) => {
-                for s in &b.stmts {
-                    self.stmt(s);
-                }
-            }
+            StmtKind::Block(b) => self.stmts(&b.stmts),
             StmtKind::Assert { cond, message } | StmtKind::Assume { cond, message } => {
                 // Upstream lowers `assert c, m` to `if (!c) { m-deps; assert c, m }` unless `c`
                 // is a literal, so the message is only evaluated when the assertion fails.
@@ -461,9 +478,11 @@ impl<'a> Compiler<'a> {
                 let end = self.here();
                 self.patch(jf, end);
                 let l = self.loops.pop().unwrap();
+                let forever = matches!(cond.kind, ExprKind::BoolLit(true)) && l.break_patches.is_empty();
                 for p in l.break_patches {
                     self.patch(p, end);
                 }
+                self.diverged = forever;
             }
             StmtKind::Foreach { item, collection, body } => {
                 let root = match &collection.kind {
@@ -560,9 +579,7 @@ impl<'a> Compiler<'a> {
                     self.fun = *fun;
                     self.parent_probe = self.probe(ProbeKind::Entry, f.span);
                     if let Some(body) = &f.body {
-                        for s in &body.stmts {
-                            self.stmt(s);
-                        }
+                        self.stmts(&body.stmts);
                     }
                     (self.fun, self.parent_probe) = (outer_fun, outer_parent);
                     end_jumps.push(self.emit(Op::Jump(0)));
@@ -665,7 +682,7 @@ impl<'a> Compiler<'a> {
     /// Assertions are deliberately excluded: their false outcome is a violation, not
     /// an obligation to exercise. Constants likewise have no two-outcome target.
     fn condition(&mut self, e: &Expr) {
-        if self.probes.is_none() {
+        if self.probes.is_none() || self.unreachable > 0 {
             self.expr(e);
             return;
         }

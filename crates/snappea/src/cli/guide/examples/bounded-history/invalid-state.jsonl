@@ -1,0 +1,14 @@
+{"event":"eBegin","payload":{"clients":1,"commands":3}}
+{"event":"eRequested","payload":{"id":"a","replenish":false,"units":1}}
+{"event":"eDecision","payload":{"id":"a","replenish":false,"units":1,"accepted":true}}
+{"event":"eReturned","payload":{"id":"a","replenish":false,"units":1,"accepted":true}}
+{"event":"eSnapshot","payload":{"id":"a","remaining":1}}
+{"event":"eRequested","payload":{"id":"b","replenish":false,"units":1}}
+{"event":"eDecision","payload":{"id":"b","replenish":false,"units":1,"accepted":true}}
+{"event":"eReturned","payload":{"id":"b","replenish":false,"units":1,"accepted":true}}
+{"event":"eSnapshot","payload":{"id":"b","remaining":0}}
+{"event":"eRequested","payload":{"id":"c","replenish":false,"units":1}}
+{"event":"eDecision","payload":{"id":"c","replenish":false,"units":1,"accepted":false}}
+{"event":"eReturned","payload":{"id":"c","replenish":false,"units":1,"accepted":false}}
+{"event":"eSnapshot","payload":{"id":"c","remaining":1}}
+{"event":"eClientFinished","payload":"serial"}

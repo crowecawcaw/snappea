@@ -164,3 +164,60 @@ fn observe_merges_witnessed_pairs_without_joining_separate_executions() {
     merged.merge(&run(&["eA", "eStep", "eStep"])).unwrap();
     assert_eq!(merged.summary().transition_pairs.covered, 3);
 }
+
+#[test]
+fn return_after_endless_loop_is_not_required_coverage() {
+    // P requires a `return` after `while (true)`; it can never run, so it is not a gap.
+    let c = coverage(
+        r#"
+        fun f(): bool {
+            var i: int;
+            while (true) {
+                i = i + 1;
+                if (i > 2) { return true; }
+            }
+            return false;
+        }
+        fun g(): int {
+            var i: int;
+            while (true) {
+                i = i + 1;
+                if (i > 2) { break; }
+            }
+            return i;
+        }
+        fun h(): int {
+            var i: int;
+            while (true) {
+                i = i + 1;
+                if (i > 2) { return i; }
+            }
+            if (i > 5) { i = 0; }
+            return i;
+        }
+        event eGo;
+        machine Main {
+            var x: int;
+            start state S {
+                entry {
+                    assert f();
+                    assert g() == 3;
+                    assert h() == 3;
+                    send this, eGo;
+                    receive {
+                        case eGo: {
+                            while (true) {
+                                x = x + 1;
+                                if (x > 2) { return; }
+                            }
+                            x = 0;
+                        }
+                    }
+                }
+            }
+        }
+    "#,
+    );
+    // nothing after the loops is required: no statement, branch or condition gaps
+    assert!(c.uncovered().is_empty(), "{:?}", c.uncovered());
+}

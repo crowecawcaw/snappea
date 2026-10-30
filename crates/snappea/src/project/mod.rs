@@ -282,8 +282,34 @@ pub(crate) fn parse_help(detail: &str) -> String {
     if detail.starts_with("nesting is too deep") {
         return "split the expression or block into smaller functions or local variables".into();
     }
+    if let Some(input) = detail.strip_prefix("no viable alternative at input '") {
+        // `(items = items)` parses as a parenthesized assignment; a one-field named
+        // tuple needs a trailing comma.
+        let input = input.trim_end_matches('\'');
+        let assigns = ["==", "!=", "<=", ">="].iter().fold(input.to_string(), |s, op| s.replace(op, "")).contains('=');
+        if input.ends_with(')') && assigns && !input.contains(',') {
+            return "a named tuple with one field needs a trailing comma: `(name = value,)`; \
+                    to compare, use `==`"
+                .into();
+        }
+    }
     if detail.starts_with("extraneous input") {
         return "remove this token, or look for an extra or missing symbol just before it".into();
     }
     "look for a missing ';', ')' or '}', or a misspelled keyword, here or on the line before".into()
+}
+
+#[cfg(test)]
+mod parse_help_tests {
+    use super::parse_help;
+
+    #[test]
+    fn one_field_named_tuple_suggests_trailing_comma() {
+        let help = parse_help("no viable alternative at input 'items=items)'");
+        assert!(help.contains("trailing comma"), "{help}");
+        for other in ["x==y)", "x<=y)", "x!=y)"] {
+            let help = parse_help(&format!("no viable alternative at input '{other}'"));
+            assert!(!help.contains("trailing comma"), "{other}: {help}");
+        }
+    }
 }

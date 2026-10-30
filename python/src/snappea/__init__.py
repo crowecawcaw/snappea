@@ -1,5 +1,7 @@
 """Check P specs against events emitted by your code during its tests.
 
+Install the ``pysnappea`` distribution and import its API from ``snappea``.
+
 Application code calls :func:`emit`. Tests are checked either by the pytest plugin
 (every test, configured under ``[tool.snappea]`` in pyproject.toml) or explicitly with
 :func:`check_spec`, :func:`expect_violation` and :func:`check_events`. In production,
@@ -51,12 +53,16 @@ class check_spec:
             server.acquire("c1")
             server.acquire("c2")
 
+    The block observes events sent with :func:`emit`; it does not intercept ordinary
+    method calls or run P drivers.
     No spec names means every spec in the spec files. Raises :class:`SpecViolation`
     (an ``AssertionError``) at the end of the block, so the test fails on this line,
     or :class:`SetupError` if the check cannot run. Options are those of
     :class:`Recorder`: ``check_hot=True`` also fails if a spec is left in a hot state;
     ``strict`` (default: true when specs are named) requires relevant events for every
-    selected spec; ``unknown_events`` ("error" by default) handles undeclared names.
+    selected spec. When this named-spec default applies, missing relevant events currently
+    warn; set ``strict=True`` explicitly to fail on them. ``unknown_events`` ("error" by
+    default) handles undeclared names.
     """
 
     def __init__(
@@ -193,8 +199,13 @@ def check_events(
 
     Events take ``event`` and ``payload`` (or payload fields directly, as with
     :func:`emit`) and optionally ``key`` and ``at``; without ``at`` they are checked in
-    list order. These events do not reach any enclosing check. Options are those of
-    :func:`check_spec`.
+    list order. This checks the supplied trace against P monitors; it does not run P test
+    cases or explore schedules. No P entry machine or test declaration is needed for
+    observation. Keep observation-only monitors outside a model test project, or use a
+    reasoned ``unselected-spec`` lint suppression for intentional observation-only use.
+    When adapting captured data, preserve the identities and values the property needs;
+    collapsing distinct results can hide violations. These events do not reach any
+    enclosing check. Options are those of :func:`check_spec`.
     """
     __tracebackhide__ = True
     rec = Recorder(
