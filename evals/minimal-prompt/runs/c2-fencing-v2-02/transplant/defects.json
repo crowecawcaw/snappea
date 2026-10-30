@@ -1,0 +1,15 @@
+{
+  "token-reset-on-release": "release deletes the lock record, so tokens restart at 1",
+  "expiry-inclusive": "a lease is still held at exactly now == expiry",
+  "reacquire-new-token": "the holder re-acquiring gets a new token",
+  "expired-holder-keeps-token": "a client whose lease expired gets its old token back",
+  "acquire-ignores-cas": "two racing acquires can both win",
+  "release-ignores-token": "release with an old token ends the current lease",
+  "release-ignores-expiry": "release succeeds after the lease expired",
+  "fence-rejects-equal": "a second write with the same token is rejected",
+  "no-issued-check": "write accepts a token that was never issued",
+  "fence-is-current-holder": "write accepts only the current lease's token",
+  "write-ignores-cas": "a write that loses a compare-and-swap still reports success",
+  "write-stale-retry": "after a lost compare-and-swap, write retries without re-reading the fence",
+  "shared-fence": "all resources share one fence"
+}

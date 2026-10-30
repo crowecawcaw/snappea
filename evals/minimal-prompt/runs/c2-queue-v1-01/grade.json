@@ -252,5 +252,60 @@
     "check_runs": 14,
     "check_runs_exit1": 0,
     "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 11,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "ignore-cas-put": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "ignore-cas-take": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "memo-in-instance": {
+        "killed": false,
+        "killed_by_observation": false
+      },
+      "stale-retry": {
+        "killed": false,
+        "killed_by_observation": false
+      }
+    },
+    "valid": 11,
+    "killed": 7,
+    "killed_by_observation": 0
   }
 }

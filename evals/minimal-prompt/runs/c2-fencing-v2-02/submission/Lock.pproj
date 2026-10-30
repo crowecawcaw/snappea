@@ -1,0 +1,6 @@
+<Project>
+  <ProjectName>FencedLock</ProjectName>
+  <InputFiles>
+    <PFile>./Lock.p</PFile>
+  </InputFiles>
+</Project>

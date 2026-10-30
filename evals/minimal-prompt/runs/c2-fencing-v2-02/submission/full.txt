@@ -1,0 +1,792 @@
+{
+  "summary": {
+    "status": "passed",
+    "message": "All test cases passed",
+    "test_cases": 4,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_failed": false,
+    "coverage_gaps": 0,
+    "uncovered": [],
+    "uncovered_more": 0,
+    "mutation_time_limit_reached": true
+  },
+  "project": "FencedLock",
+  "test_cases": [
+    {
+      "name": "tcGenLease",
+      "result": "ok",
+      "schedules": 103369,
+      "workers": 2,
+      "seconds": 6.061,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 88,
+          "total": 122
+        },
+        "branches": {
+          "covered": 32,
+          "total": 46
+        },
+        "handlers": {
+          "covered": 7,
+          "total": 12
+        },
+        "conditions": {
+          "covered": 52,
+          "total": 72
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenLease",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcGenFence",
+      "result": "ok",
+      "schedules": 204102,
+      "workers": 2,
+      "seconds": 16.382,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 108,
+          "total": 123
+        },
+        "branches": {
+          "covered": 34,
+          "total": 46
+        },
+        "handlers": {
+          "covered": 12,
+          "total": 12
+        },
+        "conditions": {
+          "covered": 48,
+          "total": 72
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "GenFence",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcExpiry",
+      "result": "ok",
+      "schedules": 7237,
+      "workers": 2,
+      "seconds": 1.053,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 112,
+          "total": 125
+        },
+        "branches": {
+          "covered": 36,
+          "total": 46
+        },
+        "handlers": {
+          "covered": 12,
+          "total": 12
+        },
+        "conditions": {
+          "covered": 48,
+          "total": 72
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Expiry",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcRelease",
+      "result": "ok",
+      "schedules": 1318,
+      "workers": 2,
+      "seconds": 0.084,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 88,
+          "total": 125
+        },
+        "branches": {
+          "covered": 26,
+          "total": 46
+        },
+        "handlers": {
+          "covered": 8,
+          "total": 12
+        },
+        "conditions": {
+          "covered": 44,
+          "total": 72
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "ReleaseCases",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    }
+  ],
+  "failed": 0,
+  "incomplete": 0,
+  "seconds": 83.606,
+  "output": "PCheckerOutput/",
+  "coverage": {
+    "statements": {
+      "covered": 141,
+      "total": 141
+    },
+    "branches": {
+      "covered": 46,
+      "total": 46
+    },
+    "handlers": {
+      "covered": 12,
+      "total": 12
+    },
+    "conditions": {
+      "covered": 72,
+      "total": 72
+    },
+    "transition_pairs": {
+      "covered": 0,
+      "total": 0
+    },
+    "uncovered": [],
+    "excluded_components": [],
+    "partial": false,
+    "required": {
+      "statements": {
+        "covered": 141,
+        "total": 141
+      },
+      "branches": {
+        "covered": 46,
+        "total": 46
+      },
+      "handlers": {
+        "covered": 12,
+        "total": 12
+      },
+      "conditions": {
+        "covered": 0,
+        "total": 0
+      },
+      "transition_pairs": {
+        "covered": 0,
+        "total": 0
+      }
+    },
+    "uncovered_required": [],
+    "gate_bypassed": false,
+    "failure": null
+  },
+  "coverage_failed": false,
+  "mutation": {
+    "mutants": 117,
+    "detected": 79,
+    "undetected": [
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Store.Ready, on eCasL",
+        "mutation": "condition-false",
+        "change": "`p.rec.version == lk.version` replaced by `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Store.Ready, on eCasL",
+        "mutation": "swap-operator",
+        "change": "`p.rec.version == lk.version` → `p.rec.version != lk.version`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 100,
+        "context": "Store.Ready, on eCasL",
+        "mutation": "swap-operator",
+        "change": "`lk.version + 1` → `lk.version - 1`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 102,
+        "context": "Store.Ready, on eCasL",
+        "mutation": "condition-true",
+        "change": "`p.op.kind == 0` replaced by `true`",
+        "test_cases": [
+          "tcGenLease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 108,
+        "context": "Store.Ready, on eLoadR",
+        "mutation": "remove-statement",
+        "change": "removed `announce eResLoadObs, (op = p.op,);`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 112,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "condition-true",
+        "change": "`p.expected == rver` replaced by `true`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 112,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "condition-false",
+        "change": "`p.expected == rver` replaced by `false`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 112,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "swap-operator",
+        "change": "`p.expected == rver` → `p.expected != rver`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 113,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "remove-statement",
+        "change": "removed `rver = rver + 1;`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 113,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "swap-operator",
+        "change": "`rver + 1` → `rver - 1`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 113,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "remove-statement",
+        "change": "removed `rhigh = p.high;`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 116,
+        "context": "Store.Ready, on eCasR",
+        "mutation": "remove-statement",
+        "change": "removed `send p.c, eConflict;`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 132,
+        "context": "Client.Run entry",
+        "mutation": "swap-operator",
+        "change": "`cid * 10 + i` → `cid * 10 - i`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 136,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `i = i + 1;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 138,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `send coord, eClientDone;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 153,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `r = x;`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 154,
+        "context": "Client.run",
+        "mutation": "condition-false",
+        "change": "`op.token < r.high` replaced by `false`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 154,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `done = true;`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 154,
+        "context": "Client.run",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 158,
+        "context": "Client.run",
+        "mutation": "condition-true",
+        "change": "`ok` replaced by `true`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 158,
+        "context": "Client.run",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 164,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `rec = x;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 166,
+        "context": "Client.run",
+        "mutation": "swap-operator",
+        "change": "`op.now < rec.exp` → `op.now <= rec.exp`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 168,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `done = true;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 168,
+        "context": "Client.run",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 173,
+        "context": "Client.run",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 173,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `done = true;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 173,
+        "context": "Client.run",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence",
+          "tcExpiry"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 176,
+        "context": "Client.run",
+        "mutation": "swap-operator",
+        "change": "`rec.holder == op.client && rec.token == op.token` → `rec.holder == op.client || rec.token == op.token`",
+        "test_cases": [
+          "tcGenLease",
+          "tcRelease"
+        ],
+        "schedules": 300,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 176,
+        "context": "Client.run",
+        "mutation": "swap-operator",
+        "change": "`rec.holder == op.client` → `rec.holder != op.client`",
+        "test_cases": [
+          "tcGenLease",
+          "tcRelease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 176,
+        "context": "Client.run",
+        "mutation": "swap-operator",
+        "change": "`rec.token == op.token` → `rec.token != op.token`",
+        "test_cases": [
+          "tcGenLease",
+          "tcRelease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 176,
+        "context": "Client.run",
+        "mutation": "remove-statement",
+        "change": "removed `done = true;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcRelease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 176,
+        "context": "Client.run",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcRelease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 181,
+        "context": "Client.run",
+        "mutation": "condition-true",
+        "change": "`ok` replaced by `true`",
+        "test_cases": [
+          "tcGenLease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 181,
+        "context": "Client.run",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcGenLease"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 190,
+        "context": "Client.waitCas",
+        "mutation": "remove-statement",
+        "change": "removed `ok = true;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 190,
+        "context": "Client.waitCas",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 191,
+        "context": "Client.waitCas",
+        "mutation": "remove-statement",
+        "change": "removed `ok = false;`",
+        "test_cases": [
+          "tcGenLease",
+          "tcGenFence"
+        ],
+        "schedules": 200,
+        "search_complete": false
+      }
+    ],
+    "suppressed": 0,
+    "not_tested": 0,
+    "time_limit_reached": true,
+    "schedules_per_mutant": 1000,
+    "seconds": 60.019
+  },
+  "scenarios": [],
+  "exit_code": 0
+}
