@@ -1,0 +1,352 @@
+{
+  "reviewer": "/root/review_singlefile",
+  "phase": "FIFO transcript/results after source-first preservation and explicit root unblind",
+  "mapping": {
+    "F1": "factorial-sol-flow-native-no-skill-02",
+    "F2": "factorial-sol-flow-compat-skill-01",
+    "F3": "factorial-sol-flow-compat-skill-02",
+    "F4": "factorial-sol-flow-native-no-skill-01"
+  },
+  "records": [
+    {
+      "neutral": "F1",
+      "run_id": "factorial-sol-flow-native-no-skill-02",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "implementation": {
+        "status": "passed",
+        "test_count": 8,
+        "forced_initial_read_race": true
+      },
+      "native_supplement": {
+        "exit_code": 0,
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 3,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "error": null,
+        "diagnostic_tail_characters": 1
+      },
+      "saved_tests": {
+        "status": "passed",
+        "test_count": 6
+      },
+      "monitor_histories": {
+        "status": "passed",
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 6,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F2",
+      "run_id": "factorial-sol-flow-compat-skill-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "implementation": {
+        "status": "passed",
+        "test_count": 8,
+        "forced_initial_read_race": true
+      },
+      "native_supplement": {
+        "exit_code": 0,
+        "summary": {
+          "status": "search_incomplete",
+          "message": "No bugs found; search incomplete for 1 test case",
+          "test_cases": 1,
+          "failed": 0,
+          "incomplete": 1,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "error": null,
+        "diagnostic_tail_characters": 1
+      },
+      "saved_tests": {
+        "status": "passed",
+        "test_count": 4
+      },
+      "monitor_histories": {
+        "status": "passed",
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 4,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F3",
+      "run_id": "factorial-sol-flow-compat-skill-02",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "implementation": {
+        "status": "passed",
+        "test_count": 8,
+        "forced_initial_read_race": true
+      },
+      "native_supplement": {
+        "exit_code": 2,
+        "summary": null,
+        "error": "error[unused-payload-field]: monitor payload field 'p.item' is never read; check it or suppress this intentional abstraction\n    --> model.p:159:15\n    |\n157 |  var takes: map[string, TakeMemo];\n158 |  start state Checking {\n159 |   on ePut do (p: (request_id: string, item: int, accepted: bool)) {\n    |               ^\n160 |    puts[p.request_id] = p.accepted;\n    |\n    = help: if this is intended, suppress it with `// snappea-lint: allow unused-payload-field -- reason` just before the declaration or statement\n\nerror[unused-payload-field]: monitor payload field 'p.request_id' is never read; check it or suppress this intentional abstraction\n    --> model.p:159:15\n    |\n157 |  var takes: map[string, TakeMemo];\n158 |  start state Checking {\n159 |   on ePut do (p: (request_id: string, item: int, accepted: bool)) {\n    |               ^\n160 |    puts[p.request_id] = p.accepted;\n    |\n    = help: if this is intended, suppress it with `// snappea-lint: allow unused-payload-field -- reason` just before the declaration or statement\n\nerror[unused-payload-field]: monitor payload field 'p.request_id' is never read; check it or suppress this intentional abstraction\n    --> model.p:162:16\n    |\n160 |    puts[p.request_id] = p.accepted;\n161 |   }\n162 |   on eTake do (p: (request_id: string, item: int, found: bool)) {\n    |                ^\n163 |    takes[p.request_id] = (item = p.item, found = p.found);\n    |\n    = help: if this is intended, suppress it with `// snappea-lint: allow unused-payload-field -- reason` just before the declaration or statement\n\nLint failed: 3 finding(s). See docs/linting.md for fixes and scoped suppression comments.",
+        "diagnostic_tail_characters": 1657
+      },
+      "saved_tests": {
+        "status": "passed",
+        "test_count": 6
+      },
+      "monitor_histories": {
+        "status": "passed",
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 6,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    },
+    {
+      "neutral": "F4",
+      "run_id": "factorial-sol-flow-native-no-skill-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "implementation": {
+        "status": "passed",
+        "test_count": 8,
+        "forced_initial_read_race": true
+      },
+      "native_supplement": {
+        "exit_code": 0,
+        "summary": {
+          "status": "passed",
+          "message": "All test cases passed",
+          "test_cases": 3,
+          "failed": 0,
+          "incomplete": 0,
+          "coverage_failed": false,
+          "coverage_gaps": 0,
+          "uncovered": [],
+          "uncovered_more": 0,
+          "mutation_time_limit_reached": true
+        },
+        "error": null,
+        "diagnostic_tail_characters": 1
+      },
+      "saved_tests": {
+        "status": "passed",
+        "test_count": 7
+      },
+      "monitor_histories": {
+        "status": "passed",
+        "valid_accepted": 4,
+        "valid_total": 4,
+        "invalid_rejected": 4,
+        "invalid_total": 4
+      },
+      "portable": {
+        "portable_probe_valid": false,
+        "reference_status": "tests_rejected",
+        "reference_test_count": 7,
+        "mutation_probes_run": false,
+        "note": "Reference incompatibility leaves mutation behavior uninterpreted."
+      }
+    }
+  ],
+  "files": {
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/prompt.txt": {
+      "sha256": "9e95dffacf290eba88778e9a4cb064ff508573c3e56e950a8454ce28b77bd329",
+      "bytes": 760
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/metadata.json": {
+      "sha256": "2b693a2bff8feff12e2248f34e4cf793a156d7cedb5104b5ec517f0537337468",
+      "bytes": 3619
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/tool-transcript.jsonl": {
+      "sha256": "24fbaac7fe6e74038232a82ece05d6110feba85d9c736615de7b3b45ad0d9d60",
+      "bytes": 70013
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/grading/grade.json": {
+      "sha256": "793254d00b4e3afffe50578a2e3b1e93926e3e96c3b3a6de0b732cffab4c174c",
+      "bytes": 144266
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/submission-manifest.json": {
+      "sha256": "25af2acf5f8593c04d16e7736068586839e0f9eb220517c4a71a99df682a9575",
+      "bytes": 1039
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/supplemental-model-source-v3/result.json": {
+      "sha256": "78214d2825ed1031a139f980ae626d902facff8c4bdf6bdaf4a355a2e0937bb7",
+      "bytes": 10872
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/supplemental-observation-source-v3/result.json": {
+      "sha256": "0753a140f4bff453a355917dbcc703da5542025cd765883fa04958cc4239e85d",
+      "bytes": 132551
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/submission/model-check.json": {
+      "sha256": "0d8d7477b923e2a5bd8de0114f3508b0ce8f0059d700ae77928bba635749e5d0",
+      "bytes": 16038
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/submission/model-check-output.json": {
+      "sha256": "0d8d7477b923e2a5bd8de0114f3508b0ce8f0059d700ae77928bba635749e5d0",
+      "bytes": 16038
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/prompt.txt": {
+      "sha256": "737c56d7484583f6f2e30ce25ebcf66f748e83e4e9ddd2313356b30cbcc2941b",
+      "bytes": 823
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/metadata.json": {
+      "sha256": "b8f7a9b110605ead54c5fa8ce29798a80fedadf8731645e532679b02ca374fc2",
+      "bytes": 8502
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/tool-transcript.jsonl": {
+      "sha256": "daa64d7de31b0e50b709faedc3f0dd81bdd58a7a7a6e5ebe75f3e32b921004af",
+      "bytes": 88442
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/grading/grade.json": {
+      "sha256": "a48c72be9c911366372eb11001b304fd340f0fbf775fc8aa8eed4824d07d7bf9",
+      "bytes": 171890
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/submission-manifest.json": {
+      "sha256": "a96e26ff2432eae9f3ec3fa489a43367847d55773187ad4577266419386d55a3",
+      "bytes": 937
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/supplemental-model-source-v3/result.json": {
+      "sha256": "7b0b9d378504daa21f182824a9e004d25bfd261c2d28b29dfac5ecdcce5c2b02",
+      "bytes": 13646
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "fba931207837663174d0ef105c986d34f88af5e9a1d49a8fd43a09a2526f3f42",
+      "bytes": 153291
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/submission/model-check.txt": {
+      "sha256": "c019f66bd0c77dd9ac05e761f59f4e6c9c4a1850ff8d1eb5751fa240adc73557",
+      "bytes": 1357
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/submission/mutation-check.txt": {
+      "sha256": "0940532938b508c61a5f4b899db5e96cce96fb11dbbc33a64eb6ff802b4cbd70",
+      "bytes": 3022
+    },
+    "/workspace/snappea-skill/evals/certified-bundles/runs/skill-snapshots/4de6d74d7e1d9c3aee3fae5587eb9879e5f7a7649708edd9d5a71e551330e506/examples/cas-retry/Balance.p": {
+      "sha256": "75aa3cf2b03dc9280b83a4da2473f75c43fa5581978d742dd6463b3af9f8cebf",
+      "bytes": 11994
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/prompt.txt": {
+      "sha256": "6781ddace4986fb34353323da9032fff6b76341e6b12aeeb4db0a384cf5c04cf",
+      "bytes": 823
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/metadata.json": {
+      "sha256": "0fc15a8133819aa7e043a1ab2ec962d62b8cec1c8dba78c3d80d7640cc1a988f",
+      "bytes": 8502
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/tool-transcript.jsonl": {
+      "sha256": "37ae38484a73d1633219c4432f388295aa5e3061ce7ed28574e318ed5a69a1e0",
+      "bytes": 83538
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/grading/grade.json": {
+      "sha256": "a1cb79bb4df633ed600234687c99f637aeec91b9622eeb559cd7ccd5cd304818",
+      "bytes": 160036
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/submission-manifest.json": {
+      "sha256": "c2ed5200bcb742c8474ca0098c4c7993266b87239416f4b041ffaaac67c10eaf",
+      "bytes": 1024
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/supplemental-model-source-v3/result.json": {
+      "sha256": "046626d52c7527ed046e0267e26a6843685489d0d7e877e921afd0eab322671a",
+      "bytes": 4392
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/supplemental-observation-source-v3/result.json": {
+      "sha256": "b2193f71f7e61e6d358e91abf5010549d6d4d2ac2d2cc0ca4960c4f36b933ea7",
+      "bytes": 154779
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/submission/model-check.txt": {
+      "sha256": "a352c30fbfa82dfea8ec61c33e41d97e207d5bbd1ac77233e423f3f820243a74",
+      "bytes": 1353
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/submission/mutation_report.txt": {
+      "sha256": "ecf96b2b4e6eea46a9a231f28216d172f432b6fcec51d8231ba4003d9236c255",
+      "bytes": 279
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/prompt.txt": {
+      "sha256": "e2008e1f015d07e3a888c856d364b3e37a14a7eab3ba7a43ff77be2faf43e731",
+      "bytes": 760
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/metadata.json": {
+      "sha256": "20e7c5602851ba5c52c7982bbd6cce6885a57e3eafd3c8bd389d175fa6871e28",
+      "bytes": 3620
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/tool-transcript.jsonl": {
+      "sha256": "7d44c6ce2cf4da3c3eeb3f2dc308abe4f837568fa254fd50b3d8ba74683c2d9b",
+      "bytes": 77143
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/grading/grade.json": {
+      "sha256": "f01b3da4490436bac1b68f1c72fe463596cc01721eb1a013957980c4adca2c22",
+      "bytes": 144908
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/submission-manifest.json": {
+      "sha256": "10511a04bd1599127a96329eecef5e4b5e4058dfe03510338cabfaf42cb9460c",
+      "bytes": 846
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/supplemental-model-source-v3/result.json": {
+      "sha256": "a1d87899a3ac84c5a65a8851224395013910a476f8344f0422915158478dac96",
+      "bytes": 11255
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/supplemental-observation-source-v3/result.json": {
+      "sha256": "5d1f15553a0b19c6724064cab2ee81f34e25c1fd1fadf07108d3650922d088fc",
+      "bytes": 132813
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/submission/model-check.json": {
+      "sha256": "071ed87f845075a90e91699911a8f8d905b2e12e2f2ffae45c023606f4837581",
+      "bytes": 15223
+    },
+    "/tmp/sol-factorial-fifo-source-audit.md": {
+      "sha256": "eb649a36053b43733faf47badc955c0d0009f030ddd653463523bb7fa013cf1e",
+      "bytes": 15017
+    },
+    "/tmp/sol-factorial-fifo-source-audit.json": {
+      "sha256": "42844412b8fa0e67877331ee8f622317f56bb5f51444f6db23b3180c8902842f",
+      "bytes": 7932
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/bridge.py": {
+      "sha256": "3c42cd9745acb9f52fb9439d3ef71ee654b42814ae0131e0ee01d8f3a75636d0",
+      "bytes": 2241
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/recheck_model_sources.py": {
+      "sha256": "84237f9ffb409ad64bc9b35d6b6cd83f6df674e442be9b1989b1f1d99d10fe9b",
+      "bytes": 3211
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/recheck_observation_sources.py": {
+      "sha256": "eb3dc822d1c592ef415ee27b58efe53856c74205eac82965ba21be2fb84ba078",
+      "bytes": 2700
+    }
+  },
+  "all_hashes_verified": true
+}

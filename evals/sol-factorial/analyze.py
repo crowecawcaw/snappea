@@ -145,14 +145,21 @@ def summarize():
    r['portable_probes']=g['portable_probes']
    observation=root/'supplemental-observation-source-v3/result.json'
    r['supplemental_observations']={**load(observation),'result_sha256':sha(observation)}
-   source=root/'supplemental-model-source-v3/result.json';c=load(source);raw=c['result'];parsed=json.loads(raw['output'])
+   source=root/'supplemental-model-source-v3/result.json';c=load(source);raw=c['result']
+   encoded=raw['output'].lstrip();parse_error=None
+   try:
+    parsed,end=json.JSONDecoder().raw_decode(encoded)
+    diagnostics=encoded[end:].strip()
+   except ValueError as error:
+    parsed={};diagnostics=raw['output'];parse_error=str(error)
    cases=parsed.get('test_cases',[]);complete=bool(cases) and all(x.get('search_complete',False) for x in cases)
    r['supplemental_model']={'result_sha256':sha(source),'source_assembly_changed':c['source_assembly_changed'],
        'checker_exit_code':raw['exit_code'],'selected_tests':len(cases),'model_search_complete':complete,
        'model_check_passed':raw['exit_code']==0 and complete,
        'test_cases':[{k:c.get(k) for k in ['name','schedules','search_complete','result']} for c in cases],
        'coverage_failed':parsed.get('coverage_failed'),
-       'uncovered_required_points':len(parsed.get('coverage',{}).get('uncovered_required',[]))}
+       'uncovered_required_points':len(parsed.get('coverage',{}).get('uncovered_required',[])),
+       'checker_json_parse_error':parse_error,'checker_diagnostic_tail':diagnostics}
   else:
    if g is None:
     r['primary']={'passed':None,'total':20,'status':'grader_execution_failure','reason':'no grade produced; inspect preserved grader-console.log'}

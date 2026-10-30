@@ -1,8 +1,9 @@
 # Handoff: experimenting with the agent evals
 
-Start here when sharing PR #108 with another agent. The missing-cell trials are
-in progress; this setup commit does not claim final factorial results. The prior
-completed experiment is [single-file examples](../single-file-examples/RESULTS.md).
+Start here when sharing PR #108 with another agent. The setup was first published
+in commit `b433171` while trials were running. All eight missing-cell trials are
+now complete: [factorial results](RESULTS.md). The prior completed experiment is
+[single-file examples](../single-file-examples/RESULTS.md).
 
 ## What is being compared
 
@@ -78,9 +79,11 @@ The prior raw evidence archive is
 (SHA256 `02741dc2370b970ff28452de7a6b8e21d85cc8523a5e711f7f3858f8ed18c6a2`).
 It includes the previous trials, immutable skill snapshots and binaries. This is
 an existing-workspace path, not a GitHub download. Another workspace needs that
-artifact supplied separately; the current cohort's final evidence archive will
-be produced after completion. Docker image IDs identify local images, not
-published registry tags.
+artifact supplied separately. The combined evidence archive is
+`/workspace/library-files/snappea-sol-factorial-evidence.tar.gz`; it retains the
+eight new trials and twelve prior trials so the earlier audits remain verifiable
+(16 Sol trials, plus four earlier Luna format trials). Docker image IDs identify
+local images, not published registry tags.
 
 ## Prepare a new local experiment
 

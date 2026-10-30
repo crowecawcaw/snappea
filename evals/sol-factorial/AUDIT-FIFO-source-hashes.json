@@ -1,0 +1,169 @@
+{
+  "reviewer": "/root/review_singlefile",
+  "scope": "assignment-withheld static FIFO source review; no execution, mappings, transcripts, grades or private fixtures",
+  "completed": [
+    "F1",
+    "F2",
+    "F3",
+    "F4"
+  ],
+  "files": {
+    "/workspace/snappea-skill/evals/modeling-skill/phases/flow/public/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/flow/public/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/modeling-skill/phases/flow/public/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/DESIGN.md": {
+      "sha256": "10f21775a6b35f2a2b88229325f6b7f386a5e6d6cbc7e41cddc4adec09117d77",
+      "bytes": 7122
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/TASK.md": {
+      "sha256": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+      "bytes": 1867
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/model.p": {
+      "sha256": "383e1485cad2ddf0d55008c1888b39d6c8f2af56099575486070053e2352b66a",
+      "bytes": 3806
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/monitor.p": {
+      "sha256": "e73216fe45e67a810af9ca14dffb7045531de87f09f77d9dd9c3791e59f7c2cc",
+      "bytes": 1661
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/solution.py": {
+      "sha256": "e4f7c8f19b5c11c23a750cf629cc1888c2a426ce3fc1f3323a5aaec352c833fa",
+      "bytes": 1975
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/test_observation.py": {
+      "sha256": "535a125aab0796abbe014bb55844d5e4e00716cac90fe5b82da0d77dc4f23035",
+      "bytes": 9556
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F2/tests.p": {
+      "sha256": "dc11d1d5f7ac1f85b6f3a5e8ad1a30fb0bd7981f416c3cfd58d615d7dce0c965",
+      "bytes": 2450
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/DESIGN.md": {
+      "sha256": "89437f429fd80f39aaaace210675380bdab347e5ae415c142d27a40629dab8de",
+      "bytes": 5992
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/model.p": {
+      "sha256": "cf24d8a8851aa49987b52de04db9438a1e7e9df2140994717eaf6c9748a2d604",
+      "bytes": 3027
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/monitor.p": {
+      "sha256": "5b7002dde658fb3f828cc782c03860c0c38aa1d0ff88b4e543685b97b4c464cb",
+      "bytes": 1366
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/solution.py": {
+      "sha256": "629b15b9e57d4978a04c831980688f9be8a3271570b1e854a1dde6b8549a9359",
+      "bytes": 2288
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/test_observation.py": {
+      "sha256": "7beb2439ac64876437e2adc491b358f35f8e023f00c1f0b8003b71a56a3c084b",
+      "bytes": 8838
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F4/tests.p": {
+      "sha256": "c7f6a6e80e416429c06e6d619236ad9509807733f8d1818be781f273cb6bd271",
+      "bytes": 2610
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/DESIGN.md": {
+      "sha256": "fc66efcdf85b0e6e61654926f992160f4390dcad4d8ca5fd0269255ea394797a",
+      "bytes": 6400
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/TASK.md": {
+      "sha256": "de11ce859ce78c23d2a6ff4b9ab36cc31f5a8873fbcbd4bc31315fcbb138a3af",
+      "bytes": 1851
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/model.p": {
+      "sha256": "8122507c8ab4fef1d9c7b7107fcbaf27303dccd29a6fc4aafc06a7bcdabfa45a",
+      "bytes": 3414
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/monitor.p": {
+      "sha256": "6afde4137fe41635be07d6ba939c327fe7f5619797d0783dbea7e9007c72f17c",
+      "bytes": 1386
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/solution.py": {
+      "sha256": "0d868cda48cb0495b8a06419c786c418bf424de79db4db6bc8642c4b6ce701e8",
+      "bytes": 1967
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/test_observation.py": {
+      "sha256": "16d65bf815b101bcfc202316f7f72d3d94e37f956e7318cd690408ac2cb3428c",
+      "bytes": 9462
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F1/tests.p": {
+      "sha256": "1bb2fe85e539949a5913fbd7ed5a496b5f8923eed39e6b5d92daa676fcefe0ee",
+      "bytes": 2343
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/DESIGN.md": {
+      "sha256": "c60467a28be5d9072a3bccf06792cf3f6eea483eb34aadf532ee86851ec20fd8",
+      "bytes": 6703
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/TASK.md": {
+      "sha256": "9ad76d1dd1819dde36ffaaae3249a7c6563cc700585664f900912397b5ed015d",
+      "bytes": 1867
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/events.p": {
+      "sha256": "b6878ba28a85162675e6dfe5278386df0612fde125a2750d8cb879ffb1ba984b",
+      "bytes": 156
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/model.p": {
+      "sha256": "9ba5ce5ba071780347d3a6860bd8798b5dbbe0fa4f227b42351c9ff774a77b97",
+      "bytes": 6133
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/monitor.p": {
+      "sha256": "99fe1a5252e309613110a97c5d21ef53b90f01b9f8869f54660363ded37dc2cf",
+      "bytes": 1514
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/runtime.py": {
+      "sha256": "03075a108b773ace32698eade86ffad44d3a49affcc171733f7665a0a17bcf44",
+      "bytes": 599
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/solution.py": {
+      "sha256": "82c19a0e1baa86d85d8171cd4248820e3da07650f240364e54dbd2298df5903c",
+      "bytes": 2011
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/test_observation.py": {
+      "sha256": "72c67328c2bfec093ec94197d301647225772263024dd28591caca38edff4290",
+      "bytes": 10056
+    },
+    "/workspace/snappea-skill/evals/sol-factorial/runs/blind-source/F3/tests.p": {
+      "sha256": "9893815cf6df1f71e5fb253c8a900ac56fe3505959cd2d5c774dcb8c53d97065",
+      "bytes": 1412
+    }
+  },
+  "all_hashes_verified": true
+}

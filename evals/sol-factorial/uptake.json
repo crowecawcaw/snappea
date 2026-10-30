@@ -1,0 +1,1455 @@
+[
+  {
+    "run_id": "factorial-sol-flow-compat-skill-01",
+    "task": "flow",
+    "repetition": 1,
+    "condition": "compat-skill",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-01/prompt.txt",
+    "model_family": "sol",
+    "tool": "snappea-compat",
+    "reference_calls": [
+      {
+        "call": 1,
+        "command": "cat TASK.md\ncat /opt/p-modeling/SKILL.md\n",
+        "stdout_characters": 5666,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "SKILL.md",
+            "matching_substantive_lines": 27,
+            "line_ranges": [
+              "2-3",
+              "8-10",
+              "14",
+              "16-26",
+              "28",
+              "30-36",
+              "40-41"
+            ],
+            "source_lines": 41
+          }
+        ]
+      },
+      {
+        "call": 2,
+        "command": "cat runtime.py events.p\ncat /opt/p-modeling/reference/p-patterns.md\ncat /opt/p-modeling/guides/implementation.md\nls -la\n",
+        "stdout_characters": 9482,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 64,
+            "line_ranges": [
+              "1",
+              "3",
+              "5",
+              "8-11",
+              "13-22",
+              "24-29",
+              "31-32",
+              "36",
+              "39",
+              "41-46",
+              "51-54",
+              "56-61",
+              "63",
+              "65",
+              "71",
+              "74",
+              "80-81",
+              "84-89",
+              "94-97",
+              "100-104"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "guides/implementation.md",
+            "matching_substantive_lines": 35,
+            "line_ranges": [
+              "1",
+              "3",
+              "5-8",
+              "11-12",
+              "15-16",
+              "18",
+              "21",
+              "23-27",
+              "30-33",
+              "35",
+              "37-43",
+              "45",
+              "47-51"
+            ],
+            "source_lines": 51
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "102",
+              "118",
+              "134",
+              "147",
+              "176",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 9,
+            "line_ranges": [
+              "125",
+              "160",
+              "205",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 10,
+            "line_ranges": [
+              "142",
+              "152",
+              "227",
+              "235",
+              "248",
+              "259",
+              "270",
+              "281",
+              "292",
+              "304"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "75",
+              "82",
+              "105",
+              "148"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "96",
+              "103",
+              "128",
+              "180"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "111",
+              "155",
+              "159",
+              "255",
+              "266",
+              "276"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/examples/cas-retry/Balance.p\ncat /opt/p-modeling/examples/reservation/Reservation.p\nsnappea-compat --help\npython - <<'PY'\nimport snappea,inspect\nprint(inspect.signature(snappea.check_events))\nprint(inspect.getsource(snappea.check_events))\nPY\n",
+        "stdout_characters": 22945,
+        "bridge_truncated": true,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 5,
+            "line_ranges": [
+              "36",
+              "41",
+              "51-52",
+              "71"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 127,
+            "line_ranges": [
+              "2",
+              "22",
+              "33",
+              "35-38",
+              "40-43",
+              "46",
+              "48-49",
+              "51-59",
+              "61-64",
+              "67",
+              "70-78",
+              "82-89",
+              "94",
+              "96-97",
+              "100",
+              "102-105",
+              "107-110",
+              "112",
+              "118-120",
+              "123-128",
+              "133-134",
+              "136-140",
+              "146-147",
+              "149-152",
+              "157",
+              "159-160",
+              "162-163",
+              "165",
+              "167-171",
+              "173-174",
+              "176-179",
+              "181-182",
+              "184-187",
+              "192-194",
+              "197-203",
+              "207-210",
+              "219-220",
+              "222-226",
+              "231",
+              "233-234"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 11,
+            "line_ranges": [
+              "2",
+              "27",
+              "125",
+              "160",
+              "205",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 19,
+            "line_ranges": [
+              "2",
+              "54",
+              "142",
+              "152",
+              "198",
+              "235",
+              "237",
+              "248",
+              "250",
+              "259",
+              "261",
+              "270",
+              "272",
+              "281",
+              "283",
+              "292",
+              "294",
+              "304",
+              "306"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 7,
+            "line_ranges": [
+              "2",
+              "27",
+              "75",
+              "82",
+              "105",
+              "148",
+              "150"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 8,
+            "line_ranges": [
+              "2",
+              "20",
+              "44",
+              "96",
+              "103",
+              "128",
+              "180",
+              "182"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 155,
+            "line_ranges": [
+              "2-5",
+              "7",
+              "9-11",
+              "13-19",
+              "21-26",
+              "28-34",
+              "36-39",
+              "42",
+              "44-52",
+              "54-57",
+              "60-76",
+              "78-80",
+              "82-83",
+              "86-90",
+              "92-98",
+              "102-106",
+              "111",
+              "114",
+              "117-125",
+              "127-135",
+              "137",
+              "140-148",
+              "153",
+              "155-163",
+              "165",
+              "171",
+              "173",
+              "177",
+              "180-197",
+              "200-203",
+              "238",
+              "255",
+              "266",
+              "276"
+            ],
+            "source_lines": 291
+          }
+        ]
+      }
+    ],
+    "checker_exit2_calls": []
+  },
+  {
+    "run_id": "factorial-sol-vcs-native-no-skill-01",
+    "task": "vcs",
+    "repetition": 1,
+    "condition": "native-no-skill",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-01",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-01/delegation.txt",
+    "model_family": "sol",
+    "tool": "snappea",
+    "reference_calls": [],
+    "checker_exit2_calls": [
+      5
+    ]
+  },
+  {
+    "run_id": "factorial-sol-flow-native-no-skill-01",
+    "task": "flow",
+    "repetition": 1,
+    "condition": "native-no-skill",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-01/prompt.txt",
+    "model_family": "sol",
+    "tool": "snappea",
+    "reference_calls": [],
+    "checker_exit2_calls": [
+      5
+    ]
+  },
+  {
+    "run_id": "factorial-sol-vcs-compat-skill-01",
+    "task": "vcs",
+    "repetition": 1,
+    "condition": "compat-skill",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-01",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-01/delegation.txt",
+    "model_family": "sol",
+    "tool": "snappea-compat",
+    "reference_calls": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md TASK.md contract.py\n",
+        "stdout_characters": 11186,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "SKILL.md",
+            "matching_substantive_lines": 27,
+            "line_ranges": [
+              "2-3",
+              "8-10",
+              "14",
+              "16-26",
+              "28",
+              "30-36",
+              "40-41"
+            ],
+            "source_lines": 41
+          }
+        ]
+      },
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/reference/p-patterns.md /opt/p-modeling/guides/implementation.md\nls -la\nls -la /opt/snappea-compat\n",
+        "stdout_characters": 8906,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 64,
+            "line_ranges": [
+              "1",
+              "3",
+              "5",
+              "8-11",
+              "13-22",
+              "24-29",
+              "31-32",
+              "36",
+              "39",
+              "41-46",
+              "51-54",
+              "56-61",
+              "63",
+              "65",
+              "71",
+              "74",
+              "80-81",
+              "84-89",
+              "94-97",
+              "100-104"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "guides/implementation.md",
+            "matching_substantive_lines": 35,
+            "line_ranges": [
+              "1",
+              "3",
+              "5-8",
+              "11-12",
+              "15-16",
+              "18",
+              "21",
+              "23-27",
+              "30-33",
+              "35",
+              "37-43",
+              "45",
+              "47-51"
+            ],
+            "source_lines": 51
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "102",
+              "118",
+              "134",
+              "147",
+              "176",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 9,
+            "line_ranges": [
+              "125",
+              "160",
+              "205",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 10,
+            "line_ranges": [
+              "142",
+              "152",
+              "227",
+              "235",
+              "248",
+              "259",
+              "270",
+              "281",
+              "292",
+              "304"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "75",
+              "82",
+              "105",
+              "148"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "96",
+              "103",
+              "128",
+              "180"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "111",
+              "155",
+              "159",
+              "255",
+              "266",
+              "276"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 3,
+        "command": "/opt/snappea-compat --help\ncat /opt/p-modeling/examples/cas-retry/Balance.p\ncat runtime.py test_public.py\n",
+        "stdout_characters": 17053,
+        "bridge_truncated": true,
+        "visible_file_line_matches": [
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 7,
+            "line_ranges": [
+              "2",
+              "22",
+              "134",
+              "136",
+              "147",
+              "149",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "2",
+              "27",
+              "248",
+              "277",
+              "316",
+              "365"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 16,
+            "line_ranges": [
+              "2",
+              "142",
+              "235",
+              "237",
+              "248",
+              "250",
+              "259",
+              "261",
+              "270",
+              "272",
+              "281",
+              "283",
+              "292",
+              "294",
+              "304",
+              "306"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "2",
+              "27",
+              "75",
+              "148",
+              "150-151"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 7,
+            "line_ranges": [
+              "2",
+              "20",
+              "44",
+              "96",
+              "180",
+              "182-183"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 183,
+            "line_ranges": [
+              "2-5",
+              "7",
+              "9-11",
+              "13-19",
+              "21-26",
+              "28-34",
+              "36-39",
+              "42",
+              "44-52",
+              "54-57",
+              "60-76",
+              "78-80",
+              "82-83",
+              "86-90",
+              "92-98",
+              "102-106",
+              "111",
+              "114",
+              "117-125",
+              "127-135",
+              "137",
+              "140-147",
+              "190-197",
+              "200-203",
+              "205-206",
+              "208-213",
+              "215-217",
+              "219",
+              "226-241",
+              "243-245",
+              "247-249",
+              "254-255",
+              "257-260",
+              "265-266",
+              "268-270",
+              "275-276",
+              "278-281",
+              "286-291"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 7,
+        "command": "cat /opt/p-modeling/examples/reservation/test_storage.py\ncat model-results/BugFinding/generatedOutput.coverage.txt\n",
+        "stdout_characters": 5244,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "examples/reservation/test_storage.py",
+            "matching_substantive_lines": 68,
+            "line_ranges": [
+              "1",
+              "4-6",
+              "8",
+              "10",
+              "13",
+              "16-21",
+              "23-25",
+              "27-30",
+              "32-37",
+              "39-42",
+              "44-50",
+              "52-54",
+              "56-59",
+              "61-64",
+              "66-69",
+              "71-73",
+              "75",
+              "77-83",
+              "85-88",
+              "91"
+            ],
+            "source_lines": 92
+          }
+        ]
+      }
+    ],
+    "checker_exit2_calls": []
+  },
+  {
+    "run_id": "factorial-sol-flow-native-no-skill-02",
+    "task": "flow",
+    "repetition": 2,
+    "condition": "native-no-skill",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-native-no-skill-02/prompt.txt",
+    "model_family": "sol",
+    "tool": "snappea",
+    "reference_calls": [],
+    "checker_exit2_calls": []
+  },
+  {
+    "run_id": "factorial-sol-vcs-compat-skill-02",
+    "task": "vcs",
+    "repetition": 2,
+    "condition": "compat-skill",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-02",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-02/delegation.txt",
+    "model_family": "sol",
+    "tool": "snappea-compat",
+    "reference_calls": [
+      {
+        "call": 1,
+        "command": "cat /opt/p-modeling/SKILL.md\ncat TASK.md contract.py\n",
+        "stdout_characters": 11186,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "SKILL.md",
+            "matching_substantive_lines": 27,
+            "line_ranges": [
+              "2-3",
+              "8-10",
+              "14",
+              "16-26",
+              "28",
+              "30-36",
+              "40-41"
+            ],
+            "source_lines": 41
+          }
+        ]
+      },
+      {
+        "call": 2,
+        "command": "cat /opt/p-modeling/reference/p-patterns.md\ncat /opt/p-modeling/guides/implementation.md\nls -la\nls /opt/snappea-compat\ncat test_public.py\n",
+        "stdout_characters": 11415,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 64,
+            "line_ranges": [
+              "1",
+              "3",
+              "5",
+              "8-11",
+              "13-22",
+              "24-29",
+              "31-32",
+              "36",
+              "39",
+              "41-46",
+              "51-54",
+              "56-61",
+              "63",
+              "65",
+              "71",
+              "74",
+              "80-81",
+              "84-89",
+              "94-97",
+              "100-104"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "guides/implementation.md",
+            "matching_substantive_lines": 35,
+            "line_ranges": [
+              "1",
+              "3",
+              "5-8",
+              "11-12",
+              "15-16",
+              "18",
+              "21",
+              "23-27",
+              "30-33",
+              "35",
+              "37-43",
+              "45",
+              "47-51"
+            ],
+            "source_lines": 51
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "102",
+              "118",
+              "134",
+              "147",
+              "176",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 9,
+            "line_ranges": [
+              "125",
+              "160",
+              "205",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 10,
+            "line_ranges": [
+              "142",
+              "152",
+              "227",
+              "235",
+              "248",
+              "259",
+              "270",
+              "281",
+              "292",
+              "304"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "75",
+              "82",
+              "105",
+              "148"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "96",
+              "103",
+              "128",
+              "180"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "111",
+              "155",
+              "159",
+              "255",
+              "266",
+              "276"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/examples/cas-retry/Balance.p\ncat runtime.py\n/opt/snappea-compat --help\npython -c 'import snappea; print(snappea.__file__)'\n",
+        "stdout_characters": 14559,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "36",
+              "51-52",
+              "71"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 11,
+            "line_ranges": [
+              "2",
+              "22",
+              "118-119",
+              "125",
+              "134",
+              "136",
+              "147",
+              "149",
+              "199",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 8,
+            "line_ranges": [
+              "2",
+              "27",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 16,
+            "line_ranges": [
+              "2",
+              "142",
+              "235",
+              "237",
+              "248",
+              "250",
+              "259",
+              "261",
+              "270",
+              "272",
+              "281",
+              "283",
+              "292",
+              "294",
+              "304",
+              "306"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 7,
+            "line_ranges": [
+              "2",
+              "27",
+              "75",
+              "105",
+              "148",
+              "150-151"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 8,
+            "line_ranges": [
+              "2",
+              "20",
+              "44",
+              "96",
+              "128",
+              "180",
+              "182-183"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 208,
+            "line_ranges": [
+              "2-5",
+              "7",
+              "9-11",
+              "13-19",
+              "21-26",
+              "28-34",
+              "36-39",
+              "42",
+              "44-52",
+              "54-57",
+              "60-76",
+              "78-80",
+              "82-83",
+              "86-90",
+              "92-98",
+              "102-106",
+              "111",
+              "114",
+              "117-125",
+              "127-135",
+              "137",
+              "140-148",
+              "153",
+              "155-163",
+              "165",
+              "171",
+              "173",
+              "177",
+              "180-197",
+              "200-203",
+              "205-206",
+              "208-213",
+              "215-217",
+              "219",
+              "226-241",
+              "243-245",
+              "247-249",
+              "254-255",
+              "257-260",
+              "265-266",
+              "268-270",
+              "275-276",
+              "278-281",
+              "286-291"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 7,
+        "command": "cat /opt/p-modeling/examples/reservation/test_storage.py\npython - <<'PY'\nimport inspect, snappea\nprint(inspect.signature(snappea.check_events))\nprint(inspect.signature(snappea.check_spec))\nPY\ncat PCheckerOutput/BugFinding/generatedOutput.coverage.txt\n",
+        "stdout_characters": 6099,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "examples/reservation/test_storage.py",
+            "matching_substantive_lines": 68,
+            "line_ranges": [
+              "1",
+              "4-6",
+              "8",
+              "10",
+              "13",
+              "16-21",
+              "23-25",
+              "27-30",
+              "32-37",
+              "39-42",
+              "44-50",
+              "52-54",
+              "56-59",
+              "61-64",
+              "66-69",
+              "71-73",
+              "75",
+              "77-83",
+              "85-88",
+              "91"
+            ],
+            "source_lines": 92
+          }
+        ]
+      }
+    ],
+    "checker_exit2_calls": []
+  },
+  {
+    "run_id": "factorial-sol-flow-compat-skill-02",
+    "task": "flow",
+    "repetition": 2,
+    "condition": "compat-skill",
+    "run": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02",
+    "prompt": "/workspace/snappea-skill/evals/modeling-skill/phases/runs/factorial-sol-flow-compat-skill-02/prompt.txt",
+    "model_family": "sol",
+    "tool": "snappea-compat",
+    "reference_calls": [
+      {
+        "call": 1,
+        "command": "cat TASK.md\ncat /opt/p-modeling/SKILL.md\n",
+        "stdout_characters": 5666,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "SKILL.md",
+            "matching_substantive_lines": 27,
+            "line_ranges": [
+              "2-3",
+              "8-10",
+              "14",
+              "16-26",
+              "28",
+              "30-36",
+              "40-41"
+            ],
+            "source_lines": 41
+          }
+        ]
+      },
+      {
+        "call": 2,
+        "command": "cat runtime.py events.p\ncat /opt/p-modeling/reference/p-patterns.md /opt/p-modeling/guides/implementation.md\nls -la\n",
+        "stdout_characters": 9482,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 64,
+            "line_ranges": [
+              "1",
+              "3",
+              "5",
+              "8-11",
+              "13-22",
+              "24-29",
+              "31-32",
+              "36",
+              "39",
+              "41-46",
+              "51-54",
+              "56-61",
+              "63",
+              "65",
+              "71",
+              "74",
+              "80-81",
+              "84-89",
+              "94-97",
+              "100-104"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "guides/implementation.md",
+            "matching_substantive_lines": 35,
+            "line_ranges": [
+              "1",
+              "3",
+              "5-8",
+              "11-12",
+              "15-16",
+              "18",
+              "21",
+              "23-27",
+              "30-33",
+              "35",
+              "37-43",
+              "45",
+              "47-51"
+            ],
+            "source_lines": 51
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "102",
+              "118",
+              "134",
+              "147",
+              "176",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 9,
+            "line_ranges": [
+              "125",
+              "160",
+              "205",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 10,
+            "line_ranges": [
+              "142",
+              "152",
+              "227",
+              "235",
+              "248",
+              "259",
+              "270",
+              "281",
+              "292",
+              "304"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "75",
+              "82",
+              "105",
+              "148"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "96",
+              "103",
+              "128",
+              "180"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 6,
+            "line_ranges": [
+              "111",
+              "155",
+              "159",
+              "255",
+              "266",
+              "276"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 3,
+        "command": "cat /opt/p-modeling/examples/cas-retry/Balance.p\nsnappea-compat --help\npython - <<'PY'\nimport snappea, inspect\nprint(inspect.signature(snappea.check_events))\nprint(inspect.signature(snappea.check_spec))\nprint(inspect.signature(snappea.emit))\nPY\n",
+        "stdout_characters": 13621,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "reference/p-patterns.md",
+            "matching_substantive_lines": 4,
+            "line_ranges": [
+              "36",
+              "51-52",
+              "71"
+            ],
+            "source_lines": 104
+          },
+          {
+            "file": "examples/reservation/Reservation.p",
+            "matching_substantive_lines": 11,
+            "line_ranges": [
+              "2",
+              "22",
+              "118-119",
+              "125",
+              "134",
+              "136",
+              "147",
+              "149",
+              "199",
+              "220"
+            ],
+            "source_lines": 234
+          },
+          {
+            "file": "examples/durable-retry/DurableRetry.p",
+            "matching_substantive_lines": 8,
+            "line_ranges": [
+              "2",
+              "27",
+              "248",
+              "277",
+              "316",
+              "365",
+              "415",
+              "433"
+            ],
+            "source_lines": 464
+          },
+          {
+            "file": "examples/bounded-history/bounded-history.p",
+            "matching_substantive_lines": 16,
+            "line_ranges": [
+              "2",
+              "142",
+              "235",
+              "237",
+              "248",
+              "250",
+              "259",
+              "261",
+              "270",
+              "272",
+              "281",
+              "283",
+              "292",
+              "294",
+              "304",
+              "306"
+            ],
+            "source_lines": 335
+          },
+          {
+            "file": "examples/versioned-publication/StaleRetry.p",
+            "matching_substantive_lines": 7,
+            "line_ranges": [
+              "2",
+              "27",
+              "75",
+              "105",
+              "148",
+              "150-151"
+            ],
+            "source_lines": 159
+          },
+          {
+            "file": "examples/versioned-publication/Revalidated.p",
+            "matching_substantive_lines": 8,
+            "line_ranges": [
+              "2",
+              "20",
+              "44",
+              "96",
+              "128",
+              "180",
+              "182-183"
+            ],
+            "source_lines": 191
+          },
+          {
+            "file": "examples/cas-retry/Balance.p",
+            "matching_substantive_lines": 208,
+            "line_ranges": [
+              "2-5",
+              "7",
+              "9-11",
+              "13-19",
+              "21-26",
+              "28-34",
+              "36-39",
+              "42",
+              "44-52",
+              "54-57",
+              "60-76",
+              "78-80",
+              "82-83",
+              "86-90",
+              "92-98",
+              "102-106",
+              "111",
+              "114",
+              "117-125",
+              "127-135",
+              "137",
+              "140-148",
+              "153",
+              "155-163",
+              "165",
+              "171",
+              "173",
+              "177",
+              "180-197",
+              "200-203",
+              "205-206",
+              "208-213",
+              "215-217",
+              "219",
+              "226-241",
+              "243-245",
+              "247-249",
+              "254-255",
+              "257-260",
+              "265-266",
+              "268-270",
+              "275-276",
+              "278-281",
+              "286-291"
+            ],
+            "source_lines": 291
+          }
+        ]
+      },
+      {
+        "call": 7,
+        "command": "snappea-compat check --help\ncat /opt/p-modeling/examples/reservation/test_storage.py\ncat > solution.py <<'EOF'\n\"\"\"Shared bounded FIFO. The Store record is the only authoritative state.\"\"\"\n\nclass Queue:\n    def __init__(self, store, capacity=2):\n        if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity <= 0:\n            raise ValueError(\"capacity must be a positive integer\")\n        self._store = store\n        while True:\n            version, record = store.load()\n            if record is not None:\n                if record['capacity'] != capacity:\n                    raise ValueError(\"all queues sharing a Store must use its capacity\")\n                break\n            record = {'capacity': capacity, 'items': [], 'puts': {}, 'takes': {}}\n            if store.compare_swap(version, record):\n                break\n\n    def put(self, request_id, item: int) -> bool:\n        while True:\n            version, record = self._store.load()\n            if request_id in record['puts']:\n                old_item, accepted = record['puts'][request_id]\n                if old_item != item:\n                    raise ValueError(\"put request ID reused with a different item\")\n                return accepted\n            accepted = len(record['items']) < record['capacity']\n            if accepted:\n                record['items'].append(item)\n            record['puts'][request_id] = (item, accepted)\n            # Rejections also commit a memo. A loser reloads all current state.\n            if self._store.compare_swap(version, record):\n                return accepted\n\n    def take(self, request_id) -> int | None:\n        while True:\n            version, record = self._store.load()\n            if request_id in record['takes']:\n                return record['takes'][request_id]\n            result = record['items'].pop(0) if record['items'] else None\n            record['takes'][request_id] = result\n            if self._store.compare_swap(version, record):\n                return result\n\n    def snapshot(self) -> list[int]:\n        _, record = self._store.load()\n        return record['items']\nEOF\n",
+        "stdout_characters": 9661,
+        "bridge_truncated": false,
+        "visible_file_line_matches": [
+          {
+            "file": "examples/reservation/test_storage.py",
+            "matching_substantive_lines": 68,
+            "line_ranges": [
+              "1",
+              "4-6",
+              "8",
+              "10",
+              "13",
+              "16-21",
+              "23-25",
+              "27-30",
+              "32-37",
+              "39-42",
+              "44-50",
+              "52-54",
+              "56-59",
+              "61-64",
+              "66-69",
+              "71-73",
+              "75",
+              "77-83",
+              "85-88",
+              "91"
+            ],
+            "source_lines": 92
+          }
+        ]
+      }
+    ],
+    "checker_exit2_calls": []
+  },
+  {
+    "run_id": "factorial-sol-vcs-native-no-skill-02",
+    "task": "vcs",
+    "repetition": 2,
+    "condition": "native-no-skill",
+    "run": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-02",
+    "prompt": "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-02/delegation.txt",
+    "model_family": "sol",
+    "tool": "snappea",
+    "reference_calls": [],
+    "checker_exit2_calls": [
+      9
+    ]
+  }
+]

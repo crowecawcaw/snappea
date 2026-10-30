@@ -1,0 +1,14 @@
+{
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-01/tool-transcript.jsonl": "d22edc501815808049c31772763d8c902c70adff131e2d07b40d9f1906697602",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-01/metadata.json": "4ee3a1386602609c1115bcb7f238193bbf0e316d631b9fde611749273fbeb4c7",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-01/agent-final.txt": "02d9cbdf39ce9b2cbcda5930c0129cd314fa643ecc6a31c21075008dfab896a9",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-02/tool-transcript.jsonl": "19b656095f81cb7707875ffadd9b7df4c7d5f4bf61daaeda43581196fecba6e5",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-02/metadata.json": "5e7a48193877df646f2d6bca3a3dd3f53ac08effbd875fd26d39ccbf49a88be3",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-02/agent-final.txt": "24200aab234838fc635776c4bcf08f131d2d7c1742ad8caceb8d0ff5a80dd7ad",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-02/tool-transcript.jsonl": "5d626c2f8db364923d8d0e3cd4444b2986b8af36268beabcd7960e4bf4775f6b",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-02/metadata.json": "8e37c348259656bbfc8d9bbca62bc4904d1d28a41bf648f52efeb4f6b293138a",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-compat-skill-02/agent-final.txt": "0e6c1de3258317a6d59122792e31dcb84881ec5412c5524853c0fdf27ddedd02",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-01/tool-transcript.jsonl": "50d8ef302d9300f928222da2dec793b91c9f4b15ab015ed1259d269d056c6145",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-01/metadata.json": "fc020a20c17aca64aea533fc920fad20bf6733c8e6a09c894a1453fe2cc61927",
+  "/workspace/snappea-skill/evals/certified-bundles/runs/factorial-sol-vcs-native-no-skill-01/agent-final.txt": "d544598dfe289763efec7ea53f5c3dc18680d9b147d9d5db099fe61165ad47ff"
+}
