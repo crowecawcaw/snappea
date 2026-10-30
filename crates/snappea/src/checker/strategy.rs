@@ -14,7 +14,7 @@ use crate::checker::random::RandomValueGenerator;
 pub enum StrategyKind {
     #[default]
     Random,
-    /// Native exhaustive-first search with feedback fallback; upstream defaults remain random.
+    /// Native exhaustive search with an adaptive scheduling portfolio; upstream defaults remain random.
     Auto,
     Pct,
     FairPct,
@@ -131,7 +131,20 @@ pub struct OpInfo {
 
 pub type SharedRandom = Rc<RefCell<RandomValueGenerator>>;
 
+/// Scheduler allocation diagnostics. Work counts checker choices, not wall time.
+#[derive(Debug, Clone, Default)]
+pub struct SchedulerStats {
+    pub name: String,
+    pub schedules: usize,
+    pub work: u64,
+    /// Decayed, capped novelty score at the end of the run (summed across workers).
+    pub reward: f64,
+}
+
 pub trait Strategy {
+    fn scheduler_stats(&self) -> Vec<SchedulerStats> {
+        Vec::new()
+    }
     /// Picks the next operation to schedule among `ops` (sorted by id). `current` is the
     /// id of the operation that reached the scheduling point.
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64>;
@@ -182,16 +195,20 @@ pub trait Strategy {
         true
     }
     /// Independent coverage novelty history of the current scheduler phase. Coverage
-    /// reports still merge every phase; changing this starts a fresh guidance history.
+    /// reports still merge every phase; revisiting an epoch restores its history.
     fn coverage_epoch(&self) -> u64 {
         0
     }
     /// Coverage delta and failure observed during the current execution.
     fn observe_progress(&mut self, _new_coverage: usize, _bug: Option<&str>) {}
+    /// Enable native prefix guidance for guided scheduler arms.
+    fn enable_frontier_guidance(&mut self) {}
     /// Whether event-count frontier checkpoints are used during execution.
     fn wants_frontiers(&self) -> bool {
         false
     }
+    /// A short-circuit edge reached during execution, before suffix choices.
+    fn observe_condition(&mut self, _fun: u32, _pc: usize, _outcome: bool) {}
     /// A delivery about to be handled, grouped by declaration rather than instance.
     fn observe_frontier(&mut self, _machine: u32, _state: u32, _event: u32) {}
     /// Validated exhaustive completion, including liveness requirements.

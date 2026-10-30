@@ -92,6 +92,42 @@ jobs:
       - name: Check the published crate package
         run: cargo package -p snappea-syntax -p snappea-lint -p snappea --locked
 
+  checker-discovery:
+    name: auto finds all benchmark bugs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: checker-discovery
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Test benchmark metrics and CI gates
+        run: python3 -m unittest discover -s scripts -p test_bench_checker.py
+      - name: Build the checker benchmark
+        run: cargo build --release --locked -p snappea --example checker_bench
+      - name: Find every development bug with auto
+        run: |
+          python3 scripts/bench-checker.py --binary target/release/examples/checker_bench \
+            --strategies auto --split develop --seeds 10 --seed-start 0 \
+            --budget 25000 --check --out benchmark-results/develop.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Find every evaluation bug with auto
+        run: |
+          python3 scripts/bench-checker.py --binary target/release/examples/checker_bench \
+            --strategies auto --split evaluation --seeds 10 --seed-start 100 \
+            --budget 25000 --check --out benchmark-results/evaluation.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: checker-discovery
+          path: benchmark-results/
+
   upstream-compat:
     name: upstream compat
     # snappea-compat against the frozen outputs of upstream P in tests/upstream/goldens and

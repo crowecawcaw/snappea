@@ -1,15 +1,15 @@
-//! Exhaust small models first, then use feedback if exhaustion stops converging.
+//! Exhaust converging small models and interleave guided scheduling interventions.
 //!
 //! Only completed unbounded exhaustion can end checking early. Stalled or bounded
-//! searches hand off permanently to fair feedback, including fresh sampling inside
-//! feedback. No independent random or PCT scheduler competes for that work.
+//! searches hand off to a feedback/delay/PCT portfolio. Independent scheduler
+//! corpora and an exploration floor protect against misleading novelty signals.
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::exhaustive::{ExhaustiveStrategy, SearchStats, Split};
-use super::feedback::{ControlledRandom, FeedbackGuidedStrategy, RandomScheduler, Source};
+use super::portfolio::Portfolio;
 use super::random::RandomValueGenerator;
-use super::strategy::{OpInfo, Strategy};
+use super::strategy::{OpInfo, SchedulerStats, Strategy};
 
 const WINDOW: u64 = 1_024;
 const MAX_WORK: u64 = 16_384;
@@ -20,7 +20,14 @@ const MAX_ALTERNATIVES: usize = 1_000_000;
 
 pub(crate) struct AutoStrategy {
     dfs: Option<ExhaustiveStrategy>,
-    feedback: FeedbackGuidedStrategy,
+    portfolio: Portfolio,
+    probing: bool,
+    contention: bool,
+    probe_remaining: usize,
+    probed: bool,
+    since_probe: usize,
+    saw_bug: bool,
+
     parked: Option<SearchStats>,
     work: u64,
     work_deadline: u64,
@@ -58,13 +65,14 @@ impl AutoStrategy {
                     None => dfs,
                 }
             }),
-            feedback: FeedbackGuidedStrategy::new(
-                fair_steps,
-                seed,
-                Box::new(RandomScheduler::new(Source::Controlled(ControlledRandom::new(seed)))),
-            )
-            .with_code_guidance(true)
-            .with_fresh_exploration(25),
+            portfolio: Portfolio::new(seed, unfair_steps, fair_steps),
+            probing: false,
+            contention: false,
+            probe_remaining: 0,
+            probed: false,
+            since_probe: 0,
+            saw_bug: false,
+
             parked: None,
             work: 0,
             work_deadline: MAX_WORK,
@@ -80,25 +88,25 @@ impl AutoStrategy {
         }
     }
     fn active(&self) -> &dyn Strategy {
-        match &self.dfs {
+        match self.dfs.as_ref().filter(|_| !self.probing) {
             Some(dfs) => dfs,
-            None => &self.feedback,
+            None => &self.portfolio,
         }
     }
     pub(crate) fn with_frontier_guidance(mut self, enabled: bool) -> Self {
         if enabled {
-            self.feedback = self.feedback.with_frontier_guidance();
+            self.portfolio = self.portfolio.with_frontier_guidance(true);
         }
         self
     }
     fn active_mut(&mut self) -> &mut dyn Strategy {
-        match &mut self.dfs {
+        match self.dfs.as_mut().filter(|_| !self.probing) {
             Some(dfs) => dfs,
-            None => &mut self.feedback,
+            None => &mut self.portfolio,
         }
     }
     fn choice(&mut self, alternatives: usize) -> bool {
-        if let Some(dfs) = &self.dfs {
+        if let Some(dfs) = self.dfs.as_ref().filter(|_| !self.probing) {
             self.work += 1;
             self.window_work += 1;
             let retained = dfs.retained_alternatives();
@@ -122,10 +130,18 @@ impl AutoStrategy {
             ..stats
         });
         self.interrupted = false;
+        self.probing = false;
     }
 }
 impl Strategy for AutoStrategy {
+    fn scheduler_stats(&self) -> Vec<SchedulerStats> {
+        self.portfolio.scheduler_stats()
+    }
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
+        self.contention |= ops.iter().filter(|o| o.enabled).count() > 1;
+        if self.dfs.is_some() && !self.probing {
+            self.portfolio.observe_operations(ops);
+        }
         if !self.choice(ops.iter().filter(|o| o.enabled).count()) {
             return None;
         }
@@ -142,13 +158,20 @@ impl Strategy for AutoStrategy {
     }
     fn prepare_next_iteration(&mut self) -> bool {
         if self.dfs.is_none() {
-            return self.feedback.prepare_next_iteration();
+            return self.portfolio.prepare_next_iteration();
+        }
+        if self.probing {
+            self.portfolio.prepare_next_iteration();
+            self.probe_remaining = self.probe_remaining.saturating_sub(1);
+            self.probing = self.probe_remaining > 0;
+            return true;
         }
         self.dfs_bounds += usize::from(self.active().has_reached_max_steps());
         if self.interrupted {
             self.park();
             return true;
         }
+        let schedule_steps = self.active().scheduled_steps();
         let dfs = self.dfs.as_mut().unwrap();
         let more = dfs.prepare_next_iteration();
         let stats = dfs.exhaustive_stats().unwrap();
@@ -206,6 +229,31 @@ impl Strategy for AutoStrategy {
                 self.window_work = 0;
             }
         }
+        if self.dfs.is_some()
+            && self.contention
+            && !self.complete
+            && !self.probed
+            && (self.work >= WINDOW || schedule_steps >= 64 || self.saw_bug)
+        {
+            // A bounded early probe catches scheduling shapes that DFS might only
+            // reach late, without doubling every converging finite search.
+            self.portfolio.begin_probe();
+            self.probing = true;
+            self.probed = true;
+            self.probe_remaining = self.portfolio.probe_budget();
+        } else if self.dfs.is_some() && self.probed && !self.complete {
+            // A closing state cache does not bound the remaining schedule tree.
+            // Continue sampling alongside DFS so it cannot monopolize all-bug search.
+            self.since_probe += 1;
+            if self.since_probe >= 3 {
+                self.since_probe = 0;
+                self.probing = true;
+                // Once a concurrent execution has failed, proving correctness is
+                // no longer the task. Favor complementary samples while retaining
+                // DFS as a floor for failures that need systematic enumeration.
+                self.probe_remaining = if self.saw_bug { 3 } else { 1 };
+            }
+        }
         true
     }
     fn scheduled_steps(&self) -> usize {
@@ -236,21 +284,28 @@ impl Strategy for AutoStrategy {
         self.active_mut().observe_timeline(timeline, minhash, reached, satisfied);
     }
     fn observe_progress(&mut self, new_coverage: usize, bug: Option<&str>) {
+        self.saw_bug |= bug.is_some();
         self.active_mut().observe_progress(new_coverage, bug);
     }
     fn wants_frontiers(&self) -> bool {
         self.active().wants_frontiers()
     }
+    fn observe_condition(&mut self, fun: u32, pc: usize, outcome: bool) {
+        self.active_mut().observe_condition(fun, pc, outcome);
+    }
     fn observe_frontier(&mut self, machine: u32, state: u32, event: u32) {
         self.active_mut().observe_frontier(machine, state, event);
     }
     fn coverage_epoch(&self) -> u64 {
-        u64::from(self.dfs.is_none())
+        u64::from(self.dfs.is_none() || self.probing)
     }
     fn wants_state_hash(&self) -> bool {
         !self.interrupted && self.active().wants_state_hash()
     }
     fn observe_state(&mut self, hash: u64) -> bool {
+        if self.probing {
+            return true;
+        }
         let Some(dfs) = self.dfs.as_mut() else {
             return true;
         };

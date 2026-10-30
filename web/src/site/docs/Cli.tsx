@@ -231,9 +231,9 @@ snappea check [SOURCE...] [TEST...] [options]
           transition pairs, and components excluded from the selected tests.
         </p>
         <p>
-          Search is automatic: exhaustive, random, guided, and priority scheduling retain their state between
-          executions. Recent behavioral novelty per controlled choice changes their work shares; every enabled
-          strategy retains a minimum share. Small exhaustive searches end early. A timeout or coverage plateau
+          Search is automatic: small exhaustive searches can finish early; larger searches also try guided
+          scheduling, deliberate actor delays, and priority scheduling. Competing sends and behavioral progress
+          guide the allocation, while each scheduler keeps an exploration share. A timeout or coverage plateau
           does not establish that the model is correct. The default timeout is fixed at ten seconds per test.
         </p>
         <p>

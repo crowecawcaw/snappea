@@ -628,3 +628,52 @@ fn auto_handoff_uses_default_frontier_guidance_and_replays() {
     assert!(replay.replay_error.is_none());
     assert_eq!(replay.report.bug_reports, result.report.bug_reports);
 }
+
+#[test]
+fn auto_explores_long_actor_delays_and_replays_without_a_coverage_gradient() {
+    for background in [false, true] {
+        let source = include_str!("models/stalled_write.p.in")
+            .replace("ROUNDS", "64")
+            .replace("BACKGROUND", if background { "new Maintenance();" } else { "" });
+        for seed in 0..10 {
+            let options =
+                CheckerOptions { seed, max_unfair_steps: 2000, max_fair_steps: 2000, ..opts(StrategyKind::Auto, 256) };
+            let result = check(&source, &options);
+            assert_eq!(result.report.num_bugs, 1, "background={background} seed={seed}");
+            assert!(result.report.bug_reports[0].contains("write still pending"));
+            let replay = check(
+                &source,
+                &CheckerOptions {
+                    strategy: StrategyKind::Replay,
+                    replay: Some(ScheduleTrace::parse(result.schedule_trace.as_ref().unwrap()).unwrap()),
+                    ..options
+                },
+            );
+            assert!(replay.replay_error.is_none());
+            assert_eq!(replay.report.bug_reports, result.report.bug_reports);
+            let allocated: usize = result.scheduler_stats.iter().map(|s| s.schedules).sum();
+            assert!(allocated > 0);
+            assert!(allocated <= result.report.explored_fair_schedules + result.report.explored_unfair_schedules);
+        }
+    }
+}
+
+#[test]
+fn auto_does_not_reward_revisited_phase_coverage_as_new() {
+    let source = include_str!("../../../benchmarks/checker/models/priority-switches-4.p");
+    let result = check(
+        source,
+        &CheckerOptions {
+            full_exploration: true,
+            max_fair_steps: 1000,
+            max_unfair_steps: 1000,
+            ..opts(StrategyKind::Auto, 2000)
+        },
+    );
+    assert!(result.scheduler_stats.iter().all(|a| a.schedules > 10));
+    assert!(
+        result.scheduler_stats.iter().all(|a| a.reward < 20.0),
+        "revisiting a phase must restore coverage; repeated features otherwise earn unbounded false credit: {:?}",
+        result.scheduler_stats
+    );
+}

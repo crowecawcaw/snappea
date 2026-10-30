@@ -1,0 +1,487 @@
+{
+  "suite_version": 1,
+  "cases": [
+    {
+      "name": "branches-10",
+      "family": "data-prefix",
+      "split": "develop",
+      "path": "models/branches-10.p",
+      "expected": [
+        {
+          "id": "branch-0",
+          "match": "branch-0"
+        },
+        {
+          "id": "branch-1",
+          "match": "branch-1"
+        },
+        {
+          "id": "branch-2",
+          "match": "branch-2"
+        }
+      ],
+      "description": "Repeated Boolean choices with visible branch progress."
+    },
+    {
+      "name": "branches-14",
+      "family": "data-prefix",
+      "split": "evaluation",
+      "path": "models/branches-14.p",
+      "expected": [
+        {
+          "id": "branch-0",
+          "match": "branch-0"
+        },
+        {
+          "id": "branch-1",
+          "match": "branch-1"
+        },
+        {
+          "id": "branch-2",
+          "match": "branch-2"
+        }
+      ],
+      "description": "Longer data prefix; independent evaluation."
+    },
+    {
+      "name": "opaque-512",
+      "family": "opaque-data",
+      "split": "develop",
+      "path": "models/opaque-512.p",
+      "expected": [
+        {
+          "id": "opaque-0",
+          "match": "opaque-0"
+        },
+        {
+          "id": "opaque-1",
+          "match": "opaque-1"
+        },
+        {
+          "id": "opaque-2",
+          "match": "opaque-2"
+        }
+      ],
+      "description": "Sparse integer failures with little incremental scheduling signal."
+    },
+    {
+      "name": "opaque-2048",
+      "family": "opaque-data",
+      "split": "evaluation",
+      "path": "models/opaque-2048.p",
+      "expected": [
+        {
+          "id": "opaque-0",
+          "match": "opaque-0"
+        },
+        {
+          "id": "opaque-1",
+          "match": "opaque-1"
+        },
+        {
+          "id": "opaque-2",
+          "match": "opaque-2"
+        }
+      ],
+      "description": "Sparse integer failures with little incremental scheduling signal."
+    },
+    {
+      "name": "boundaries-256",
+      "family": "data-boundary",
+      "split": "develop",
+      "path": "models/boundaries-256.p",
+      "expected": [
+        {
+          "id": "boundary-0",
+          "match": "boundary-0"
+        },
+        {
+          "id": "boundary-1",
+          "match": "boundary-1"
+        },
+        {
+          "id": "boundary-2",
+          "match": "boundary-2"
+        }
+      ],
+      "description": "Distinct low, interior and high boundary bugs."
+    },
+    {
+      "name": "boundaries-1024",
+      "family": "data-boundary",
+      "split": "evaluation",
+      "path": "models/boundaries-1024.p",
+      "expected": [
+        {
+          "id": "boundary-0",
+          "match": "boundary-0"
+        },
+        {
+          "id": "boundary-1",
+          "match": "boundary-1"
+        },
+        {
+          "id": "boundary-2",
+          "match": "boundary-2"
+        }
+      ],
+      "description": "Distinct low, interior and high boundary bugs."
+    },
+    {
+      "name": "orders-5",
+      "family": "message-orders",
+      "split": "develop",
+      "path": "models/orders-5.p",
+      "expected": [
+        {
+          "id": "order-0",
+          "match": "order-0"
+        },
+        {
+          "id": "order-1",
+          "match": "order-1"
+        },
+        {
+          "id": "order-2",
+          "match": "order-2"
+        }
+      ],
+      "description": "Three unrelated full delivery permutations; all sites must be found."
+    },
+    {
+      "name": "orders-6",
+      "family": "message-orders",
+      "split": "evaluation",
+      "path": "models/orders-6.p",
+      "expected": [
+        {
+          "id": "order-0",
+          "match": "order-0"
+        },
+        {
+          "id": "order-1",
+          "match": "order-1"
+        },
+        {
+          "id": "order-2",
+          "match": "order-2"
+        }
+      ],
+      "description": "Three unrelated full delivery permutations; all sites must be found."
+    },
+    {
+      "name": "runtime-8",
+      "family": "runtime-errors",
+      "split": "develop",
+      "path": "models/runtime-8.p",
+      "expected": [
+        {
+          "id": "assertion",
+          "match": "runtime-assert"
+        },
+        {
+          "id": "unhandled",
+          "match": "cannot be handled"
+        },
+        {
+          "id": "deadlock",
+          "match": "Deadlock detected"
+        }
+      ],
+      "description": "Assertion, unhandled event and deadlock at distinct reachable paths."
+    },
+    {
+      "name": "runtime-12",
+      "family": "runtime-errors",
+      "split": "evaluation",
+      "path": "models/runtime-12.p",
+      "expected": [
+        {
+          "id": "assertion",
+          "match": "runtime-assert"
+        },
+        {
+          "id": "unhandled",
+          "match": "cannot be handled"
+        },
+        {
+          "id": "deadlock",
+          "match": "Deadlock detected"
+        }
+      ],
+      "description": "Assertion, unhandled event and deadlock at distinct reachable paths."
+    },
+    {
+      "name": "terminal-hot-64",
+      "family": "terminal-liveness",
+      "split": "develop",
+      "path": "models/terminal-hot-64.p",
+      "expected": [
+        {
+          "id": "hot-A",
+          "match": "hot state 'HotA'"
+        },
+        {
+          "id": "hot-B",
+          "match": "hot state 'HotB'"
+        },
+        {
+          "id": "hot-C",
+          "match": "hot state 'HotC'"
+        }
+      ],
+      "description": "Hot monitors at actual program termination, meaningful under unfair schedulers too."
+    },
+    {
+      "name": "terminal-hot-256",
+      "family": "terminal-liveness",
+      "split": "evaluation",
+      "path": "models/terminal-hot-256.p",
+      "expected": [
+        {
+          "id": "hot-A",
+          "match": "hot state 'HotA'"
+        },
+        {
+          "id": "hot-B",
+          "match": "hot state 'HotB'"
+        },
+        {
+          "id": "hot-C",
+          "match": "hot state 'HotC'"
+        }
+      ],
+      "description": "Hot monitors at actual program termination, meaningful under unfair schedulers too."
+    },
+    {
+      "name": "skewed-8",
+      "family": "failure-masking",
+      "split": "develop",
+      "path": "models/skewed-8.p",
+      "expected": [
+        {
+          "id": "common",
+          "match": "common"
+        },
+        {
+          "id": "rare-prefix",
+          "match": "rare-prefix"
+        },
+        {
+          "id": "rarest-prefix",
+          "match": "rarest-prefix"
+        }
+      ],
+      "description": "An easy bug must not hide two rare sites; first-bug speed is misleading."
+    },
+    {
+      "name": "skewed-12",
+      "family": "failure-masking",
+      "split": "evaluation",
+      "path": "models/skewed-12.p",
+      "expected": [
+        {
+          "id": "common",
+          "match": "common"
+        },
+        {
+          "id": "rare-prefix",
+          "match": "rare-prefix"
+        },
+        {
+          "id": "rarest-prefix",
+          "match": "rarest-prefix"
+        }
+      ],
+      "description": "An easy bug must not hide two rare sites; first-bug speed is misleading."
+    },
+    {
+      "name": "stall-32",
+      "family": "pending-operation",
+      "split": "develop",
+      "path": "models/stall-32.p",
+      "expected": [
+        {
+          "id": "stall-0",
+          "match": "stall-0"
+        },
+        {
+          "id": "stall-1",
+          "match": "stall-1"
+        },
+        {
+          "id": "stall-2",
+          "match": "stall-2"
+        }
+      ],
+      "description": "Three pending-write errors at different reader round-trip lengths, optional independent background work."
+    },
+    {
+      "name": "stall-64-noise",
+      "family": "pending-operation",
+      "split": "develop",
+      "path": "models/stall-64-noise.p",
+      "expected": [
+        {
+          "id": "stall-0",
+          "match": "stall-0"
+        },
+        {
+          "id": "stall-1",
+          "match": "stall-1"
+        },
+        {
+          "id": "stall-2",
+          "match": "stall-2"
+        }
+      ],
+      "description": "Three pending-write errors at different reader round-trip lengths, optional independent background work."
+    },
+    {
+      "name": "stall-96",
+      "family": "pending-operation",
+      "split": "evaluation",
+      "path": "models/stall-96.p",
+      "expected": [
+        {
+          "id": "stall-0",
+          "match": "stall-0"
+        },
+        {
+          "id": "stall-1",
+          "match": "stall-1"
+        },
+        {
+          "id": "stall-2",
+          "match": "stall-2"
+        }
+      ],
+      "description": "Three pending-write errors at different reader round-trip lengths, optional independent background work."
+    },
+    {
+      "name": "stall-128-noise",
+      "family": "pending-operation",
+      "split": "evaluation",
+      "path": "models/stall-128-noise.p",
+      "expected": [
+        {
+          "id": "stall-0",
+          "match": "stall-0"
+        },
+        {
+          "id": "stall-1",
+          "match": "stall-1"
+        },
+        {
+          "id": "stall-2",
+          "match": "stall-2"
+        }
+      ],
+      "description": "Three pending-write errors at different reader round-trip lengths, optional independent background work."
+    },
+    {
+      "name": "priority-switches-4",
+      "family": "multi-phase-ordering",
+      "split": "develop",
+      "path": "models/priority-switches-4.p",
+      "expected": [
+        {
+          "id": "switch-0",
+          "match": "switch-0"
+        },
+        {
+          "id": "switch-1",
+          "match": "switch-1"
+        },
+        {
+          "id": "switch-2",
+          "match": "switch-2"
+        }
+      ],
+      "description": "Two long-run orderings and an alternating ordering: static priorities alone cannot cover all sites."
+    },
+    {
+      "name": "priority-switches-5",
+      "family": "multi-phase-ordering",
+      "split": "evaluation",
+      "path": "models/priority-switches-5.p",
+      "expected": [
+        {
+          "id": "switch-0",
+          "match": "switch-0"
+        },
+        {
+          "id": "switch-1",
+          "match": "switch-1"
+        },
+        {
+          "id": "switch-2",
+          "match": "switch-2"
+        }
+      ],
+      "description": "Two long-run orderings and an alternating ordering: static priorities alone cannot cover all sites."
+    },
+    {
+      "name": "lost-update-2",
+      "family": "transaction-race",
+      "split": "develop",
+      "path": "models/lost-update-2.p",
+      "expected": [
+        {
+          "id": "lost-0",
+          "match": "lost-0"
+        },
+        {
+          "id": "lost-1",
+          "match": "lost-1"
+        },
+        {
+          "id": "lost-2",
+          "match": "lost-2"
+        }
+      ],
+      "description": "Concurrent read/modify/write loses updates; all three independent operation contexts must fail."
+    },
+    {
+      "name": "lost-update-3",
+      "family": "transaction-race",
+      "split": "evaluation",
+      "path": "models/lost-update-3.p",
+      "expected": [
+        {
+          "id": "lost-0",
+          "match": "lost-0"
+        },
+        {
+          "id": "lost-1",
+          "match": "lost-1"
+        },
+        {
+          "id": "lost-2",
+          "match": "lost-2"
+        }
+      ],
+      "description": "Concurrent read/modify/write loses updates; all three independent operation contexts must fail."
+    },
+    {
+      "name": "safe-finite",
+      "family": "negative-control",
+      "split": "develop",
+      "path": "models/safe-finite.p",
+      "expected": [],
+      "description": "Finite safe model must never report a failure and may certify exhaustion.",
+      "budget": 256,
+      "expect_exhausted": true
+    },
+    {
+      "name": "safe-background",
+      "family": "negative-control",
+      "split": "evaluation",
+      "path": "models/safe-background.p",
+      "expected": [],
+      "description": "Unbounded safe counter must not be called exhausted merely because coverage stalls.",
+      "budget": 256,
+      "expect_exhausted": false
+    }
+  ]
+}

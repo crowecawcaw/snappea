@@ -376,6 +376,8 @@ pub struct CheckResult {
     /// `verbose`), the log of the last schedule explored.
     pub last_log: Vec<String>,
     pub strategy_description: String,
+    /// Automatic scheduler allocation and novelty diagnostics.
+    pub scheduler_stats: Vec<super::strategy::SchedulerStats>,
     /// Set when a replay could not follow its trace.
     pub replay_error: Option<String>,
     /// Exploration was stopped by [`Output::cancelled`].
@@ -826,7 +828,7 @@ impl<'p> Checker<'p> {
         let mut verbose_json = (opts.verbose && opts.json_trace && !is_replay).then(Vec::new);
         let mut depth_bound_hits = 0usize;
         let mut coverage_epoch = strategy.coverage_epoch();
-        let mut earlier_coverage: Option<crate::checker::coverage::CoverageInfo> = None;
+        let mut phase_coverage = std::collections::BTreeMap::new();
         let mut reported_complete = false;
         let mut driver_facts = opts
             .driver_machines
@@ -843,9 +845,10 @@ impl<'p> Checker<'p> {
             }
             if coverage_epoch != strategy.coverage_epoch() {
                 if let Some(info) = result.coverage.take() {
-                    earlier_coverage.get_or_insert_with(Default::default).merge(info);
+                    phase_coverage.insert(coverage_epoch, info);
                 }
                 coverage_epoch = strategy.coverage_epoch();
+                result.coverage = phase_coverage.remove(&coverage_epoch);
             }
             // the schedule's number among those of all workers
             let schedule = pool.started.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1015,11 +1018,14 @@ impl<'p> Checker<'p> {
             }
             i += 1;
         }
-        if let Some(mut earlier) = earlier_coverage {
-            if let Some(current) = result.coverage.take() {
-                earlier.merge(current);
-            }
-            result.coverage = Some(earlier);
+        for earlier in phase_coverage.into_values() {
+            result.coverage = Some(match result.coverage.take() {
+                Some(mut current) => {
+                    current.merge(earlier);
+                    current
+                }
+                None => earlier,
+            });
         }
         let unverifiable = if !searchable {
             Some("the program's foreign functions may keep state or values the search cannot hash (see ForeignFunctions::searchable).".to_string())
@@ -1032,6 +1038,7 @@ impl<'p> Checker<'p> {
             unverifiable,
             ..s
         });
+        result.scheduler_stats = strategy.scheduler_stats();
         result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
         Ok(Exploration { result, first_bug, won, time })
@@ -1120,6 +1127,15 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
         let r = p.result;
         result.report.merge(r.report);
         result.cancelled |= r.cancelled;
+        for stats in r.scheduler_stats {
+            if let Some(total) = result.scheduler_stats.iter_mut().find(|s| s.name == stats.name) {
+                total.schedules += stats.schedules;
+                total.work += stats.work;
+                total.reward += stats.reward;
+            } else {
+                result.scheduler_stats.push(stats);
+            }
+        }
         // workers split one exhaustive search: complete only when every part is
         match (&mut result.exhaustive, &r.exhaustive) {
             (Some(a), Some(b)) => a.combine(b),
