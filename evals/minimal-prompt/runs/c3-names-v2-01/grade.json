@@ -1,0 +1,462 @@
+{
+  "run_id": "c3-names-v2-01",
+  "task": "names",
+  "skill": "v2",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 10,
+    "total": 10,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 32,
+    "agent_tests_pass_own_solution": 32,
+    "reference_passing": 31,
+    "reference_rejecting": [
+      "test_solution::test_user_record_version_bump_is_retried_on_register"
+    ],
+    "observation_tests": 31,
+    "mutants": {
+      "case-sensitive": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_case_insensitive_and_lowercase_storage",
+          "test_solution::test_name_validity_boundaries[AAAAAAAAAAAAAAAA-True]"
+        ]
+      },
+      "length-17": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_invalid_names_change_nothing",
+          "test_solution::test_name_validity_boundaries[AAAAAAAAAAAAAAAAA-False]",
+          "test_solution::test_name_validity_boundaries[aaaaaaaaaaaaaaaaa-False]"
+        ]
+      },
+      "empty-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_invalid_names_change_nothing",
+          "test_solution::test_name_validity_boundaries[-False]"
+        ]
+      },
+      "claim-ignores-cas": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_cas_conflict_on_name_record_is_retried_not_ignored",
+          "test_solution::test_competitor_takes_name_between_load_and_cas_in_register",
+          "test_solution::test_competitor_takes_target_between_load_and_cas_in_rename",
+          "test_solution::test_observed_forced_race_matches_spec",
+          "test_solution::test_two_users_read_same_free_name_one_wins"
+        ]
+      },
+      "claim-steals": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_basic_register_rename_release",
+          "test_solution::test_case_insensitive_and_lowercase_storage",
+          "test_solution::test_competitor_takes_name_between_load_and_cas_in_register",
+          "test_solution::test_competitor_takes_target_between_load_and_cas_in_rename",
+          "test_solution::test_many_threads_stress_invariant"
+        ]
+      },
+      "free-before-claim": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_competitor_takes_target_between_load_and_cas_in_rename",
+          "test_solution::test_many_threads_stress_invariant",
+          "test_solution::test_observed_sequential_history_matches_spec",
+          "test_solution::test_old_name_not_free_until_released_then_free",
+          "test_solution::test_swap_attempt_fails_for_both"
+        ]
+      },
+      "rename-keeps-old": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_basic_register_rename_release",
+          "test_solution::test_observed_release_history_matches_spec",
+          "test_solution::test_old_name_not_free_until_released_then_free",
+          "test_solution::test_rival_claims_old_name_right_after_release"
+        ]
+      },
+      "register-same-false": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_basic_register_rename_release",
+          "test_solution::test_case_insensitive_and_lowercase_storage"
+        ]
+      },
+      "rename-same-frees": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_many_threads_stress_invariant",
+          "test_solution::test_observed_sequential_history_matches_spec"
+        ]
+      },
+      "register-second-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_basic_register_rename_release",
+          "test_solution::test_observed_sequential_history_matches_spec"
+        ]
+      },
+      "rename-without-name": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_solution::test_basic_register_rename_release",
+          "test_solution::test_observed_sequential_history_matches_spec"
+        ]
+      }
+    },
+    "killed": 11,
+    "killed_by_observation": 11,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 32,
+    "mutants": {
+      "true@38": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@79": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@45": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@58": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@87": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@72": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@75": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@72": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@87": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@58": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@75": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@45": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "flip@77": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@61": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@13": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@58": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@72": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@75": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@61": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@13": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@53": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "true@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@38": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@61": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@63": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@63": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@61": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@87": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@65": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@75": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@53": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@79": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@45": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "false@65": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@34": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      }
+    },
+    "total": 40,
+    "killed": 38,
+    "killed_by_observation": 38
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 6,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcRenameSame",
+        "result": "ok",
+        "complete": true,
+        "schedules": 116
+      },
+      {
+        "name": "tcGenerated",
+        "result": "ok",
+        "complete": true,
+        "schedules": 50117
+      },
+      {
+        "name": "tcGeneratedSeq",
+        "result": "ok",
+        "complete": true,
+        "schedules": 4065
+      },
+      {
+        "name": "tcSameName",
+        "result": "ok",
+        "complete": true,
+        "schedules": 3528
+      },
+      {
+        "name": "tcSwap",
+        "result": "ok",
+        "complete": true,
+        "schedules": 3196
+      },
+      {
+        "name": "tcHandoff",
+        "result": "ok",
+        "complete": true,
+        "schedules": 2168
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 6,
+    "hot_states": 1,
+    "design_doc_chars": 3733
+  },
+  "process": {
+    "calls": 26,
+    "minutes": 10.7,
+    "read_skill": true,
+    "first_check_call": 6,
+    "first_solution_write_call": 16,
+    "model_first": true,
+    "check_runs": 15,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 32,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "case-sensitive": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "length-17": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "empty-name": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "claim-ignores-cas": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "claim-steals": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "free-before-claim": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-keeps-old": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "register-same-false": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-same-frees": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "register-second-name": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rename-without-name": {
+        "killed": true,
+        "killed_by_observation": true
+      }
+    },
+    "valid": 11,
+    "killed": 11,
+    "killed_by_observation": 11
+  }
+}

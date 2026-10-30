@@ -1,0 +1,373 @@
+{
+  "summary": {
+    "status": "search_incomplete",
+    "message": "No bugs found; search incomplete for 1 test case",
+    "test_cases": 5,
+    "failed": 0,
+    "incomplete": 1,
+    "coverage_failed": false,
+    "coverage_gaps": 0,
+    "uncovered": [],
+    "uncovered_more": 0,
+    "mutation_time_limit_reached": false,
+    "mutants_undetected": 3,
+    "skipped": [],
+    "note": "3 mutants not detected: the model ran the changed code but no assertion failed. Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason."
+  },
+  "project": "generatedOutput",
+  "test_cases": [
+    {
+      "name": "tcGenerated",
+      "result": "ok",
+      "schedules": 612787,
+      "workers": 2,
+      "seconds": 60.006,
+      "time_limit_reached": true,
+      "search_complete": false,
+      "coverage": {
+        "statements": {
+          "covered": 114,
+          "total": 114
+        },
+        "branches": {
+          "covered": 38,
+          "total": 38
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 52,
+          "total": 54
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Generated"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcSwap",
+      "result": "ok",
+      "schedules": 32685,
+      "workers": 2,
+      "seconds": 2.649,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 109,
+          "total": 114
+        },
+        "branches": {
+          "covered": 33,
+          "total": 38
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 45,
+          "total": 54
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "SwapNames"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcTakeFreed",
+      "result": "ok",
+      "schedules": 37410,
+      "workers": 2,
+      "seconds": 2.297,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 111,
+          "total": 114
+        },
+        "branches": {
+          "covered": 35,
+          "total": 38
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 48,
+          "total": 54
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "TakeFreed"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcSameName",
+      "result": "ok",
+      "schedules": 4095,
+      "workers": 2,
+      "seconds": 0.208,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 89,
+          "total": 113
+        },
+        "branches": {
+          "covered": 21,
+          "total": 38
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 32,
+          "total": 54
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "SameName"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcRenameChain",
+      "result": "ok",
+      "schedules": 64822,
+      "workers": 2,
+      "seconds": 5.5,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 105,
+          "total": 114
+        },
+        "branches": {
+          "covered": 28,
+          "total": 38
+        },
+        "handlers": {
+          "covered": 9,
+          "total": 9
+        },
+        "conditions": {
+          "covered": 40,
+          "total": 54
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "RenameChain"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          }
+        ]
+      }
+    }
+  ],
+  "failed": 0,
+  "incomplete": 1,
+  "seconds": 71.801,
+  "output": "PCheckerOutput/",
+  "coverage": {
+    "statements": {
+      "covered": 120,
+      "total": 120
+    },
+    "branches": {
+      "covered": 38,
+      "total": 38
+    },
+    "handlers": {
+      "covered": 9,
+      "total": 9
+    },
+    "conditions": {
+      "covered": 52,
+      "total": 54
+    },
+    "transition_pairs": {
+      "covered": 0,
+      "total": 0
+    },
+    "uncovered": [
+      {
+        "file": "Names.p",
+        "line": 182,
+        "end_line": 182,
+        "context": "Client.doRegister",
+        "what": "condition cur != 0 never false"
+      },
+      {
+        "file": "Names.p",
+        "line": 190,
+        "end_line": 190,
+        "context": "Client.doRename",
+        "what": "condition cur == 0 never true"
+      }
+    ],
+    "excluded_components": [],
+    "partial": false,
+    "required": {
+      "statements": {
+        "covered": 120,
+        "total": 120
+      },
+      "branches": {
+        "covered": 38,
+        "total": 38
+      },
+      "handlers": {
+        "covered": 9,
+        "total": 9
+      },
+      "conditions": {
+        "covered": 0,
+        "total": 0
+      },
+      "transition_pairs": {
+        "covered": 0,
+        "total": 0
+      }
+    },
+    "uncovered_required": [],
+    "gate_bypassed": false,
+    "failure": null
+  },
+  "coverage_failed": false,
+  "mutation": {
+    "mutants": 108,
+    "detected": 105,
+    "undetected": [
+      {
+        "file": "Names.p",
+        "line": 160,
+        "context": "Client.claim",
+        "mutation": "remove-statement",
+        "change": "removed `decided = result;`",
+        "test_cases": [
+          "tcGenerated",
+          "tcSwap",
+          "tcTakeFreed",
+          "tcSameName",
+          "tcRenameChain"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Names.p",
+        "line": 181,
+        "context": "Client.doRegister",
+        "mutation": "condition-false",
+        "change": "`cur == name` replaced by `false`",
+        "test_cases": [
+          "tcGenerated"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Names.p",
+        "line": 181,
+        "context": "Client.doRegister",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcGenerated"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      }
+    ],
+    "suppressed": 2,
+    "not_tested": 0,
+    "time_limit_reached": false,
+    "schedules_per_mutant": 1000,
+    "seconds": 1.136
+  },
+  "scenarios": [],
+  "exit_code": 0
+}

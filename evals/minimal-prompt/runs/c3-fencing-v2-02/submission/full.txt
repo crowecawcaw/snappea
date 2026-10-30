@@ -1,0 +1,1030 @@
+{
+  "summary": {
+    "status": "passed",
+    "message": "All test cases passed",
+    "test_cases": 4,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_failed": false,
+    "coverage_gaps": 0,
+    "uncovered": [],
+    "uncovered_more": 0,
+    "mutation_time_limit_reached": false,
+    "mutants_undetected": 55,
+    "skipped": [],
+    "note": "55 mutants not detected: the model ran the changed code but no assertion failed. Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason."
+  },
+  "project": "generatedOutput",
+  "test_cases": [
+    {
+      "name": "tcFence",
+      "result": "ok",
+      "schedules": 2392,
+      "workers": 2,
+      "seconds": 0.077,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 50,
+          "total": 51
+        },
+        "branches": {
+          "covered": 13,
+          "total": 14
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 6
+        },
+        "conditions": {
+          "covered": 17,
+          "total": 18
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "FenceGenerated",
+          "FenceScenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "sequence",
+            "id": "FenceScenario.sequence",
+            "text": "FenceScenario sends eRLoad exactly once",
+            "hint": "if the real environment can send more, or in other orders, extend the driver (a loop, or a choice with `$`)"
+          },
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 ResStore, 2 Writer and 1 FenceScenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Writer.values",
+            "text": "Writer is always created with t2 = 0, two = false",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcStale",
+      "result": "ok",
+      "schedules": 1838,
+      "workers": 2,
+      "seconds": 0.08,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 48,
+          "total": 51
+        },
+        "branches": {
+          "covered": 12,
+          "total": 14
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 6
+        },
+        "conditions": {
+          "covered": 15,
+          "total": 18
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "FenceScenario",
+          "Stale"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "sequence",
+            "id": "FenceScenario.sequence",
+            "text": "FenceScenario sends eRLoad exactly once",
+            "hint": "if the real environment can send more, or in other orders, extend the driver (a loop, or a choice with `$`)"
+          },
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 ResStore, 2 Writer and 1 FenceScenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Writer.values",
+            "text": "Writer is only created with t1 = 1 or 2, t2 = 0, 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcLock",
+      "result": "ok",
+      "schedules": 77408,
+      "workers": 2,
+      "seconds": 5.932,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 94,
+          "total": 95
+        },
+        "branches": {
+          "covered": 27,
+          "total": 28
+        },
+        "handlers": {
+          "covered": 7,
+          "total": 7
+        },
+        "conditions": {
+          "covered": 34,
+          "total": 36
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Generated",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 0 or 1, relTok = -1",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcWrongToken",
+      "result": "ok",
+      "schedules": 132065,
+      "workers": 2,
+      "seconds": 11.854,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 95,
+          "total": 95
+        },
+        "branches": {
+          "covered": 28,
+          "total": 28
+        },
+        "handlers": {
+          "covered": 7,
+          "total": 7
+        },
+        "conditions": {
+          "covered": 36,
+          "total": 36
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Scenario",
+          "WrongToken"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 0 or 1, relTok = -1, 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    }
+  ],
+  "failed": 0,
+  "incomplete": 0,
+  "seconds": 399.489,
+  "output": "PCheckerOutput/",
+  "coverage": {
+    "statements": {
+      "covered": 148,
+      "total": 148
+    },
+    "branches": {
+      "covered": 42,
+      "total": 42
+    },
+    "handlers": {
+      "covered": 13,
+      "total": 13
+    },
+    "conditions": {
+      "covered": 54,
+      "total": 54
+    },
+    "transition_pairs": {
+      "covered": 0,
+      "total": 0
+    },
+    "uncovered": [],
+    "excluded_components": [
+      {
+        "file": "Observe.p",
+        "line": 8,
+        "end_line": 8,
+        "context": "ObservedContract",
+        "what": "not included in selected test cases"
+      }
+    ],
+    "partial": false,
+    "required": {
+      "statements": {
+        "covered": 148,
+        "total": 148
+      },
+      "branches": {
+        "covered": 42,
+        "total": 42
+      },
+      "handlers": {
+        "covered": 13,
+        "total": 13
+      },
+      "conditions": {
+        "covered": 0,
+        "total": 0
+      },
+      "transition_pairs": {
+        "covered": 0,
+        "total": 0
+      }
+    },
+    "uncovered_required": [],
+    "gate_bypassed": false,
+    "failure": null
+  },
+  "coverage_failed": false,
+  "mutation": {
+    "mutants": 125,
+    "detected": 70,
+    "undetected": [
+      {
+        "file": "Fence.p",
+        "line": 50,
+        "context": "ResStore.Serving, on eRCas",
+        "mutation": "condition-false",
+        "change": "`p.expected == version` replaced by `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 50,
+        "context": "ResStore.Serving, on eRCas",
+        "mutation": "swap-operator",
+        "change": "`p.expected == version` → `p.expected != version`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 54,
+        "context": "ResStore.Serving, on eRCas",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 56,
+        "context": "ResStore.Serving, on eRCas",
+        "mutation": "flip-boolean",
+        "change": "`false` → `true`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 66,
+        "context": "Writer.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `ok = Write(input.store, input.t1, 1);`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 67,
+        "context": "Writer.Run entry",
+        "mutation": "condition-true",
+        "change": "`input.two` replaced by `true`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 67,
+        "context": "Writer.Run entry",
+        "mutation": "condition-false",
+        "change": "`input.two` replaced by `false`",
+        "test_cases": [
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 67,
+        "context": "Writer.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `ok = Write(input.store, input.t2, 2);`",
+        "test_cases": [
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 68,
+        "context": "Writer.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `send input.coordinator, eWriterDone;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 78,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `announce eWriteRejected, (version = -1, token = token);`",
+        "test_cases": [
+          "tcFence"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 79,
+        "context": "Writer.Write",
+        "mutation": "flip-boolean",
+        "change": "`false` → `true`",
+        "test_cases": [
+          "tcFence"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 81,
+        "context": "Writer.Write",
+        "mutation": "remove-not",
+        "change": "`!fin` → `fin`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 83,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `s = x;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 85,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `announce eWriteRejected, (version = s.version, token = to...`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 86,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 86,
+        "context": "Writer.Write",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 89,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `ok = b;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "condition-true",
+        "change": "`ok` replaced by `true`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `res = true;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Fence.p",
+        "line": 90,
+        "context": "Writer.Write",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcFence",
+          "tcStale"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 15,
+        "context": "Held",
+        "mutation": "swap-operator",
+        "change": "`r.holder != -1 && now < r.expires` → `r.holder != -1 || now < r.expires`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 15,
+        "context": "Held",
+        "mutation": "swap-operator",
+        "change": "`r.holder != -1` → `r.holder == -1`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 15,
+        "context": "Held",
+        "mutation": "swap-operator",
+        "change": "`now < r.expires` → `now <= r.expires`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 70,
+        "context": "Store.Serving entry",
+        "mutation": "remove-statement",
+        "change": "removed `rec = (last = 0, holder = -1, token = 0, expires = 0);`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 73,
+        "context": "Store.Serving, on eCas",
+        "mutation": "condition-false",
+        "change": "`p.expected == version` replaced by `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 73,
+        "context": "Store.Serving, on eCas",
+        "mutation": "swap-operator",
+        "change": "`p.expected == version` → `p.expected != version`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 77,
+        "context": "Store.Serving, on eCas",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 95,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `announce eReturned, (cid = cid, result = tok);`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 96,
+        "context": "Client.Run entry",
+        "mutation": "condition-true",
+        "change": "`input.relTok >= 0` replaced by `true`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 96,
+        "context": "Client.Run entry",
+        "mutation": "condition-false",
+        "change": "`input.relTok >= 0` replaced by `false`",
+        "test_cases": [
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 96,
+        "context": "Client.Run entry",
+        "mutation": "swap-operator",
+        "change": "`input.relTok >= 0` → `input.relTok > 0`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 96,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `tok = input.relTok;`",
+        "test_cases": [
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 98,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `announce eReturned, (cid = cid, result = ReleaseCode(r));`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Client.Run entry",
+        "mutation": "condition-true",
+        "change": "`cid == 0` replaced by `true`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Client.Run entry",
+        "mutation": "condition-false",
+        "change": "`cid == 0` replaced by `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Client.Run entry",
+        "mutation": "swap-operator",
+        "change": "`cid == 0` → `cid != 0`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 99,
+        "context": "Client.Run entry",
+        "mutation": "remove-statement",
+        "change": "removed `announce eReturned, (cid = cid, result = tok);`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 114,
+        "context": "Client.Acquire",
+        "mutation": "remove-statement",
+        "change": "removed `s = x;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 116,
+        "context": "Client.Acquire",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 116,
+        "context": "Client.Acquire",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 119,
+        "context": "Client.Acquire",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 119,
+        "context": "Client.Acquire",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 123,
+        "context": "Client.Acquire",
+        "mutation": "remove-statement",
+        "change": "removed `ok = b;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 124,
+        "context": "Client.Acquire",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 124,
+        "context": "Client.Acquire",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 124,
+        "context": "Client.Acquire",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 138,
+        "context": "Client.Release",
+        "mutation": "remove-statement",
+        "change": "removed `s = x;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 141,
+        "context": "Client.Release",
+        "mutation": "remove-statement",
+        "change": "removed `fin = true;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 141,
+        "context": "Client.Release",
+        "mutation": "flip-boolean",
+        "change": "`true` → `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 145,
+        "context": "Client.Release",
+        "mutation": "remove-statement",
+        "change": "removed `ok = b;`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 146,
+        "context": "Client.Release",
+        "mutation": "condition-true",
+        "change": "`ok` replaced by `true`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      },
+      {
+        "file": "Lock.p",
+        "line": 146,
+        "context": "Client.Release",
+        "mutation": "condition-false",
+        "change": "`ok` replaced by `false`",
+        "test_cases": [
+          "tcLock",
+          "tcWrongToken"
+        ],
+        "schedules": 1000,
+        "search_complete": false
+      }
+    ],
+    "suppressed": 0,
+    "not_tested": 0,
+    "time_limit_reached": false,
+    "schedules_per_mutant": 1000,
+    "seconds": 381.54
+  },
+  "scenarios": [],
+  "exit_code": 0
+}
+done

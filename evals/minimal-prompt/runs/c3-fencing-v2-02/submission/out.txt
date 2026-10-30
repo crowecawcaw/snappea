@@ -1,0 +1,315 @@
+{
+  "summary": {
+    "status": "passed",
+    "message": "All test cases passed",
+    "test_cases": 4,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_failed": false,
+    "coverage_gaps": 0,
+    "uncovered": [],
+    "uncovered_more": 0,
+    "mutation_time_limit_reached": false,
+    "mutants_undetected": 0,
+    "skipped": [
+      "mutation testing (--no-mutation)"
+    ],
+    "note": "Skipped: mutation testing (--no-mutation). Run without these options before relying on the result."
+  },
+  "project": "generatedOutput",
+  "test_cases": [
+    {
+      "name": "tcFence",
+      "result": "ok",
+      "schedules": 1825,
+      "workers": 2,
+      "seconds": 0.125,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 50,
+          "total": 51
+        },
+        "branches": {
+          "covered": 13,
+          "total": 14
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 6
+        },
+        "conditions": {
+          "covered": 17,
+          "total": 18
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "FenceGenerated",
+          "FenceScenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "sequence",
+            "id": "FenceScenario.sequence",
+            "text": "FenceScenario sends eRLoad exactly once",
+            "hint": "if the real environment can send more, or in other orders, extend the driver (a loop, or a choice with `$`)"
+          },
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 ResStore, 2 Writer and 1 FenceScenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Writer.values",
+            "text": "Writer is always created with t2 = 0, two = false",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcStale",
+      "result": "ok",
+      "schedules": 1806,
+      "workers": 2,
+      "seconds": 0.119,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 48,
+          "total": 51
+        },
+        "branches": {
+          "covered": 12,
+          "total": 14
+        },
+        "handlers": {
+          "covered": 6,
+          "total": 6
+        },
+        "conditions": {
+          "covered": 15,
+          "total": 18
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "FenceScenario",
+          "Stale"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "sequence",
+            "id": "FenceScenario.sequence",
+            "text": "FenceScenario sends eRLoad exactly once",
+            "hint": "if the real environment can send more, or in other orders, extend the driver (a loop, or a choice with `$`)"
+          },
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 ResStore, 2 Writer and 1 FenceScenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Writer.values",
+            "text": "Writer is only created with t1 = 1 or 2, t2 = 0, 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcLock",
+      "result": "ok",
+      "schedules": 81115,
+      "workers": 2,
+      "seconds": 16.539,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 94,
+          "total": 95
+        },
+        "branches": {
+          "covered": 27,
+          "total": 28
+        },
+        "handlers": {
+          "covered": 7,
+          "total": 7
+        },
+        "conditions": {
+          "covered": 34,
+          "total": 36
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Generated",
+          "Scenario"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 0 or 1, relTok = -1",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tcWrongToken",
+      "result": "ok",
+      "schedules": 134783,
+      "workers": 2,
+      "seconds": 13.881,
+      "time_limit_reached": false,
+      "search_complete": true,
+      "coverage": {
+        "statements": {
+          "covered": 95,
+          "total": 95
+        },
+        "branches": {
+          "covered": 28,
+          "total": 28
+        },
+        "handlers": {
+          "covered": 7,
+          "total": 7
+        },
+        "conditions": {
+          "covered": 36,
+          "total": 36
+        },
+        "transition_pairs": {
+          "covered": 0,
+          "total": 0
+        },
+        "partial": false
+      },
+      "driver": {
+        "machines": [
+          "Scenario",
+          "WrongToken"
+        ],
+        "repeats": false,
+        "facts": [
+          {
+            "kind": "instances",
+            "id": "instances",
+            "text": "creates 1 Store, 2 Client and 1 Scenario, never more",
+            "hint": "if more of these can run at once, create more in the driver"
+          },
+          {
+            "kind": "values",
+            "id": "new.Client.values",
+            "text": "Client is only created with cid = 0 or 1, relTok = -1, 1 or 2",
+            "hint": "if other values are possible, let the driver choose them (`choose(...)`, or `$`)"
+          }
+        ]
+      }
+    }
+  ],
+  "failed": 0,
+  "incomplete": 0,
+  "seconds": 30.691,
+  "output": "PCheckerOutput/",
+  "coverage": {
+    "statements": {
+      "covered": 148,
+      "total": 148
+    },
+    "branches": {
+      "covered": 42,
+      "total": 42
+    },
+    "handlers": {
+      "covered": 13,
+      "total": 13
+    },
+    "conditions": {
+      "covered": 54,
+      "total": 54
+    },
+    "transition_pairs": {
+      "covered": 0,
+      "total": 0
+    },
+    "uncovered": [],
+    "excluded_components": [
+      {
+        "file": "Observe.p",
+        "line": 8,
+        "end_line": 8,
+        "context": "ObservedContract",
+        "what": "not included in selected test cases"
+      }
+    ],
+    "partial": false,
+    "required": {
+      "statements": {
+        "covered": 148,
+        "total": 148
+      },
+      "branches": {
+        "covered": 42,
+        "total": 42
+      },
+      "handlers": {
+        "covered": 13,
+        "total": 13
+      },
+      "conditions": {
+        "covered": 0,
+        "total": 0
+      },
+      "transition_pairs": {
+        "covered": 0,
+        "total": 0
+      }
+    },
+    "uncovered_required": [],
+    "gate_bypassed": false,
+    "failure": null
+  },
+  "coverage_failed": false,
+  "mutation": {
+    "skipped": "--no-mutation"
+  },
+  "scenarios": [],
+  "exit_code": 0
+}
+done

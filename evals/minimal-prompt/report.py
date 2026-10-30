@@ -39,6 +39,8 @@ def main():
     for g in sorted(RUNS.glob(f"{prefix}*/grade.json")):
         d = json.loads(g.read_text())
         run = g.parent
+        if (run / "TRUNCATED").exists():
+            continue
         h, t, o, tr = d["hidden"], d["tests"], d.get("own_mutation", {}), d.get("transplant", {})
         m, p = d["model_check"], d["process"]
         s = signals(run)
