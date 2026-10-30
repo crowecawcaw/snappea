@@ -235,7 +235,6 @@ snappea check [SOURCE...] [TEST...] [options]
           executions. Recent behavioral novelty per controlled choice changes their work shares; every enabled
           strategy retains a minimum share. Small exhaustive searches end early. A timeout or coverage plateau
           does not establish that the model is correct. The default timeout is fixed at ten seconds per test.
-          <code> --time</code> remains an alias for <code>--timeout</code>.
         </p>
         <p>
           When every test case passes, <code>check</code> then runs them against mutants: copies of the model with

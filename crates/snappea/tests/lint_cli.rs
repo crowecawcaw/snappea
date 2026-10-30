@@ -112,6 +112,12 @@ fn warn_and_deny_reject_unknown_and_conflicting_checks() {
     assert!(h.stderr.contains("'--warn lint' and '--deny lint' conflict: use one"), "{}", h.stderr);
     assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation", "--deny", "mutation"]), 2);
     assert!(h.stderr.contains("use only one of '--no-mutation' and '--deny mutation'"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "--allow-incomplete-coverage"]), 2);
+    assert!(
+        h.stderr.contains("unknown option '--allow-incomplete-coverage': it was renamed, use '--warn coverage'"),
+        "{}",
+        h.stderr
+    );
 }
 
 #[test]
