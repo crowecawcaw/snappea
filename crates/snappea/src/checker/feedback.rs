@@ -264,6 +264,14 @@ impl Source {
 pub trait Scheduler {
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64>;
     fn prepare_next_iteration(&mut self) -> bool;
+    /// Whether a complete schedule from this scheduler supports temperature checks.
+    fn is_fair(&self) -> bool {
+        true
+    }
+    /// Keep deliberate interventions in separate frontier buckets.
+    fn context(&self) -> u64 {
+        0
+    }
     fn mutate(&self) -> Box<dyn Scheduler>;
     fn new_like(&self) -> Box<dyn Scheduler>;
     /// Replayable consumed prefix, and the number of retained random choices.
@@ -318,6 +326,136 @@ impl Scheduler for RandomScheduler {
     }
     fn consumed_choices(&self) -> Option<usize> {
         let Source::Controlled(random) = &self.rng else { return None };
+        Some(random.consumed())
+    }
+}
+
+/// Suppress one runnable actor for a sampled interval. Choices, including the
+/// intervention, live in the mutable random prefix so checkpoints can replay it.
+#[derive(Clone)]
+pub(crate) struct DelayScheduler {
+    rng: Source,
+    initialized: bool,
+    trial: Rc<std::cell::Cell<usize>>,
+    plan: usize,
+    target: Option<u64>,
+    candidate: Option<u64>,
+    start: usize,
+    duration: usize,
+    opportunities: usize,
+    elapsed: usize,
+    released: bool,
+}
+impl DelayScheduler {
+    pub(crate) fn new(rng: Source) -> Self {
+        Self {
+            rng,
+            initialized: false,
+            trial: Rc::new(std::cell::Cell::new(0)),
+            plan: 0,
+            target: None,
+            candidate: None,
+            start: 0,
+            duration: 0,
+            opportunities: 0,
+            elapsed: 0,
+            released: false,
+        }
+    }
+}
+impl Scheduler for DelayScheduler {
+    fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
+        let enabled: Vec<_> = ops.iter().filter(|o| o.enabled).map(|o| o.id).collect();
+        if enabled.is_empty() {
+            return None;
+        }
+        if self.candidate.is_none() {
+            self.candidate = ops.first().map(|op| op.id + (self.plan % 16) as u64);
+        }
+        if enabled.len() > 1 && !self.initialized {
+            // Cover each actor with a long initial delay before spending trials
+            // on shorter/later delays. This avoids repeatedly choosing one actor.
+            self.start = if self.plan < 16 { 0 } else { [0, 1, 4, 16][(self.plan / 16) % 4] };
+            self.duration = if self.plan < 16 { 1024 } else { [16, 64, 256, 1024][(self.plan / 64) % 4] };
+            self.initialized = true;
+        }
+        if enabled.len() > 1 && !self.released {
+            if self.target.is_none() && self.opportunities >= self.start {
+                self.target = self.candidate.filter(|id| enabled.contains(id));
+            }
+            self.opportunities += 1;
+        }
+        let held = self.target.filter(|_| !self.released);
+        if let Some(target) = held {
+            // Never manufacture a deadlock. If no other actor can run, release it.
+            if self.elapsed >= self.duration || (enabled.len() == 1 && enabled[0] == target) {
+                self.released = true;
+            } else {
+                self.elapsed += 1;
+            }
+        }
+        let choices: Vec<_> = enabled.into_iter().filter(|id| self.released || Some(*id) != held).collect();
+        // Alternate stable ordering with random continuations. Stable ordering
+        // explores long runs of another actor without additional lucky choices.
+        let draw = self.rng.next_below(choices.len() as i32) as usize;
+        // Let an unheld creator finish making its actors before exploring their
+        // orders. Otherwise high-id-first simply executes every child at birth.
+        if choices.contains(&current) && ops.iter().any(|o| o.id == current && o.kind == SchedKind::Create) {
+            return Some(current);
+        }
+        let index = match if self.plan < 32 { self.plan % 2 } else { 2 } {
+            0 => 0,
+            1 => choices.len() - 1,
+            _ => draw,
+        };
+        Some(choices[index])
+    }
+    fn prepare_next_iteration(&mut self) -> bool {
+        true
+    }
+    fn is_fair(&self) -> bool {
+        false
+    }
+    fn context(&self) -> u64 {
+        // The target and start remain distinct after release, too: a successful
+        // continuation must not evict a still-stalled prefix from another plan.
+        self.target.or(self.candidate).map_or(0, |id| {
+            (id + 1).wrapping_mul(4099)
+                ^ ((self.start as u64) << 32)
+                ^ ((self.duration as u64) << 40)
+                ^ (((self.plan % 2) as u64) << 56)
+                ^ ((self.released as u64) << 63)
+        })
+    }
+    fn mutate(&self) -> Box<dyn Scheduler> {
+        let mut next = Self::new(self.rng.mutate());
+        next.plan = self.plan;
+        next.trial = self.trial.clone();
+        Box::new(next)
+    }
+    fn new_like(&self) -> Box<dyn Scheduler> {
+        let mut next = Self::new(self.rng.new_like());
+        self.trial.set(self.trial.get() + 1);
+        next.plan = self.trial.get();
+        next.trial = self.trial.clone();
+        Box::new(next)
+    }
+    fn checkpoint(&self, rewind: bool) -> Option<(Box<dyn Scheduler>, usize)> {
+        let Source::Controlled(random) = &self.rng else {
+            return None;
+        };
+        let prefix = random.prefix(rewind);
+        let count = prefix.choice_count();
+        let mut scheduler = if rewind { Self::new(Source::Controlled(prefix.clone())) } else { self.clone() };
+        scheduler.rng = Source::Controlled(prefix);
+        scheduler.plan = self.plan;
+        scheduler.trial = self.trial.clone();
+        Some((Box::new(scheduler), count))
+    }
+    fn consumed_choices(&self) -> Option<usize> {
+        let Source::Controlled(random) = &self.rng else {
+            return None;
+        };
         Some(random.consumed())
     }
 }
@@ -538,7 +676,11 @@ struct GeneratorState {
 
 type Generator = Rc<RefCell<GeneratorState>>;
 
-type FrontierKey = (u32, u32, u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum FrontierKey {
+    Delivery(u32, u32, u32, u64),
+    Condition(u32, usize, bool, u64),
+}
 
 struct FrontierRecord {
     key: FrontierKey,
@@ -585,6 +727,7 @@ pub struct FeedbackGuidedStrategy {
     suite_satisfied: HashSet<String>,
     fresh_percent: u8,
     code_guidance: bool,
+    condition_prefixes: bool,
     stalled: usize,
     native_features: HashSet<String>,
     failures: HashSet<String>,
@@ -612,6 +755,7 @@ impl FeedbackGuidedStrategy {
             suite_satisfied: HashSet::new(),
             fresh_percent: 0,
             code_guidance: false,
+            condition_prefixes: false,
             stalled: 0,
             native_features: HashSet::new(),
             failures: HashSet::new(),
@@ -647,6 +791,49 @@ impl FeedbackGuidedStrategy {
         self
     }
 
+    /// Preserve condition-edge prefixes in automatic search. Kept separate from
+    /// explicit feedback's established mutation policy for controlled comparisons.
+    pub(crate) fn with_condition_prefixes(mut self) -> Self {
+        self.condition_prefixes = true;
+        self
+    }
+    fn checkpoint_frontier(&mut self, key: FrontierKey, count: usize) {
+        let Some(frontiers) = &mut self.frontiers else {
+            return;
+        };
+        let old = frontiers.saved.iter().position(|record| record.key == key);
+        if old.is_some_and(|index| frontiers.saved[index].count >= count) {
+            return;
+        }
+        // a full table reuses the slot of a prefix with nothing left to sample
+        let slot = old.or_else(|| {
+            (frontiers.saved.len() == 256).then(|| frontiers.saved.iter().position(|r| r.generator.is_none())).flatten()
+        });
+        if slot.is_none() && frontiers.saved.len() == 256 {
+            return;
+        }
+        // count before copying: this runs on every counted event
+        let generator = self.generator.borrow();
+        let Some(scheduling_choices) = generator.scheduler.consumed_choices() else { return };
+        let choices = scheduling_choices + generator.input.consumed();
+        let retained = frontiers.retained - slot.map_or(0, |index| frontiers.saved[index].choices) + choices;
+        if retained > 262_144 {
+            return;
+        }
+        let Some((scheduler, _)) = generator.scheduler.checkpoint(false) else { return };
+        let input = generator.input.prefix(false);
+        let record = FrontierRecord {
+            key,
+            count,
+            choices,
+            generator: Some(Rc::new(RefCell::new(GeneratorState { input, scheduler }))),
+        };
+        match slot {
+            Some(index) => frontiers.saved[index] = record,
+            None => frontiers.saved.push(record),
+        }
+        frontiers.retained = retained;
+    }
     fn compute_diversity(&mut self, timeline: &str, hash: &[i32]) -> f64 {
         if !self.visited_timelines.insert(timeline.to_string()) {
             return 0.0;
@@ -692,7 +879,18 @@ impl FeedbackGuidedStrategy {
             frontiers.counts.clear();
             let available: Vec<_> = frontiers.saved.iter().filter(|record| record.generator.is_some()).collect();
             if !available.is_empty() && self.rnd.next_below(2) == 0 {
-                let record = available[self.rnd.next_below(available.len() as i32) as usize];
+                let recent: Vec<_> = available
+                    .iter()
+                    .rev()
+                    .filter(|r| matches!(r.key, FrontierKey::Condition(..)))
+                    .take(8)
+                    .copied()
+                    .collect();
+                let record = if !recent.is_empty() && self.rnd.next_below(4) != 0 {
+                    recent[self.rnd.next_below(recent.len() as i32) as usize]
+                } else {
+                    available[self.rnd.next_below(available.len() as i32) as usize]
+                };
                 frontiers.parent = Some((record.key, record.count, record.choices));
                 let parent = record.generator.as_ref().unwrap().borrow();
                 self.generator = Rc::new(RefCell::new(GeneratorState {
@@ -769,12 +967,15 @@ impl FeedbackGuidedStrategy {
 }
 
 impl Strategy for FeedbackGuidedStrategy {
+    fn enable_frontier_guidance(&mut self) {
+        self.frontiers = Some(Frontiers::default());
+    }
     fn wants_frontiers(&self) -> bool {
         self.frontiers.is_some()
     }
     fn observe_frontier(&mut self, machine: u32, state: u32, event: u32) {
         let Some(frontiers) = &mut self.frontiers else { return };
-        let key = (machine, state, event);
+        let key = FrontierKey::Delivery(machine, state, event, self.generator.borrow().scheduler.context());
         if !frontiers.counts.contains_key(&key) && frontiers.counts.len() == 256 {
             return;
         }
@@ -784,38 +985,17 @@ impl Strategy for FeedbackGuidedStrategy {
         if *count > 64 && !count.is_power_of_two() {
             return;
         }
-        let old = frontiers.saved.iter().position(|record| record.key == key);
-        if old.is_some_and(|index| frontiers.saved[index].count >= *count) {
+        let count = *count;
+        self.checkpoint_frontier(key, count);
+    }
+    fn observe_condition(&mut self, fun: u32, pc: usize, outcome: bool) {
+        if !self.condition_prefixes || !self.code_guidance || self.frontiers.is_none() {
             return;
         }
-        // a full table reuses the slot of a prefix with nothing left to sample
-        let slot = old.or_else(|| {
-            (frontiers.saved.len() == 256).then(|| frontiers.saved.iter().position(|r| r.generator.is_none())).flatten()
-        });
-        if slot.is_none() && frontiers.saved.len() == 256 {
-            return;
-        }
-        // count before copying: this runs on every counted event
-        let generator = self.generator.borrow();
-        let Some(scheduling_choices) = generator.scheduler.consumed_choices() else { return };
-        let choices = scheduling_choices + generator.input.consumed();
-        let retained = frontiers.retained - slot.map_or(0, |index| frontiers.saved[index].choices) + choices;
-        if retained > 262_144 {
-            return;
-        }
-        let Some((scheduler, _)) = generator.scheduler.checkpoint(false) else { return };
-        let input = generator.input.prefix(false);
-        let record = FrontierRecord {
-            key,
-            count: *count,
-            choices,
-            generator: Some(Rc::new(RefCell::new(GeneratorState { input, scheduler }))),
-        };
-        match slot {
-            Some(index) => frontiers.saved[index] = record,
-            None => frontiers.saved.push(record),
-        }
-        frontiers.retained = retained;
+        let context = self.generator.borrow().scheduler.context();
+        // Coverage sites are stable keys, not repeatedly increasing event counts.
+        // Keep the prefix at the feature, before unrelated suffix choices consume it.
+        self.checkpoint_frontier(FrontierKey::Condition(fun, pc, outcome, context), 1);
     }
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
         let r = self.generator.borrow_mut().scheduler.next_operation(current, ops);
@@ -844,7 +1024,7 @@ impl Strategy for FeedbackGuidedStrategy {
         self.max_steps != 0 && self.steps >= self.max_steps
     }
     fn is_fair(&self) -> bool {
-        true
+        self.generator.borrow().scheduler.is_fair()
     }
     fn description(&self) -> String {
         "feedback".into()
@@ -1110,5 +1290,95 @@ mod mutation_tests {
         strategy.prepare_next_iteration();
         assert_eq!(strategy.current_parent.as_ref().unwrap().id, saved.id);
         assert!(!strategy.generator.borrow().input.ints.data.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod delay_tests {
+    use super::*;
+    fn op(id: u64) -> OpInfo {
+        OpInfo { id, enabled: true, kind: SchedKind::Default, receiver: None }
+    }
+    #[test]
+    fn delay_releases_when_it_is_the_only_enabled_actor_and_stays_unfair() {
+        let mut s = DelayScheduler::new(Source::Controlled(ControlledRandom::new(7)));
+        assert_eq!(s.next_operation(1, &[op(1), op(2)]), Some(2));
+        assert_eq!(s.next_operation(2, &[op(1)]), Some(1));
+        assert!(!s.is_fair());
+        assert_eq!(s.next_operation(1, &[]), None);
+    }
+    #[test]
+    fn delay_checkpoints_replay_the_intervention_and_retain_context() {
+        let mut s = DelayScheduler::new(Source::Controlled(ControlledRandom::new(7)));
+        let ops = [op(1), op(2), op(3)];
+        let mut expected = Vec::new();
+        for _ in 0..20 {
+            expected.push(s.next_operation(1, &ops));
+        }
+        let context = s.context();
+        let (saved, count) = s.checkpoint(false).unwrap();
+        assert_eq!(count, 20);
+        assert_eq!(saved.context(), context);
+        let (mut replay, _) = saved.checkpoint(true).unwrap();
+        for choice in expected {
+            assert_eq!(replay.next_operation(1, &ops), choice);
+        }
+        assert_eq!(replay.context(), context);
+    }
+    #[test]
+    fn future_actor_is_delayed_when_it_becomes_runnable() {
+        let mut s = DelayScheduler::new(Source::Controlled(ControlledRandom::new(7)));
+        s.plan = 3;
+        s.next_operation(1, &[op(1), op(2)]);
+        for _ in 0..10 {
+            assert_ne!(s.next_operation(2, &[op(1), op(2), op(4)]), Some(4));
+        }
+        assert_eq!(s.target, Some(4));
+    }
+}
+
+#[cfg(test)]
+mod condition_prefix_tests {
+    use super::*;
+    #[test]
+    fn condition_checkpoint_precedes_the_unrelated_suffix() {
+        let mut strategy = FeedbackGuidedStrategy::new(
+            100,
+            7,
+            Box::new(RandomScheduler::new(Source::Controlled(ControlledRandom::new(7)))),
+        )
+        .with_code_guidance(true)
+        .with_frontier_guidance()
+        .with_condition_prefixes();
+        strategy.next_bool(2);
+        strategy.observe_condition(0, 42, true);
+        for _ in 0..20 {
+            strategy.next_bool(2);
+        }
+        strategy.observe_condition(0, 42, true);
+        let saved = &strategy.frontiers.as_ref().unwrap().saved;
+        assert_eq!(saved.len(), 1);
+        assert_eq!(
+            saved[0].choices, 1,
+            "later executions must not replace the useful early boundary with a completed suffix"
+        );
+        let generator = saved[0].generator.as_ref().unwrap().borrow();
+        let mut replay = generator.input.prefix(true);
+        assert_eq!(replay.consumed(), 0);
+        replay.next_below(2);
+        assert_eq!(replay.consumed(), 1);
+    }
+    #[test]
+    fn explicit_feedback_keeps_condition_checkpointing_opt_in() {
+        let mut strategy = FeedbackGuidedStrategy::new(
+            100,
+            7,
+            Box::new(RandomScheduler::new(Source::Controlled(ControlledRandom::new(7)))),
+        )
+        .with_code_guidance(true)
+        .with_frontier_guidance();
+        strategy.next_bool(2);
+        strategy.observe_condition(0, 42, true);
+        assert!(strategy.frontiers.as_ref().unwrap().saved.is_empty());
     }
 }

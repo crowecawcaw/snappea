@@ -22,16 +22,48 @@ workers, each explores its own part of the schedules.
 After each 1,024 controlled choices it checks whether the unexplored frontier is
 small, state-cache pruning is keeping up with new states, or a shrinking frontier
 is projected to finish within another 4,096 choices. If none applies, it releases
-the exhaustive search and continues with coverage-guided feedback. Narrow frontiers
+the exhaustive search and continues with an adaptive scheduling portfolio. Narrow frontiers
 (up to 256 untried alternatives) get the bounded probe to reach deeper recovery stages. The 16,384-choice stall budget renews while cache pruning keeps up with new states;
 workers share renewals and unused budget, since they share the state cache.
 Memory is limited to 100,000 cached states and 1,000,000 retained choice
-alternatives; hitting a step bound also starts feedback.
-There are no separate random or PCT arms in automatic mode. Feedback retains its
-own fresh sampling so it can escape unproductive seeds.
+alternatives; hitting a step bound also starts the portfolio.
 
-The handoff gives feedback a fresh coverage novelty history; the coverage report
-still includes every schedule from both phases. Work budgets count controlled
+The portfolio keeps separate guided-random and deliberate-delay corpora,
+plus PCT trials with 0, 2, and 10 priority-change points. Delays temporarily hold
+one runnable actor while others execute; they release it if nothing else can run.
+Their checkpoints distinguish the delayed actor, starting point, duration, ordering,
+and whether the delay has ended. Delayed schedules and PCT schedules are unfair;
+only the fair guided-random arm performs liveness temperature checks.
+
+After actor contention, a bounded early pilot also explores these schedulers before
+resuming a converging exhaustive search. Tiny finite searches finish before this
+pilot starts. Several senders targeting one receiver favor priority ordering and a
+larger pilot, capped at 512 schedules. Bounded coverage/event-progress novelty and
+new failure sites adjust later allocation, with execution work charged to each arm.
+Every arm retains an exploration floor when those signals are uninformative.
+Selection samples among scores instead of giving all exploitation work to one
+slightly higher score; the initial send-target hint fades with experience.
+Feedback also retains fresh sampling so it can escape unproductive seeds.
+
+The portfolio continues sampling alongside a converging DFS search rather than
+letting state-cache pruning monopolize the entire run. In full exploration, once
+a concurrent execution fails, finding different failures becomes the priority:
+three portfolio schedules run between DFS schedules, while DFS remains active.
+Without a failure, the continuing allocation is one portfolio schedule per three
+DFS schedules. Tiny finite searches finish before this interleaving starts.
+
+Automatic guided arms also retain prefixes at short-circuit condition edges,
+before unrelated suffix choices can destroy useful progress. These bounded
+checkpoints complement event-count prefixes. Explicit feedback and upstream
+compatibility retain their existing mutation policies.
+
+These heuristics do not guarantee that auto will outperform an explicit strategy
+on every model or seed. Library callers can inspect allocation and novelty
+scores in `CheckResult::scheduler_stats`.
+
+Exhaustive search and the portfolio keep separate coverage novelty histories.
+Revisiting either phase restores its history; replaying already-covered code does
+not earn fresh novelty. The coverage report includes every schedule from both phases. Work budgets count controlled
 scheduling and data choices, including replayed DFS prefixes, rather than elapsed
 time or schedule counts.
 

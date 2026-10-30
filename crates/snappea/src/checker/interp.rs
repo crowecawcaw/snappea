@@ -930,6 +930,7 @@ impl<'p> Runtime<'p> {
                     if let Some(c) = self.coverage.as_mut() {
                         c.condition(fun.0, pc - 1, outcome);
                     }
+                    self.strategy.observe_condition(fun.0, pc - 1, outcome);
                     if !outcome {
                         pc = *t as usize;
                     } else {
@@ -943,6 +944,7 @@ impl<'p> Runtime<'p> {
                     if let Some(c) = self.coverage.as_mut() {
                         c.condition(fun.0, pc - 1, outcome);
                     }
+                    self.strategy.observe_condition(fun.0, pc - 1, outcome);
                     if outcome {
                         pc = *t as usize;
                     } else {

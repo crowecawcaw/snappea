@@ -36,3 +36,7 @@ java/natives/
 
 # Checker output from running `snappea guide` examples in place
 crates/snappea/src/cli/guide/examples/**/PCheckerOutput/
+
+# Local checker benchmark measurements and journals
+benchmarks/checker/results/
+benchmark-results/
