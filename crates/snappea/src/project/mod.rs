@@ -267,6 +267,19 @@ fn report_native(
     false
 }
 
+#[cfg(test)]
+mod parse_help_tests {
+    use super::parse_help;
+
+    #[test]
+    fn one_field_named_tuple_suggests_trailing_comma() {
+        let help = parse_help("no viable alternative at input 'items=items)'");
+        assert!(help.contains("trailing comma"), "{help}");
+        let other = parse_help("no viable alternative at input 'x==y)'");
+        assert!(!other.contains("trailing comma"), "{other}");
+    }
+}
+
 /// A suggested fix for a syntax error, from its message.
 pub(crate) fn parse_help(detail: &str) -> String {
     if let Some(rest) = detail.strip_prefix("missing ") {
@@ -287,6 +300,14 @@ pub(crate) fn parse_help(detail: &str) -> String {
     }
     if detail.starts_with("nesting is too deep") {
         return "split the expression or block into smaller functions or local variables".into();
+    }
+    if let Some(input) = detail.strip_prefix("no viable alternative at input '") {
+        // `(items = items)` parses as a parenthesized assignment; a one-field named
+        // tuple needs a trailing comma.
+        let input = input.trim_end_matches('\'');
+        if input.ends_with(')') && input.contains('=') && !input.contains("==") && !input.contains(',') {
+            return "a named tuple with one field needs a trailing comma: `(name = value,)`".into();
+        }
     }
     if detail.starts_with("extraneous input") {
         return "remove this token, or look for an extra or missing symbol just before it".into();
