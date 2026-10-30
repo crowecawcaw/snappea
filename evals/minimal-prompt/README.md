@@ -15,7 +15,8 @@ times). Finding those is the modeling work.
 | Task | Component | Hidden tests | Mutants |
 | --- | --- | --- | --- |
 | `queue` | bounded FIFO queue with idempotent retries | 12 | 11 |
-| `fencing` | lease lock with fencing tokens; per-key store, no transactions | 15 | 13 |
+| `fencing` | lease lock with fencing tokens; per-key store, no transactions | 14 | 13 |
+| `names` | unique usernames with rename; claim/release across keys (held out from skill v2 design) | 10 | 11 |
 
 `tasks/<task>/public/` is all the solver sees. `private/` holds a reference
 implementation, hidden tests and realistic faulty variants (mutants).
@@ -24,25 +25,32 @@ and every mutant fails at least one.
 
 ## Scores
 
-`python harness.py grade <run>` writes `runs/<run>/grade.json`:
+`python harness.py grade <run>` writes `runs/<run>/grade.json`; `python report.py c2-`
+summarizes runs by condition. Results so far: [RESULTS.md](RESULTS.md).
 
 - **hidden**: hidden tests passed by the agent's `solution.py`. Race tests force two
   calls to read the same version, or inject a competing call between read and write,
   so they are deterministic.
-- **killed**: mutants caught by the agent's saved tests. Each agent test is first run
-  twice against the reference; tests that fail there (they assert on the agent's own
-  internals, or are flaky) are dropped. A mutant is killed if a remaining test fails.
-  This measures the tests, independent of whether the agent's own code is right.
-- **obs-kill**: mutants killed by test files that import `snappea` (real calls checked
-  against a P spec).
-- **model check**: `snappea check` on the submitted P files (status, test cases,
-  complete search), plus counts of spec monitors and hot states.
-- **process**: from the command transcript: whether the first `snappea check` came
-  before the first write of `solution.py`, number of checks, and bug-finding checks.
+- **transplant** (primary test score): `harness.py transplant <run>` prints a prompt for
+  a helper agent that writes each named defect into the agent's own `solution.py`,
+  keeping its instrumentation. `harness.py grade_transplant <run>` keeps the mutants
+  that fail some hidden tests and pass others, and runs the agent's full test suite
+  against each.
+- **reference mutants**: the same defects as edits to the private reference. Agent tests
+  are first run twice against the reference; tests that fail there (tied to the agent's
+  internals, or flaky) are dropped.
+- **own mutants**: generic AST mutations of the agent's own code (`ast_mutants.py`).
+- **model check**: `snappea check` on the submitted P files.
+- **process**: from the command transcript: model-first, number of checks, whether the
+  final check skipped mutation or coverage.
 
-Limits: tests that need `emit` calls inside the agent's own `solution.py` cannot run
-against the reference, so they are dropped from the mutation score. Mutants and hidden
-tests are written by the eval author and cover the bugs they thought of.
+`autograde.sh` and `autotransplant.sh` grade frozen runs in the background. Pin the
+binary for a cohort with `SNAPPEA_EVAL_BINARY`; rebuilding `target/release` mid-cohort
+would otherwise change it for new runs.
+
+Limits: mutants and hidden tests are written by the eval author and cover the bugs they
+thought of. Solvers sometimes run a first command on the host by mistake; check
+transcripts and record deviations in the run folder.
 
 ## Running a trial
 
