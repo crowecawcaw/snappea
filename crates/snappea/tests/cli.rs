@@ -685,11 +685,14 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert!(h.stdout.contains("Required coverage was not reached within the run budget"), "{}", h.stdout);
     assert!(h.stdout.contains("Add scenarios that reach the listed sites"), "{}", h.stdout);
 
+    assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--warn", "coverage", "--format", "text"]), 0);
+    assert!(h.stdout.contains("Warning: required coverage was not reached"), "{}", h.stdout);
+    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 2 coverage gaps."), "{}", h.stdout);
+    // the earlier spelling still works
     assert_eq!(
         snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--allow-incomplete-coverage", "--format", "text"]),
         0
     );
-    assert!(h.stdout.contains("Coverage gate bypassed:"), "{}", h.stdout);
 
     h.add_file(
         "coverage.p",
@@ -912,6 +915,13 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 0);
     assert!(h.stdout.contains("Mutation testing: 1 of 3 mutants detected"), "{}", h.stdout);
     assert!(h.stdout.contains("  counter.p:7  Counter.S, on eAdd: removed `total = total + n;`\n"), "{}", h.stdout);
+    assert!(h.stdout.contains(", with warnings: 2 undetected mutants. Output: "), "{}", h.stdout);
+    // `--deny mutation` makes them fail `check`, and `--warn mutation` lets `check mutation` pass
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--deny", "mutation", "--format", "text"]), 1);
+    assert!(h.stdout.contains("\n2 mutants not detected in "), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "mutation", "counter.p", "--warn", "mutation", "--json"]), 0);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["warnings"]["mutation"], 2);
     // a suppression comment excludes the mutants of the next statement, of one kind or all
     let suppressed = COUNTER.replace(
         "announce eTotal",

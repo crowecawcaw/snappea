@@ -64,9 +64,21 @@ pub fn render_coded(
     message: &str,
     help: Option<&str>,
 ) -> String {
+    render_with_level(sm, "error", code, span, message, help)
+}
+
+/// [`render_coded`] with another level in the heading, e.g. `warning[code]: message`.
+pub fn render_with_level(
+    sm: &SourceMap,
+    level: &str,
+    code: Option<&str>,
+    span: Option<Span>,
+    message: &str,
+    help: Option<&str>,
+) -> String {
     let mut out = match code {
-        Some(c) => format!("error[{}]: {}\n", c, message),
-        None => format!("error: {}\n", message),
+        Some(c) => format!("{}[{}]: {}\n", level, c, message),
+        None => format!("{}: {}\n", level, message),
     };
     let span = span.filter(|s| !s.is_dummy());
     let Some(span) = span else {

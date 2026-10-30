@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 
 use crate::checker::code_coverage::{uncovered_lines, CodeMap, Hits, Scope, SHOWN_UNCOVERED};
 use crate::checker::strategy::StrategyKind;
-use crate::driver::check::{self, CheckConfig, Style};
+use crate::driver::check::{self, CheckConfig, Gate, Style};
 use crate::driver::progress::Position;
 use crate::driver::scenario;
 use crate::host::{full_path, Buffered, Color, Exit, Host, HostExt, ProgressView, Quiet, Stream};
@@ -69,10 +69,17 @@ find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj
 Sources are linted first; findings fail with exit status 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
+Lint findings and required coverage gaps fail the check; undetected mutants are
+warnings. Silence an intended finding in the source with a
+`// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
+fails for one run.
+
 Examples:
   snappea check                       # all test cases, 10s each
   snappea check 'tcRetry*' --timeout 1m   # more search time on a few
   snappea check --no-mutation         # faster iteration while editing
+  snappea check --warn lint           # look for bugs before addressing lint findings
+  snappea check --deny mutation       # CI: also fail on undetected mutants
 
 Exploration:
       --timeout <DURATION>  Time limit per test case (default: 10s; accepts 90s, 5m, 1h).
@@ -93,13 +100,17 @@ Time (for models with timeouts or latency budgets):
                             orders real timing rules out, e.g. a timeout handled
                             before a reply that arrives earlier.
 
+What fails the check:
+      --warn <CHECK>        Report CHECK's findings as warnings and keep going: lint,
+                            coverage, mutation or all. Repeatable. Use it to explore,
+                            not to pass: fix or suppress findings before relying on
+                            the result.
+      --deny <CHECK>        Fail on CHECK's findings (default for lint and coverage)
+
 Mutation testing:
       --mutation-timeout <DURATION>
                             Time limit for mutation testing (default: 30s)
       --no-mutation         Skip mutation testing
-      --allow-incomplete-coverage
-                            Do not fail when selected code coverage is missing; useful
-                            for exploratory checks while a test suite is being built.
 
 Driver limits:
       --no-driver-facts     Do not list the limits each test's driver kept
@@ -128,7 +139,7 @@ Prints one line per test case with its coverage, and for a bug its report and th
 `snappea replay` command that reproduces it; then the code no test case ran. By default,
 missing statements, event handlers, or `if` branch outcomes in selected code fail the
 check. Use a scoped `coverage` suppression with a reason for deliberate omissions.
-`--allow-incomplete-coverage` bypasses this gate for exploratory checks.
+`--warn coverage` reports them as warnings instead, for exploratory checks.
 
 A bug's files go to <DIR>/<TEST>/, replacing the previous run's: bug.txt (the buggy
 schedule's log; read this first), bug.schedule (for `snappea replay`) and
@@ -138,7 +149,7 @@ scenario_coverage.json.
 When every test case passes, mutation testing follows: each mutant changes the model
 slightly (a removed statement, a forced `if`, a swapped operator). A mutant no test
 case detects marks code whose effect no spec or assertion checks. Undetected mutants
-are listed but do not change the exit status. To accept one, put
+are listed as warnings; `--deny mutation` makes them fail the check. To accept one, put
 `// snappea-lint: allow mutation[:<kind>] -- reason` before the statement
 (see docs/checking-models.md).
 
@@ -160,7 +171,7 @@ by adding an assertion or spec that the change breaks.
 
 Use it to judge whether the specs are strong enough, e.g. as a CI gate. Unlike
 `snappea check`, it reports no coverage or scenarios, and fails when a mutant goes
-undetected.
+undetected (`--warn mutation` lists them without failing).
 
 Example:
   snappea check mutation tcBank --mutation-timeout 10m
@@ -172,6 +183,7 @@ Options:
   -j, --workers <N>         Worker limit (default: one per CPU core)
       --seed <N>            Seed for reproducible choices
       --latency <FILE>[:<PROFILE>], --timed
+      --warn <CHECK>, --deny <CHECK>
                             As for `snappea check`
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
   -v, --verbose             Show progress and statistics
@@ -772,7 +784,9 @@ const CHECK_OPTS: &[Opt] = &[
     flag("verbose", Some('v')),
     value("mutation-timeout", None),
     flag("no-mutation", None),
-    flag("allow-incomplete-coverage", None),
+    value("warn", None),
+    value("deny", None),
+    flag("allow-incomplete-coverage", None), // Unadvertised alias of `--warn coverage`.
     flag("no-driver-facts", None),
     flag("ignore-foreign-files", None),
     value("progress", None),
@@ -806,14 +820,7 @@ fn check(args: &[String], host: &mut dyn Host) -> i32 {
         Err(m) => return usage_error(host, &m, Some("check")),
     };
     with_output(host, &parsed, "check", |host| {
-        run_check(
-            host,
-            cfg,
-            &patterns,
-            parsed.get("latency"),
-            Mutation::After(mutation),
-            parsed.has("allow-incomplete-coverage"),
-        )
+        run_check(host, cfg, &patterns, parsed.get("latency"), Mutation::After(mutation))
     })
 }
 
@@ -834,6 +841,7 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
         return usage_error(host, "'--no-mutation' does not apply to `check mutation`", CMD);
     }
     let mut cfg = snappea_config();
+    cfg.gates.mutation = Gate::Deny;
     let patterns = match check_config(&parsed, &mut cfg) {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, CMD),
@@ -844,7 +852,7 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
         Err(m) => return usage_error(host, &m, CMD),
     };
     with_output(host, &parsed, "check mutation", |host| {
-        run_check(host, cfg, &patterns, parsed.get("latency"), Mutation::Only(limit), true)
+        run_check(host, cfg, &patterns, parsed.get("latency"), Mutation::Only(limit))
     })
 }
 
@@ -902,8 +910,42 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     cfg.driver_facts = !a.has("no-driver-facts");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
+    gates(a, &mut cfg.gates)?;
     check::finish_options(cfg);
     Ok(patterns)
+}
+
+/// Applies `--warn` and `--deny` (each repeatable, or a comma list) to `gates`: `all`
+/// first, then single checks, so `--warn all --deny mutation` warns on all but mutation.
+fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
+    let mut named: Vec<(&str, Gate)> = Vec::new();
+    if a.has("allow-incomplete-coverage") {
+        named.push(("coverage", Gate::Warn));
+    }
+    for (option, gate) in [("warn", Gate::Warn), ("deny", Gate::Deny)] {
+        for name in a.all(option).into_iter().flat_map(|v| v.split(',')).map(str::trim) {
+            if name != "all" && !check::Gates::CHECKS.contains(&name) {
+                return Err(format!(
+                    "unknown check '{}' for '--{}': use lint, coverage, mutation or all",
+                    name, option
+                ));
+            }
+            named.push((name, gate));
+        }
+    }
+    for (name, gate) in &named {
+        if named.iter().any(|(n, g)| n == name && g != gate) {
+            return Err(format!("'--warn {0}' and '--deny {0}' conflict: use one", name));
+        }
+    }
+    if a.has("no-mutation") && named.iter().any(|&(n, g)| n == "mutation" && g == Gate::Deny) {
+        return Err("use only one of '--no-mutation' and '--deny mutation'".into());
+    }
+    named.sort_by_key(|(n, _)| *n != "all");
+    for (name, gate) in named {
+        gates.set(name, gate)?;
+    }
+    Ok(())
 }
 
 /// `--max-steps`, `--fair-max-steps` and `--fail-on-max-steps`, which `check` and `replay`
@@ -962,7 +1004,6 @@ fn run_check(
     patterns: &[String],
     latency: Option<&str>,
     mutation: Mutation,
-    allow_incomplete_coverage: bool,
 ) -> Outcome {
     let only = matches!(mutation, Mutation::Only(_));
     let start = host.now();
@@ -973,9 +1014,8 @@ fn run_check(
     }
     check::resolve_sources(&mut con, &mut cfg)?;
     let loaded = check::load(&mut con, &cfg)?;
-    if crate::driver::lint::run(con.inner, &loaded.sources)? != 0 {
-        return Err(Exit(ERROR));
-    }
+    let gates = cfg.gates;
+    let lint_findings = crate::driver::lint::gate(con.inner, &loaded.sources, gates.lint)?;
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
     let selected = select_tests(&names, patterns).map_err(|m| {
         error(con.inner, &m);
@@ -1057,10 +1097,11 @@ fn run_check(
         - required.branches.covered
         + required.handlers.total
         - required.handlers.covered;
-    let coverage_failed = !only && failed == 0 && !allow_incomplete_coverage && required_missing;
+    let coverage_warned = !only && failed == 0 && gates.coverage == Gate::Warn && required_missing;
+    let coverage_failed = !only && failed == 0 && gates.coverage == Gate::Deny && required_missing;
     let coverage_failure_message =
         format!("Required coverage was not reached within the run budget ({} points).", required_gap_count);
-    let coverage_failure_help = "Add scenarios that reach the listed sites, or increase the timeout if exploration ran out of time. For deliberate omissions, add a scoped `coverage` suppression with a reason; use --allow-incomplete-coverage only for exploratory checking.";
+    let coverage_failure_help = "Add scenarios that reach the listed sites, or increase the timeout if exploration ran out of time. For deliberate omissions, add a scoped `coverage` suppression with a reason; use --warn coverage only for exploratory checking.";
     let excluded = scope.excluded(prog);
     if !only {
         if n > 1 {
@@ -1082,9 +1123,9 @@ fn run_check(
         }
         if coverage_failed {
             con.inner.out_line(&format!("{coverage_failure_message} {coverage_failure_help}"));
-        } else if failed == 0 && allow_incomplete_coverage && !required_uncovered.is_empty() {
+        } else if coverage_warned {
             con.inner.out_line(&format!(
-                "Coverage gate bypassed: required coverage was not reached within the run budget ({} points).",
+                "Warning: required coverage was not reached within the run budget ({} points; --warn coverage).",
                 required_gap_count
             ));
         }
@@ -1120,11 +1161,42 @@ fn run_check(
         "" if cfg.output_path.is_empty() => ".",
         o => o,
     };
+    let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
+    // what was reported but did not fail the check
+    let mut warnings = serde_json::Map::new();
+    if lint_findings > 0 {
+        warnings.insert("lint".into(), json!(lint_findings));
+    }
+    if coverage_warned {
+        warnings.insert("coverage".into(), json!(required_gap_count));
+    }
+    if undetected > 0 && !mutation_failed {
+        warnings.insert("mutation".into(), json!(undetected));
+    }
+    let with_warnings = if failed > 0 || warnings.is_empty() {
+        String::new()
+    } else {
+        let parts: Vec<String> = warnings
+            .iter()
+            .map(|(k, v)| {
+                let n = v.as_u64().unwrap_or(0) as usize;
+                match k.as_str() {
+                    "lint" => format!("{} lint finding{}", n, plural(n)),
+                    "coverage" => format!("{} coverage gap{}", n, plural(n)),
+                    _ => format!("{} undetected mutant{}", n, plural(n)),
+                }
+            })
+            .collect();
+        format!(", with warnings: {}", parts.join(", "))
+    };
     con.inner.out_line(&if only && failed == 0 {
         match undetected {
-            0 => format!("🫛 Every mutant was detected in {}{}.", elapsed, memory),
-            n => format!("{} mutant{} not detected in {}{}.", n, plural(n), elapsed, memory),
+            0 => format!("🫛 Every mutant was detected in {}{}{}.", elapsed, memory, with_warnings),
+            n if mutation_failed => format!("{} mutant{} not detected in {}{}.", n, plural(n), elapsed, memory),
+            n => format!("{} mutant{} not detected in {}{}{}.", n, plural(n), elapsed, memory, with_warnings),
         }
+    } else if failed == 0 && mutation_failed && !coverage_failed {
+        format!("{} mutant{} not detected in {}{}. Output: {}/", undetected, plural(undetected), elapsed, memory, out)
     } else if failed == 0 && coverage_failed {
         format!(
             "Coverage requirements were not met for {} point{}. Output: {}/",
@@ -1134,17 +1206,18 @@ fn run_check(
         )
     } else if failed == 0 && incomplete > 0 {
         format!(
-            "🫛 No bugs found in {}{}. Search incomplete for {} test case{}. Output: {}/",
+            "🫛 No bugs found in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
             elapsed,
             memory,
+            with_warnings,
             incomplete,
             plural(incomplete),
             out
         )
     } else if failed == 0 && n == 1 {
-        format!("🫛 The test case passed in {}{}. Output: {}/", elapsed, memory, out)
+        format!("🫛 The test case passed in {}{}{}. Output: {}/", elapsed, memory, with_warnings, out)
     } else if failed == 0 {
-        format!("🫛 All {} test cases passed in {}{}. Output: {}/", n, elapsed, memory, out)
+        format!("🫛 All {} test cases passed in {}{}{}. Output: {}/", n, elapsed, memory, with_warnings, out)
     } else {
         format!("{} of {} test case{} failed in {}{}. Output: {}/", failed, n, plural(n), elapsed, memory, out)
     });
@@ -1156,15 +1229,16 @@ fn run_check(
             "seconds": round_ms(seconds),
             "output": format!("{}/", out),
             "mutation": mutation,
+            "warnings": warnings,
         });
-        return Ok((if failed > 0 || undetected > 0 { BUG } else { OK }, result));
+        return Ok((if failed > 0 || mutation_failed { BUG } else { OK }, result));
     }
     let mut coverage = suite.to_json(false);
     coverage["excluded_components"] = excluded.iter().map(|u| u.to_json()).collect();
     coverage["partial"] = json!(failed > 0);
     coverage["required"] = required.to_json();
     coverage["uncovered_required"] = required_uncovered.iter().map(|u| u.to_json()).collect();
-    coverage["gate_bypassed"] = json!(!only && allow_incomplete_coverage);
+    coverage["gate_bypassed"] = json!(!only && gates.coverage == Gate::Warn);
     coverage["failure"] = if coverage_failed {
         json!({"message": coverage_failure_message, "help": coverage_failure_help})
     } else {
@@ -1180,9 +1254,10 @@ fn run_check(
         "coverage": coverage,
         "coverage_failed": coverage_failed,
         "mutation": mutation,
+        "warnings": warnings,
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
-    Ok((if failed > 0 || coverage_failed { BUG } else { OK }, result))
+    Ok((if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK }, result))
 }
 
 /// Driver facts shown for a test case; `--json` has them all.

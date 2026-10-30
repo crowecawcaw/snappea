@@ -1,8 +1,9 @@
 //! Model lint policy, shared by the standalone lint command, the pre-check gate and
 //! `snappea observe`.
+use crate::driver::check::Gate;
 use crate::host::{Color, Exit, Host, Stream};
 use crate::project::Sources;
-use crate::sema::diag::{render_coded, render_snippet};
+use crate::sema::diag::{render_coded, render_snippet, render_with_level};
 use crate::syntax::SourceMap;
 use snappea_lint::Finding;
 
@@ -12,6 +13,41 @@ pub fn run(host: &mut dyn Host, sources: &Sources) -> Result<usize, Exit> {
     let findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
     Ok(report(host, &sm, &findings))
 }
+
+/// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and stop
+/// the check (exit status 2); with [`Gate::Warn`] they print as warnings and the check
+/// goes on. Returns how many findings there were.
+pub fn gate(host: &mut dyn Host, sources: &Sources, gate: Gate) -> Result<usize, Exit> {
+    if gate == Gate::Deny {
+        if run(host, sources)? == 0 {
+            return Ok(0);
+        }
+        host.write(Stream::Err, &format!("{}\n", WARN_HINT), None);
+        return Err(Exit(2));
+    }
+    let sm = sources.source_map();
+    let findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
+    for f in &findings {
+        let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)));
+        host.write(Stream::Err, &text, Some(Color::Yellow));
+        host.write(Stream::Err, "\n", None);
+    }
+    if !findings.is_empty() {
+        host.write(
+            Stream::Err,
+            &format!(
+                "Lint: {} finding(s) reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n",
+                findings.len()
+            ),
+            None,
+        );
+    }
+    Ok(findings.len())
+}
+
+/// How to check a model before its lint findings are addressed.
+const WARN_HINT: &str =
+    "hint: to look for bugs before addressing these, pass --warn lint; the findings are then reported as warnings";
 
 /// Like [`run`], with only the rules that apply when checking logs against specs
 /// ([`snappea_lint::OBSERVATION_RULES`]).

@@ -66,10 +66,37 @@ The default is a fixed **10-second limit per test**, with no automatic extension
 `--timeout` overrides it; the previous spelling `--time` remains an alias. A timeout
 means the search is incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
-coverage was not reached within the run budget. `--allow-incomplete-coverage` bypasses
-that gate during exploratory checks. Exit status is 0 when no bug or required coverage
-gap was found, 1 for a bug or coverage gap, and 2 on an error. The result distinguishes
-exhaustive completion from an incomplete search.
+coverage was not reached within the run budget. Exit status is 0 when no bug or
+required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
+result distinguishes exhaustive completion from an incomplete search.
+
+### What fails a check
+
+Besides bugs, `snappea check` reports three kinds of findings. Each one either fails
+the check or is reported as a warning:
+
+| Check | Default | Silence one in the source |
+|---|---|---|
+| `lint` | fails (exit 2, before exploring) | `// snappea-lint: allow <rule> -- reason` |
+| `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
+| `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
+
+The source comment is the way to accept an intended finding: it names one rule, covers
+one declaration or statement, and carries its reason into code review. To change what
+fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `all`
+names every check; a single check overrides `all`):
+
+```sh
+snappea check --warn lint        # look for bugs in a model before addressing its lints
+snappea check --warn coverage    # explore while the test suite is still being built
+snappea check --deny mutation    # CI: also fail on undetected mutants
+```
+
+A warned finding is still printed, labelled `warning`, and the final line says
+`with warnings: ...`; the JSON result counts them under `warnings`. Fix or suppress
+warnings before relying on a passing result. `--allow-incomplete-coverage` remains an
+alias of `--warn coverage`. The [playground](../web/README.md) warns on all three
+unless "Strict checks" is ticked.
 
 Workers run in parallel, one per available CPU core by default; `-j N` limits resource
 use. Workers split exhaustive search between them, each taking its own part of the
@@ -278,8 +305,8 @@ go round robin, a run the time limit stops has given every mutant about the same
 on a large model, each may get only its first turn. Undetected mutants with fewer than
 1000 schedules are marked `(only 100 schedules)` in the console and have a smaller
 `schedules` in JSON; raise the limit for a stronger result. Mutation testing is skipped
-when a test case fails: fix the bug first. Undetected mutants never change the exit
-status. The JSON result has every undetected mutant under `mutation.undetected`, with
+when a test case fails: fix the bug first. Undetected mutants do not change the exit
+status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules` and
 `search_complete`.
 

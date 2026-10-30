@@ -30,6 +30,7 @@ export function App() {
   const [seed, setSeed] = useState(randomSeed);
   const [fixedSeed, setFixedSeed] = useState(false);
   const [extraArgs, setExtraArgs] = useState("");
+  const [strict, setStrict] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [compileConsole, setCompileConsole] = useState("");
   const [compileOk, setCompileOk] = useState<boolean | undefined>();
@@ -59,6 +60,7 @@ export function App() {
     setTestCase(s.testCase ?? d.testCase);
     setTimeoutSeconds(s.timeout ?? 10);
     setExtraArgs(s.extraArgs ?? d.extraArgs ?? "");
+    setStrict(s.strict ?? false);
     setResult(undefined);
     setRunError(undefined);
     setDiagnostics([]);
@@ -132,13 +134,14 @@ export function App() {
         testCase,
         timeout,
         extraArgs: extraArgs || undefined,
+        strict: strict || undefined,
       };
       const { url, tooBig } = urlFor(state, edited.current);
       setShareTooBig(tooBig);
       if (url !== location.search + location.hash) history.replaceState(null, "", url);
     }, URL_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [loaded, demo, files, open, testCase, timeout, extraArgs]);
+  }, [loaded, demo, files, open, testCase, timeout, extraArgs, strict]);
 
   // Compile shortly after each edit: diagnostics and the list of test cases.
   useEffect(() => {
@@ -179,6 +182,7 @@ export function App() {
           testCase,
           timeout,
           seed: s,
+          strict,
           extraArgs: splitArgs(extraArgs),
         },
         setProgress,
@@ -194,7 +198,7 @@ export function App() {
     } finally {
       setRunning(false);
     }
-  }, [running, testCase, fixedSeed, seed, runner, files, timeout, extraArgs]);
+  }, [running, testCase, fixedSeed, seed, runner, files, timeout, strict, extraArgs]);
 
   const openLocation = useCallback(
     (file: string, line: number) => {
@@ -457,6 +461,7 @@ export function App() {
                 <span className="muted">
                   {" "}· up to {timeout}s
                   {fixedSeed ? ` · seed ${seed}` : ""}
+                  {strict ? " · strict" : ""}
                   {extraArgs.trim() ? ` · ${extraArgs.trim()}` : ""}
                 </span>
               </summary>
@@ -487,6 +492,10 @@ export function App() {
                 <label className="check">
                   <input type="checkbox" checked={fixedSeed} onChange={(e) => setFixedSeed(e.target.checked)} />
                   Keep seed
+                </label>
+                <label className="check" title="Fail on lint findings and missing coverage, as the snappea CLI does. Off: they are shown as warnings and the check goes on.">
+                  <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
+                  Strict checks
                 </label>
                 <label className="span-all">
                   Extra flags

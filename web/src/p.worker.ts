@@ -81,7 +81,12 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
   const mutation = req.extraArgs.some((a) => /^--(no-mutation|mutation-timeout)\b/.test(a))
     ? []
     : ["--mutation-timeout", `${req.timeout}s`];
-  const opts = ["--timeout", `${req.timeout}s`, ...mutation, "--seed", String(req.seed), ...req.extraArgs];
+  // people exploring a model see lint findings and coverage gaps as warnings unless they
+  // ask for the CLI's strict defaults; a `--warn`/`--deny` in the extra options wins
+  const gates = req.strict || req.extraArgs.some((a, i) => /^--(warn|deny)(=all)?$/.test(a) && (a.endsWith("=all") || req.extraArgs[i + 1] === "all"))
+    ? []
+    : ["--warn", "all"];
+  const opts = ["--timeout", `${req.timeout}s`, ...mutation, "--seed", String(req.seed), ...gates, ...req.extraArgs];
   const shown = ["check", req.testCase, ...opts];
   const args = ["check", ...sourceArgs(req.files), req.testCase, ...opts];
   const r = (await p()).run(args, toFs(req.files), {
