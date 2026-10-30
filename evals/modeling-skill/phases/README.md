@@ -82,3 +82,5 @@ Written failure-scenario prompt experiment: [Luna/high results](../../prethought
 Reviewed example revision: [Luna/high old/revised/no-skill comparison](../../skill-examples/RESULTS.md) (twelve fresh trials; reference uptake, setup friction and semantic failures reported separately).
 
 Single-file examples: [Luna format trial and Sol/medium package comparison](../../single-file-examples/RESULTS.md) (twelve fresh trials; actual source visibility, model quality and implementation correctness reported separately).
+
+Sol CLI × skill: [current setup and experimentation handoff](../../sol-factorial/HANDOFF.md) for completing the four combinations with matched tasks and tools.
