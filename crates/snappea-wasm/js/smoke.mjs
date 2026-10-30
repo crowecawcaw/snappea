@@ -25,10 +25,13 @@ if (safe.exitCode !== 0 || !/\(all \d+ schedules?/.test(safe.stdout)) {
 }
 // Timed models use sampling, so a safe run must stop at the deadline as incomplete.
 const started = performance.now();
-const busy = p.run(["check", "busy.p", "--timed", "--timeout", "1s"], {
+const busy = p.run(["check", "busy.p", "--timed", "--timeout", "1s", "--json-report", "busy.json"], {
   "/work/busy.p": "// snappea-lint: allow no-model-machine -- single-machine fixture tests the timed search deadline\nmachine Main { start state Init { } }",
 }, { seed: 1 });
-if (busy.exitCode !== 0 || !busy.stdout.includes("Search incomplete") || performance.now() - started > 5000) {
+const busyReport = JSON.parse(busy.files["/work/busy.json"]);
+if (busy.exitCode !== 0 || busyReport.summary.status !== "search_incomplete"
+    || busyReport.summary.incomplete !== 1 || !busy.stdout.includes(busyReport.summary.message)
+    || performance.now() - started > 5000) {
   throw new Error(`expected bounded incomplete search: ${busy.stdout}${busy.stderr}`);
 }
 // onProgress sees the check while it runs; the last snapshot has the final count.

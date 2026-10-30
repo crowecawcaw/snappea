@@ -674,15 +674,24 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
          test tcMain [main=Main]: { Main };\n",
     );
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--json-report", "r.json"]), 1);
-    let result: serde_json::Value = serde_json::from_str(&read(&h, "r.json")).unwrap();
+    let json = read(&h, "r.json");
+    let result: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(result["coverage_failed"], true);
     assert_eq!(result["coverage"]["statements"], serde_json::json!({"covered": 1, "total": 2}));
     assert_eq!(result["coverage"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["required"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["uncovered_required"].as_array().unwrap().len(), 2);
-    assert!(result["coverage"]["failure"]["message"].as_str().unwrap().contains("within the run budget"));
+    assert_eq!(result["summary"]["status"], "coverage_failed");
+    assert_eq!(result["summary"]["coverage_gaps"], 2);
+    assert_eq!(result["summary"]["mutation_time_limit_reached"], false);
+    assert_eq!(result["summary"]["uncovered"][0]["file"], "coverage.p");
+    assert!(json.find("\"summary\"").unwrap() < json.find("\"coverage\"").unwrap());
+    assert_eq!(
+        result["coverage"]["failure"]["message"],
+        "Required coverage was not reached within the run budget (2 points)."
+    );
     assert!(result["coverage"]["failure"]["help"].as_str().unwrap().contains("Add scenarios"));
-    assert!(h.stdout.contains("Required coverage was not reached within the run budget"), "{}", h.stdout);
+    assert!(h.stdout.contains("Required coverage was not reached within the run budget (2 points)."), "{}", h.stdout);
     assert!(h.stdout.contains("Add scenarios that reach the listed sites"), "{}", h.stdout);
 
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--warn", "coverage", "--format", "text"]), 0);

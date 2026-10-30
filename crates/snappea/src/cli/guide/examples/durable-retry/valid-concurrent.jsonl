@@ -1,0 +1,8 @@
+{"event":"eRequest","payload":7}
+{"event":"eRequest","payload":8}
+{"event":"eCommit","payload":{"id":7,"total":1}}
+{"event":"eReply","payload":{"id":7,"result":1,"currentTotal":1}}
+{"event":"eCommit","payload":{"id":8,"total":2}}
+{"event":"eReply","payload":{"id":8,"result":2,"currentTotal":2}}
+{"event":"eReply","payload":{"id":7,"result":1,"currentTotal":2}}
+{"event":"eScenarioDone"}

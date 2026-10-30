@@ -28,6 +28,9 @@ Examples:
   snappea observe --all-specs --strict --check-hot \"test-logs/**/*.jsonl\"
   my-service | snappea observe --spec BankBalanceCorrect --stdin
 
+In Python tests, the pysnappea package (imported as `snappea`) checks events
+without log files: `from snappea import check_events, check_spec`.
+
 Specs:
       --spec <NAME>           Spec monitor to check; repeat or separate with commas
       --all-specs             Check every spec monitor. Use in test suites.

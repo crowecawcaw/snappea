@@ -38,6 +38,8 @@ Commands:
   observe    Check logs of a real system against the model's spec monitors.
              Use to test that an implementation matches the model.
   coverage   Merge coverage from several runs (CI shards, processes)
+  guide      How to model a design and test code against it, with runnable
+             examples. Start here: `snappea guide`.
   version    Print the version
 
 Typical loop:
@@ -357,6 +359,7 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
         "tests" => tests(rest, host),
         "observe" => super::observe::observe(rest, host),
         "coverage" => coverage(rest, host),
+        "guide" => super::guide::guide(rest, host),
         "version" | "--version" | "-V" => {
             let a = match parse_args(rest, &[]) {
                 Ok(a) => a,
@@ -372,7 +375,7 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
                 host.write(Stream::Out, HELP, None);
                 OK
             }
-            Some(c @ ("check" | "replay" | "tests" | "observe" | "coverage")) => {
+            Some(c @ ("check" | "replay" | "tests" | "observe" | "coverage" | "guide")) => {
                 dispatch(&[c.to_string(), "--help".into()], host)
             }
             Some(c) => usage_error(host, &format!("unknown command '{}'", c), None),
@@ -1133,6 +1136,13 @@ fn run_check(
         }
     }
     let mut undetected = 0;
+    let mut skipped = Vec::new();
+    if coverage_warned {
+        skipped.push("required coverage (--warn coverage reported gaps as warnings)");
+    }
+    if matches!(mutation, Mutation::After(None)) && failed == 0 {
+        skipped.push("mutation testing (--no-mutation)");
+    }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
         _ if failed > 0 => {
@@ -1156,11 +1166,25 @@ fn run_check(
     };
     let seconds = con.inner.now() - start;
     let (elapsed, memory) = (duration(seconds), memory(con.inner));
+    let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
+    let not_tested = mutation.get("not_tested").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
+    let summary = check_summary(
+        failed,
+        n,
+        incomplete,
+        coverage_failed,
+        required_gap_count,
+        &required_uncovered,
+        mutation_time_limit_reached,
+        (undetected, mutation_failed),
+        not_tested,
+        &skipped,
+    );
     let out = match cfg.output_path.trim_end_matches('/') {
         "" if cfg.output_path.is_empty() => ".",
         o => o,
     };
-    let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
     // what was reported but did not fail the check
     let mut warnings = serde_json::Map::new();
     if lint_findings > 0 {
@@ -1220,8 +1244,12 @@ fn run_check(
     } else {
         format!("{} of {} test case{} failed in {}{}. Output: {}/", failed, n, plural(n), elapsed, memory, out)
     });
+    if let Some(note) = summary["note"].as_str() {
+        con.inner.out_line(note);
+    }
     if only {
         let result = json!({
+            "summary": summary,
             "project": cfg.project_name,
             "test_cases": cases,
             "failed": failed,
@@ -1244,6 +1272,7 @@ fn run_check(
         Value::Null
     };
     let result = json!({
+        "summary": summary,
         "project": cfg.project_name,
         "test_cases": cases,
         "failed": failed,
@@ -1257,6 +1286,92 @@ fn run_check(
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
     Ok((if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK }, result))
+}
+
+/// A concise top-level outcome. Mutation time limits are reported independently because
+/// they do not change whether the test search or required-coverage gate passed.
+#[allow(clippy::too_many_arguments)]
+fn check_summary(
+    failed: usize,
+    test_cases: usize,
+    incomplete: usize,
+    coverage_failed: bool,
+    coverage_gaps: usize,
+    uncovered: &[crate::checker::code_coverage::Uncovered],
+    mutation_time_limit_reached: bool,
+    (mutants_undetected, mutation_failed): (usize, bool),
+    mutants_not_tested: usize,
+    skipped: &[&str],
+) -> Value {
+    // What a pass does not cover, so a partial check is not read as a full one.
+    let mut notes = Vec::new();
+    if !skipped.is_empty() {
+        notes.push(format!(
+            "Not checked: {}. Run without these options before relying on the result.",
+            skipped.join(", ")
+        ));
+    }
+    if failed == 0 && mutants_undetected > 0 {
+        notes.push(format!(
+            "{} mutant{} not detected: the model ran the changed code but no assertion failed. \
+             Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
+            mutants_undetected,
+            plural(mutants_undetected)
+        ));
+    }
+    if failed == 0 && mutants_not_tested > 0 {
+        notes.push(format!(
+            "Mutation testing reached its time limit with {} mutant{} not tested. Finish them \
+             separately, e.g. `snappea check mutation --mutation-timeout 5m`, or name fewer test cases.",
+            mutants_not_tested,
+            plural(mutants_not_tested)
+        ));
+    }
+    let (status, message) = if failed > 0 {
+        ("tests_failed", format!("{} of {} test case{} failed", failed, test_cases, plural(test_cases)))
+    } else if coverage_failed {
+        (
+            "coverage_failed",
+            format!(
+                "Required coverage was not reached within the run budget ({} point{})",
+                coverage_gaps,
+                plural(coverage_gaps)
+            ),
+        )
+    } else if mutation_failed {
+        (
+            "mutation_failed",
+            format!("{} mutant{} not detected (--deny mutation)", mutants_undetected, plural(mutants_undetected)),
+        )
+    } else if incomplete > 0 {
+        (
+            "search_incomplete",
+            format!("No bugs found; search incomplete for {} test case{}", incomplete, plural(incomplete)),
+        )
+    } else {
+        ("passed", "All test cases passed".to_string())
+    };
+    json!({
+        "status": status,
+        "message": message,
+        "test_cases": test_cases,
+        "failed": failed,
+        "incomplete": incomplete,
+        "coverage_failed": coverage_failed,
+        "coverage_gaps": coverage_gaps,
+        "uncovered": uncovered.iter().take(5).map(|u| json!({
+            "file": u.file,
+            "line": u.line,
+            "context": u.context,
+            "what": u.what,
+        })).collect::<Vec<_>>(),
+        "uncovered_more": uncovered.len().saturating_sub(5),
+        "mutation_time_limit_reached": mutation_time_limit_reached,
+        "mutants_undetected": mutants_undetected,
+        "mutants_not_tested": mutants_not_tested,
+        "skipped": skipped,
+        "note": if notes.is_empty() { Value::Null } else { json!(notes.join(" ")) },
+    })
 }
 
 /// Driver facts shown for a test case; `--json` has them all.
@@ -1677,5 +1792,51 @@ mod tests {
         assert_eq!(split_latency("l.toml:fast"), ("l.toml", Some("fast")));
         assert_eq!(split_latency("C:\\x\\l.toml"), ("C:\\x\\l.toml", None));
         assert_eq!(split_latency("C:\\x\\l.toml:fast"), ("C:\\x\\l.toml", Some("fast")));
+    }
+
+    #[test]
+    fn check_summary_separates_check_outcomes_from_mutation_limits() {
+        let uncovered = crate::checker::code_coverage::Uncovered {
+            file: "coverage.p".into(),
+            line: 9,
+            end_line: 9,
+            context: "Main.S, on ePing".into(),
+            what: "if (x) never true".into(),
+        };
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false), 0, &[]);
+        assert_eq!(coverage["status"], "coverage_failed");
+        assert_eq!(coverage["message"], "Required coverage was not reached within the run budget (3 points)");
+        assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
+        assert_eq!(coverage["mutation_time_limit_reached"], true);
+
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        assert_eq!(failed["status"], "tests_failed");
+
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false), 0, &[]);
+        assert_eq!(incomplete["status"], "search_incomplete");
+
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        assert_eq!(passed["status"], "passed");
+        assert!(passed["note"].is_null());
+    }
+
+    #[test]
+    fn check_summary_notes_skipped_checks_and_undetected_mutants() {
+        let partial =
+            check_summary(0, 1, 0, false, 0, &[], false, (0, false), 0, &["mutation testing (--no-mutation)"]);
+        assert_eq!(partial["status"], "passed");
+        assert!(partial["note"].as_str().unwrap().starts_with("Not checked: mutation testing (--no-mutation)."));
+
+        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true), 0, &[]);
+        assert_eq!(denied["status"], "mutation_failed");
+        assert_eq!(denied["message"], "2 mutants not detected (--deny mutation)");
+
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false), 0, &[]);
+        assert_eq!(weak["mutants_undetected"], 4);
+        assert!(weak["note"].as_str().unwrap().starts_with("4 mutants not detected"));
+
+        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false), 17, &[]);
+        assert_eq!(unfinished["mutants_not_tested"], 17);
+        assert!(unfinished["note"].as_str().unwrap().contains("17 mutants not tested"));
     }
 }

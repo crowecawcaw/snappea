@@ -188,7 +188,15 @@ is, and 2 on any other error. `snappea <command> --help` lists the options.
 On a terminal or in CI (`CI` set) the output is the text above; otherwise (agents,
 scripts) it is JSON: per test case its result, schedules, bug report and `replay`
 command, coverage and driver limits (`driver`); then the coverage of all test cases
-with every uncovered entry, and the mutation testing results under `mutation`.
+with every uncovered entry, and the mutation testing results under `mutation`. The
+top-level `summary` says first what happened: `status` is `tests_failed`,
+`coverage_failed`, `mutation_failed` (with `--deny mutation`), `search_incomplete` or
+`passed`, with counts for each outcome. `summary.uncovered` lists up to five required
+sites that never ran (`uncovered_more` counts the rest). `mutants_undetected` and
+`mutants_not_tested` count mutants no test case caught, and mutants left untested when
+mutation testing reached its time limit, which does not change `status`. `skipped`
+lists checks a pass did not include (`--no-mutation`, `--warn coverage`), and `note`
+says in a sentence what a pass did not cover and what to run next.
 `--format text|json` or `--json` chooses, as does `SNAPPEA_FORMAT=text|json`, and
 `--json-report FILE` also writes the JSON to `FILE`. Every `snappea` command takes
 these options, before or after the command (for example, `snappea --json check`).
