@@ -164,3 +164,37 @@ fn observe_merges_witnessed_pairs_without_joining_separate_executions() {
     merged.merge(&run(&["eA", "eStep", "eStep"])).unwrap();
     assert_eq!(merged.summary().transition_pairs.covered, 3);
 }
+
+#[test]
+fn return_after_endless_loop_is_not_required_coverage() {
+    // P requires a `return` after `while (true)`; it can never run, so it is not a gap.
+    let c = coverage(
+        r#"
+        fun f(): bool {
+            var i: int;
+            while (true) {
+                i = i + 1;
+                if (i > 2) { return true; }
+            }
+            return false;
+        }
+        fun g(): int {
+            var i: int;
+            while (true) {
+                i = i + 1;
+                if (i > 2) { break; }
+            }
+            return i;
+        }
+        machine Main {
+            start state S {
+                entry {
+                    assert f();
+                    assert g() == 3;
+                }
+            }
+        }
+    "#,
+    );
+    assert!(c.uncovered().is_empty(), "{:?}", c.uncovered());
+}
