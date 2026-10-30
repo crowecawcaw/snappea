@@ -17,6 +17,9 @@ impl Host for NativeHost {
     fn stdout_is_terminal(&self) -> bool {
         io::stdout().is_terminal()
     }
+    fn stderr_is_terminal(&self) -> bool {
+        io::stderr().is_terminal()
+    }
     fn env_var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
     }

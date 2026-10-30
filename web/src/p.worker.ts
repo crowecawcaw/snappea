@@ -57,7 +57,7 @@ async function compile(files: Files) {
   return cache;
 }
 
-async function handle(req: Request): Promise<CompileResult | CheckResult> {
+async function handle(id: number, req: Request): Promise<CompileResult | CheckResult> {
   const t0 = performance.now();
   const c = await compile(req.files);
   if (req.kind === "compile") {
@@ -84,7 +84,11 @@ async function handle(req: Request): Promise<CompileResult | CheckResult> {
   const opts = ["--timeout", `${req.timeout}s`, ...mutation, "--seed", String(req.seed), ...req.extraArgs];
   const shown = ["check", req.testCase, ...opts];
   const args = ["check", ...sourceArgs(req.files), req.testCase, ...opts];
-  const r = (await p()).run(args, toFs(req.files), { seed: req.seed });
+  const r = (await p()).run(args, toFs(req.files), {
+    seed: req.seed,
+    // delivered while the check runs: only this worker is busy
+    onProgress: (progress) => post({ id, progress }),
+  });
   const dir = `${ROOT}/PCheckerOutput/${req.testCase}/`;
   const file = (name: string): string | undefined => r.files[dir + name];
   const console = `$ snappea ${shown.join(" ")}\n` + (r.stdout + r.stderr).trimEnd();
@@ -107,12 +111,16 @@ self.onmessage = async (e: MessageEvent<{ id: number; req: Request }>) => {
   const { id, req } = e.data;
   let reply: WorkerReply;
   try {
-    reply = { id, result: await handle(req) };
+    reply = { id, result: await handle(id, req) };
   } catch (err) {
     // A trap (e.g. a Rust panic) poisons the instance; start over next time.
     tool = undefined;
     cache = undefined;
     reply = { id, error: String(err) };
   }
-  (self as unknown as DedicatedWorkerGlobalScope).postMessage(reply);
+  post(reply);
 };
+
+function post(reply: WorkerReply) {
+  (self as unknown as DedicatedWorkerGlobalScope).postMessage(reply);
+}

@@ -15,6 +15,13 @@
 //!
 //! The host may import `env.snappea_now() -> f64` (seconds) for elapsed-time reporting;
 //! when targeting WebAssembly it is required.
+//!
+//! With `"progress": true` in the request, a running `snappea check` calls the import
+//! `env.snappea_progress(ptr, len)` a few times a second with a progress snapshot as
+//! UTF-8 JSON (see `snappea::driver::progress::Progress::to_json`), e.g.
+//! `{"phase":"check","test_case":"tcMain","schedules":1240,"elapsed":3.1,"time_limit":10,...}`.
+//! The buffer is only valid during the call. When targeting WebAssembly the import is
+//! required; it may do nothing.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -31,6 +38,9 @@ pub struct Request {
     pub cwd: Option<String>,
     #[serde(default)]
     pub seed: Option<u32>,
+    /// Send progress snapshots to `env.snappea_progress`.
+    #[serde(default)]
+    pub progress: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,6 +62,17 @@ fn now() -> f64 {
     unsafe { snappea_now() }
 }
 
+/// Passes a progress snapshot to the embedder.
+#[cfg(target_arch = "wasm32")]
+fn progress(p: &snappea::driver::progress::Progress) {
+    #[link(wasm_import_module = "env")]
+    extern "C" {
+        fn snappea_progress(ptr: *const u8, len: usize);
+    }
+    let json = p.to_json().to_string();
+    unsafe { snappea_progress(json.as_ptr(), json.len()) }
+}
+
 /// Runs one request (usable natively too, e.g. for tests).
 pub fn run(req: Request) -> Response {
     let cwd = req.cwd.unwrap_or_else(|| "/work".into());
@@ -60,6 +81,9 @@ pub fn run(req: Request) -> Response {
     #[cfg(target_arch = "wasm32")]
     {
         mem.clock = now;
+        if req.progress {
+            mem.on_progress = Some(progress);
+        }
     }
     for (path, text) in &req.files {
         if let Err(e) = mem.write_file(Path::new(path), text) {
@@ -145,7 +169,8 @@ mod tests {
             "/work/m.p".to_string(),
             "// snappea-lint: allow no-model-machine -- Wasm round-trip fixture checks failure output from the entry machine\nmachine Main { start state S { entry { assert false, \"no\"; } } }".to_string(),
         );
-        let r = run(Request { args: vec!["check".into(), "m.p".into()], files, cwd: None, seed: Some(7) });
+        let r =
+            run(Request { args: vec!["check".into(), "m.p".into()], files, cwd: None, seed: Some(7), progress: false });
         assert_eq!(r.exit_code, 1, "{}", r.stdout);
         assert!(r.stdout.contains("\nFAIL  "), "{}", r.stdout);
         assert!(r.stdout.contains("Replay: snappea replay PCheckerOutput/"), "{}", r.stdout);
@@ -158,7 +183,7 @@ mod tests {
     fn conflicting_files_are_an_invalid_request() {
         let files =
             BTreeMap::from([("/work/d".to_string(), String::new()), ("/work/d/f.p".to_string(), String::new())]);
-        let r = run(Request { args: vec!["check".into()], files, cwd: None, seed: None });
+        let r = run(Request { args: vec!["check".into()], files, cwd: None, seed: None, progress: false });
         assert_eq!(r.exit_code, 2);
         assert!(r.stderr.starts_with("invalid request: cannot add file /work/d/f.p: "), "{}", r.stderr);
     }

@@ -3,7 +3,7 @@ import { CUSTOM, DEMOS, loadDemo, sortPaths, type Demo } from "./demos";
 import { filesFromDrop, filesFromList } from "./importFiles";
 import { decodeShared, sharedFromHash, urlFor, MAX_SHARE_CHARS, type Shared } from "./share";
 import { PEditor } from "./editor/PEditor";
-import type { CheckResult, Diagnostic, Files } from "./protocol";
+import type { CheckResult, Diagnostic, Files, Progress } from "./protocol";
 import { Runner } from "./runner";
 import { TraceView } from "./trace/TraceView";
 import { Logo } from "./site/Logo";
@@ -36,6 +36,7 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<CheckResult>();
   const [runError, setRunError] = useState<string>();
+  const [progress, setProgress] = useState<Progress>();
   const [narrow, setNarrow] = useState(() => matchMedia(NARROW).matches);
   const [tab, setTab] = useState<Tab>(() => (matchMedia(NARROW).matches ? "files" : "console"));
   const [jump, setJump] = useState<{ line: number; nonce: number }>();
@@ -170,14 +171,18 @@ export function App() {
     setSeed(s);
     setRunning(true);
     setRunError(undefined);
+    setProgress(undefined);
     try {
-      const r = await runner.check({
-        files,
-        testCase,
-        timeout,
-        seed: s,
-        extraArgs: splitArgs(extraArgs),
-      });
+      const r = await runner.check(
+        {
+          files,
+          testCase,
+          timeout,
+          seed: s,
+          extraArgs: splitArgs(extraArgs),
+        },
+        setProgress,
+      );
       setResult(r);
       if (r.diagnostics.length) setDiagnostics(r.diagnostics);
       setTab(r.bug && r.traceJson ? "trace" : "console");
@@ -266,7 +271,9 @@ export function App() {
   }, [diagnostics]);
 
   const status = running
-    ? "Checking…"
+    ? progress
+      ? progressText(progress)
+      : "Checking…"
     : runError
       ? runError
       : compileOk === false || (result && !result.ok)
@@ -532,6 +539,12 @@ export function App() {
             {showStatus && (
             <div className="status-line">
               <span className={`status ${statusClass}`}>{status}</span>
+              {running && !!progress?.time_limit && (
+                <span className="progress" role="progressbar" aria-label="Time used" aria-valuemin={0} aria-valuemax={100}
+                  aria-valuenow={Math.round(Math.min(1, progress.elapsed / progress.time_limit) * 100)}>
+                  <span style={{ width: `${Math.min(1, progress.elapsed / progress.time_limit) * 100}%` }} />
+                </span>
+              )}
               {!running && (compileOk === false || (result && !result.ok)) && diagnostics[0] && (
                 <button className="diag" onClick={() => openLocation(diagnostics[0].file, diagnostics[0].line)}>
                   {diagnostics[0].file}:{diagnostics[0].line} {diagnostics[0].message}
@@ -623,4 +636,13 @@ function Download({ name, text }: { name: string; text: string }) {
       ⤓ {name.slice(name.indexOf(".") + 1)}
     </a>
   );
+}
+
+/** A running check in a few words, e.g. `Checking tcMain: 1,240 schedules · 3.1 of 10 s`. */
+function progressText(p: Progress): string {
+  const time = p.time_limit ? `${p.elapsed.toFixed(1)} of ${p.time_limit} s` : `${p.elapsed.toFixed(1)} s`;
+  if (p.phase === "mutation") return `Mutation testing: ${p.detected} of ${p.mutants} mutants detected · ${time}`;
+  const n = p.schedules.toLocaleString("en-US");
+  const bugs = p.bugs ? ` · ${p.bugs} bug${p.bugs === 1 ? "" : "s"}` : "";
+  return `Checking ${p.test_case}: ${n} schedule${p.schedules === 1 ? "" : "s"}${bugs} · ${time}`;
 }

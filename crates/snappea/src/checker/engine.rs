@@ -514,6 +514,17 @@ impl WorkerPool {
         self.count
     }
 
+    /// Schedules the workers have started so far.
+    pub fn started(&self) -> usize {
+        self.started.load(Ordering::Relaxed)
+    }
+
+    /// Bugs the workers have found so far; counted only with `full_exploration`, since
+    /// otherwise the first bug ends the run.
+    pub fn bugs(&self) -> usize {
+        self.bugs.load(Ordering::Relaxed)
+    }
+
     /// How many workers a run with `opts` can use when `requested` are asked for: one for
     /// strategies that learn across schedules (feedback, rl), `dfs`/`random-dfs`, replays
     /// and verbose runs (which stream every schedule's log); otherwise at most one per

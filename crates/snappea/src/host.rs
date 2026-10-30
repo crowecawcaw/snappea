@@ -67,10 +67,18 @@ pub trait Host {
     fn stdout_is_terminal(&self) -> bool {
         false
     }
+    /// Whether stderr is a terminal: `snappea check` then shows a live status line there.
+    fn stderr_is_terminal(&self) -> bool {
+        false
+    }
     /// The value of environment variable `name`, if it is set.
     fn env_var(&self, _name: &str) -> Option<String> {
         None
     }
+    /// Receives a snapshot of a running check, a few times a second, when
+    /// [`CheckConfig::progress`](crate::driver::check::CheckConfig::progress) is set. The
+    /// default ignores it.
+    fn progress(&mut self, _p: &crate::driver::progress::Progress) {}
     /// Whether errors get a `hint:` line with a suggested next step. Only `snappea`
     /// commands turn it on; upstream-compatible output keeps upstream's exact text.
     fn shows_hints(&self) -> bool {
@@ -262,11 +270,17 @@ impl Host for Buffered<'_> {
     fn stdout_is_terminal(&self) -> bool {
         self.inner.stdout_is_terminal()
     }
+    fn stderr_is_terminal(&self) -> bool {
+        self.inner.stderr_is_terminal()
+    }
     fn env_var(&self, name: &str) -> Option<String> {
         self.inner.env_var(name)
     }
     fn shows_hints(&self) -> bool {
         self.inner.shows_hints()
+    }
+    fn progress(&mut self, p: &crate::driver::progress::Progress) {
+        self.inner.progress(p)
     }
 }
 
@@ -286,7 +300,29 @@ pub(crate) struct Quiet<'a> {
     /// With `record_errors`, the stdout text shown so far.
     pub shown_out: String,
     record_errors: bool,
+    /// How progress snapshots are shown; `None` passes them on only.
+    pub progress: Option<ProgressView>,
 }
+
+/// How [`Quiet`] shows progress snapshots (`snappea check --progress`).
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ProgressView {
+    /// A status line on a terminal's stderr, redrawn in place and cleared when done.
+    Live { shown: bool },
+    /// A plain stderr line every [`HEARTBEAT`] seconds (CI logs).
+    Heartbeat { printed_at: Option<f64> },
+    /// Every snapshot as one line of JSON on stderr.
+    Json,
+}
+
+/// Seconds between two [`ProgressView::Heartbeat`] lines.
+#[cfg(feature = "cli")]
+pub(crate) const HEARTBEAT: f64 = 30.0;
+
+/// Erases the current terminal line.
+#[cfg(feature = "cli")]
+const CLEAR_LINE: &str = "\r\x1b[2K";
 
 #[cfg(feature = "cli")]
 impl<'a> Quiet<'a> {
@@ -299,6 +335,15 @@ impl<'a> Quiet<'a> {
             captured_err: String::new(),
             shown_out: String::new(),
             record_errors: false,
+            progress: None,
+        }
+    }
+
+    /// Erases a shown status line before other text is written.
+    fn clear_status(&mut self) {
+        if let Some(ProgressView::Live { shown: shown @ true }) = &mut self.progress {
+            *shown = false;
+            self.inner.write(Stream::Err, CLEAR_LINE, None);
         }
     }
 
@@ -326,10 +371,12 @@ impl Host for Quiet<'_> {
             self.shown_out.push_str(text);
         }
         if stream == Stream::Err || !self.quiet {
+            self.clear_status();
             return self.inner.write(stream, text, color);
         }
         if color.is_some() || (self.shown && text == "\n") {
             self.shown = true;
+            self.clear_status();
             self.inner.write(stream, text, color);
         } else {
             self.shown = false;
@@ -389,9 +436,42 @@ impl Host for Quiet<'_> {
     fn env_var(&self, name: &str) -> Option<String> {
         self.inner.env_var(name)
     }
+    fn stderr_is_terminal(&self) -> bool {
+        self.inner.stderr_is_terminal()
+    }
     /// `Quiet` wraps the host of every `snappea` command, so its errors carry hints.
     fn shows_hints(&self) -> bool {
         true
+    }
+    fn progress(&mut self, p: &crate::driver::progress::Progress) {
+        self.inner.progress(p);
+        match &mut self.progress {
+            None => {}
+            Some(ProgressView::Live { shown }) => {
+                if p.done {
+                    if *shown {
+                        *shown = false;
+                        self.inner.write(Stream::Err, CLEAR_LINE, None);
+                    }
+                } else {
+                    *shown = true;
+                    // a line that wraps could not be redrawn in place
+                    let text: String = p.text().chars().take(79).collect();
+                    self.inner.write(Stream::Err, &format!("{}{}", CLEAR_LINE, text), None);
+                }
+            }
+            Some(ProgressView::Heartbeat { printed_at }) => {
+                if p.done {
+                    *printed_at = None;
+                } else if p.elapsed - printed_at.unwrap_or(0.0) >= HEARTBEAT {
+                    *printed_at = Some(p.elapsed);
+                    self.inner.write(Stream::Err, &format!("{}\n", p.text()), None);
+                }
+            }
+            Some(ProgressView::Json) => {
+                self.inner.write(Stream::Err, &format!("{}\n", p.to_json()), None);
+            }
+        }
     }
     fn open_live(&self, inputs: &[LiveInput]) -> Box<dyn LiveSource + '_> {
         self.inner.open_live(inputs)
@@ -488,6 +568,10 @@ pub struct MemHost {
     pub threads: Option<Threads>,
     /// [`Host::stdout_is_terminal`]; true by default.
     pub terminal: bool,
+    /// [`Host::stderr_is_terminal`]; false by default.
+    pub stderr_terminal: bool,
+    /// Called with each [`Host::progress`] snapshot; `None` by default.
+    pub on_progress: Option<fn(&crate::driver::progress::Progress)>,
     /// [`Host::env_var`]; empty by default.
     pub env: BTreeMap<String, String>,
 }
@@ -509,6 +593,8 @@ impl MemHost {
             seed: 0,
             threads: None,
             terminal: true,
+            stderr_terminal: false,
+            on_progress: None,
             env: BTreeMap::new(),
         };
         h.create_dir_all(Path::new(cwd)).expect("an empty file system has no files in the way");
@@ -557,6 +643,16 @@ fn not_a_directory(p: &Path) -> io::Error {
 impl Host for MemHost {
     fn stdout_is_terminal(&self) -> bool {
         self.terminal
+    }
+
+    fn stderr_is_terminal(&self) -> bool {
+        self.stderr_terminal
+    }
+
+    fn progress(&mut self, p: &crate::driver::progress::Progress) {
+        if let Some(f) = self.on_progress {
+            f(p);
+        }
     }
 
     fn env_var(&self, name: &str) -> Option<String> {

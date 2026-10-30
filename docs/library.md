@@ -21,6 +21,12 @@ println!("{} bug(s)", result.report.num_bugs);
 thread (each with its own `Checker` of the shared program) and merge the results with
 `Checker::finish`; `run_workers` in `crates/snappea/src/driver/check.rs` does this.
 
+To follow a long check, set `CheckConfig::progress` and implement `Host::progress`: the
+driver (`snappea::driver::check::testing_process`) sends a
+`snappea::driver::progress::Progress` a few times a second, the same snapshot
+`snappea check --progress json` prints. `Checker::check` on its own calls
+`Output::schedule_finished` after every schedule instead.
+
 Logs are checked with `snappea::checker::observe::Spec::new(&program, "MySpec")?.observe(...)`,
 which takes the log entries, a `Parser` and `ObserveOptions` and returns a `Report`.
 

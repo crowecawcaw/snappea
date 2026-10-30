@@ -21,6 +21,7 @@ use crate::checker::engine::{Checker, CheckerOptions, Output};
 use crate::checker::mutation::{self, Mutant};
 use crate::checker::strategy::StrategyKind;
 use crate::driver::check::{engine_options, CheckConfig};
+use crate::driver::progress::{Phase, Tracker};
 use crate::host::{Host, Job};
 use crate::sema::{Program, TestCase};
 use crate::syntax::Span;
@@ -244,6 +245,13 @@ pub fn run(
     };
     let threads = host.threads();
     let mut time_limit_reached = false;
+    let testable = states.iter().filter(|s| !s.suppressed).count();
+    let mut progress =
+        cfg.progress.map(|_| Tracker::new(Phase::Mutation { detected: 0, mutants: testable }, start, Some(time_limit)));
+    let mut detected = 0;
+    if let Some(t) = progress.as_mut() {
+        t.tick(host, |_| {});
+    }
     loop {
         let round: Vec<(usize, Turn)> = order.iter().filter_map(|&i| states[i].next_turn().map(|t| (i, t))).collect();
         if round.is_empty() {
@@ -252,15 +260,21 @@ pub fn run(
         let job = Mutants { prog, mutants: &mutants, states: &states, passed, opts: &opts };
         let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, round.len());
         let results = match threads {
-            Some(threads) if workers > 1 => job.round_threads(host, threads, workers, deadline, &round),
+            Some(threads) if workers > 1 => {
+                job.round_threads(host, threads, workers, deadline, &round, &mut progress, &mut detected)
+            }
             _ => {
-                let mut out = Deadline { host, deadline };
                 let mut results = Vec::new();
                 for (k, (i, turn)) in round.iter().enumerate() {
+                    let mut out = Deadline { host: &*host, deadline };
                     match job.turn(*i, turn, &mut out) {
-                        Some(r) => results.push((k, r)),
+                        Some(r) => {
+                            detected += usize::from(r.bug);
+                            results.push((k, r));
+                        }
                         None => break,
                     }
+                    report_detected(host, &mut progress, detected);
                 }
                 results
             }
@@ -276,7 +290,23 @@ pub fn run(
         }
     }
     let verdicts = states.iter().map(|s| s.verdict(passed)).collect();
-    Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached }
+    let report = Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached };
+    if let Some(t) = progress.as_mut() {
+        let (detected, tested) = (report.detected(), report.tested());
+        t.finish(host, |phase| *phase = Phase::Mutation { detected, mutants: tested });
+    }
+    report
+}
+
+/// Sends a progress snapshot, if one is due, with `detected` mutants detected so far.
+fn report_detected(host: &mut dyn Host, progress: &mut Option<Tracker>, detected: usize) {
+    if let Some(t) = progress.as_mut() {
+        t.tick(host, |phase| {
+            if let Phase::Mutation { detected: d, .. } = phase {
+                *d = detected;
+            }
+        });
+    }
 }
 
 /// Where a mutant is in its rounds.
@@ -398,7 +428,8 @@ impl Mutants<'_> {
     }
 
     /// Takes the turns of `round` on `workers` threads, until `deadline`; returns the
-    /// results by position in `round`.
+    /// results by position in `round`. Counts the mutants detected in `detected`.
+    #[allow(clippy::too_many_arguments)]
     fn round_threads(
         &self,
         host: &mut dyn Host,
@@ -406,6 +437,8 @@ impl Mutants<'_> {
         workers: usize,
         deadline: f64,
         round: &[(usize, Turn)],
+        progress: &mut Option<Tracker>,
+        detected: &mut usize,
     ) -> Vec<(usize, TurnResult)> {
         let next = AtomicUsize::new(0);
         let cancelled = AtomicBool::new(false);
@@ -432,10 +465,14 @@ impl Mutants<'_> {
         let mut results = Vec::new();
         let mut main = || loop {
             match rx.recv_timeout(Duration::from_millis(20)) {
-                Ok(r) => results.push(r),
+                Ok(r) => {
+                    *detected += usize::from(r.1.bug);
+                    results.push(r);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            report_detected(host, progress, *detected);
             if host.now() >= deadline {
                 cancelled.store(true, Ordering::Relaxed);
             }
