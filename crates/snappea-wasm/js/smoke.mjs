@@ -31,4 +31,13 @@ const busy = p.run(["check", "busy.p", "--timed", "--timeout", "1s"], {
 if (busy.exitCode !== 0 || !busy.stdout.includes("Search incomplete") || performance.now() - started > 5000) {
   throw new Error(`expected bounded incomplete search: ${busy.stdout}${busy.stderr}`);
 }
+// onProgress sees the check while it runs; the last snapshot has the final count.
+const seen = [];
+const counted = p.run(["check", "safe.p", "--timeout", "1s"], {
+  "/work/safe.p": "// snappea-lint: allow no-model-machine -- single-machine fixture tests progress snapshots\nmachine Main { start state Init { } }",
+}, { seed: 1, onProgress: (s) => seen.push(s) });
+const last = seen.filter((s) => s.phase === "check").at(-1);
+if (!last?.done || last.test_case !== "DefaultImpl" || !counted.stdout.includes(`all ${last.schedules} schedule`)) {
+  throw new Error(`expected progress snapshots: ${JSON.stringify(seen)} ${counted.stdout}`);
+}
 console.log("smoke test OK");

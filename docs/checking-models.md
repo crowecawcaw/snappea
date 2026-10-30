@@ -79,6 +79,29 @@ timing can change which bug wins and how many schedules run. Bug schedules recor
 choices and replay exactly, whatever the worker count.
 `-v` shows progress and statistics and uses one worker.
 
+While a check runs, `snappea check` shows how far it has got on stderr. On a terminal
+that is a status line, redrawn in place and cleared when each test case ends:
+
+```text
+Checking tcBank (2/5): 12,400 schedules, 3.1s of 10s
+```
+
+In CI (`CI` set) the same line prints every 30 seconds, so the log shows the run is
+alive. Otherwise, as when an agent or script captures the output, nothing extra is
+printed, and with `-v` the schedule log replaces it. `--progress off` turns it off.
+`--progress json` writes each update as one line of JSON on stderr, for a harness or
+agent watching a long check:
+
+```json
+{"phase":"check","test_case":"tcBank","test":2,"tests":5,"schedules":12400,"schedule_limit":null,"bugs":0,"workers":8,"elapsed":3.1,"time_limit":10.0,"done":false}
+```
+
+Mutation testing reports `{"phase":"mutation","detected":3,"mutants":12,...}`. The
+last update of each phase has `"done":true` and the counts the result reports. Progress
+never estimates time left: the fraction shown is against `--timeout` or the schedule
+limit. The [playground](../web/README.md) and the [Rust library](library.md) get the
+same updates.
+
 Each test case's files go to `PCheckerOutput/<test>/`, replacing the previous run's:
 `bug.txt`, `bug.schedule`, `bug.trace.json` and, for
 scenario monitors, `scenario_coverage.json`. A failure includes its report and a

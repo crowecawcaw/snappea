@@ -1,4 +1,7 @@
 // Messages between the UI and the worker that runs the WebAssembly `p` tool.
+import type { Progress } from "../../crates/snappea-wasm/js/snappea.mjs";
+
+export type { Progress };
 
 export type Files = Record<string, string>;
 
@@ -57,4 +60,6 @@ export interface WorkerReply {
   id: number;
   result?: Result;
   error?: string;
+  /** A snapshot of the running check; more replies follow. */
+  progress?: Progress;
 }

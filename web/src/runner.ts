@@ -1,8 +1,8 @@
 // Talks to p.worker.ts. A check that runs too long can be cancelled, which
 // replaces the worker.
-import type { CheckRequest, CheckResult, CompileResult, Files, Request, WorkerReply } from "./protocol";
+import type { CheckRequest, CheckResult, CompileResult, Files, Progress, Request, WorkerReply } from "./protocol";
 
-type Pending = { resolve: (r: never) => void; reject: (e: Error) => void };
+type Pending = { resolve: (r: never) => void; reject: (e: Error) => void; onProgress?: (p: Progress) => void };
 
 export class Runner {
   private worker!: Worker;
@@ -18,16 +18,17 @@ export class Runner {
     this.worker.onmessage = (e: MessageEvent<WorkerReply>) => {
       const p = this.pending.get(e.data.id);
       if (!p) return;
+      if (e.data.progress) return p.onProgress?.(e.data.progress);
       this.pending.delete(e.data.id);
       if (e.data.error) p.reject(new Error(e.data.error));
       else p.resolve(e.data.result as never);
     };
   }
 
-  private send<T>(req: Request): Promise<T> {
+  private send<T>(req: Request, onProgress?: (p: Progress) => void): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (r: never) => void, reject });
+      this.pending.set(id, { resolve: resolve as (r: never) => void, reject, onProgress });
       this.worker.postMessage({ id, req });
     });
   }
@@ -36,8 +37,9 @@ export class Runner {
     return this.send({ kind: "compile", files });
   }
 
-  check(req: Omit<CheckRequest, "kind">): Promise<CheckResult> {
-    return this.send({ kind: "check", ...req });
+  /** Checks a test case; `onProgress` sees it while it runs, a few times a second. */
+  check(req: Omit<CheckRequest, "kind">, onProgress?: (p: Progress) => void): Promise<CheckResult> {
+    return this.send({ kind: "check", ...req }, onProgress);
   }
 
   /** Stops whatever is running and rejects every pending request. */

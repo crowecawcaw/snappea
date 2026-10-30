@@ -16,6 +16,7 @@ use crate::checker::engine::{CheckResult, Checker, CheckerOptions, Exploration, 
 use crate::checker::strategy::{ScheduleTrace, StrategyKind};
 
 use crate::driver::format_0_00;
+use crate::driver::progress::{Phase, Position, Tracker};
 use crate::host::{
     full_path, report_and_exit, report_and_exit_hint, write_output, Color, Exit, Host, HostExt, Job, Stream, Threads,
 };
@@ -116,6 +117,9 @@ pub struct CheckConfig {
     pub code_coverage: bool,
     /// Report what the driver did in every schedule ([`CaseOutcome::driver`]).
     pub driver_facts: bool,
+    /// Send progress snapshots to [`Host::progress`] while checking, for the test case at
+    /// this position of the run (and during mutation testing). `None` sends none.
+    pub progress: Option<Position>,
 }
 
 impl Default for CheckConfig {
@@ -154,6 +158,7 @@ impl Default for CheckConfig {
             timed: false,
             code_coverage: false,
             driver_facts: false,
+            progress: None,
         }
     }
 }
@@ -369,7 +374,7 @@ pub fn replay(
     opts.replay = Some(trace);
     opts.replay_bound_at_end = cfg.style == Style::Snappea && cfg.fail_on_max_steps;
     let start = host.now();
-    let (res, _) = run_engine(host, loaded, tc, &opts, None, Some(1), false)?;
+    let (res, _) = run_engine(host, loaded, tc, &opts, None, Some(1), false, None)?;
     // `ReplayStrategy` reports a schedule it cannot follow with `Error.ReportAndExit`
     if let Some(e) = &res.replay_error {
         return Err(report_and_exit_hint(
@@ -452,10 +457,27 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
     }
 }
 
-/// Engine output on the console, with an optional deadline (`--timeout`).
+/// Engine output on the console, with an optional deadline (`--timeout`) and progress.
 struct ConsoleOut<'h> {
     host: &'h mut dyn Host,
     deadline: Option<f64>,
+    progress: Option<Tracker>,
+}
+
+impl ConsoleOut<'_> {
+    /// Sends a progress snapshot, if one is due, with these counts.
+    fn tick(&mut self, schedules: usize, bugs: usize) {
+        if let Some(t) = self.progress.as_mut() {
+            t.tick(self.host, |phase| set_counts(phase, schedules, bugs));
+        }
+    }
+}
+
+fn set_counts(phase: &mut Phase, schedules: usize, bugs: usize) {
+    if let Phase::Check { schedules: s, bugs: b, .. } = phase {
+        *s = schedules;
+        *b = bugs;
+    }
 }
 
 impl Output for ConsoleOut<'_> {
@@ -467,12 +489,21 @@ impl Output for ConsoleOut<'_> {
         self.host.write(Stream::Out, s, Some(Color::Yellow));
         self.host.write(Stream::Out, "\n", None);
     }
+    fn schedule_finished(&mut self, schedule: usize, bug: Option<&str>) {
+        // one worker: its schedules are numbered in order
+        let bugs = match self.progress.as_ref().map(|t| &t.progress().phase) {
+            Some(Phase::Check { bugs, .. }) => bugs + usize::from(bug.is_some()),
+            _ => return,
+        };
+        self.tick(schedule, bugs);
+    }
     fn cancelled(&mut self) -> bool {
         self.deadline.map(|d| self.host.now() >= d).unwrap_or(false)
     }
 }
 
 /// Runs the engine on `tc` with up to `workers` workers (`None` = one per CPU core).
+#[allow(clippy::too_many_arguments)]
 fn run_engine(
     host: &mut dyn Host,
     loaded: &Loaded,
@@ -481,6 +512,8 @@ fn run_engine(
     deadline: Option<f64>,
     workers: Option<usize>,
     code_coverage: bool,
+    // where the test case sits in the run, and when its check started
+    progress: Option<(Position, f64)>,
 ) -> Result<(CheckResult, usize), Exit> {
     let prog = &loaded.analysis.program;
     let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
@@ -489,11 +522,28 @@ fn run_engine(
     let threads = host.threads();
     let requested = threads.map_or(1, |t| workers.unwrap_or(t.available));
     let workers = WorkerPool::workers_for(opts, requested);
-    let mut out = ConsoleOut { host, deadline };
+    let progress = progress.map(|(pos, start)| {
+        let phase = Phase::Check {
+            test_case: tc.name.clone(),
+            test: pos.test,
+            tests: pos.tests,
+            schedules: 0,
+            schedule_limit: (opts.iterations > 0).then_some(opts.iterations),
+            bugs: 0,
+            workers,
+        };
+        Tracker::new(phase, start, deadline.map(|d| d - start))
+    });
+    let mut out = ConsoleOut { host, deadline, progress };
+    out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
         _ => checker.check(tc, opts, &mut out),
     };
+    if let (Some(t), Ok(r)) = (out.progress.as_mut(), result.as_ref()) {
+        let schedules = r.report.explored_fair_schedules + r.report.explored_unfair_schedules;
+        t.finish(out.host, |phase| set_counts(phase, schedules, r.report.num_bugs));
+    }
     result.map(|r| (r, workers)).map_err(|e| report_and_exit(host, &e))
 }
 
@@ -558,6 +608,7 @@ fn run_workers(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
+        out.tick(pool.started(), pool.bugs());
         if !timed_out.load(Ordering::Relaxed) && out.cancelled() {
             timed_out.store(true, Ordering::Relaxed);
         }
@@ -630,7 +681,16 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     }
     let engine_start = host.now();
     let deadline = cfg.timeout.map(|t| engine_start + f64::from(t));
-    let (res, workers) = run_engine(host, loaded, &tc, &opts, deadline, cfg.workers, cfg.code_coverage)?;
+    let (res, workers) = run_engine(
+        host,
+        loaded,
+        &tc,
+        &opts,
+        deadline,
+        cfg.workers,
+        cfg.code_coverage,
+        cfg.progress.map(|p| (p, engine_start)),
+    )?;
     let engine_elapsed = host.now() - engine_start;
     if res.cancelled {
         host.out_line("... Checker timed out.");

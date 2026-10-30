@@ -14,8 +14,9 @@ use serde_json::{json, Value};
 use crate::checker::code_coverage::{uncovered_lines, CodeMap, Hits, Scope, SHOWN_UNCOVERED};
 use crate::checker::strategy::StrategyKind;
 use crate::driver::check::{self, CheckConfig, Style};
+use crate::driver::progress::Position;
 use crate::driver::scenario;
-use crate::host::{full_path, Buffered, Color, Exit, Host, HostExt, Quiet, Stream};
+use crate::host::{full_path, Buffered, Color, Exit, Host, HostExt, ProgressView, Quiet, Stream};
 use crate::project::pproj::Includes;
 
 pub(super) const OK: i32 = 0;
@@ -117,6 +118,11 @@ Output:
                             case ran to FILE
   -v, --verbose             Show progress and statistics, and log every schedule.
                             Uses one worker.
+      --progress <WHEN>     auto, off or json. auto (default) shows a status line
+                            when stderr is a terminal and a line every 30s in CI
+                            (CI set); none with --verbose. json writes a JSON
+                            object per update to stderr, e.g. for a harness
+                            watching a long check.
 
 Prints one line per test case with its coverage, and for a bug its report and the
 `snappea replay` command that reproduces it; then the code no test case ran. By default,
@@ -169,6 +175,7 @@ Options:
                             As for `snappea check`
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
   -v, --verbose             Show progress and statistics
+      --progress <WHEN>     auto, off or json, as for `snappea check`
 
 `// snappea-lint: allow mutation[:<kind>] -- reason` before a statement, handler,
 function or machine accepts its mutants. See docs/checking-models.md.
@@ -502,8 +509,43 @@ pub(super) fn output_format(a: &Args, host: &dyn Host) -> Result<Format, String>
     if let Some(f) = host.env_var("SNAPPEA_FORMAT").filter(|v| !v.is_empty()) {
         return parse(&f, "SNAPPEA_FORMAT");
     }
-    let ci = host.env_var("CI").is_some_and(|v| !matches!(v.as_str(), "" | "0" | "false"));
-    Ok(if host.stdout_is_terminal() || ci { Format::Text } else { Format::Json })
+    Ok(if host.stdout_is_terminal() || is_ci(host) { Format::Text } else { Format::Json })
+}
+
+/// `--progress`: how `check` shows a running check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgressMode {
+    Auto,
+    Off,
+    Json,
+}
+
+fn progress_mode(a: &Args) -> Result<ProgressMode, String> {
+    match a.get("progress") {
+        None | Some("auto") => Ok(ProgressMode::Auto),
+        Some("off") => Ok(ProgressMode::Off),
+        Some("json") => Ok(ProgressMode::Json),
+        Some(v) => Err(format!("'--progress' takes auto, off or json, not '{}'", v)),
+    }
+}
+
+/// How progress is shown: with `auto`, a status line when stderr is a terminal, a line
+/// every 30 seconds in CI, and nothing otherwise or with `--verbose` (which logs every
+/// schedule instead).
+fn progress_view(a: &Args, host: &dyn Host) -> Option<ProgressView> {
+    match progress_mode(a).ok()? {
+        ProgressMode::Off => None,
+        ProgressMode::Json => Some(ProgressView::Json),
+        ProgressMode::Auto if a.has("verbose") => None,
+        ProgressMode::Auto if host.stderr_is_terminal() => Some(ProgressView::Live { shown: false }),
+        ProgressMode::Auto if is_ci(host) => Some(ProgressView::Heartbeat { printed_at: None }),
+        ProgressMode::Auto => None,
+    }
+}
+
+/// Whether the `CI` environment variable says this runs in CI.
+fn is_ci(host: &dyn Host) -> bool {
+    host.env_var("CI").is_some_and(|v| !matches!(v.as_str(), "" | "0" | "false"))
 }
 
 /// A command's exit status and result, or the status of a failure it has reported.
@@ -523,10 +565,13 @@ pub(super) fn with_output(
         Ok(f) => f,
         Err(m) => return usage_error(host, &m, Some(cmd)),
     };
+    let progress = progress_view(a, host);
     let mut capture = match format {
         Format::Text => Quiet::recording_errors(host),
         Format::Json => Quiet::capturing(host),
     };
+    // progress goes straight to stderr, never into the captured errors
+    capture.progress = progress;
     let outcome = body(&mut capture);
     let (code, mut result) = outcome.unwrap_or_else(|_| {
         // what the command reported: its errors, else what it printed
@@ -730,6 +775,7 @@ const CHECK_OPTS: &[Opt] = &[
     flag("allow-incomplete-coverage", None),
     flag("no-driver-facts", None),
     flag("ignore-foreign-files", None),
+    value("progress", None),
 ];
 
 /// Default time limit for mutation testing, in seconds.
@@ -855,6 +901,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     cfg.verbose = a.has("verbose");
     cfg.driver_facts = !a.has("no-driver-facts");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
+    cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
     check::finish_options(cfg);
     Ok(patterns)
 }
@@ -949,8 +996,9 @@ fn run_check(
     let mut incomplete = 0;
     let all_tests = prog.test_cases();
     let mut passed = Vec::new();
-    for name in selected {
+    for (i, name) in selected.into_iter().enumerate() {
         cfg.test_case_name = name;
+        cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
         check::set_output_directory(&mut con, &mut cfg)?;
         let case = check::testing_process(&mut con, &loaded, &cfg)?;
         if case.bugs > 0 {
@@ -1058,7 +1106,7 @@ fn run_check(
             let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
             let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
             let report =
-                crate::driver::mutation::run(con.inner, prog, &cfg, &passed, &suppressed, &drivers, f64::from(limit));
+                crate::driver::mutation::run(&mut con, prog, &cfg, &passed, &suppressed, &drivers, f64::from(limit));
             for l in report.lines(SHOWN_UNCOVERED) {
                 con.inner.out_line(&l);
             }
