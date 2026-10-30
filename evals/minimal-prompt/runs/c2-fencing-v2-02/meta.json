@@ -1,0 +1,19 @@
+{
+  "run_id": "c2-fencing-v2-02",
+  "task": "fencing",
+  "skill": {
+    "source": "/tmp/claude-0/-home-user-snappea/765f5ef2-00d8-5582-8aaf-89fdb0785eda/scratchpad/skills/v2/skills/p-modeling",
+    "label": "v2",
+    "tree_hash": "edfa2027e53f10d76fa5f6521159969a62e71fb257414edcb1a2008445a1e2db"
+  },
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "0e2d93f362c0d9b2979946fbcc7a5807a0803f8b0ee87bf7d1dd6fb415452825",
+  "task_hash": "9f4f831196641a22af80ba9895486d9cf7e624f7f4e5a076f92b681b2a4cc95f",
+  "created": 1793326855.6631596,
+  "prompt_sha256": "ac6b46631c708a0f03936c9a940cf957837d920ca86352edad27b854dc8a09a5"
+}

@@ -1,0 +1,334 @@
+{
+  "run_id": "c2-queue-none-02",
+  "task": "queue",
+  "skill": "none",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 5,
+    "agent_tests_pass_own_solution": 5,
+    "reference_passing": 5,
+    "reference_rejecting": [],
+    "observation_tests": 0,
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full"
+        ]
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full",
+          "test_queue::test_retries_idempotent",
+          "test_queue::test_shared_store_capacity",
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent",
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent",
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent",
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_put_take_same_id_distinct"
+        ]
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_threads_conserve_items"
+        ]
+      },
+      "memo-in-instance": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_threads_conserve_items"
+        ]
+      }
+    },
+    "killed": 10,
+    "killed_by_observation": 0,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 5,
+    "mutants": {
+      "negate@31": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@23": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@11": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@31": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@36": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "pop-end@44": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@31": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@31": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@27": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      }
+    },
+    "total": 25,
+    "killed": 22,
+    "killed_by_observation": 0
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "search_incomplete",
+    "test_cases": 1,
+    "failed": 0,
+    "incomplete": 1,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcQueue",
+        "result": "ok",
+        "complete": false,
+        "schedules": 112758
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 1,
+    "hot_states": 0,
+    "design_doc_chars": 0
+  },
+  "process": {
+    "calls": 6,
+    "minutes": 1.5,
+    "read_skill": false,
+    "first_check_call": 3,
+    "first_solution_write_call": 4,
+    "model_first": true,
+    "check_runs": 2,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 5,
+    "written": 11,
+    "skipped": [],
+    "invalid": [
+      "memo-in-instance"
+    ],
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": false
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": false
+      }
+    },
+    "valid": 10,
+    "killed": 10,
+    "killed_by_observation": 0
+  }
+}

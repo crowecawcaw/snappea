@@ -1,0 +1,19 @@
+{
+  "run_id": "fencing-v1-02",
+  "task": "fencing",
+  "skill": {
+    "source": "skills/p-modeling",
+    "label": "v1",
+    "tree_hash": "17357110e5c065a80ee03eafbd2343fcbf7a979ee5b93bd88ec8097a526d0c16"
+  },
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "b5b2ce306b1a5cfb7b5a16d340f4fb5adb989743c90b784b19ec19821a143f1f",
+  "task_hash": "9f4f831196641a22af80ba9895486d9cf7e624f7f4e5a076f92b681b2a4cc95f",
+  "created": 1793323811.0688899,
+  "prompt_sha256": "ac658bf9248b864a70cbadac3678a9bb2d69d4fabba36bb5c9480a8b88ef06f7"
+}

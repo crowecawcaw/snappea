@@ -1,0 +1,15 @@
+{
+  "run_id": "fencing-none-01",
+  "task": "fencing",
+  "skill": null,
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "b5b2ce306b1a5cfb7b5a16d340f4fb5adb989743c90b784b19ec19821a143f1f",
+  "task_hash": "9f4f831196641a22af80ba9895486d9cf7e624f7f4e5a076f92b681b2a4cc95f",
+  "created": 1793323809.5635233,
+  "prompt_sha256": "135a6f9f11d6142cd3395e415badd4cb95efd9fcc620037a3699d69fc0b687e7"
+}

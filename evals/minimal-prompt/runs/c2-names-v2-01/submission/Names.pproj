@@ -1,0 +1,7 @@
+<Project>
+  <ProjectName>Names</ProjectName>
+  <InputFiles>
+    <PFile>./Spec.p</PFile>
+    <PFile>./Names.p</PFile>
+  </InputFiles>
+</Project>

@@ -1,0 +1,13 @@
+{
+  "case-sensitive": "Bob and bob are different names",
+  "length-17": "accepts 17-character names",
+  "empty-name": "accepts the empty name",
+  "claim-ignores-cas": "two users racing for a free name both get it",
+  "claim-steals": "claiming a name someone else holds succeeds",
+  "free-before-claim": "rename frees the old name before claiming the new one",
+  "rename-keeps-old": "rename never frees the old name",
+  "register-same-false": "registering the name you hold returns False",
+  "rename-same-frees": "renaming to your own name frees it",
+  "register-second-name": "a user with a name can register another",
+  "rename-without-name": "rename works for a user with no name"
+}

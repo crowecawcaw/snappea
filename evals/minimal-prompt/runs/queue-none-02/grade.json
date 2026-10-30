@@ -1,0 +1,251 @@
+{
+  "run_id": "queue-none-02",
+  "task": "queue",
+  "skill": "none",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 3,
+    "agent_tests_pass_own_solution": 3,
+    "reference_passing": 3,
+    "reference_rejecting": [],
+    "observation_tests": 0,
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_and_full"
+        ]
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_and_full",
+          "test_queue::test_retries_idempotent"
+        ]
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent",
+          "test_queue::test_threads"
+        ]
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent"
+        ]
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent"
+        ]
+      },
+      "empty-take-not-memoized": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retries_idempotent"
+        ]
+      },
+      "ignore-cas-put": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "ignore-cas-take": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "memo-in-instance": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_threads"
+        ]
+      }
+    },
+    "killed": 7,
+    "killed_by_observation": 0,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 3,
+    "mutants": {
+      "false@20": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "index-end@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@20": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@20": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@16": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@25": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@25": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "pop-end@34": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@25": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@20": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@13": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "true@25": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@25": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": false
+      }
+    },
+    "total": 21,
+    "killed": 17,
+    "killed_by_observation": 0
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 1,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcRetry",
+        "result": "ok",
+        "complete": true,
+        "schedules": 854
+      }
+    ],
+    "spec_monitors": 0,
+    "test_decls": 1,
+    "hot_states": 0,
+    "design_doc_chars": 0
+  },
+  "process": {
+    "calls": 10,
+    "minutes": 0.7,
+    "read_skill": false,
+    "first_check_call": 3,
+    "first_solution_write_call": 4,
+    "model_first": true,
+    "check_runs": 8,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  }
+}

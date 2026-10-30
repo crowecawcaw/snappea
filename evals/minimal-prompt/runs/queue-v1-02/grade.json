@@ -1,0 +1,269 @@
+{
+  "run_id": "queue-v1-02",
+  "task": "queue",
+  "skill": "v1",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 12,
+    "agent_tests_pass_own_solution": 12,
+    "reference_passing": 10,
+    "reference_rejecting": [
+      "test_queue::test_concurrent_conservation[0]",
+      "test_queue::test_concurrent_conservation[2]"
+    ],
+    "observation_tests": 10,
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full",
+          "test_queue::test_observed_history_matches_monitor",
+          "test_queue::test_shared_store_many_queue_objects"
+        ]
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full",
+          "test_queue::test_capacity_any[1]",
+          "test_queue::test_capacity_any[2]",
+          "test_queue::test_capacity_any[5]",
+          "test_queue::test_concurrent_conservation[1]"
+        ]
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full",
+          "test_queue::test_concurrent_conservation[1]",
+          "test_queue::test_concurrent_conservation[3]",
+          "test_queue::test_concurrent_conservation[4]",
+          "test_queue::test_observed_history_matches_monitor"
+        ]
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[1]",
+          "test_queue::test_concurrent_conservation[3]",
+          "test_queue::test_concurrent_conservation[4]",
+          "test_queue::test_observed_history_matches_monitor",
+          "test_queue::test_retries_and_same_id_distinct_kinds"
+        ]
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_basic_fifo_and_full",
+          "test_queue::test_concurrent_conservation[1]",
+          "test_queue::test_concurrent_conservation[3]",
+          "test_queue::test_observed_history_matches_monitor",
+          "test_queue::test_retries_and_same_id_distinct_kinds"
+        ]
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[4]",
+          "test_queue::test_retries_and_same_id_distinct_kinds"
+        ]
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[4]",
+          "test_queue::test_observed_history_matches_monitor",
+          "test_queue::test_retries_and_same_id_distinct_kinds"
+        ]
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[4]"
+        ]
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[3]",
+          "test_queue::test_concurrent_conservation[4]"
+        ]
+      },
+      "memo-in-instance": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_concurrent_conservation[1]",
+          "test_queue::test_concurrent_conservation[4]"
+        ]
+      }
+    },
+    "killed": 10,
+    "killed_by_observation": 10,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 10,
+    "mutants": {
+      "true@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@10": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@20": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@24": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@10": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@20": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@20": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@10": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "pop-end@37": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@20": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@20": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@10": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@29": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      }
+    },
+    "total": 20,
+    "killed": 17,
+    "killed_by_observation": 17
+  },
+  "model_check": {
+    "p_files": 2,
+    "exit_code": 2,
+    "status": null,
+    "test_cases": null,
+    "failed": null,
+    "incomplete": null,
+    "coverage_gaps": null,
+    "tests": [],
+    "spec_monitors": 2,
+    "test_decls": 3,
+    "hot_states": 1,
+    "design_doc_chars": 0
+  },
+  "process": {
+    "calls": 11,
+    "minutes": 1.6,
+    "read_skill": true,
+    "first_check_call": 4,
+    "first_solution_write_call": 8,
+    "model_first": true,
+    "check_runs": 4,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  }
+}

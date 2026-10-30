@@ -1,0 +1,15 @@
+{
+  "run_id": "c2-names-none-01",
+  "task": "names",
+  "skill": null,
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "0e2d93f362c0d9b2979946fbcc7a5807a0803f8b0ee87bf7d1dd6fb415452825",
+  "task_hash": "94468490e15014c36471d53f69840a89b226cfb35a08fc50b384f06b9e54ad3a",
+  "created": 1793325657.1663115,
+  "prompt_sha256": "7794a929aec2ecb1fb490c7ed9b7b9fc7ca2d81f233d4d6cb47d6fbd04cbde39"
+}

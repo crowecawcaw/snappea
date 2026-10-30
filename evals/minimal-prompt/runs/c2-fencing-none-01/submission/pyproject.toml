@@ -1,0 +1,3 @@
+[tool.snappea]
+spec_files = ["model/lock.p"]
+mode = "off"

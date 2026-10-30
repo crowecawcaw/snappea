@@ -1,0 +1,19 @@
+{
+  "run_id": "c2-queue-v1-01",
+  "task": "queue",
+  "skill": {
+    "source": "/tmp/claude-0/-home-user-snappea/765f5ef2-00d8-5582-8aaf-89fdb0785eda/scratchpad/skills/v1/skills/p-modeling",
+    "label": "v1",
+    "tree_hash": "17357110e5c065a80ee03eafbd2343fcbf7a979ee5b93bd88ec8097a526d0c16"
+  },
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "0e2d93f362c0d9b2979946fbcc7a5807a0803f8b0ee87bf7d1dd6fb415452825",
+  "task_hash": "cdcc6dc90c91126834f529a1781c90adbdcf169ccfc238fa5565750f59ab04db",
+  "created": 1793326432.9835298,
+  "prompt_sha256": "4f418e1333437c0f731126eddbb4f3cf0d4753d3b3cacdad98c47544ab7b2a7d"
+}

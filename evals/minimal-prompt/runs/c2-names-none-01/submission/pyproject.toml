@@ -1,0 +1,2 @@
+[tool.snappea]
+spec_files = ["model/names.p"]

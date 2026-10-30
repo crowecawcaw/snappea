@@ -1,0 +1,13 @@
+{
+  "lifo": "takes the newest item",
+  "capacity-off-by-one": "accepts one item past capacity",
+  "no-put-memo": "a retried put appends again",
+  "no-take-memo": "a retried take removes another item",
+  "rejection-not-memoized": "a retried rejected put succeeds once space frees",
+  "empty-take-not-memoized": "a retried empty take removes a later item",
+  "shared-namespace": "a take with a put's request id returns the put's result",
+  "ignore-cas-put": "a put that loses a compare-and-swap still reports success",
+  "ignore-cas-take": "a take that loses a compare-and-swap still returns an item",
+  "memo-in-instance": "retry memos live in the Queue object, not the Store",
+  "stale-retry": "after a lost compare-and-swap, reuses the already-modified record"
+}

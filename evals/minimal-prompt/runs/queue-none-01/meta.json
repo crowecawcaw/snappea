@@ -1,0 +1,15 @@
+{
+  "run_id": "queue-none-01",
+  "task": "queue",
+  "skill": null,
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "b5b2ce306b1a5cfb7b5a16d340f4fb5adb989743c90b784b19ec19821a143f1f",
+  "task_hash": "cdcc6dc90c91126834f529a1781c90adbdcf169ccfc238fa5565750f59ab04db",
+  "created": 1793323807.7279258,
+  "prompt_sha256": "77d8a31e0e647ab439c0ae608df34053e680d4fcc8603c009a49eca636f65a89"
+}

@@ -1,0 +1,13 @@
+You are working in a sandbox. Your only tool is a shell inside it: run each command with
+
+    python3 /home/user/snappea/evals/minimal-prompt/harness.py bridge fencing-v1-01 <<'CMD'
+    <your shell command>
+    CMD
+
+Do not use any other tool, and do not read or write files outside the sandbox. The sandbox
+has no network. You have 60 commands and 40 minutes; each command may run for
+120 seconds.
+
+Use the P modeling skill at /opt/skill/SKILL.md.
+
+Complete the task in /work/TASK.md. When done, reply with a short summary.

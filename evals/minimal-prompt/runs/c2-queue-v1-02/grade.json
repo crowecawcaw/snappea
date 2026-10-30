@@ -1,0 +1,350 @@
+{
+  "run_id": "c2-queue-v1-02",
+  "task": "queue",
+  "skill": "v1",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 14,
+    "agent_tests_pass_own_solution": 14,
+    "reference_passing": 0,
+    "reference_rejecting": [
+      "test_queue::test_monitor_rejects_defects[IgnoresCapacity]",
+      "test_queue::test_monitor_rejects_defects[NoMemo]",
+      "test_queue::test_new_queue_objects_share_state",
+      "test_queue::test_same_request_concurrently_applies_once",
+      "test_queue::test_sequential_boundaries_and_retries[1]",
+      "test_queue::test_sequential_boundaries_and_retries[2]",
+      "test_queue::test_sequential_boundaries_and_retries[3]",
+      "test_queue::test_sequential_boundaries_and_retries[5]",
+      "test_queue::test_threads_with_retries[0]",
+      "test_queue::test_threads_with_retries[1]",
+      "test_queue::test_threads_with_retries[2]",
+      "test_queue::test_threads_with_retries[3]",
+      "test_queue::test_threads_with_retries[4]",
+      "test_queue::test_threads_with_retries[5]"
+    ],
+    "observation_tests": 0,
+    "mutants": {
+      "lifo": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "capacity-off-by-one": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "no-put-memo": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "no-take-memo": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "rejection-not-memoized": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "empty-take-not-memoized": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "shared-namespace": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "ignore-cas-put": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "ignore-cas-take": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "memo-in-instance": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      },
+      "stale-retry": {
+        "killed": false,
+        "killed_by_observation": false,
+        "timed_out": false,
+        "killers": []
+      }
+    },
+    "killed": 0,
+    "killed_by_observation": 0,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 14,
+    "mutants": {
+      "negate@17": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@22": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@45": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "pop-end@41": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@28": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "flip@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@22": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@11": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "drop-return@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@23": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@19": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@22": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@23": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@22": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "index-end@23": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@28": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@22": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@28": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@23": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@28": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@23": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      }
+    },
+    "total": 30,
+    "killed": 26,
+    "killed_by_observation": 26
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 1,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcGenerated",
+        "result": "ok",
+        "complete": true,
+        "schedules": 108389
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 1,
+    "hot_states": 1,
+    "design_doc_chars": 0
+  },
+  "process": {
+    "calls": 10,
+    "minutes": 3.9,
+    "read_skill": true,
+    "first_check_call": 4,
+    "first_solution_write_call": 5,
+    "model_first": true,
+    "check_runs": 6,
+    "check_runs_exit1": 0,
+    "observe_runs": 0
+  },
+  "transplant": {
+    "stable_tests": 14,
+    "written": 11,
+    "skipped": [],
+    "invalid": [],
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "memo-in-instance": {
+        "killed": true,
+        "killed_by_observation": true
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true
+      }
+    },
+    "valid": 11,
+    "killed": 11,
+    "killed_by_observation": 11
+  }
+}
