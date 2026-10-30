@@ -10,7 +10,7 @@ documentation = "https://docs.rs/snappea"
 readme = "README.md"
 keywords = ["p-language", "model-checking", "formal-methods", "testing", "specification"]
 categories = ["development-tools::testing", "command-line-utilities"]
-include = ["Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE", "src/**/*.rs", "src/**/README.md"]
+include = ["Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE", "src/**/*.rs", "src/**/README.md", "src/cli/guide/*.md"]
 
 [lib]
 name = "snappea"

@@ -11,6 +11,7 @@ for shared state, retries, concurrency and recovery. Pure transformations need o
 ordinary tests.
 
 The model is worth what it changes in the code and tests. Follow these steps in order.
+The same steps are built into the CLI: `snappea guide`.
 
 ## 1. List the risks (before any code)
 
