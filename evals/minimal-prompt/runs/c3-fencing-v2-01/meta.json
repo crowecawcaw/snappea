@@ -1,0 +1,20 @@
+{
+  "run_id": "c3-fencing-v2-01",
+  "task": "fencing",
+  "skill": {
+    "source": "/tmp/claude-0/-home-user-snappea/765f5ef2-00d8-5582-8aaf-89fdb0785eda/scratchpad/skills/v2b/skills/p-modeling",
+    "label": "v2",
+    "tree_hash": "480de25d2ce271b6c350897a206abbf9e86586a09f7240fc242ece6f0fe27865"
+  },
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "00bffa70e9fcb5dcc215e394d2a9f8b3031c5af19457ef7d5d8f7d1919291abd",
+  "task_hash": "9f4f831196641a22af80ba9895486d9cf7e624f7f4e5a076f92b681b2a4cc95f",
+  "created": 1793330242.1041343,
+  "prompt_sha256": "56d796d888b03010bee948e2ce2728f52ed5e7cba5b115bae197074d1e90f3a1",
+  "binary": "/home/user/snappea/evals/minimal-prompt/bin/snappea-c3"
+}

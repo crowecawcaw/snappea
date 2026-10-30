@@ -85,7 +85,7 @@ def cmd_start(a):
     extra = []
     meta = {"run_id": a.run_id, "task": a.task, "skill": None, "model": a.model,
             "limits": {"calls": a.calls, "seconds": a.minutes * 60, "command_seconds": a.command_seconds},
-            "binary_sha256": hashlib.sha256(BINARY.read_bytes()).hexdigest(),
+            "binary": str(BINARY), "binary_sha256": hashlib.sha256(BINARY.read_bytes()).hexdigest(),
             "task_hash": tree_hash(task), "created": time.time()}
     if a.skill:
         skill = run / "skill"
@@ -375,6 +375,7 @@ def grade_transplant(run: Path, sub: Path, private: Path) -> dict:
 def cmd_grade_transplant(a):
     run = RUNS / a.run_id
     meta = json.loads((run / "meta.json").read_text())
+    use_run_binary(meta)
     path = run / "grade.json"
     grade = json.loads(path.read_text())
     grade["transplant"] = grade_transplant(run, run / "submission", HERE / "tasks" / meta["task"] / "private")
@@ -435,9 +436,18 @@ def grade_process(run: Path) -> dict:
     }
 
 
+def use_run_binary(meta: dict):
+    """Grade with the binary the solver had, when it is still on disk."""
+    global BINARY
+    path = Path(meta.get("binary", ""))
+    if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == meta["binary_sha256"]:
+        BINARY = path
+
+
 def cmd_grade(a):
     run = RUNS / a.run_id
     meta = json.loads((run / "meta.json").read_text())
+    use_run_binary(meta)
     sub = run / "submission"
     private = HERE / "tasks" / meta["task"] / "private"
     grade = {"run_id": a.run_id, "task": meta["task"],

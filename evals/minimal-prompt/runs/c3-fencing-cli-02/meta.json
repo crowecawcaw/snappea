@@ -1,0 +1,16 @@
+{
+  "run_id": "c3-fencing-cli-02",
+  "task": "fencing",
+  "skill": null,
+  "model": "sonnet",
+  "limits": {
+    "calls": 60,
+    "seconds": 2400,
+    "command_seconds": 120
+  },
+  "binary_sha256": "00bffa70e9fcb5dcc215e394d2a9f8b3031c5af19457ef7d5d8f7d1919291abd",
+  "task_hash": "9f4f831196641a22af80ba9895486d9cf7e624f7f4e5a076f92b681b2a4cc95f",
+  "created": 1793330241.6357987,
+  "prompt_sha256": "8880c86d2d016a96d5343c429649e1395fa296981c4161cfd7a0218c9a10620f",
+  "binary": "/home/user/snappea/evals/minimal-prompt/bin/snappea-c3"
+}
