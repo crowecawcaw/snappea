@@ -1030,6 +1030,13 @@ fn run_check(
         }
     }
     let mut undetected = 0;
+    let mut skipped = Vec::new();
+    if !only && allow_incomplete_coverage && required_missing {
+        skipped.push("required coverage (--allow-incomplete-coverage)");
+    }
+    if matches!(mutation, Mutation::After(None)) && failed == 0 {
+        skipped.push("mutation testing (--no-mutation)");
+    }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
         _ if failed > 0 => {
@@ -1062,6 +1069,8 @@ fn run_check(
         required_gap_count,
         &required_uncovered,
         mutation_time_limit_reached,
+        undetected,
+        &skipped,
     );
     let out = match cfg.output_path.trim_end_matches('/') {
         "" if cfg.output_path.is_empty() => ".",
@@ -1081,6 +1090,9 @@ fn run_check(
     } else {
         format!("{} of {} test case{} failed in {}{}. Output: {}/", failed, n, plural(n), elapsed, memory, out)
     });
+    if let Some(note) = summary["note"].as_str() {
+        con.inner.out_line(note);
+    }
     if only {
         let result = json!({
             "project": cfg.project_name,
@@ -1121,6 +1133,7 @@ fn run_check(
 
 /// A concise top-level outcome. Mutation time limits are reported independently because
 /// they do not change whether the test search or required-coverage gate passed.
+#[allow(clippy::too_many_arguments)]
 fn check_summary(
     failed: usize,
     test_cases: usize,
@@ -1129,7 +1142,22 @@ fn check_summary(
     coverage_gaps: usize,
     uncovered: &[crate::checker::code_coverage::Uncovered],
     mutation_time_limit_reached: bool,
+    mutants_undetected: usize,
+    skipped: &[&str],
 ) -> Value {
+    // What a pass does not cover, so a partial check is not read as a full one.
+    let mut notes = Vec::new();
+    if !skipped.is_empty() {
+        notes.push(format!("Skipped: {}. Run without these options before relying on the result.", skipped.join(", ")));
+    }
+    if failed == 0 && mutants_undetected > 0 {
+        notes.push(format!(
+            "{} mutant{} not detected: the model ran the changed code but no assertion failed. \
+             Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
+            mutants_undetected,
+            plural(mutants_undetected)
+        ));
+    }
     let (status, message) = if failed > 0 {
         ("tests_failed", format!("{} of {} test case{} failed", failed, test_cases, plural(test_cases)))
     } else if coverage_failed {
@@ -1158,6 +1186,9 @@ fn check_summary(
         })).collect::<Vec<_>>(),
         "uncovered_more": uncovered.len().saturating_sub(5),
         "mutation_time_limit_reached": mutation_time_limit_reached,
+        "mutants_undetected": mutants_undetected,
+        "skipped": skipped,
+        "note": if notes.is_empty() { Value::Null } else { json!(notes.join(" ")) },
     })
 }
 
@@ -1583,19 +1614,31 @@ mod tests {
             context: "Main.S, on ePing".into(),
             what: "if (x) never true".into(),
         };
-        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true);
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, 0, &[]);
         assert_eq!(coverage["status"], "coverage_failed");
         assert_eq!(coverage["message"], "Required coverage is missing (3 points)");
         assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
         assert_eq!(coverage["mutation_time_limit_reached"], true);
 
-        let failed = check_summary(1, 2, 0, false, 0, &[], false);
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, 0, &[]);
         assert_eq!(failed["status"], "tests_failed");
 
-        let incomplete = check_summary(0, 2, 1, false, 0, &[], false);
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, 0, &[]);
         assert_eq!(incomplete["status"], "search_incomplete");
 
-        let passed = check_summary(0, 2, 0, false, 0, &[], false);
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, 0, &[]);
         assert_eq!(passed["status"], "passed");
+        assert!(passed["note"].is_null());
+    }
+
+    #[test]
+    fn check_summary_notes_skipped_checks_and_undetected_mutants() {
+        let partial = check_summary(0, 1, 0, false, 0, &[], false, 0, &["mutation testing (--no-mutation)"]);
+        assert_eq!(partial["status"], "passed");
+        assert!(partial["note"].as_str().unwrap().starts_with("Skipped: mutation testing (--no-mutation)."));
+
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, 4, &[]);
+        assert_eq!(weak["mutants_undetected"], 4);
+        assert!(weak["note"].as_str().unwrap().starts_with("4 mutants not detected"));
     }
 }
