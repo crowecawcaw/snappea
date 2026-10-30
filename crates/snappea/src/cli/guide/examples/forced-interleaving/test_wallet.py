@@ -1,4 +1,13 @@
-"""Turn model interleavings into deterministic tests, and check real calls against the spec."""
+"""Turn the interleavings a P model explores into deterministic tests, and check real
+calls against the model's spec.
+
+- SameVersionStore makes two calls read the same version before either writes.
+- InterferingStore runs a competing call between a load and its compare-and-swap.
+- Recorder records real calls and checks them against WalletContract in Wallet.p.
+
+wallet.py is the implementation under test. Run: python -m pytest (needs pysnappea).
+Break wallet.py on purpose (ignore the compare_swap result) and both forced tests fail.
+"""
 import threading
 from concurrent.futures import ThreadPoolExecutor
 

@@ -36,7 +36,16 @@ fn every_topic_prints_markdown() {
         assert!(out.status.success(), "snappea guide {topic} failed");
         assert!(String::from_utf8_lossy(&out.stdout).starts_with("# "), "guide {topic} is not Markdown");
     }
-    for bad in [&["guide", "nope"][..], &["guide", "example", "nope"]] {
+    for e in EXAMPLES {
+        let main = snappea(&["guide", "example", e], &dir);
+        let body = String::from_utf8_lossy(&main.stdout);
+        assert!(main.status.success() && body.contains(&format!("snappea guide example {e}:")), "{body}");
+        assert!(body.len() < 20_000, "example {e} prints {} bytes; keep the main file short", body.len());
+    }
+    let one = snappea(&["guide", "example", "reservation", "storage.py"], &dir);
+    assert!(String::from_utf8_lossy(&one.stdout).contains("class ReservationStore"));
+    for bad in [&["guide", "nope"][..], &["guide", "example", "nope"], &["guide", "example", "reservation", "nope.py"]]
+    {
         assert_eq!(snappea(bad, &dir).status.code(), Some(2), "{bad:?}");
     }
 }

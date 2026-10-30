@@ -27,6 +27,8 @@ const TOPICS: &[(&str, &str, &str)] = &[
 
 pub(super) struct Example {
     pub name: &'static str,
+    /// The file to read first: its header explains the example and how to run it.
+    pub main: &'static str,
     pub about: &'static str,
     pub files: &'static [(&'static str, &'static str)],
 }
@@ -34,11 +36,11 @@ pub(super) struct Example {
 pub(super) const EXAMPLES: &[Example] = &[
     Example {
         name: "cas-retry",
+        main: "Balance.p",
         about: "Compare-and-swap with retries: two clients, generated inputs, an independent oracle.",
         files: &[
             ("Balance.p", include_str!("guide/examples/cas-retry/Balance.p")),
             ("Balance.pproj", include_str!("guide/examples/cas-retry/Balance.pproj")),
-            ("README.md", include_str!("guide/examples/cas-retry/README.md")),
             ("check_examples.py", include_str!("guide/examples/cas-retry/check_examples.py")),
             ("invalid-retry.jsonl", include_str!("guide/examples/cas-retry/invalid-retry.jsonl")),
             ("valid-concurrent.jsonl", include_str!("guide/examples/cas-retry/valid-concurrent.jsonl")),
@@ -46,9 +48,9 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
     Example {
         name: "forced-interleaving",
+        main: "test_wallet.py",
         about: "Python tests that force the interleavings a model explores, and check real calls.",
         files: &[
-            ("README.md", include_str!("guide/examples/forced-interleaving/README.md")),
             ("Wallet.p", include_str!("guide/examples/forced-interleaving/Wallet.p")),
             ("test_wallet.py", include_str!("guide/examples/forced-interleaving/test_wallet.py")),
             ("wallet.py", include_str!("guide/examples/forced-interleaving/wallet.py")),
@@ -56,9 +58,9 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
     Example {
         name: "reservation",
+        main: "Reservation.p",
         about: "Atomic conditional update versus a stale read/write, with Python observation tests.",
         files: &[
-            ("README.md", include_str!("guide/examples/reservation/README.md")),
             ("Reservation.p", include_str!("guide/examples/reservation/Reservation.p")),
             ("storage.py", include_str!("guide/examples/reservation/storage.py")),
             ("test_storage.py", include_str!("guide/examples/reservation/test_storage.py")),
@@ -66,9 +68,9 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
     Example {
         name: "bounded-history",
+        main: "bounded-history.p",
         about: "Bounded generated input histories, with hand-made valid and invalid traces.",
         files: &[
-            ("README.md", include_str!("guide/examples/bounded-history/README.md")),
             ("bounded-history.p", include_str!("guide/examples/bounded-history/bounded-history.p")),
             ("incomplete.jsonl", include_str!("guide/examples/bounded-history/incomplete.jsonl")),
             ("invalid-reply.jsonl", include_str!("guide/examples/bounded-history/invalid-reply.jsonl")),
@@ -81,11 +83,11 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
     Example {
         name: "durable-retry",
+        main: "DurableRetry.p",
         about: "Retries across crashes: durable state, split commits, reapplied effects.",
         files: &[
             ("DurableRetry.p", include_str!("guide/examples/durable-retry/DurableRetry.p")),
             ("DurableRetry.pproj", include_str!("guide/examples/durable-retry/DurableRetry.pproj")),
-            ("README.md", include_str!("guide/examples/durable-retry/README.md")),
             ("invalid-duplicate.jsonl", include_str!("guide/examples/durable-retry/invalid-duplicate.jsonl")),
             ("invalid-incomplete.jsonl", include_str!("guide/examples/durable-retry/invalid-incomplete.jsonl")),
             ("invalid-premature-done.jsonl", include_str!("guide/examples/durable-retry/invalid-premature-done.jsonl")),
@@ -97,9 +99,9 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
     Example {
         name: "versioned-publication",
+        main: "Revalidated.p",
         about: "Publish only what was validated for the current version.",
         files: &[
-            ("README.md", include_str!("guide/examples/versioned-publication/README.md")),
             ("Revalidated.p", include_str!("guide/examples/versioned-publication/Revalidated.p")),
             ("StaleRetry.p", include_str!("guide/examples/versioned-publication/StaleRetry.p")),
             ("test_completion.py", include_str!("guide/examples/versioned-publication/test_completion.py")),
@@ -110,7 +112,7 @@ pub(super) const EXAMPLES: &[Example] = &[
 const HELP: &str = "\
 Usage: snappea guide [TOPIC]
        snappea guide examples
-       snappea guide example NAME [--out DIR]
+       snappea guide example NAME [FILE | --out DIR]
 
 Prints a short guide, as Markdown. Start with `snappea guide`.
 
@@ -124,7 +126,8 @@ Topics:
   syntax     P syntax and a complete small model
 
 Examples are complete, checked models, some with Python tests. `example NAME` prints
-one; `--out DIR` writes its files to DIR/NAME so you can run them.
+its main file, whose header explains it and how to run it; `example NAME FILE` prints
+another of its files; `--out DIR` writes them all to DIR/NAME so you can run them.
 
 Examples:
   snappea guide testing
@@ -139,6 +142,20 @@ pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
         ["examples"] => print(host, &list()),
         ["example", name] => match find(name) {
             Some(e) => print(host, &show(e)),
+            None => unknown_example(host, name),
+        },
+        ["example", name, file] if !file.starts_with('-') => match find(name) {
+            Some(e) => match e.files.iter().find(|(f, _)| f == file) {
+                Some((_, text)) => print(host, text),
+                None => {
+                    let names: Vec<&str> = e.files.iter().map(|(f, _)| *f).collect();
+                    usage_error(
+                        host,
+                        &format!("example '{}' has no file '{}'; files: {}", name, file, names.join(", ")),
+                        Some("guide"),
+                    )
+                }
+            },
             None => unknown_example(host, name),
         },
         ["example", name, "--out", dir] | ["example", "--out", dir, name] => match find(name) {
@@ -156,7 +173,7 @@ pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
                 )
             }
         },
-        _ => usage_error(host, "expected a topic, `examples`, or `example NAME [--out DIR]`", Some("guide")),
+        _ => usage_error(host, "expected a topic, `examples`, or `example NAME [FILE | --out DIR]`", Some("guide")),
     }
 }
 
@@ -175,26 +192,31 @@ fn unknown_example(host: &mut dyn Host, name: &str) -> i32 {
 }
 
 fn list() -> String {
-    let mut s = String::from("# Examples\n\nComplete, checked models. Print one with `snappea guide example NAME`;\n");
-    s.push_str("write its files with `snappea guide example NAME --out DIR`.\n\n");
+    let mut s =
+        String::from("# Examples\n\nComplete, checked models. `snappea guide example NAME` prints the main file;\n");
+    s.push_str("`snappea guide example NAME --out DIR` writes all its files so you can run them.\n\n");
     for e in EXAMPLES {
         s.push_str(&format!("- `{}`: {}\n", e.name, e.about));
     }
     s
 }
 
-/// Every file of an example, README first, each under a heading with its name.
+/// The example's main file, then the other files and how to get them.
 fn show(e: &Example) -> String {
-    let mut s = format!(
-        "# Example {}\n\n{}\nWrite these files with `snappea guide example {} --out DIR`.\n",
-        e.name, e.about, e.name
-    );
-    let readme = e.files.iter().filter(|(f, _)| *f == "README.md");
-    for (file, text) in readme.chain(e.files.iter().filter(|(f, _)| *f != "README.md")) {
-        s.push_str(&format!("\n## {}\n\n{}", file, text));
-        if !text.ends_with('\n') {
-            s.push('\n');
-        }
+    let main = e.files.iter().find(|(f, _)| *f == e.main).map_or("", |(_, t)| *t);
+    let c = if e.main.ends_with(".py") { "#" } else { "//" };
+    let mut s = format!("{c} snappea guide example {}: {}\n{c} {}\n\n{}", e.name, e.main, e.about, main);
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    let others: Vec<&str> = e.files.iter().map(|(f, _)| *f).filter(|f| *f != e.main).collect();
+    if !others.is_empty() {
+        s.push_str(&format!(
+            "\n{c} Other files: {}.\n{c} Print one with `snappea guide example {} FILE`; write all with `snappea guide example {} --out DIR`.\n",
+            others.join(", "),
+            e.name,
+            e.name
+        ));
     }
     s
 }
@@ -211,10 +233,11 @@ fn write(host: &mut dyn Host, e: &Example, dir: &str) -> i32 {
         }
     }
     host.out_line(&format!(
-        "Wrote {} files to {}. Next: cd there and read README.md; it names the commands to run, \
+        "Wrote {} files to {}. Next: cd there; the header of {} lists the commands to run, \
          including the deliberately broken cases.",
         e.files.len(),
-        target.display()
+        target.display(),
+        e.main
     ));
     OK
 }
