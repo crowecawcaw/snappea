@@ -26,6 +26,9 @@ Make P easier for developers to incorporate into application design and developm
 4. **Fail on likely modeling mistakes, with explicit suppression for intentional cases.**
    Models and validation fail by default to avoid undetected issues; runtime instrumentation
    must remain best-effort and must not introduce errors that break application code.
+5. **The CLI and library target agents; the playground targets humans.** Choose defaults,
+   options and output for that audience. When they differ, keep one mechanism in the core
+   and let each interface set its own default.
 
 For compatibility details, see [Compatibility](docs/compatibility.md).
 
