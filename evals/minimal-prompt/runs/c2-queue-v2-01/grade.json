@@ -1,0 +1,296 @@
+{
+  "run_id": "c2-queue-v2-01",
+  "task": "queue",
+  "skill": "v2",
+  "model": "sonnet",
+  "hidden": {
+    "passed": 12,
+    "total": 12,
+    "failed": [],
+    "timed_out": false
+  },
+  "tests": {
+    "agent_tests": 19,
+    "agent_tests_pass_own_solution": 19,
+    "reference_passing": 19,
+    "reference_rejecting": [],
+    "observation_tests": 19,
+    "mutants": {
+      "lifo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_capacity_boundary[2]",
+          "test_queue::test_capacity_boundary[3]",
+          "test_queue::test_capacity_boundary[5]",
+          "test_queue::test_fifo_and_capacity",
+          "test_queue::test_observation_against_p_spec"
+        ]
+      },
+      "capacity-off-by-one": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_capacity_boundary[1]",
+          "test_queue::test_capacity_boundary[2]",
+          "test_queue::test_capacity_boundary[3]",
+          "test_queue::test_capacity_boundary[5]",
+          "test_queue::test_competitor_fills_queue_between_load_and_cas"
+        ]
+      },
+      "no-put-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_observation_against_p_spec",
+          "test_queue::test_put_and_take_same_id_are_different",
+          "test_queue::test_put_retry_does_not_reapply",
+          "test_queue::test_rejected_put_stays_rejected_after_space_frees",
+          "test_queue::test_retry_through_second_object"
+        ]
+      },
+      "no-take-memo": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_empty_take_stays_empty_after_put",
+          "test_queue::test_put_and_take_same_id_are_different",
+          "test_queue::test_retry_through_second_object",
+          "test_queue::test_take_retry_returns_original_and_does_not_remove"
+        ]
+      },
+      "rejection-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_observation_against_p_spec",
+          "test_queue::test_rejected_put_stays_rejected_after_space_frees"
+        ]
+      },
+      "empty-take-not-memoized": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_empty_take_stays_empty_after_put",
+          "test_queue::test_retry_through_second_object"
+        ]
+      },
+      "shared-namespace": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_observation_against_p_spec",
+          "test_queue::test_put_and_take_same_id_are_different"
+        ]
+      },
+      "ignore-cas-put": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": true,
+        "killers": [
+          "test_queue::test_competitor_fills_queue_between_load_and_cas",
+          "test_queue::test_thread_stress_no_loss_no_duplicates",
+          "test_queue::test_two_clients_read_same_version"
+        ]
+      },
+      "ignore-cas-take": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_competing_takes_do_not_duplicate_item",
+          "test_queue::test_competitor_empties_queue_between_load_and_cas",
+          "test_queue::test_thread_stress_no_loss_no_duplicates"
+        ]
+      },
+      "memo-in-instance": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": false,
+        "killers": [
+          "test_queue::test_retry_through_second_object",
+          "test_queue::test_same_request_races_with_itself"
+        ]
+      },
+      "stale-retry": {
+        "killed": true,
+        "killed_by_observation": true,
+        "timed_out": true,
+        "killers": [
+          "test_queue::test_capacity_boundary[1]",
+          "test_queue::test_capacity_boundary[2]",
+          "test_queue::test_capacity_boundary[3]",
+          "test_queue::test_capacity_boundary[5]",
+          "test_queue::test_competing_takes_do_not_duplicate_item"
+        ]
+      }
+    },
+    "killed": 11,
+    "killed_by_observation": 11,
+    "total_mutants": 11
+  },
+  "own_mutation": {
+    "stable_tests": 19,
+    "mutants": {
+      "true@28": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "flip@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@18": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@33": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@28": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "false@11": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      },
+      "negate@21": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "negate@28": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "flip@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "pop-end@41": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "false@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@33": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "drop-return@24": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "true@11": {
+        "killed": true,
+        "timed_out": false,
+        "killed_by_observation": true
+      },
+      "negate@33": {
+        "killed": true,
+        "timed_out": true,
+        "killed_by_observation": true
+      },
+      "drop-return@28": {
+        "killed": false,
+        "timed_out": false,
+        "killed_by_observation": false
+      }
+    },
+    "total": 21,
+    "killed": 18,
+    "killed_by_observation": 18
+  },
+  "model_check": {
+    "p_files": 1,
+    "exit_code": 0,
+    "status": "passed",
+    "test_cases": 3,
+    "failed": 0,
+    "incomplete": 0,
+    "coverage_gaps": 0,
+    "tests": [
+      {
+        "name": "tcGenerated",
+        "result": "ok",
+        "complete": true,
+        "schedules": 13531
+      },
+      {
+        "name": "tcFullRetry",
+        "result": "ok",
+        "complete": true,
+        "schedules": 5729
+      },
+      {
+        "name": "tcEmptyRetry",
+        "result": "ok",
+        "complete": true,
+        "schedules": 6144
+      }
+    ],
+    "spec_monitors": 1,
+    "test_decls": 3,
+    "hot_states": 1,
+    "design_doc_chars": 2916
+  },
+  "process": {
+    "calls": 15,
+    "minutes": 7.6,
+    "read_skill": true,
+    "first_check_call": 4,
+    "first_solution_write_call": 12,
+    "model_first": true,
+    "check_runs": 9,
+    "check_runs_exit1": 2,
+    "observe_runs": 0
+  }
+}
