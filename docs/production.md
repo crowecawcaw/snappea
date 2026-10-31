@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer", "coding-agent"]
+questions:
+  - "How do I reuse instrumentation from tests in production?"
+  - "How do I interpret observations and their limits?"
+---
+
 # Testing and production
 
 Instrument once: the same `emit` calls that tests check also write a production log

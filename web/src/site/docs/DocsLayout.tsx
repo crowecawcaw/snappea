@@ -7,14 +7,21 @@ const BLOB = `${REPO}/blob/main`;
 type Page = { id: string; title: string; href: (root: string) => string };
 
 /** Docs pages on this site. Add new pages here. */
-const PAGES: Page[] = [
-  { id: "overview", title: "Overview", href: (root) => links(root).overview },
+const LEARN: Page[] = [
+  { id: "overview", title: "Understand models", href: (root) => links(root).overview },
+  { id: "first-model", title: "Your first model", href: (root) => links(root).firstModel },
+  { id: "agents", title: "Work with your agent", href: (root) => links(root).agents },
+];
+const CHECK: Page[] = [
+  { id: "coverage", title: "Understand coverage", href: (root) => links(root).coverage },
+  { id: "github-actions", title: "Run checks in CI", href: (root) => links(root).githubActions },
+];
+const REFERENCE: Page[] = [
+  { id: "cli", title: "Command line", href: (root) => links(root).cli },
   { id: "coming-from-p", title: "Coming from P", href: (root) => links(root).comingFromP },
   { id: "parity", title: "Upstream parity", href: (root) => links(root).parity },
-  { id: "cli", title: "Command line", href: (root) => links(root).cli },
-  { id: "coverage", title: "Coverage", href: (root) => links(root).coverage },
-  { id: "github-actions", title: "GitHub Actions", href: (root) => links(root).githubActions },
 ];
+const PAGES = [...LEARN, ...CHECK, ...REFERENCE];
 
 /** One page per language helper; each follows docs/language-support.md#docs-page. */
 const LANGUAGES: Page[] = [
@@ -58,11 +65,15 @@ export function DocsLayout({ root, page, children }: { root: string; page: strin
 function DocsIndex({ root, page, sidebar = false }: { root: string; page: string; sidebar?: boolean }) {
   return (
     <nav className={`docs-index${sidebar ? " docs-side" : ""}`} aria-label="Docs">
-      <p className="side-head">Docs</p>
-      <PageList pages={PAGES} root={root} page={page} />
-      <p className="side-head">Languages</p>
+      <p className="side-head">Learn and design</p>
+      <PageList pages={LEARN} root={root} page={page} />
+      <p className="side-head">Check your application</p>
       <PageList pages={LANGUAGES} root={root} page={page} />
-      <p className="side-head">Guides on GitHub</p>
+      <p className="side-head">Check quality and CI</p>
+      <PageList pages={CHECK} root={root} page={page} />
+      <p className="side-head">Reference and migration</p>
+      <PageList pages={REFERENCE} root={root} page={page} />
+      <p className="side-head">More guides on GitHub</p>
       <ul>
         {GUIDES.map((g) => (
           <li key={g.title}>

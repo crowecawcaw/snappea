@@ -1,3 +1,10 @@
+---
+diataxis: how-to
+personas: ["application-developer", "coding-agent"]
+questions:
+  - "How do I check Python application behavior with P specs?"
+---
+
 # Checking P specs from Python tests
 
 This guide is now on the project site:

@@ -1,6 +1,6 @@
 # 🫛 Snap Pea
 
-**Fast formal models that also check your code.**
+**Formal models for developers and their agents.**
 
 Find bugs in how your system behaves before they reach production. Snap Pea uses the
 [P modeling language](https://p-org.github.io/P/) to explore different event orderings,

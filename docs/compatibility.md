@@ -1,3 +1,11 @@
+---
+diataxis: reference
+personas: ["p-user", "contributor"]
+questions:
+  - "What is compatible with upstream P?"
+  - "What differences and limitations remain?"
+---
+
 # Compatibility with upstream P
 
 This reference is about `snappea-compat`. `snappea` checks the same way, finds the same bugs

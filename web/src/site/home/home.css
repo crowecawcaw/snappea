@@ -72,3 +72,11 @@
 .home-p-links a { text-decoration: none; }
 .home-p-links a::after { content: " ↗"; font-weight: 400; color: var(--muted); }
 
+
+/* Shared interactive explanations use the same lane colors as the docs. */
+.home { --lane-a-c: var(--lane-0); --lane-b-c: var(--lane-2); --lane-c-c: var(--lane-1); --lane-m-c: var(--lane-5); }
+.home-p > p { margin: 0 0 16px; }
+.home-p .home-features { margin-top: 24px; }
+.home-feedback { margin-top: 64px; }
+.home-p-links { margin-top: 18px !important; }
+.home-p { overflow-wrap: anywhere; }

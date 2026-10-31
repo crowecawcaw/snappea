@@ -1,3 +1,10 @@
+---
+diataxis: how-to
+personas: ["contributor"]
+questions:
+  - "How do I build, validate and benchmark Snap Pea?"
+---
+
 # Development
 
 The commands to build, test and lint are in [AGENTS.md](../AGENTS.md).

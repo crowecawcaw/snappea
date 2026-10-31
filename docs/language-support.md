@@ -1,3 +1,10 @@
+---
+diataxis: reference
+personas: ["contributor", "coding-agent"]
+questions:
+  - "What must a language helper implement and document?"
+---
+
 # Language helper requirements
 
 Normative requirements for the language helpers that check application events against P

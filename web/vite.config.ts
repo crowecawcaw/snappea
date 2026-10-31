@@ -17,6 +17,8 @@ export default defineConfig({
       input: {
         home: fileURLToPath(new URL("index.html", import.meta.url)),
         playground: fileURLToPath(new URL("playground.html", import.meta.url)),
+        agents: fileURLToPath(new URL("docs/agents.html", import.meta.url)),
+        "first-model": fileURLToPath(new URL("docs/first-model.html", import.meta.url)),
         overview: fileURLToPath(new URL("docs/overview.html", import.meta.url)),
         "coming-from-p": fileURLToPath(new URL("docs/coming-from-p.html", import.meta.url)),
         parity: fileURLToPath(new URL("docs/parity.html", import.meta.url)),

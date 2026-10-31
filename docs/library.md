@@ -1,3 +1,10 @@
+---
+diataxis: reference
+personas: ["application-developer", "contributor"]
+questions:
+  - "How do I embed Snap Pea as a Rust library?"
+---
+
 # Using Snap Pea from Rust
 
 The checker is part of the [`snappea` crate](../crates/snappea/README.md) (library name `snappea`;
