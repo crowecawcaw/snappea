@@ -6,14 +6,13 @@ import { MiniPlayground } from "./MiniPlayground";
 import { SpeedBars } from "./SpeedBars";
 
 const BLOB = `${REPO}/blob/main`;
-const P_DOCS = "https://p-org.github.io/P/";
 const l = links("./");
 
 const FEATURES = [
   { title: "Exercise the behavior", text: "Coverage shows which branches, handlers and scenarios your checks reached, and where the model needs a better workload.", link: { label: "Understand coverage", href: "./docs/coverage.html" } },
   { title: "Check the checks", text: "Mutation testing changes the model and asks whether your specs notice. A passing run is more useful when the checks can reject mistakes.", link: { label: "Mutation testing", href: `${BLOB}/docs/checking-models.md#mutation-testing` } },
   { title: "Catch modeling mistakes", text: "Lints catch unselected specs, assertions that are always true, and monitors that accept everything, before exploration starts.", link: { label: "Model lints", href: `${BLOB}/docs/linting.md` } },
-  { title: "Use your existing tests", text: "Helpers for Python, Rust, Go and Java check real application events against the same specs that checked the design.", link: { label: "Application examples", href: `${BLOB}/examples/README.md` } },
+  { title: "See the driver’s limits", text: "Passing checks report limits observed in the test driver: fixed client counts, input values and event orders. Extend the driver when real clients can do more.", link: { label: "Driver limits", href: `${BLOB}/docs/checking-models.md#driver-limits` } },
 ];
 
 export function Home() {
@@ -108,8 +107,8 @@ snappea check --json           # structured results for agents`}</code></pre>
             <h2>Fast feedback, on every change</h2>
             <p>
               One binary, no compile step or runtime toolchain. Automatic exploration combines exhaustive
-              search for small models with guided scheduling for larger ones. Start with the defaults;
-              set a time budget for CI without choosing a scheduler.
+              search, coverage-guided random search, deliberate delays and priority scheduling. It adapts the
+              mix as it discovers new behavior, so you can set a CI time budget without choosing a scheduler.
             </p>
             <p><a href={l.githubActions}>Run checks in CI →</a></p>
           </div>
@@ -145,10 +144,19 @@ snappea check --json           # structured results for agents`}</code></pre>
           </p>
         </section>
         <section className="home-p">
-          <h2>Your P models, with a shorter feedback loop</h2>
-          <p>Snap Pea runs P models directly and is validated against upstream tests and tutorials.
-            <a href={l.comingFromP}> Coming from P</a> covers compatibility and migration.
-            The <a href={P_DOCS}>P language manual</a> covers the language.</p>
+          <h2>Coming from P?</h2>
+          <p>
+            Keep your P models. <code>snappea-compat</code> is a drop-in replacement for the <code>p</code> CLI
+            in existing checking scripts, preserving upstream options, output and replayable schedules, with no compile step.
+            Use the native <code>snappea</code> CLI for automatic scheduling and model quality checks.
+            See <a href={l.comingFromP}>compatibility and migration</a> for supported behavior and differences.
+          </p>
+          <p>
+            Run more schedules per second and direct the search toward new behavior. On our synthetic
+            search benchmarks, Snap Pea's guided feedback search finds bugs in fewer schedules than the original
+            feedback strategy. Native checking combines several search strategies automatically;
+            results vary by model and seed. <a href={`${BLOB}/benchmarks/search/README.md`}>Search measurements and methodology</a>.
+          </p>
           <div className="home-band home-comparison">
             <div className="home-band-text">
             <p>Checking the Raft tutorial, 120 schedules:</p>
