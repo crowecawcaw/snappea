@@ -2,8 +2,7 @@
 import { Island } from "../Island";
 import { REPO, SiteHeader, links } from "../SiteHeader";
 import { Loops } from "../docs/diagrams/Loops";
-import { Schedules } from "../docs/diagrams/Schedules";
-import { Workflow } from "../docs/diagrams/Workflow";
+import { MiniPlayground } from "./MiniPlayground";
 import { SpeedBars } from "./SpeedBars";
 
 const BLOB = `${REPO}/blob/main`;
@@ -30,40 +29,46 @@ export function Home() {
             Check the design before you build, then use the same specs in your application tests.
           </p>
           <div className="home-ctas">
-            <a className="button primary" href="#what-is-p">See how it works</a>
-            <a className="button" href={l.agents}>Start with your agent</a>
+            <a className="button primary" href={l.playground}>Try the playground</a>
+            <a className="button" href={l.overview}>Read the docs</a>
             <a className="button ghost" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
           </div>
         </section>
 
         <section className="home-p" id="what-is-p">
-          <h2>A small model. An ordering you missed.</h2>
-          <p>
-            P is a language for writing executable models of your design: components, the messages they exchange,
-            and what each does when a message arrives. You describe the choices and the rules that must hold.
-            Snap Pea explores executions and reports a trace when a rule breaks.
+          <p className="eyebrow">Explore a design</p>
+          <h2>Read the model. Find the race.</h2>
+          <p className="section-intro">
+            Two clients each add one to a shared counter. Each reads the current value, then writes back
+            that value plus one. What happens if both read before either writes?
           </p>
           <p>
-            Two clients read a counter, add one and write it back. Try the sequential test, then explore
-            other orderings. Both clients can read 0, so two increments leave the counter at 1.
+            This is P: state machines exchange messages with <code>send</code> and handle them with <code>on</code>.
+            The test starts two clients and checks that the final counter is 2. Run the model to explore message
+            orderings, then try making the increment atomic.
           </p>
-          <Island name="schedules"><Schedules /></Island>
-          <p className="muted small">Scripted illustration, not a live checker run. The Playground runs actual P models in your browser.</p>
-          <p>
-            The fix is a design change: let the counter apply each increment in one operation.
-            <a href={l.firstModel}> Read the P model and its failure trace</a>, or{" "}
-            <a href={`${l.playground}?demo=lost-update`}>edit and check it in the Playground</a>.
-          </p>
+          <Island name="mini-playground"><MiniPlayground /></Island>
+          <p className="muted small">The real checker runs locally in your browser. No installation, and no code leaves this page.</p>
+          <p><a href={l.firstModel}>Walk through the model and its counterexample →</a></p>
         </section>
 
         <section className="home-p">
+          <p className="eyebrow">Connect design to code</p>
           <h2>The same rules, from design to application tests</h2>
           <p>
             A spec is a state machine that observes events and checks rules about them.
             Check the model's events while designing, then check your application's events from ordinary tests.
           </p>
           <Island name="loops"><Loops /></Island>
-          <Island name="workflow"><Workflow /></Island>
+          <p className="muted small">Illustration of the shared-spec workflow; the animation is not a live check.</p>
+          <div className="home-artifacts">
+            <article><h3>A contract to review</h3><p>Write down the real atomic operations and what must stay true.
+              For the counter: every completed increment contributes exactly one to the total.</p></article>
+            <article><h3>A spec to share</h3><p>Express that contract independently of the algorithm.
+              Check events from both the P model and real application calls against it.</p></article>
+            <article><h3>A regression test to keep</h3><p>Force both calls to read before either writes.
+              Use the counterexample to test the implementation, rather than hoping a stress test hits it.</p></article>
+          </div>
           <p>
             When a check fails, review the design, model and implementation together. Turn counterexamples
             into regression tests that force the troublesome ordering on real code.
@@ -75,6 +80,7 @@ export function Home() {
         </section>
 
         <section className="home-p">
+          <p className="eyebrow">Check model quality</p>
           <h2>Treat models like code you test</h2>
           <p>A model that passes without testing the important behavior gives false confidence. Snap Pea helps you find weak checks.</p>
           <div className="home-features">
@@ -85,6 +91,7 @@ export function Home() {
         </section>
 
         <section className="home-p" id="agents">
+          <p className="eyebrow">Work with your agent</p>
           <h2>Give your agent a model checker</h2>
           <p>
             Ask your agent to model a feature before implementing it. The built-in guide teaches the workflow,
@@ -101,30 +108,27 @@ snappea check --json           # structured results for agents`}</code></pre>
           </p>
         </section>
 
-        <section className="home-band home-feedback">
+        <section className="home-p home-feedback">
           <div className="home-band-text">
+            <p className="eyebrow">Keep feedback short</p>
             <h2>Fast feedback, on every change</h2>
             <p>
               One binary, no compile step or runtime toolchain. Automatic exploration combines exhaustive
               search for small models with guided scheduling for larger ones. Start with the defaults;
               set a time budget for CI without choosing a scheduler.
             </p>
-            <p>Checking the Raft tutorial, 120 schedules:</p>
-            <p className="muted small">
-              Warmed up, snappea checks 290 schedules per second, and P checks 4. Results vary by model. {" "}
-              <a href={`${BLOB}/docs/development.md#benchmarks`}>Benchmark setup and results</a>
-            </p>
             <p><a href={l.githubActions}>Run checks in CI →</a></p>
           </div>
-          <Island name="speed"><SpeedBars /></Island>
         </section>
 
         <section className="home-install" id="install">
+          <p className="eyebrow">Get started</p>
           <h2>Install</h2>
           <p>Install the prebuilt checker on Linux or macOS, then read the built-in guide:</p>
           <pre className="terminal">
             <code>
               <span className="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh{"\n"}
+              <span className="prompt">$ </span>export PATH="$HOME/.local/bin:$PATH"{"\n"}
               <span className="prompt">$ </span>snappea guide
             </code>
           </pre>
@@ -148,10 +152,21 @@ snappea check --json           # structured results for agents`}</code></pre>
           </p>
         </section>
         <section className="home-p">
-          <h2>Already using P?</h2>
+          <p className="eyebrow">Coming from P</p>
+          <h2>Your P models, with a shorter feedback loop</h2>
           <p>Snap Pea runs P models directly and is validated against upstream tests and tutorials.
             <a href={l.comingFromP}> Coming from P</a> covers compatibility and migration.
             The <a href={P_DOCS}>P language manual</a> covers the language.</p>
+          <div className="home-band home-comparison">
+            <div className="home-band-text">
+            <p>Checking the Raft tutorial, 120 schedules:</p>
+            <p className="muted small">
+              Warmed up, snappea checks 290 schedules per second, and P checks 4. Results vary by model. {" "}
+              <a href={`${BLOB}/docs/development.md#benchmarks`}>Benchmark setup and results</a>
+            </p>
+            </div>
+            <Island name="speed"><SpeedBars /></Island>
+          </div>
         </section>
       </main>
       <footer className="site-footer">

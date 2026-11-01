@@ -5,8 +5,7 @@ import "../docs/docs.css";
 import "./home.css";
 
 hydrateIslands({
-  schedules: () => import("../docs/diagrams/Schedules").then((m) => m.Schedules),
+  "mini-playground": () => import("./MiniPlayground").then((m) => m.MiniPlayground),
   loops: () => import("../docs/diagrams/Loops").then((m) => m.Loops),
-  workflow: () => import("../docs/diagrams/Workflow").then((m) => m.Workflow),
   speed: () => import("./SpeedBars").then((m) => m.SpeedBars),
 });
