@@ -22,7 +22,6 @@ export function Home() {
       <SiteHeader root="./" current="home" />
       <main>
         <section className="home-hero">
-          <p className="eyebrow">Design, model, implement, test</p>
           <h1>Formal models for developers and their agents.</h1>
           <p className="home-lede">
             Explore how your application behaves under retries, failures and unexpected event orderings.
@@ -36,7 +35,6 @@ export function Home() {
         </section>
 
         <section className="home-p" id="what-is-p">
-          <p className="eyebrow">Explore a design</p>
           <h2>Read the model. Find the race.</h2>
           <p className="section-intro">
             Two clients each add one to a shared counter. Each reads the current value, then writes back
@@ -53,7 +51,6 @@ export function Home() {
         </section>
 
         <section className="home-p">
-          <p className="eyebrow">Connect design to code</p>
           <h2>The same rules, from design to application tests</h2>
           <p>
             A spec is a state machine that observes events and checks rules about them.
@@ -80,7 +77,6 @@ export function Home() {
         </section>
 
         <section className="home-p">
-          <p className="eyebrow">Check model quality</p>
           <h2>Treat models like code you test</h2>
           <p>A model that passes without testing the important behavior gives false confidence. Snap Pea helps you find weak checks.</p>
           <div className="home-features">
@@ -91,7 +87,6 @@ export function Home() {
         </section>
 
         <section className="home-p" id="agents">
-          <p className="eyebrow">Work with your agent</p>
           <h2>Give your agent a model checker</h2>
           <p>
             Ask your agent to model a feature before implementing it. The built-in guide teaches the workflow,
@@ -110,7 +105,6 @@ snappea check --json           # structured results for agents`}</code></pre>
 
         <section className="home-p home-feedback">
           <div className="home-band-text">
-            <p className="eyebrow">Keep feedback short</p>
             <h2>Fast feedback, on every change</h2>
             <p>
               One binary, no compile step or runtime toolchain. Automatic exploration combines exhaustive
@@ -122,7 +116,6 @@ snappea check --json           # structured results for agents`}</code></pre>
         </section>
 
         <section className="home-install" id="install">
-          <p className="eyebrow">Get started</p>
           <h2>Install</h2>
           <p>Install the prebuilt checker on Linux or macOS, then read the built-in guide:</p>
           <pre className="terminal">
@@ -152,7 +145,6 @@ snappea check --json           # structured results for agents`}</code></pre>
           </p>
         </section>
         <section className="home-p">
-          <p className="eyebrow">Coming from P</p>
           <h2>Your P models, with a shorter feedback loop</h2>
           <p>Snap Pea runs P models directly and is validated against upstream tests and tutorials.
             <a href={l.comingFromP}> Coming from P</a> covers compatibility and migration.

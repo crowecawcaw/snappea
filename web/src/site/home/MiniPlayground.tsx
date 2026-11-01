@@ -121,7 +121,6 @@ export function MiniPlayground() {
             }} /> : <div className="mini-code" role="region" aria-label={`Read ${file === "model" ? "Model.p" : "Test.p"}`} tabIndex={0}><Code lang="p">{source}</Code></div>}
         </div>
         <div className="mini-result">
-          <p className="eyebrow">Starting property</p>
           <h3>Two increments should leave 2.</h3>
           <Code lang="p">{`assert final == 2;`}</Code>
           <p>Each client runs independently. The checker chooses which message is delivered next.</p>
