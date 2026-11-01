@@ -1,3 +1,11 @@
+---
+diataxis: reference
+personas: ["application-developer", "coding-agent"]
+questions:
+  - "Which modeling mistakes do lints detect?"
+  - "How do I fix or suppress a finding?"
+---
+
 # Linting P models
 
 `snappea check` type-checks and lints all loaded sources before exploring schedules.

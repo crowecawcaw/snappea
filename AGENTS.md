@@ -37,6 +37,39 @@ For compatibility details, see [Compatibility](docs/compatibility.md).
 CLI help and doc strings say what a thing does, when to use it, and give an example.
 Plain and short.
 
+## Documentation
+
+Use Diátaxis. Give each page one primary type: `tutorial`, `how-to`,
+`explanation`, or `reference`. Tutorials teach through a guided experience;
+how-to guides solve a task; explanations develop understanding; reference
+states exact behavior. Split substantial material serving a different purpose.
+
+Start Markdown documentation pages with non-rendered YAML front matter:
+
+```yaml
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I run model checks in CI?
+  - How do I reproduce a failing run locally?
+---
+```
+
+For website docs, put equivalent `doc:type`, `doc:personas` and `doc:questions`
+meta tags in the HTML entry's head; encode personas and questions as JSON arrays.
+These headers are authoring context and machine-readable metadata, not visible
+page labels. Use the declared questions to define scope and review completeness.
+Choose specific personas such as application-developer, coding-agent, p-user,
+or contributor. Preserve language-helper documentation requirements in
+[language support](docs/language-support.md).
+
+Lead with the application development task. Connect design, model checks,
+implementation events and tests through shared specs. Distinguish model checking
+from checking observed application executions, and state assumptions and bounds.
+Keep exact command behavior and defaults in canonical reference pages. Reuse the
+built-in guide and runnable examples rather than inventing a separate agent workflow.
+
 ## Error messages
 
 Every error says what went wrong, where, and what to do next.

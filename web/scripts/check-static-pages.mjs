@@ -18,11 +18,18 @@ for (const file of ["index.html", ...pages.map((file) => `docs/${file}`)]) {
     assert.match(html, /<pre[^>]*><code>[\s\S]*?<\/code><\/pre>/);
     assert.match(html, /<link rel="stylesheet"[^>]*href="(?:\.\.\/|\.\/)assets\//);
     if (file.startsWith("docs/")) {
+      assert.match(html, /<meta name="doc:type" content="(?:tutorial|how-to|explanation|reference)"/);
+      assert.match(html, /<meta name="doc:personas" content="[^"]+"/);
+      assert.match(html, /<meta name="doc:questions" content="[^"]+"/);
       const id = file.slice(5, -5);
       assert.match(html, new RegExp(`href="../docs/${id}.html" aria-current="page"`));
-      assert.equal((html.match(/data-island=/g) ?? []).length, id === "overview" ? 4 : 0);
+      assert.equal((html.match(/data-island=/g) ?? []).length, id === "overview" ? 3 : id === "first-model" ? 1 : 0);
     } else {
       assert.match(html, /data-island="speed"/);
+      assert.match(html, /class="mini-code"[\s\S]*?<pre/);
+      for (const island of ["mini-playground", "loops"]) {
+        assert.match(html, new RegExp(`data-island="${island}"`));
+      }
     }
   });
 }

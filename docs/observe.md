@@ -1,3 +1,11 @@
+---
+diataxis: reference
+personas: ["application-developer", "coding-agent"]
+questions:
+  - "How do I check application logs against specs?"
+  - "What formats and options does observe support?"
+---
+
 # Checking logs with `snappea observe`
 
 `snappea observe` checks events recorded by a running system against the spec monitors of

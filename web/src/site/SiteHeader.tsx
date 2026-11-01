@@ -8,6 +8,8 @@ export type Section = "home" | "docs" | "playground";
 /** Links between pages. `root` is the relative path to the site root ("./" or "../"). */
 export const links = (root: string) => ({
   home: root,
+  agents: `${root}docs/agents.html`,
+  firstModel: `${root}docs/first-model.html`,
   overview: `${root}docs/overview.html`,
   comingFromP: `${root}docs/coming-from-p.html`,
   parity: `${root}docs/parity.html`,

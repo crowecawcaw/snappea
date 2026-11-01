@@ -12,7 +12,10 @@ import { Python } from "./docs/languages/Python";
 import { Rust } from "./docs/languages/Rust";
 import { Parity } from "./docs/Parity";
 
-const PAGES = { overview: Overview, parity: Parity, "coming-from-p": ComingFromP, cli: Cli, coverage: Coverage, "github-actions": GitHubActions, python: Python, rust: Rust, go: Go, java: Java };
+import { Agents } from "./docs/Agents";
+import { FirstModel } from "./docs/FirstModel";
+
+const PAGES = { agents: Agents, "first-model": FirstModel, overview: Overview, parity: Parity, "coming-from-p": ComingFromP, cli: Cli, coverage: Coverage, "github-actions": GitHubActions, python: Python, rust: Rust, go: Go, java: Java };
 
 /** Render the same content in development and in every published HTML entry. */
 export function render(page: string) {

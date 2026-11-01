@@ -25,6 +25,13 @@ the browser; the playground remains a client application.
   Checks pass `--warn all`, so lint findings and coverage gaps show as warnings, unless
   Options > "Strict checks" is ticked (the CLI's defaults). The setting is in the link.
 
+Docs pages follow Diátaxis and declare their type, personas and reader questions
+in non-rendered meta tags in each HTML entry; see [AGENTS.md](../AGENTS.md#documentation).
+The homepage reuses the shared-spec diagram and adds a mini Playground island
+(`src/site/home/MiniPlayground.tsx`). It starts the real checker worker only on Run,
+with a two-second exploration budget and mutation checks disabled. Users can edit
+both P files and carry them into the full Playground with a share link.
+
 The docs diagrams are React components driven by scripted data
 (`src/site/docs/diagrams/`). `build/static-pages.ts` renders `src/site/render.tsx`
 for both development requests and production HTML entries. Wrap interactive

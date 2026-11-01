@@ -21,7 +21,7 @@ const SIDES: Record<Side, { label: string; dur: number; gap: number; redEvery: n
     dur: 2.4,
     gap: 1.1,
     redEvery: 5,
-    bug: "✗ test fails: stock went negative",
+    bug: "✗ test fails: counter is 1, expected 2",
     ok: "✓ events match the spec",
     caption:
       "Your code emits events at the points that matter, from its ordinary unit and integration tests. snappea checks those events against specs written in P, so a rule you checked in the design is also checked in the code.",

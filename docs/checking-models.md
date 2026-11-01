@@ -1,3 +1,11 @@
+---
+diataxis: reference
+personas: ["application-developer", "coding-agent"]
+questions:
+  - "How do checks, exploration, coverage and mutation testing behave?"
+  - "What makes a check fail?"
+---
+
 # Checking P models
 
 Run `snappea` in a folder with a `.pproj` file:

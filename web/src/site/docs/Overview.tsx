@@ -4,7 +4,6 @@ import { REPO, links } from "../SiteHeader";
 import { Code } from "./Code";
 import { Loops } from "./diagrams/Loops";
 import { Schedules } from "./diagrams/Schedules";
-import { Trace } from "./diagrams/Trace";
 import { Workflow } from "./diagrams/Workflow";
 
 const BLOB = `${REPO}/blob/main`;
@@ -99,66 +98,10 @@ export function Overview({ root }: { root: string }) {
         </table>
       </section>
 
-      <section>
-        <h2>Worked example: a lost update</h2>
-        <p>
-          Each <b>machine</b> is a state machine with an inbox. <code>send</code> puts an event in another machine's
-          inbox, and the checker decides when it's delivered. Here the Counter serves reads and writes, and each
-          Client reads, then writes back the value plus one:
-        </p>
-        <Code lang="p" title="LostUpdate.p">{`
-machine Counter {
-var value: int;
-start state Serving {
-  on eRead do (c: Client) { send c, eValue, value; }
-  on eWrite do (v: int) { value = v; }
-  on eGet do (m: Main) { send m, eValue, value; }
-}
-}
-
-machine Client {
-start state Run {
-  entry (input: (counter: Counter, owner: Main)) {
-    var v: int;
-    send input.counter, eRead, this;
-    receive { case eValue: (x: int) { v = x; } }
-    send input.counter, eWrite, v + 1;
-    send input.owner, eDone;
-  }
-}
-}
-`}</Code>
-        <p>
-          The test machine, <code>Main</code>, starts the Counter and two Clients. Once both Clients are done, it
-          asserts that the counter reached 2:
-        </p>
-        <Code lang="p">{`
-assert final == 2, format("expected 2 increments, counter is {0}", final);
-
-test tcTwoClients [main=Main]: { Main, Counter, Client };
-`}</Code>
-        <p>Check it:</p>
-        <Code lang="shell">{`
-$ snappea check LostUpdate.p tcTwoClients
-Checking generatedOutput: 1 test case
-FAIL  tcTwoClients (bug found after 9 schedules, 8 workers, 0.00s)
-      Assertion Failed: LostUpdate.p:68:7 expected 2 increments, counter is 1
-      Replay: snappea replay PCheckerOutput/tcTwoClients/bug.schedule LostUpdate.p
-1 of 1 test case failed in 0.01s, peak memory 9 MB. Output: PCheckerOutput/
-`}</Code>
-        <p>The trace shows exactly how the update was lost:</p>
-        <Island name="trace"><Trace /></Island>
-        <p>
-          <b>The fix is a design change:</b> replace the read and write with one <code>eIncrement</code> event that
-          the Counter applies itself. With that change, <code>snappea check</code> covers every possible
-          ordering through automatic exhaustive exploration and finds no bug.
-        </p>
-        <Code lang="p">{`
-on eIncrement do { value = value + 1; }
-`}</Code>
-        <p>
-          <a className="button primary" href={DEMO}>Open this model in the Playground →</a>
-        </p>
+      <section id="worked-example">
+        <h2>Follow a counterexample</h2>
+        <p><a href="./first-model.html">Your first model</a> walks through the lost-update P code,
+          its failure trace, and a design change that fixes it in the Playground.</p>
       </section>
 
       <section>
@@ -205,14 +148,21 @@ def test_release_makes_stock_available_again(inventory_factory):
         <Island name="workflow"><Workflow /></Island>
         <p>
           AI agents are well suited to writing models: they can turn a design doc into machines and specs quickly,
-          and rerun the checker after every change. Your part is to read the specs. They are the short, plain
+          and rerun the checker after every change. Review the model boundaries and assumptions as well as the specs. The specs are the short, plain
           statement of what must always be true, and the part of the model worth reviewing line by line.
         </p>
       </section>
 
       <section className="next">
+        <h2>What a passing check establishes</h2>
+        <p>Checks explore the model you wrote, including its input bounds, atomic operations and failure assumptions.
+          Complete exploration covers that bounded model. A timed-out search may miss a bug. Coverage and mutation
+          testing help find weak checks, but cannot establish that every requirement is represented.</p>
+        <p>Application tests check the recorded events against the same specs; they do not automatically compare
+          all implementation behavior with the model. Instrumentation and forced-interleaving tests need review too.</p>
         <h2>Next</h2>
         <ul>
+          <li><a href="./agents.html">Work with your agent</a>: model a feature and test its implementation.</li>
           <li>
             <a href={DEMO}>Run the lost-update model</a> in the Playground, then try the bigger tutorials in its menu.
           </li>
