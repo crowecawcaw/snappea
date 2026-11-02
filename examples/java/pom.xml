@@ -10,7 +10,7 @@
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <snappea.version>0.2.0</snappea.version>
+    <snappea.version>0.2.1-SNAPSHOT</snappea.version>
   </properties>
 
   <dependencies>
