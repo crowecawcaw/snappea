@@ -8,15 +8,15 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/crowecawcaw/snappea"
 rust-version = "1.87"
 
 [workspace.dependencies]
-snappea-syntax = { path = "crates/snappea-syntax", version = "0.1.0" }
-snappea-lint = { path = "crates/snappea-lint", version = "0.1.0" }
+snappea-syntax = { path = "crates/snappea-syntax", version = "0.2.0" }
+snappea-lint = { path = "crates/snappea-lint", version = "0.2.0" }
 snappea = { path = "crates/snappea", default-features = false }
 indexmap = "2"
 serde = { version = "1", features = ["derive"] }
