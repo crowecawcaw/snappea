@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test:html": "node --test scripts/check-static-pages.mjs",
-    "test:replay": "node --experimental-strip-types --test scripts/replay.test.ts"
+    "test:replay": "node --experimental-strip-types --test scripts/replay.test.ts",
+    "test:diagrams": "node --experimental-strip-types --test scripts/diagrams.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

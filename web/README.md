@@ -93,3 +93,7 @@ recorded execution, using implementation names from snapshots where available.
 Only participating implementation machines are shown then. Instances are grouped
 by type with counts; highlighted states are the union of states occupied at the
 selected step. Rule observers remain available in the single-machine view.
+
+`npm run test:diagrams` runs the real D2/TALA compiler against a multi-machine
+fixture, including P's `$` / `$$` choice expressions in transition labels. These
+must be escaped as literal text because D2 otherwise treats them as substitutions.

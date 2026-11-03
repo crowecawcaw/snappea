@@ -8,7 +8,8 @@ export function systemD2(model: ModelInfo, trace?: Trace, cursor = -1) {
   const machines = model.machines.filter(m => m.kind === "machine" && (!participating || participating.has(m.name)));
   const sources: SourceLocation[] = [];
   const link = (source: SourceLocation) => `https://snappea.invalid/model-source/${sources.push(source) - 1}`;
-  const q = JSON.stringify;
+  // D2 interprets `$` as substitution syntax even inside quoted labels.
+  const q = (text: string) => JSON.stringify(text).replace(/\$/g, "\\$");
   const ids = new Map(machines.map((m, i) => [m.name, `m${i}`]));
   const lines = ["direction: right", "vars: {d2-config: {layout-engine: tala}}", "classes: {state: {style: {border-radius: 10; font-size: 15; fill: '#ffffff'; stroke: '#64748b'}}}"];
   const current = new Map<string, Set<string>>();
