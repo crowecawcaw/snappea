@@ -6,10 +6,12 @@ import { PEditor } from "./editor/PEditor";
 import type { CheckResult, Diagnostic, Files, Progress } from "./protocol";
 import { Runner } from "./runner";
 import { TraceView } from "./trace/TraceView";
+import { ModelOverview } from "./model/ModelOverview";
+import type { ModelInfo } from "./model/types";
 import { Logo } from "./site/Logo";
 
 /** Output tabs. "files" is the editor, which is a tab only on phones. */
-type Tab = "files" | "console" | "trace" | "log";
+type Tab = "files" | "model" | "console" | "trace" | "log";
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000);
 const splitArgs = (s: string) => s.split(/\s+/).filter(Boolean);
@@ -17,7 +19,7 @@ const REPO = "https://github.com/crowecawcaw/snappea";
 const NARROW = "(max-width: 900px)";
 /** How long the URL waits for edits to settle before it is rewritten. */
 const URL_DEBOUNCE_MS = 500;
-const TAB_LABEL: Record<Tab, string> = { files: "Files", console: "Console", trace: "Trace", log: "Log" };
+const TAB_LABEL: Record<Tab, string> = { files: "Files", model: "Model", console: "Console", trace: "Trace", log: "Log" };
 
 export function App() {
   const runner = useMemo(() => new Runner(), []);
@@ -33,14 +35,21 @@ export function App() {
   const [strict, setStrict] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [compileConsole, setCompileConsole] = useState("");
+  const [model, setModel] = useState<ModelInfo>();
+  const [modelKey, setModelKey] = useState("");
+  const [resultKey, setResultKey] = useState("");
+  const [resultModel, setResultModel] = useState<ModelInfo>();
+  const sourceKey = JSON.stringify(files);
+  const originalFiles = useMemo(() => demo === CUSTOM ? undefined : loadDemo(demo), [demo]);
+  const changedExample = originalFiles && (Object.keys(originalFiles).length !== Object.keys(files).length || Object.entries(originalFiles).some(([path, text]) => files[path] !== text));
   const [compileOk, setCompileOk] = useState<boolean | undefined>();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<CheckResult>();
   const [runError, setRunError] = useState<string>();
   const [progress, setProgress] = useState<Progress>();
   const [narrow, setNarrow] = useState(() => matchMedia(NARROW).matches);
-  const [tab, setTab] = useState<Tab>(() => (matchMedia(NARROW).matches ? "files" : "console"));
-  const [jump, setJump] = useState<{ line: number; nonce: number }>();
+  const [tab, setTab] = useState<Tab>(() => (matchMedia(NARROW).matches ? "files" : "model"));
+  const [jump, setJump] = useState<{ line: number; nonce: number; focus?: boolean }>();
   const [loaded, setLoaded] = useState(false);
   const edited = useRef(false);
   const [blurbOpen, setBlurbOpen] = useState(false);
@@ -64,7 +73,9 @@ export function App() {
     setResult(undefined);
     setRunError(undefined);
     setDiagnostics([]);
-    setTab(matchMedia(NARROW).matches ? "files" : "console");
+    setModel(undefined);
+    setModelKey("");
+    setTab(matchMedia(NARROW).matches ? "files" : "model");
     edited.current = isEdited;
   }, []);
 
@@ -106,7 +117,7 @@ export function App() {
     const mq = matchMedia(NARROW);
     const on = () => {
       setNarrow(mq.matches);
-      if (!mq.matches) setTab((t) => (t === "files" ? "console" : t));
+      if (!mq.matches) setTab((t) => (t === "files" ? "model" : t));
     };
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
@@ -154,6 +165,8 @@ export function App() {
         setDiagnostics(r.diagnostics);
         setCompileConsole(r.console);
         setCompileOk(r.ok);
+        setModel(r.model);
+        setModelKey(JSON.stringify(files));
         if (r.ok) {
           setTests(r.tests);
           setTestCase((tc) => (r.tests.includes(tc) ? tc : r.tests[0] ?? ""));
@@ -176,6 +189,7 @@ export function App() {
     setRunError(undefined);
     setProgress(undefined);
     try {
+      const compiled = await runner.compile(files);
       const r = await runner.check(
         {
           files,
@@ -188,6 +202,8 @@ export function App() {
         setProgress,
       );
       setResult(r);
+      setResultKey(JSON.stringify(files));
+      setResultModel(compiled.model);
       if (r.diagnostics.length) setDiagnostics(r.diagnostics);
       setTab(r.bug && r.traceJson ? "trace" : "console");
     } catch (e) {
@@ -201,13 +217,13 @@ export function App() {
   }, [running, testCase, fixedSeed, seed, runner, files, timeout, strict, extraArgs]);
 
   const openLocation = useCallback(
-    (file: string, line: number) => {
+    (file: string, line: number, focus = true) => {
       const f = file.replace(/^\/work\//, "");
       const match = files[f] !== undefined ? f : Object.keys(files).find((k) => k.endsWith("/" + f) || k === f);
       if (!match) return;
       setOpen(match);
-      setJump({ line, nonce: Date.now() });
-      if (matchMedia(NARROW).matches) setTab("files");
+      setJump({ line, nonce: Date.now(), focus });
+      if (focus && matchMedia(NARROW).matches) setTab("files");
     },
     [files],
   );
@@ -274,6 +290,7 @@ export function App() {
     return m;
   }, [diagnostics]);
 
+  const staleResult = !!result && (resultKey !== sourceKey || result.testCase !== testCase);
   const status = running
     ? progress
       ? progressText(progress)
@@ -282,7 +299,9 @@ export function App() {
       ? runError
       : compileOk === false || (result && !result.ok)
         ? "Compile error"
-        : result
+        : staleResult
+          ? "Previous run · source or test changed"
+          : result
           ? result.bug
             ? "Bug found"
             : result.exitCode !== 0
@@ -291,11 +310,11 @@ export function App() {
           : compileOk
             ? "Ready"
             : "Loading…";
-  const statusClass = running ? "" : compileOk === false || result?.bug || (result && (!result.ok || result.exitCode !== 0)) ? "bad" : result?.ok ? "good" : "";
+  const statusClass = running || staleResult ? "" : compileOk === false || result?.bug || (result && (!result.ok || result.exitCode !== 0)) ? "bad" : result?.ok ? "good" : "";
 
   const blurb = (
     <div className={blurbOpen ? "blurb open" : "blurb"}>
-      <p ref={blurbRef}>{demo.blurb}</p>
+      <p ref={blurbRef}>{changedExample ? `You are editing “${demo.title}”. Explore the current source in Model, or Check again to find and replay its executions.` : demo.blurb}</p>
       {(blurbClamped || blurbOpen) && (
         <button className="more" onClick={() => setBlurbOpen(!blurbOpen)}>
           {blurbOpen ? "less" : "more"}
@@ -307,7 +326,7 @@ export function App() {
   // Phones: the tabs carry the result (Trace dot, console verdict); show the row only for
   // progress and errors.
   const showStatus = narrow ? running || !!runError || compileErr : running || !!result || !!runError || compileOk === false;
-  const downloads = result?.schedule && !running && (
+  const downloads = result?.schedule && !running && !staleResult && (
     <span className="downloads">
       <Download name={`${result.testCase}.schedule`} text={result.schedule} />
       {result.traceText && <Download name={`${result.testCase}.txt`} text={result.traceText} />}
@@ -340,7 +359,7 @@ export function App() {
           onClick={() => fileInput.current?.click()}
           title="Open .p files or a .zip (or drop them anywhere)"
         >
-          Open
+          Open files
         </button>
         <input
           ref={fileInput}
@@ -514,7 +533,7 @@ export function App() {
 
           <div className="out-head">
             <div className="out-tabs" role="tablist">
-              {((narrow ? ["files", "console", "trace", "log"] : ["console", "trace", "log"]) as Tab[]).map((t) => (
+              {((narrow ? ["files", "model", "console", "trace", "log"] : ["model", "console", "trace", "log"]) as Tab[]).map((t) => (
                 <button
                   key={t}
                   role="tab"
@@ -566,6 +585,7 @@ export function App() {
           </div>
 
           <div className="output">
+            {tab === "model" && <ModelOverview model={modelKey === sourceKey ? model : undefined} testCase={testCase} pending={modelKey !== sourceKey} onOpen={s => openLocation(s.file, s.line)} />}
             {tab === "console" && (
               <Console
                 summary={!runError && result?.ok && (result.bug || result.exitCode === 0) ? (result.bug ? `✕ ${bugLine(result)}` : `✓ No bugs found in ${result.testCase}`) : undefined}
@@ -578,6 +598,8 @@ export function App() {
             {(tab === "trace" || tab === "log") && result?.traceJson && (
               <TraceView
                 json={result.traceJson}
+                model={resultModel}
+                stale={staleResult}
                 view={tab === "log" ? "log" : "diagram"}
                 onOpenLocation={openLocation}
                 onShowDiagram={() => setTab("trace")}

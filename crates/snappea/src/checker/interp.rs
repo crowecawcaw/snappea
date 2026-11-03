@@ -652,6 +652,149 @@ impl<'p> Runtime<'p> {
         format_composite(base, &args).map_err(format_exception)
     }
 
+    fn inspect_assignment(
+        &mut self,
+        actor: Actor,
+        exec: &Exec,
+        code: &crate::checker::bytecode::CodeBlock,
+        pc: usize,
+        root: Root,
+        before: Value,
+    ) {
+        use crate::checker::jsonlog::Json;
+        let probe = code.ops[..pc].iter().rev().find_map(|op| match op {
+            Op::Probe(id) => Some(self.code.probes[*id as usize]),
+            _ => None,
+        });
+        let Some(probe) = probe else {
+            return;
+        };
+        if probe.kind != crate::checker::bytecode::ProbeKind::Stmt {
+            return;
+        }
+        let (scope, name, after) = match root {
+            Root::Field(slot) => {
+                let decl = match actor {
+                    Actor::Machine(m) => self.machines[m].decl,
+                    Actor::Monitor(m) => self.monitors[m].decl,
+                };
+                let var = self.prog.machine(decl).fields.iter().map(|v| self.prog.var(*v)).find(|v| v.slot == slot);
+                (
+                    "fields",
+                    var.map(|v| v.name.clone()).unwrap_or_else(|| format!("field #{slot}")),
+                    self.fields_mut(actor)[slot as usize].clone(),
+                )
+            }
+            Root::Local(slot) => {
+                let frame = exec.frames.last().unwrap();
+                let f = self.prog.fun(probe.fun);
+                let root_fun = self.prog.fun(frame.fun);
+                let var = f
+                    .params
+                    .iter()
+                    .chain(&f.locals)
+                    .chain(&root_fun.params)
+                    .chain(&root_fun.locals)
+                    .map(|v| self.prog.var(*v))
+                    .find(|v| v.slot == slot);
+                (
+                    "locals",
+                    var.map(|v| v.name.clone()).unwrap_or_else(|| format!("local #{slot}")),
+                    exec.values[frame.base + slot as usize].clone(),
+                )
+            }
+        };
+        let write = Json::Obj(vec![
+            ("scope".into(), Json::str(scope)),
+            ("name".into(), Json::str(name)),
+            ("before".into(), Json::str(inspection_excerpt(&before.to_escaped(self.prog), 500))),
+            ("after".into(), Json::str(inspection_excerpt(&after.to_escaped(self.prog), 500))),
+            ("unchanged".into(), Json::Bool(before == after)),
+        ]);
+        self.inspect_snapshot(actor, exec, probe.span, true, Some(write), probe.fun);
+    }
+
+    /// Values are captured at execution time, including assignments that keep the same value.
+    /// `after` means the assignment completed; other snapshots precede the statement.
+    fn inspect_snapshot(
+        &mut self,
+        actor: Actor,
+        exec: &Exec,
+        span: crate::syntax::Span,
+        after: bool,
+        write: Option<crate::checker::jsonlog::Json>,
+        active_fun: crate::sema::FunId,
+    ) {
+        use crate::checker::jsonlog::{Details, Json};
+        if span.is_dummy() {
+            return;
+        }
+        let (decl, fields, state) = match actor {
+            Actor::Machine(m) => (self.machines[m].decl, &self.machines[m].fields, self.machines[m].state),
+            Actor::Monitor(m) => (self.monitors[m].decl, &self.monitors[m].fields, self.monitors[m].state),
+        };
+        let render = |v: &Value| Json::str(inspection_excerpt(&v.to_escaped(self.prog), 500));
+        let fields = self
+            .prog
+            .machine(decl)
+            .fields
+            .iter()
+            .filter_map(|id| {
+                let var = self.prog.var(*id);
+                fields.get(var.slot as usize).map(|v| (var.name.clone(), render(v)))
+            })
+            .collect();
+        let locals = exec
+            .frames
+            .last()
+            .map(|frame| {
+                let f = self.prog.fun(frame.fun);
+                let active = self.prog.fun(active_fun);
+                f.params
+                    .iter()
+                    .chain(&f.locals)
+                    .chain(&active.params)
+                    .chain(&active.locals)
+                    .filter_map(|id| {
+                        let var = self.prog.var(*id);
+                        exec.values.get(frame.base + var.slot as usize).map(|v| (var.name.clone(), render(v)))
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>()
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let loc = self.prog.sources.location(span);
+        let text = inspection_excerpt(self.prog.sources.text(span), 300);
+        let inspection = Json::Obj(vec![
+            (
+                "source".into(),
+                Json::Obj(vec![
+                    ("file".into(), Json::str(loc.file.unwrap_or_default())),
+                    ("line".into(), Json::Int(loc.line)),
+                    ("col".into(), Json::Int(loc.col)),
+                    ("text".into(), Json::str(text.clone())),
+                ]),
+            ),
+            ("machine".into(), Json::str(self.prog.machine(decl).name.clone())),
+            ("state".into(), Json::str(self.state_name(state))),
+            ("fields".into(), Json::Obj(fields)),
+            ("locals".into(), Json::Obj(locals)),
+            ("phase".into(), Json::str(if after { "after" } else { "before" })),
+            ("write".into(), write.unwrap_or(Json::Null)),
+        ]);
+        self.jlog(
+            "Inspection",
+            Details {
+                id: Some(self.actor_name(actor)),
+                log: Some(text),
+                inspection: Some(inspection),
+                ..Details::default()
+            },
+            false,
+        );
+    }
+
     /// Runs the innermost frame until it calls or returns, or until the action finishes,
     /// unwinds, fails or reaches a scheduling point. Every instruction is one unit of work.
     fn run_frame(&mut self, actor: Actor, exec: &mut Exec) -> Result<Flow, Fault> {
@@ -676,6 +819,7 @@ impl<'p> Runtime<'p> {
         let limit = self.config.max_work_per_step;
         let prog = self.prog;
         let java = self.java_semantics();
+        let inspecting = self.config.inspection_trace && self.json_enabled();
         // Counts `n` units of work. A fused instruction counts its first unit with the
         // loop and the others before the part they stand for. The bound is checked as if
         // the units were counted one at a time, so it is reported with the counter just
@@ -700,12 +844,19 @@ impl<'p> Runtime<'p> {
                 next_poll = work.saturating_add(4096);
                 self.next_cancel_work = next_poll;
             }
+            // Inspection is only active in the logged replay, never during search.
             let stack = &mut exec.values;
             // every code block ends with a `Return`
             let op = &code.ops[pc];
             pc += 1;
             match op {
                 Op::Probe(id) => {
+                    if self.config.inspection_trace && self.json_enabled() {
+                        let probe = self.code.probes[*id as usize];
+                        if probe.kind == crate::checker::bytecode::ProbeKind::Stmt {
+                            self.inspect_snapshot(actor, exec, probe.span, false, None, probe.fun);
+                        }
+                    }
                     // probes count no work (see `Op::Probe`); any bound the charge above
                     // crossed, the next instruction would cross too
                     *work -= 1;
@@ -738,15 +889,27 @@ impl<'p> Runtime<'p> {
                 }
                 Op::StoreLocal(s) => {
                     let v = pop(stack);
+                    let before = inspecting.then(|| stack[base + *s as usize].clone());
                     stack[base + *s as usize] = v;
+                    if let Some(before) = before {
+                        self.inspect_assignment(actor, exec, &code, pc, Root::Local(*s), before);
+                    }
                 }
                 Op::StoreLocalConst { slot, value } => {
                     charge!(1);
+                    let before = inspecting.then(|| stack[base + *slot as usize].clone());
                     stack[base + *slot as usize] = value.clone();
+                    if let Some(before) = before {
+                        self.inspect_assignment(actor, exec, &code, pc, Root::Local(*slot), before);
+                    }
                 }
                 Op::StoreField(s) => {
                     let v = pop(stack);
+                    let before = inspecting.then(|| self.fields_mut(actor)[*s as usize].clone());
                     self.fields_mut(actor)[*s as usize] = v;
+                    if let Some(before) = before {
+                        self.inspect_assignment(actor, exec, &code, pc, Root::Field(*s), before);
+                    }
                 }
                 Op::LoadField(s) => {
                     let v = self.fields_mut(actor)[*s as usize].clone();
@@ -1002,6 +1165,7 @@ impl<'p> Runtime<'p> {
                         Root::Local(s) => &mut exec.values[base + s as usize],
                         Root::Field(s) => &mut self.fields_mut(actor)[s as usize],
                     };
+                    let before = inspecting.then(|| target.clone());
                     match path.split_last() {
                         None => *target = rhs,
                         Some((last, init)) => {
@@ -1009,6 +1173,9 @@ impl<'p> Runtime<'p> {
                             let base = navigate(target, init, &keys[..nk], prog)?;
                             store_at(base, last, keys.get(nk), rhs, prog)?;
                         }
+                    }
+                    if let Some(before) = before {
+                        self.inspect_assignment(actor, exec, &code, pc, *root, before);
                     }
                 }
                 Op::ForeachInit { iter_slot, root } => {
@@ -1066,6 +1233,20 @@ impl<'p> Runtime<'p> {
     fn other_op(&mut self, actor: Actor, exec: &mut Exec, frame_idx: usize, op: &Op) -> Result<Flow, Fault> {
         let prog = self.prog;
         let base = exec.frames[frame_idx].base;
+        let mutation = if self.config.inspection_trace && self.json_enabled() {
+            match op {
+                Op::Insert { root, .. } | Op::Add { root, .. } | Op::Remove { root, .. } => {
+                    let before = match *root {
+                        Root::Local(slot) => exec.values[base + slot as usize].clone(),
+                        Root::Field(slot) => self.fields_mut(actor)[slot as usize].clone(),
+                    };
+                    Some((*root, before))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let stack = &mut exec.values;
         match op {
             Op::Keys => {
@@ -1446,6 +1627,10 @@ impl<'p> Runtime<'p> {
             }
             _ => unreachable!("run_frame executes {:?}", op),
         }
+        if let Some((root, before)) = mutation {
+            let frame = &exec.frames[frame_idx];
+            self.inspect_assignment(actor, exec, &frame.code, frame.pc, root, before);
+        }
         Ok(Flow::Continue)
     }
 
@@ -1571,6 +1756,16 @@ fn foreign_missing(name: &str) -> Exception {
     )
 }
 
+/// Keep large values readable and mark every truncated preview.
+fn inspection_excerpt(text: &str, limit: usize) -> String {
+    let mut chars = text.chars();
+    let mut out: String = chars.by_ref().take(limit).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1582,6 +1777,61 @@ mod tests {
         let mut sm = crate::syntax::SourceMap::new();
         sm.add("model.p", src.to_string());
         crate::sema::compile(&sm, &crate::sema::Options::default()).unwrap_or_else(|_| panic!("does not compile"))
+    }
+
+    #[test]
+    fn inspection_records_actual_writes_without_changing_execution() {
+        let a = analyze(
+            r#"machine Main {
+            var value: int;
+            var items: seq[int];
+            var members: set[int];
+            start state Init { entry {
+                var rememberedValue: int;
+                value = 1;
+                value = 1;
+                rememberedValue = value;
+                items += (0, value);
+                members += (value);
+                members -= value;
+                items[0] = 2;
+                items -= 0;
+                assert rememberedValue == 2, "expected two increments";
+            } }
+        } test tc [main=Main]: {Main};"#,
+        );
+        let prog = &a.program;
+        let code = compile_program_with_probes(prog);
+        let tc = prog.test_cases().into_iter().next().unwrap();
+        let (module, main) = prog.test_case_module(&tc);
+        let execute = |inspection_trace| {
+            let config = Config { inspection_trace, ..Config::default() };
+            let rng = Rc::new(std::cell::RefCell::new(crate::checker::random::RandomValueGenerator::new(0)));
+            let mut strategy = crate::checker::strategy::RandomStrategy::new(1000, rng);
+            let setup = Setup { json_trace: true, ..Setup::default() };
+            let mut rt = Runtime::new(prog, &code, module, &config, &mut strategy, setup);
+            rt.run_test(main.unwrap(), &tc.name);
+            (rt.bug.clone(), rt.log.clone(), rt.step_work, rt.json.as_ref().unwrap().to_json_text())
+        };
+        let plain = execute(false);
+        let detailed = execute(true);
+        assert_eq!((&plain.0, &plain.1, plain.2), (&detailed.0, &detailed.1, detailed.2));
+        let entries: serde_json::Value = serde_json::from_str(&detailed.3).unwrap();
+        let writes: Vec<_> = entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| {
+                let w = &e["details"]["inspection"]["write"];
+                (!w.is_null()).then_some(w)
+            })
+            .collect();
+        assert!(writes.iter().any(|w| w["name"] == "value" && w["before"] == "0" && w["after"] == "1"));
+        assert!(writes.iter().any(|w| w["name"] == "value" && w["before"] == "1" && w["after"] == "1"));
+        assert!(writes.iter().any(|w| w["name"] == "rememberedValue" && w["after"] == "1"));
+        assert_eq!(writes.iter().filter(|w| w["name"] == "items").count(), 3);
+        assert_eq!(writes.iter().filter(|w| w["name"] == "members").count(), 2);
+        assert!(!plain.3.contains("inspection"));
     }
 
     /// The bug, log and final work count of the program's test under a work bound.

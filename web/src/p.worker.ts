@@ -67,6 +67,9 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
       console: c.console,
       diagnostics: c.diagnostics,
       tests: c.tests,
+      model: c.out.exitCode === 0
+        ? JSON.parse((await p()).run(["playground-model"], toFs(req.files)).stdout)
+        : undefined,
       millis: performance.now() - t0,
     };
   }
@@ -86,7 +89,7 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
   const gates = req.strict || req.extraArgs.some((a, i) => /^--(warn|deny)(=all)?$/.test(a) && (a.endsWith("=all") || req.extraArgs[i + 1] === "all"))
     ? []
     : ["--warn", "all"];
-  const opts = ["--timeout", `${req.timeout}s`, ...mutation, "--seed", String(req.seed), ...gates, ...req.extraArgs];
+  const opts = ["--inspect-trace", "--timeout", `${req.timeout}s`, ...mutation, "--seed", String(req.seed), ...gates, ...req.extraArgs];
   const shown = ["check", req.testCase, ...opts];
   const args = ["check", ...sourceArgs(req.files), req.testCase, ...opts];
   const r = (await p()).run(args, toFs(req.files), {

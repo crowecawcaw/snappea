@@ -28,20 +28,28 @@ export function FirstModel({ root }: { root: string }) {
 machine Counter {
 var value: int;
 start state Serving {
-  on eRead do (c: Client) { send c, eValue, value; }
-  on eWrite do (v: int) { value = v; }
-  on eGet do (m: Main) { send m, eValue, value; }
+  on ReadValue do (client: Client) {
+    send client, ValueRead, value;
+  }
+  on WritValueRead do (v: int) { value = v; }
+  on ReadFinalValue do (testHarness: Main) {
+    send testHarness, ValueRead, value;
+  }
 }
 }
 
 machine Client {
 start state Run {
   entry (input: (counter: Counter, owner: Main)) {
-    var v: int;
-    send input.counter, eRead, this;
-    receive { case eValue: (x: int) { v = x; } }
-    send input.counter, eWrite, v + 1;
-    send input.owner, eDone;
+    var rememberedValue: int;
+    send input.counter, ReadValue, this;
+    receive {
+      case ValueRead: (replyValue: int) {
+        rememberedValue = replyValue;
+      }
+    }
+    send input.counter, WritValueRead, v + 1;
+    send input.owner, ClientFinished;
   }
 }
 }
@@ -51,7 +59,7 @@ start state Run {
           asserts that the counter reached 2:
         </p>
         <Code lang="p">{`
-assert final == 2, format("expected 2 increments, counter is {0}", final);
+assert finalValue == 2, format("expected 2 increments, counter is {0}", finalValue);
 
 test tcTwoClients [main=Main]: { Main, Counter, Client };
 `}</Code>
@@ -60,18 +68,18 @@ test tcTwoClients [main=Main]: { Main, Counter, Client };
 $ snappea check LostUpdate.p tcTwoClients
 Checking generatedOutput: 1 test case
 FAIL  tcTwoClients (bug found after 9 schedules, 8 workers, 0.00s)
-      Assertion Failed: LostUpdate.p:68:7 expected 2 increments, counter is 1
+      Assertion Failed: LostUpdate.p:69:7 expected 2 increments, counter is 1
       Replay: snappea replay PCheckerOutput/tcTwoClients/bug.schedule LostUpdate.p
 1 of 1 test case failed in 0.01s, peak memory 9 MB. Output: PCheckerOutput/
 `}</Code>
         <p>The trace shows exactly how the update was lost:</p>
         <Island name="trace"><Trace /></Island>
         <p>
-          <b>The fix is a design change:</b> replace the read and write with one <code>eIncrement</code> event that
+          <b>The fix is a design change:</b> replace the read and write with one <code>Increment</code> event that
           the Counter applies itself. For this small model, automatic exhaustive exploration can finish and find no bug. Read the result to confirm whether it completed.
         </p>
         <Code lang="p">{`
-on eIncrement do { value = value + 1; }
+on Increment do { value = value + 1; }
 `}</Code>
         <p>
           <a className="button primary" href={DEMO}>Open this model in the Playground →</a>
@@ -85,18 +93,18 @@ on eIncrement do { value = value + 1; }
         instead of reading and writing. Keep the final assertion: two completed increments must leave 2.
         Declare the new event and remove unused read/write declarations. Run the checker again.</p>
       <Code lang="p" title="Replacement event and handlers (excerpts)">{`
-event eIncrement;
+event Increment;
 
-// Counter.Serving: replace on eRead and on eWrite with:
-on eIncrement do { value = value + 1; }
+// Counter.Serving: replace on ReadValue and on WritValueRead with:
+on Increment do { value = value + 1; }
 
 // Client.Run: replace its entry with:
 entry (input: (counter: Counter, owner: Main)) {
-  send input.counter, eIncrement;
-  send input.owner, eDone;
+  send input.counter, Increment;
+  send input.owner, ClientFinished;
 }
 `}</Code>
-      <p>Keep <code>eValue</code> and the Counter's <code>eGet</code> handler: Main still uses them to verify the final value.</p>
+      <p>Keep <code>ValueRead</code> and the Counter's <code>ReadFinalValue</code> handler: Main still uses them to verify the final value.</p>
       <p>The fixed design should pass. Read the result to see whether exploration completed or reached its budget.
         A pass checks this bounded model, not every possible implementation.</p>
       <p>You have changed the design, not just the test order. Next, use the

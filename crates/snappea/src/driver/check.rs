@@ -105,6 +105,8 @@ pub struct CheckConfig {
     pub verbose: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
+    /// Include execution-time source and value captures for visual replay.
+    pub inspection_trace: bool,
     pub timeline: crate::checker::timeline::TimelineConfig,
     /// `--replay`: the schedule file to replay.
     pub schedule_file: Option<String>,
@@ -205,6 +207,7 @@ impl Default for CheckConfig {
             timeout: None,
             verbose: false,
             xml_trace: false,
+            inspection_trace: false,
             timeline: Default::default(),
             schedule_file: None,
             latency: None,
@@ -503,6 +506,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         verbose: cfg.verbose,
         json_trace: true,
         xml_trace: cfg.xml_trace,
+        inspection_trace: cfg.inspection_trace,
         timeline: cfg.timeline,
         activity_coverage: true,
         latency: cfg.latency.clone(),

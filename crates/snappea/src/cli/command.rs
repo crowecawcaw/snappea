@@ -125,6 +125,8 @@ Inputs:
                             code out.
 
 Output:
+      --inspect-trace       Include source statements and variable snapshots in a bug's
+                            JSON trace for visual replay. Exploration is unchanged.
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
       --coverage-file <FILE>
                             Write every statement, branch and event handler no test
@@ -784,6 +786,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
 }
 
 const CHECK_OPTS: &[Opt] = &[
+    flag("inspect-trace", None),
     value("timeout", None),
     value("workers", Some('j')),
     value("seed", None),
@@ -908,6 +911,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.latency_profile = split_latency(l).1.map(str::to_string);
     }
     cfg.timed = a.has("timed");
+    cfg.inspection_trace = a.has("inspect-trace");
     if let Some(o) = a.get("out") {
         cfg.output_path = o.to_string();
     }

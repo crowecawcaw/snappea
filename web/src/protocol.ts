@@ -36,6 +36,7 @@ export interface CompileResult {
   console: string;
   diagnostics: Diagnostic[];
   tests: string[];
+  model?: import("./model/types").ModelInfo;
   millis: number;
 }
 

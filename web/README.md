@@ -51,3 +51,28 @@ npm run test:html # verify published content is present in the HTML
   `design/time/RetryBudget`, `web/demos`); see `src/demos.ts`.
 - Projects are checked with `snappea check <every .p file> <test>`, so `.pproj` files are not used.
 - `.github/workflows/pages.yml` publishes `main` to GitHub Pages and maintainer PRs to `pr/<number>/`.
+
+The Model tab derives actors, assertions, and state diagrams from the Rust parser
+via the Wasm-only `playground-model` request. This reads the current files;
+comments and strings cannot create diagram nodes. Arrows represent explicit
+`on ... goto` transitions and `goto` statements reached through state actions or
+named statement calls (including conditional/loop/receive bodies). Conditions
+still apply; this is a declaration diagram, not a reachability proof or a list of
+enabled runtime choices. Foreign implementations are not expanded.
+
+Checks request `--inspect-trace`: the first failing schedule is replayed with
+source probes, fields, active-frame locals, and writes (including unchanged
+values). Search itself uses the usual bytecode. Ordinary CLI and compatibility
+traces retain their format unless this option is requested. Captures are bounded
+at 10,000 snapshots and value previews at 500 characters; truncation is marked.
+
+Trace > Walkthrough, Sequence, and States share a cursor. The walkthrough shows
+captured values and pending messages reconstructed from sends/receives; the
+variable history lets readers jump from writes to the surrounding messages.
+Snapshots explicitly retain their capture positions. Editing source or selecting
+another test marks the previous execution stale and pauses its source links.
+Follow source scrolls the editor without taking its keyboard focus.
+
+`npm run test:replay` checks inbox reconstruction and snapshot capture positions.
+Rust tests in `snappea-wasm::model` check diagram extraction; interpreter tests
+check that inspection preserves execution and records equal-value writes.

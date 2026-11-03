@@ -69,6 +69,8 @@ pub struct CheckerOptions {
     /// Produce the JSON trace of the first buggy schedule (by replaying it with JSON
     /// logging on, so exploration itself pays nothing).
     pub json_trace: bool,
+    /// Include source/variable captures in the first bug's replay; search stays uninstrumented.
+    pub inspection_trace: bool,
     /// Produce the XML trace of the first buggy schedule (`--xml-trace`), also by replaying it.
     pub xml_trace: bool,
     /// `--timeline-repr`, `--timeline-kgram`, `--timeline-payload`.
@@ -108,6 +110,7 @@ impl Default for CheckerOptions {
             activity_coverage: false,
             driver_machines: None,
             json_trace: false,
+            inspection_trace: false,
             xml_trace: false,
             timeline: Default::default(),
             assembly_name: "PImplementation".into(),
@@ -708,7 +711,14 @@ impl<'p> Checker<'p> {
             xml_trace: xml.then_some(bug.test_task_id),
             ..Setup::default()
         };
-        let mut rt = Runtime::new(self.prog, &self.code, module, &config, &mut strategy, setup);
+        let inspected;
+        let code = if config.inspection_trace {
+            inspected = crate::checker::compile::compile_program_with_probes(self.prog);
+            &inspected
+        } else {
+            &self.code
+        };
+        let mut rt = Runtime::new(self.prog, code, module, &config, &mut strategy, setup);
         rt.run_test(main, &tc.name);
         if rt.bug.is_none() {
             rt.check_hot_monitors_at_termination();
@@ -1095,6 +1105,7 @@ impl<'p> Checker<'p> {
 /// The runtime configuration of a run with `opts`.
 fn run_config(opts: &CheckerOptions) -> Config {
     Config {
+        inspection_trace: opts.inspection_trace,
         max_unfair_steps: opts.max_unfair_steps,
         max_fair_steps: opts.max_fair_steps,
         liveness_enabled: true,
