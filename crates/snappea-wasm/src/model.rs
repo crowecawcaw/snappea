@@ -29,6 +29,16 @@ pub fn inspect(files: &BTreeMap<String, String>) -> Result<Value, String> {
         match d {
             TopDecl::Machine(m) => {
                 let funs: Vec<&FunDecl> = m.funs.iter().chain(globals.iter().copied()).collect();
+                let mut sent = Vec::new();
+                let mut received: Vec<String> = m.observes.iter().map(|e| e.name.clone()).collect();
+                for state in &m.states {
+                    for item in &state.items {
+                        match &item.kind {
+                            StateItemKind::OnDo { events, .. } | StateItemKind::OnGoto { events, .. } => received.extend(events.iter().map(|e| e.name.clone())),
+                            _ => {}
+                        }
+                    }
+                }
                 let mut states = Vec::new();
                 let mut rules = Vec::new();
                 for s in &m.states {
@@ -44,12 +54,15 @@ pub fn inspect(files: &BTreeMap<String, String>) -> Result<Value, String> {
                         };
                         let mut targets = Vec::new();
                         if let Some(t) = target { targets.push(json!({"state":t,"conditional":false,"source":source(&sm,item.span)})); }
-                        if let Some(h) = handler { walk_handler(h, &funs, &sm, &mut Vec::new(), &mut targets, &mut rules, false); }
+                        if let Some(h) = handler {
+                            walk_handler(h, &funs, &sm, &mut Vec::new(), &mut targets, &mut rules, false);
+                            messages(h, &funs, &mut Vec::new(), &mut sent, &mut received);
+                        }
                         actions.push(json!({"label":label,"source":source(&sm,item.span),"targets":targets}));
                     }
                     states.push(json!({"name":s.name.name,"start":s.is_start,"hot":s.temperature==Temperature::Hot,"source":source(&sm,s.name.span),"actions":actions}));
                 }
-                machines.push(json!({"name":m.name.name,"kind":match m.kind {MachineKind::Impl=>"machine",MachineKind::Spec=>"spec",MachineKind::Scenario=>"scenario"},"source":source(&sm,m.name.span),"variables":m.vars.iter().flat_map(|v|v.names.iter().map(|n|json!({"name":n.name,"type":sm.text(v.ty.span)}))).collect::<Vec<_>>(),"states":states,"rules":rules}));
+                machines.push(json!({"name":m.name.name,"kind":match m.kind {MachineKind::Impl=>"machine",MachineKind::Spec=>"spec",MachineKind::Scenario=>"scenario"},"source":source(&sm,m.name.span),"sent":sent,"received":received,"variables":m.vars.iter().flat_map(|v|v.names.iter().map(|n|json!({"name":n.name,"type":sm.text(v.ty.span)}))).collect::<Vec<_>>(),"states":states,"rules":rules}));
             }
             TopDecl::SafetyTest(t) => tests.push(json!({"name":t.name.name,"main":t.main.name,"source":source(&sm,t.span),"composition":sm.text(t.expr.span)})),
             _ => {}
@@ -138,6 +151,65 @@ fn walk(
         }
     }
 }
+/// Event relationships from AST actions. These describe compatibility, not resolved destinations.
+fn messages(
+    handler: &Handler,
+    funs: &[&FunDecl],
+    seen: &mut Vec<String>,
+    sent: &mut Vec<String>,
+    received: &mut Vec<String>,
+) {
+    let body = match handler {
+        Handler::Anon(a) => Some(&a.body),
+        Handler::Named(n) => {
+            if seen.contains(&n.name) {
+                return;
+            }
+            seen.push(n.name.clone());
+            funs.iter().find(|f| f.name.name == n.name).and_then(|f| f.body.as_ref())
+        }
+    };
+    if let Some(body) = body {
+        message_stmts(&body.stmts, funs, seen, sent, received);
+    }
+}
+fn message_stmts(
+    stmts: &[Stmt],
+    funs: &[&FunDecl],
+    seen: &mut Vec<String>,
+    sent: &mut Vec<String>,
+    received: &mut Vec<String>,
+) {
+    for stmt in stmts {
+        match &stmt.kind {
+            StmtKind::Send { event, .. } => {
+                if let ExprKind::Name(n) = &event.kind {
+                    if !sent.contains(&n.name) {
+                        sent.push(n.name.clone());
+                    }
+                }
+            }
+            StmtKind::Compound(stmts) => message_stmts(stmts, funs, seen, sent, received),
+            StmtKind::If { then_branch, else_branch, .. } => {
+                message_stmts(std::slice::from_ref(then_branch.as_ref()), funs, seen, sent, received);
+                if let Some(b) = else_branch {
+                    message_stmts(std::slice::from_ref(b.as_ref()), funs, seen, sent, received);
+                }
+            }
+            StmtKind::While { body, .. } | StmtKind::Foreach { body, .. } => {
+                message_stmts(std::slice::from_ref(body.as_ref()), funs, seen, sent, received)
+            }
+            StmtKind::Receive { cases } => {
+                for case in cases {
+                    received.extend(case.events.iter().map(|e| e.name.clone()));
+                    message_stmts(&case.handler.body.stmts, funs, seen, sent, received);
+                }
+            }
+            StmtKind::FunCall { fun, .. } => messages(&Handler::Named(fun.clone()), funs, seen, sent, received),
+            _ => {}
+        }
+    }
+}
 fn add_guard(targets: &mut [Value], guard: &str) {
     for target in targets {
         let combined = match target.get("guard").and_then(Value::as_str) {
@@ -155,7 +227,7 @@ mod tests {
         let files = BTreeMap::from([(
             "/work/model.p".into(),
             r#"// state Fake { }
-        machine Main { fun move() { if (true) { goto Done; } }
+        machine Main { fun move() { send this, Go; if (true) { goto Done; } }
           start state Init { on Go do move; }
           state Done { entry { assert false, "goto Fake;"; } }
         } test tc [main=Main]: {Main};"#
@@ -167,6 +239,8 @@ mod tests {
         assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["conditional"], true);
         assert_eq!(v["machines"][0]["rules"][0]["condition"], "false");
         assert_eq!(v["tests"][0]["main"], "Main");
+        assert_eq!(v["machines"][0]["sent"][0], "Go");
+        assert_eq!(v["machines"][0]["received"][0], "Go");
         assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["guard"], "true");
     }
     #[test]

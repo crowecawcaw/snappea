@@ -78,3 +78,18 @@ Follow source scrolls the editor without taking its keyboard focus.
 `npm run test:replay` checks inbox reconstruction and snapshot capture positions.
 Rust tests in `snappea-wasm::model` check diagram extraction; interpreter tests
 check that inspection preserves execution and records equal-value writes.
+
+Model and Trace also offer **Together**, a combined diagram using the pinned
+`@d2lang/d2` package and its TALA layout engine. It runs locally in a separate
+worker and loads only when requested (the current D2 browser chunk is about
+8.6 MB compressed). Machine containers hold their source states and transitions;
+expand/zoom controls preserve readable labels on larger projects.
+
+Before checking, dashed connections show event compatibility: an action sends a
+named event and another machine handles that event. These are possible links,
+not resolved destinations; dynamic event expressions and calls through expressions
+are not expanded. After checking, connections summarize actual sends in the whole
+recorded execution, using implementation names from snapshots where available.
+Only participating implementation machines are shown then. Instances are grouped
+by type with counts; highlighted states are the union of states occupied at the
+selected step. Rule observers remain available in the single-machine view.

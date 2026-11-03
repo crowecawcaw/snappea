@@ -8,6 +8,7 @@ export interface ModelAction {
 export interface ModelState { name: string; start: boolean; hot: boolean; source: SourceLocation; actions: ModelAction[] }
 export interface ModelMachine {
   name: string; kind: "machine" | "spec" | "scenario"; source: SourceLocation;
+  sent?: string[]; received?: string[];
   variables: { name: string; type: string }[];
   states: ModelState[];
   rules: { condition: string; source: SourceLocation }[];
