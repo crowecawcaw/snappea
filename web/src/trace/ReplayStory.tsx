@@ -20,7 +20,7 @@ export function ReplayStory({ trace, cursor, onSelect, onOpen, sourceAvailable =
     { label: "Failure", i: trace.steps.findIndex(s => s.kind === "error") },
   ].filter(m => m.i >= 0).sort((a, b) => a.i - b.i);
   return <div className="replay-story">
-    <div className="replay-milestones" aria-label="Execution landmarks">{milestones.map(m => <button key={m.label} onClick={() => onSelect(m.i)}>{m.label}<span>step {m.i + 1}</span></button>)}</div>
+    <details className="replay-landmarks"><summary>Jump to a step</summary><div className="replay-milestones" aria-label="Execution landmarks">{milestones.map(m => <button key={m.label} onClick={() => onSelect(m.i)}>{m.label}<span>step {m.i + 1}</span></button>)}</div></details>
     <section className={`replay-caption ${step.kind === "error" ? "failure" : ""}`} aria-live="polite">
       <span className="eyebrow">STEP {cursor + 1} · {inspection ? inspection.phase === "after" ? "AFTER ASSIGNMENT" : "BEFORE STATEMENT" : step.kind.toUpperCase()}</span>
       <h3>{explainStep(trace, step)}</h3>
@@ -36,6 +36,7 @@ export function ReplayStory({ trace, cursor, onSelect, onOpen, sourceAvailable =
       {step.peer !== undefined && <button className="link" onClick={() => onSelect(step.peer!)}>{step.kind === "send" ? "Jump to when this message is handled" : "Jump to when this message was sent"} · step {step.peer + 1}</button>}
     </section>
     <VariableHistory trace={trace} onSelect={onSelect} />
+    <details className="replay-actor-details"><summary>Actor variables and pending messages</summary>
     <h3 className="actor-heading">Actors at this point <span>Snapshots and recorded messages</span></h3>
     <div className="replay-actors">{[...frames].map(([lane, frame]) => <section key={lane} className={`replay-actor ${step.lane === lane ? "active" : ""}`}>
       <div className="actor-title"><strong>{trace.lanes[lane].label}</strong><span className="model-tag">{trace.lanes[lane].monitor ? "observer" : "actor"}</span></div>
@@ -47,6 +48,7 @@ export function ReplayStory({ trace, cursor, onSelect, onOpen, sourceAvailable =
       </> : <p className="capture-note">Variables have not been captured yet.</p>}
       {!trace.lanes[lane].monitor && <div className="actor-inbox"><span className="eyebrow">PENDING MESSAGES · {frame.inbox.length}</span>{frame.inbox.slice(0, 5).map(i => <button key={i} onClick={() => onSelect(i)}>{trace.steps[i].label} <code>{trace.steps[i].payload === undefined ? "" : JSON.stringify(trace.steps[i].payload)}</code></button>)}{frame.inbox.length > 5 && <span>+{frame.inbox.length - 5} more</span>}</div>}
     </section>)}</div>
+    </details>
     <p className="model-hint">Replay follows one execution found by the checker. It does not explore new choices as you step. Actor values show their latest capture; inboxes are reconstructed from recorded sends and receives.</p>
   </div>;
 }

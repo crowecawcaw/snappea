@@ -115,10 +115,14 @@ fn walk(
                 }
             }
             StmtKind::Compound(stmts) => walk(stmts, funs, sm, visiting, targets, rules, conditional),
-            StmtKind::If { then_branch, else_branch, .. } => {
+            StmtKind::If { cond, then_branch, else_branch } => {
+                let start = targets.len();
                 walk(std::slice::from_ref(then_branch.as_ref()), funs, sm, visiting, targets, rules, true);
+                add_guard(&mut targets[start..], sm.text(cond.span));
                 if let Some(b) = else_branch {
+                    let start = targets.len();
                     walk(std::slice::from_ref(b.as_ref()), funs, sm, visiting, targets, rules, true);
+                    add_guard(&mut targets[start..], &format!("!({})", sm.text(cond.span)));
                 }
             }
             StmtKind::While { body, .. } | StmtKind::Foreach { body, .. } => {
@@ -132,6 +136,15 @@ fn walk(
             StmtKind::FunCall { fun, .. } => call(&fun.name, funs, sm, visiting, targets, rules, conditional),
             _ => {}
         }
+    }
+}
+fn add_guard(targets: &mut [Value], guard: &str) {
+    for target in targets {
+        let combined = match target.get("guard").and_then(Value::as_str) {
+            Some(inner) => format!("({guard}) && ({inner})"),
+            None => guard.to_string(),
+        };
+        target["guard"] = json!(combined);
     }
 }
 #[cfg(test)]
@@ -154,6 +167,7 @@ mod tests {
         assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["conditional"], true);
         assert_eq!(v["machines"][0]["rules"][0]["condition"], "false");
         assert_eq!(v["tests"][0]["main"], "Main");
+        assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["guard"], "true");
     }
     #[test]
     fn invalid_edits_do_not_produce_a_partial_diagram() {

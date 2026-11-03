@@ -3,7 +3,7 @@ export interface SourceLocation { file: string; line: number; col: number; text:
 export interface ModelAction {
   label: string;
   source: SourceLocation;
-  targets: { state: string; conditional: boolean; source: SourceLocation }[];
+  targets: { state: string; conditional: boolean; guard?: string; source: SourceLocation }[];
 }
 export interface ModelState { name: string; start: boolean; hot: boolean; source: SourceLocation; actions: ModelAction[] }
 export interface ModelMachine {

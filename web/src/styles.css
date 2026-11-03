@@ -511,3 +511,30 @@ button.loc { border: none; background: none; padding: 0; color: var(--accent); t
 .state-graph svg { max-height: none; }
 .write-history .prior-message { padding-top: 5px; color: var(--accent); font-size: 10px; }
 .write-history .prior-message strong { font-size: 10px; }
+.model-reference { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.model-reference summary, .state-actions > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.state-actions > summary { padding: 10px 0; }
+.state-edge { cursor: pointer; }
+.state-edge:hover path, .state-edge:focus path { stroke: var(--accent); stroke-width: 3px; }
+.edge-label { fill: var(--fg); font: 12px var(--sans); }
+.edge-condition { fill: var(--muted); font: 10px var(--sans); }
+.state-node .state-node-actions { fill: var(--muted); font: 10px var(--sans); }
+.state-node .state-current { fill: var(--accent); font: 11px var(--sans); }
+.state-replay-summary { margin: 0 0 16px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--bg); font-size: 14px; line-height: 1.5; }
+.state-replay-summary.failure { border-left-color: var(--bad); }
+.machine-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+.machine-picker button { background: var(--panel); border: 1px solid var(--border); padding: 7px 12px; font-size: 12px; }
+.machine-picker button[aria-pressed="true"] { background: var(--active-line); border-color: var(--accent); color: var(--accent); }
+.model-heading > .model-hint { margin: 5px 0 16px; }
+.state-graph-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 10px 0; }
+.state-graph-title strong { font: 600 16px var(--sans); color: var(--fg); }
+.state-graph-title span { font-size: 11px; }
+.state-node.active.failed rect { stroke: var(--bad); fill: var(--bad-bg); }
+.state-node.failed .state-current { fill: var(--bad); }
+.state-replay-summary > strong { display: block; margin-bottom: 5px; }
+.state-replay-summary p { margin: 0 0 6px; }
+.state-replay-summary .link { font-size: 12px; }
+.replay-landmarks { margin-bottom: 12px; }
+.replay-landmarks > summary, .replay-actor-details > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.replay-landmarks .replay-milestones { margin-top: 10px; }
+.replay-actor-details { margin-top: 16px; }

@@ -66,7 +66,9 @@ values). Search itself uses the usual bytecode. Ordinary CLI and compatibility
 traces retain their format unless this option is requested. Captures are bounded
 at 10,000 snapshots and value previews at 500 characters; truncation is marked.
 
-Trace > Walkthrough, Sequence, and States share a cursor. The walkthrough shows
+The Model tab opens directly to source-derived state diagrams. Trace opens to
+the active machine's state diagram, marking the state where a failure was detected.
+Trace > State diagram, Details, and Messages share a cursor. The Details view shows
 captured values and pending messages reconstructed from sends/receives; the
 variable history lets readers jump from writes to the surrounding messages.
 Snapshots explicitly retain their capture positions. Editing source or selecting

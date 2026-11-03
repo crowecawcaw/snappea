@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReplayStory } from "./ReplayStory";
 import { StateDiagram } from "../model/StateDiagram";
 import type { ModelInfo } from "../model/types";
-import { framesAt } from "./explain";
+import { explainStep, framesAt } from "./explain";
 import { visible } from "./filter";
 import { parseTrace, type Trace } from "./model";
 import { laneColors, SequenceDiagram } from "./SequenceDiagram";
@@ -29,7 +29,7 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
   const trace = useMemo(() => parseTrace(json), [json]);
   const color = useMemo(() => laneColors(trace.lanes), [trace]);
   const [cursor, setCursor] = useState(trace.steps.length - 1);
-  const [mode, setMode] = useState<"story" | "sequence" | "states">("story");
+  const [mode, setMode] = useState<"story" | "sequence" | "states">(model ? "states" : "story");
   const [follow, setFollow] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(false);
@@ -120,11 +120,11 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
     <div className="trace" ref={root}>
       {stale && <div className="stale-trace" role="status">Source or test changed. This is the previous execution. Check again to replay your edits; source links are paused.</div>}
       {view === "diagram" && <div className="replay-toolbar"><div className="view-switch" aria-label="Replay view">
-        <button aria-pressed={mode === "story"} onClick={() => setMode("story")}>Walkthrough</button>
-        <button aria-pressed={mode === "sequence"} onClick={() => setMode("sequence")}>Sequence</button>
-        <button aria-pressed={mode === "states"} onClick={() => setMode("states")} disabled={!model}>States</button>
+        <button aria-pressed={mode === "states"} onClick={() => setMode("states")} disabled={!model}>State diagram</button>
+        <button aria-pressed={mode === "story"} onClick={() => setMode("story")}>Details</button>
+        <button aria-pressed={mode === "sequence"} onClick={() => setMode("sequence")}>Messages</button>
       </div><label className="follow-source"><input type="checkbox" checked={follow} disabled={stale} onChange={e => setFollow(e.target.checked)} />Follow source</label></div>}
-      {trace.error && (
+      {trace.error && mode !== "states" && (
         <div className={bannerOpen ? "trace-error open" : "trace-error"} onClick={() => setBannerOpen(!bannerOpen)}>
           <span className="trace-error-text">
             <strong>Bug:</strong> {trace.error}
@@ -189,7 +189,15 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
       {view === "log" ? (
         list
       ) : mode === "story" ? <ReplayStory sourceAvailable={!stale} trace={trace} cursor={cursor} onSelect={go} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />
-        : mode === "states" && model ? <div className="replay-state-panel"><StateDiagram readOnly={stale} key={json} model={model} activeMachine={activeMachine} activeState={actor?.state} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} /></div> : (
+        : mode === "states" && model ? <div className="replay-state-panel">
+          {step && <div className={`state-replay-summary ${step.kind === "error" ? "failure" : ""}`} aria-live="polite">
+            {step.kind === "error" && <strong>Check failed</strong>}
+            <p>{step.kind === "error" ? (trace.error ?? step.label).replace(/^Assertion Failed:\s*[^\s]+\.p:\d+:\d+\s*/, "") : explainStep(trace, step)}</p>
+            {step.kind === "error" && loc && <button className="link" disabled={stale} onClick={() => onOpenLocation(loc[1], Number(loc[2]))}>Open failed assertion</button>}
+          </div>}
+          <StateDiagram failed={step?.kind === "error"} readOnly={stale} key={json} model={model} activeMachine={activeMachine} activeState={actor?.state} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />
+          {actor?.snapshot && <details className="model-reference"><summary>Variables in {trace.lanes[step.lane!].label}</summary><pre className="replay-code">{Object.entries({...actor.snapshot.fields, ...actor.snapshot.locals}).map(([name, value]) => `${name} = ${value}`).join("\n")}</pre><p className="capture-note">Last captured at step {actor.at! + 1}.</p></details>}
+        </div> : (
         <>
           <div className={`trace-main list-${place}`}>
             <SequenceDiagram
