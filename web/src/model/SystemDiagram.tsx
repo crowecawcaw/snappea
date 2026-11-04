@@ -90,8 +90,10 @@ export function SystemDiagram({ model, trace, cursor, onOpen, readOnly = false, 
   return <div className={`system-diagram ${expanded ? "expanded" : ""}`} onKeyDown={e => { if (e.key === "Escape") setExpanded(false); }}>
     <div className="model-toolbar"><strong>All machines</strong><div className="system-zoom"><button aria-label="Zoom out system map" onClick={() => setZoom(z => Math.max(.25, z - .25))}>−</button><button onClick={() => setZoom(Math.min((viewport.current?.clientWidth ?? width) / width, (viewport.current?.clientHeight ?? height) / height))}>Fit</button><button aria-label="Zoom in system map" onClick={() => setZoom(z => Math.min(4, z + .25))}>+</button><button onClick={() => setExpanded(x => !x)}>{expanded ? "Close expanded diagram" : "Expand"}</button></div></div>
     {expanded && replayControls}
+    <details className="diagram-help"><summary>Diagram key</summary>
     <div className="system-legend" aria-label="Diagram key"><span><i className="legend-state" />State changes</span><span><i className={trace ? "legend-route observed" : "legend-route"} />{trace ? "Observed event routes" : "Compatible event routes"}</span></div>
     <p className="model-hint">{trace ? "Routes cover the recorded execution. Each box is an actor. Sends enter its inbox; deliveries enter its current state." : "Run Check to see actual routes. Select a machine or state to open its code."}</p>
+    </details>
     {!ready && <p role="status">Arranging state machines…</p>}
     {ready && layout.error && <p role="alert">Could not arrange this diagram. {layout.error}</p>}
     {ready && layout.graph && <div className="system-viewport" ref={viewport}><svg className={`system-svg ${activity?.message ? "has-message" : ""}`} aria-label="Linked state-machine diagram" viewBox={`0 0 ${width} ${height}`} style={{ width: zoom * width }}>
@@ -102,6 +104,5 @@ export function SystemDiagram({ model, trace, cursor, onOpen, readOnly = false, 
       <code>{activity.step.inspection?.write ? `${activity.step.inspection.write.name}: ${activity.step.inspection.write.before} → ${activity.step.inspection.write.after}` : activity.event}</code>
       {activity.payload !== undefined && <pre>{typeof activity.payload === "string" ? activity.payload : JSON.stringify(activity.payload, null, 2)}</pre>}
     </div>}
-    <details className="model-reference"><summary>Diagram data · ELK JSON</summary><pre className="replay-code">{JSON.stringify(data.graph, null, 2)}</pre></details>
   </div>;
 }

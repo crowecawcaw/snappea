@@ -299,7 +299,7 @@ export function SequenceDiagram({ trace, rows, cols, color, focus, cursor, hover
           −
         </button>
         <button className="zoom-level" onClick={() => zoomTo(zoom === 1 ? fitZoom() : 1)} title="Toggle 100% / fit width">
-          {Math.round(zoom * 100)}%
+          {zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`}
         </button>
         <button onClick={() => zoomTo(zoom * 1.25)} aria-label="Zoom in" disabled={zoom >= MAX_ZOOM}>
           +

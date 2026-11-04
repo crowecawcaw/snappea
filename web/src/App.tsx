@@ -19,7 +19,7 @@ const REPO = "https://github.com/crowecawcaw/snappea";
 const NARROW = "(max-width: 900px)";
 /** How long the URL waits for edits to settle before it is rewritten. */
 const URL_DEBOUNCE_MS = 500;
-const TAB_LABEL: Record<Tab, string> = { files: "Files", model: "Model", console: "Console", trace: "Trace", log: "Log" };
+const TAB_LABEL: Record<Tab, string> = { files: "Files", model: "Model", console: "Console", trace: "Replay", log: "Log" };
 
 export function App() {
   const runner = useMemo(() => new Runner(), []);
@@ -533,7 +533,7 @@ export function App() {
 
           <div className="out-head">
             <div className="out-tabs" role="tablist">
-              {((narrow ? ["files", "model", "console", "trace", "log"] : ["model", "console", "trace", "log"]) as Tab[]).map((t) => (
+              {((narrow ? ["files", "model", "trace", "console"] : ["model", "trace", "console"]) as Tab[]).map((t) => (
                 <button
                   key={t}
                   role="tab"
@@ -564,7 +564,7 @@ export function App() {
                 </button>
               )}
             </div>
-            {showStatus && (
+            {showStatus && (tab !== "trace" || running || !!runError || compileErr) && (
             <div className="status-line">
               <span className={`status ${statusClass}`}>{status}</span>
               {running && !!progress?.time_limit && (
@@ -600,6 +600,7 @@ export function App() {
                 json={result.traceJson}
                 schedules={result.schedules}
                 bug={result.bug}
+                downloads={downloads}
                 model={resultModel}
                 stale={staleResult}
                 view={tab === "log" ? "log" : "diagram"}

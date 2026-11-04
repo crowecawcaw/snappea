@@ -71,7 +71,11 @@ JSON. Completed executions and step-bound stops qualify; search prefixes pruned
 at known states do not. The failure remains separately available regardless of
 sample limits. A checker that fails immediately may have no successful recordings.
 
-Both Model and Trace use the combined state-machine diagram. ELK.js runs in a
+Model and Replay use the combined state-machine diagram. Replay has one view
+selector for state machines, messages, step details, or the event log; the message
+diagram does not repeat the log. A single failure summary leads the replay.
+Schedule statistics and downloads live under Run details. Diagram JSON and the
+per-actor variable disclosure below the canvas are not exposed. ELK.js runs in a
 worker (about 444 KB gzipped); React renders SVG directly. Source links, zoom,
 expansion and keyboard operation remain available. Layout stays stable during
 playback. Execution diagrams show individual actors, including rule observers,
