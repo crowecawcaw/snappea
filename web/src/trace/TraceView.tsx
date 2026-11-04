@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReplayStory } from "./ReplayStory";
-import { TalaDiagram } from "../model/TalaDiagram";
+import { SystemDiagram } from "../model/SystemDiagram";
 import { StateDiagram } from "../model/StateDiagram";
 import type { ModelInfo } from "../model/types";
 import { explainStep, framesAt } from "./explain";
@@ -198,7 +198,7 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
             {step.kind === "error" && loc && <button className="link" disabled={stale} onClick={() => onOpenLocation(loc[1], Number(loc[2]))}>Open failed assertion</button>}
           </div>}
           <div className="view-switch" aria-label="Diagram scope"><button aria-pressed={system} onClick={() => setSystem(true)}>Together</button><button aria-pressed={!system} onClick={() => setSystem(false)}>One machine</button></div>
-          {system ? <TalaDiagram model={model} trace={trace} cursor={cursor} readOnly={stale} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} /> : <StateDiagram failed={step?.kind === "error"} readOnly={stale} key={json} model={model} activeMachine={activeMachine} activeState={actor?.state} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />}
+          {system ? <SystemDiagram model={model} trace={trace} cursor={cursor} readOnly={stale} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} /> : <StateDiagram failed={step?.kind === "error"} readOnly={stale} key={json} model={model} activeMachine={activeMachine} activeState={actor?.state} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />}
           {actor?.snapshot && <details className="model-reference"><summary>Variables in {trace.lanes[step.lane!].label}</summary><pre className="replay-code">{Object.entries({...actor.snapshot.fields, ...actor.snapshot.locals}).map(([name, value]) => `${name} = ${value}`).join("\n")}</pre><p className="capture-note">Last captured at step {actor.at! + 1}.</p></details>}
         </div> : (
         <>

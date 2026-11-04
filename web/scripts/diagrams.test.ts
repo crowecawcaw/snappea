@@ -1,11 +1,11 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { D2 } from "@d2lang/d2";
-import { systemD2 } from "../src/model/systemD2.ts";
+import ELK from "elkjs/lib/elk.bundled.js";
+import { systemGraph } from "../src/model/systemGraph.ts";
 import type { ModelInfo } from "../src/model/types.ts";
 
-// Run the actual D2/TALA compiler: string-only tests cannot catch D2 escaping errors.
-test("TALA compiles multiple machines with P nondeterministic choices in transition labels", async () => {
+// Exercise the real layout engine with nesting, ports and cross-machine connections.
+test("ELK routes nested machines and treats P choice labels as literal text", async () => {
   const source = { file: "choices.p", line: 1, col: 1, text: "if ($$) { goto Done; }" };
   const model: ModelInfo = { tests: [], machines: [
     { name: "Worker", kind: "machine", source, variables: [], rules: [], sent: ["Ready"], received: [], states: [
@@ -14,13 +14,21 @@ test("TALA compiles multiple machines with P nondeterministic choices in transit
     ] },
     { name: "Peer", kind: "machine", source, variables: [], rules: [], sent: [], received: ["Ready"], states: [{ name: "Waiting", start: true, hot: false, source, actions: [] }] },
   ] };
-  const engine = new D2();
-  try {
-    const result = await engine.compile(systemD2(model).code, { layout: "tala", pad: 24 });
-    assert.ok(result.diagram);
-    assert.equal(result.diagram.connections.length, 2);
-    const svg = await engine.render(result.diagram, result.renderOptions);
-    assert.match(svg, /\$\$/);
-    assert.match(svg, /Ready/);
-  } finally { await engine.dispose(); }
+  const data = systemGraph(model);
+  const layout = await new ELK().layout(data.graph);
+  assert.ok(Number.isFinite(layout.width) && layout.width! > 0);
+  assert.ok(Number.isFinite(layout.height) && layout.height! > 0);
+  assert.equal(layout.children?.length, 2);
+  assert.equal(layout.edges?.length, 1);
+  assert.ok(layout.edges?.[0].sections?.length);
+  const worker = layout.children?.find(n => data.nodes[n.id].machine === "Worker");
+  assert.equal(worker?.children?.length, 2);
+  assert.match(worker?.edges?.[0].labels?.[0].text ?? "", /\$\$/);
+  assert.ok(worker?.edges?.[0].sections?.length);
+  const allEdges = [...layout.edges ?? [], ...worker?.edges ?? []];
+  for (const edge of allEdges) for (const section of edge.sections ?? []) {
+    for (const point of [section.startPoint, ...section.bendPoints ?? [], section.endPoint]) {
+      assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y));
+    }
+  }
 });

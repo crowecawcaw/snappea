@@ -79,11 +79,14 @@ Follow source scrolls the editor without taking its keyboard focus.
 Rust tests in `snappea-wasm::model` check diagram extraction; interpreter tests
 check that inspection preserves execution and records equal-value writes.
 
-Model and Trace also offer **Together**, a combined diagram using the pinned
-`@d2lang/d2` package and its TALA layout engine. It runs locally in a separate
-worker and loads only when requested (the current D2 browser chunk is about
-8.6 MB compressed). Machine containers hold their source states and transitions;
-expand/zoom controls preserve readable labels on larger projects.
+Model and Trace also offer **Together**, a combined diagram laid out by ELK.js
+in a dedicated worker, loaded only when requested (about 444 KB gzipped in the
+production build). Machine containers hold
+source states and transitions; ports and orthogonal paths connect machines.
+React renders the SVG directly, preserving source navigation, keyboard operation,
+and replay styling without interpreting another diagram language or inserting
+renderer-generated HTML. Stepping updates highlights without rerunning layout.
+Expand/zoom controls preserve readable labels on larger projects.
 
 Before checking, dashed connections show event compatibility: an action sends a
 named event and another machine handles that event. These are possible links,
@@ -94,6 +97,6 @@ Only participating implementation machines are shown then. Instances are grouped
 by type with counts; highlighted states are the union of states occupied at the
 selected step. Rule observers remain available in the single-machine view.
 
-`npm run test:diagrams` runs the real D2/TALA compiler against a multi-machine
-fixture, including P's `$` / `$$` choice expressions in transition labels. These
-must be escaped as literal text because D2 otherwise treats them as substitutions.
+`npm run test:diagrams` runs the real ELK engine against nested machines,
+internal transitions, and cross-machine port connections. It checks routed edge
+geometry and literal labels, including P's `$` / `$$` choice expressions.

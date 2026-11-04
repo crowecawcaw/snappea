@@ -34,7 +34,7 @@ test("snapshots remain labelled by capture step instead of being invented at lat
   assert.equal(actor.snapshot?.state, "Serving");
 });
 
-import { systemD2 } from "../src/model/systemD2.ts";
+import { systemGraph, replayStates } from "../src/model/systemGraph.ts";
 import type { ModelInfo } from "../src/model/types.ts";
 const source = { file: "custom.p", line: 1, col: 1, text: "machine" };
 const systemModel: ModelInfo = { tests: [], machines: [
@@ -43,12 +43,12 @@ const systemModel: ModelInfo = { tests: [], machines: [
   { name: "Unused", kind: "machine", source, variables: [], rules: [], sent: [], received: [], states: [] },
 ] };
 
-test("D2 source uses TALA and labels static connections as compatible event routes", () => {
-  const generated = systemD2(systemModel);
-  assert.match(generated.code, /layout-engine: tala/);
-  assert.match(generated.code, /m0 -> m1: "Request".*stroke-dash: 5/);
-  assert.equal(generated.routes, 1);
-  assert.equal(generated.sources[0].file, "custom.p");
+test("system graph distinguishes compatible routes from state transitions", () => {
+  const generated = systemGraph(systemModel);
+  assert.equal(generated.graph.layoutOptions?.["elk.algorithm"], "layered");
+  assert.equal(generated.graph.edges?.length, 1);
+  assert.deepEqual(generated.edges.route0, { kind: "route", observed: false });
+  assert.equal(generated.sources.m0.file, "custom.p");
 });
 
 test("system replay resolves implementation aliases and preserves simultaneous instance states", () => {
@@ -57,13 +57,13 @@ test("system replay resolves implementation aliases and preserves simultaneous i
     { kind: "note", lane: 1, label: "snapshot", log: "", inspection: { machine: "Receiver", state: "Waiting", phase: "before", fields: {}, locals: {}, source } },
     { kind: "note", lane: 2, label: "snapshot", log: "", inspection: { machine: "Receiver", state: "Working", phase: "before", fields: {}, locals: {}, source } },
   ] };
-  const generated = systemD2(systemModel, trace, 2);
-  assert.doesNotMatch(generated.code, /Unused/);
-  assert.match(generated.code, /m0 -> m1: "Request"/);
-  assert.doesNotMatch(generated.code, /stroke-dash: 5/);
-  assert.equal((generated.code.match(/style.fill: '#dcfce7'/g) ?? []).length, 2);
+  const generated = systemGraph(systemModel, trace);
+  assert.equal(Object.values(generated.nodes).some(n => n.machine === "Unused"), false);
+  assert.equal(generated.graph.edges?.length, 1);
+  assert.equal(generated.edges.route0.observed, true);
+  assert.equal(replayStates(trace, 2).active.size, 2);
   trace.steps.push({ kind: "error", lane: 2, label: "failed", log: "failed" });
-  const failed = systemD2(systemModel, trace, 3);
-  assert.equal((failed.code.match(/style.fill: '#fff1eb'/g) ?? []).length, 1);
-  assert.equal((failed.code.match(/style.fill: '#dcfce7'/g) ?? []).length, 1);
+  const failed = replayStates(trace, 3);
+  assert.equal(failed.active.size, 2);
+  assert.equal(failed.failed, JSON.stringify(["Receiver", "Working"]));
 });
