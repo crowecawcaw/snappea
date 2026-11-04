@@ -254,6 +254,8 @@ pub struct Monitor {
 /// Configuration of one checking run (`CheckerConfiguration`).
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Capture source and variable snapshots during a logged browser replay.
+    pub inspection_trace: bool,
     pub max_unfair_steps: usize,
     pub max_fair_steps: usize,
     pub liveness_enabled: bool,
@@ -280,6 +282,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            inspection_trace: false,
             max_unfair_steps: 10000,
             max_fair_steps: 100000,
             liveness_enabled: true,

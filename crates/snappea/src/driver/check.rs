@@ -60,6 +60,7 @@ const SNAPPEA_FILES: &[&str] = &[
     "bug.trace.xml",
     "bug.schedule",
     "verbose.trace.json",
+    "schedules.json",
     "coverage.txt",
     "summary.txt",
     crate::driver::scenario::SNAPPEA_FILE_NAME,
@@ -105,6 +106,8 @@ pub struct CheckConfig {
     pub verbose: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
+    /// Include execution-time source and value captures for visual replay.
+    pub inspection_trace: bool,
     pub timeline: crate::checker::timeline::TimelineConfig,
     /// `--replay`: the schedule file to replay.
     pub schedule_file: Option<String>,
@@ -205,6 +208,7 @@ impl Default for CheckConfig {
             timeout: None,
             verbose: false,
             xml_trace: false,
+            inspection_trace: false,
             timeline: Default::default(),
             schedule_file: None,
             latency: None,
@@ -503,6 +507,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         verbose: cfg.verbose,
         json_trace: true,
         xml_trace: cfg.xml_trace,
+        inspection_trace: cfg.inspection_trace,
         timeline: cfg.timeline,
         activity_coverage: true,
         latency: cfg.latency.clone(),
@@ -756,6 +761,15 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     let path = |upstream: String, snappea_name: &str| {
         format!("{}{}", cfg.output_directory, if snappea { snappea_name.to_string() } else { upstream })
     };
+    if cfg.inspection_trace && snappea {
+        let summary = serde_json::json!({
+            "total": res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
+            "bugs": res.report.num_bugs,
+            "samples": res.schedule_samples.iter().map(|s| serde_json::json!({ "number": s.number, "outcome": s.outcome, "steps": s.steps, "trace": s.trace })).collect::<Vec<_>>(),
+            "limit": 12,
+        });
+        write_output(host, &format!("{}schedules.json", cfg.output_directory), &summary.to_string())?;
+    }
     if let Some(j) = &res.verbose_json_trace {
         host.out_line("... Emitting verbose logs:");
         let path = path(format!("{}_0_verbose.trace.json", file), "verbose.trace.json");

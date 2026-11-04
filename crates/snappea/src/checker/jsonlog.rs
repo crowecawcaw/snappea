@@ -130,6 +130,8 @@ fn write_string(out: &mut String, s: &str) {
 /// `LogDetails`, in declaration (= serialization) order.
 #[derive(Debug, Clone, Default)]
 pub struct Details {
+    /// Optional browser replay data. Omitted from compatible traces.
+    pub inspection: Option<Json>,
     pub log: Option<String>,
     pub id: Option<String>,
     pub error: Option<String>,
@@ -230,6 +232,9 @@ impl Details {
         if let Some(c) = &self.clock {
             f.push(("clock".into(), Json::Obj(c.iter().map(|(k, v)| (k.clone(), Json::Int(*v))).collect())));
         }
+        if let Some(i) = &self.inspection {
+            f.push(("inspection".into(), i.clone()));
+        }
         Json::Obj(f)
     }
 }
@@ -324,6 +329,7 @@ impl VectorClocks {
 /// The JSON log of one schedule.
 #[derive(Debug, Clone, Default)]
 pub struct JsonLog {
+    inspection_count: usize,
     entries: Vec<(String, Details)>,
     vc: VectorClocks,
 }
@@ -335,6 +341,16 @@ impl JsonLog {
 
     /// `JsonWriter.AddToLogs`.
     pub fn add(&mut self, ty: &str, mut d: Details, update_vc: bool) {
+        // Bound browser-only snapshots without dropping any ordinary trace events.
+        if ty == "Inspection" {
+            self.inspection_count += 1;
+            if self.inspection_count > 10_000 {
+                if self.inspection_count == 10_001 {
+                    self.entries.push(("InspectionLimit".into(), Details { log: Some("Variable capture limit reached (10,000 snapshots). Later values remain last known; messages and failures are still recorded.".into()), ..Details::default() }));
+                }
+                return;
+            }
+        }
         if update_vc && !self.vc.handle(ty, &mut d) {
             return;
         }

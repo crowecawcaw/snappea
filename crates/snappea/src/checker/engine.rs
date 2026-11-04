@@ -69,6 +69,8 @@ pub struct CheckerOptions {
     /// Produce the JSON trace of the first buggy schedule (by replaying it with JSON
     /// logging on, so exploration itself pays nothing).
     pub json_trace: bool,
+    /// Include source/variable captures in the first bug's replay; search stays uninstrumented.
+    pub inspection_trace: bool,
     /// Produce the XML trace of the first buggy schedule (`--xml-trace`), also by replaying it.
     pub xml_trace: bool,
     /// `--timeline-repr`, `--timeline-kgram`, `--timeline-payload`.
@@ -108,6 +110,7 @@ impl Default for CheckerOptions {
             activity_coverage: false,
             driver_machines: None,
             json_trace: false,
+            inspection_trace: false,
             xml_trace: false,
             timeline: Default::default(),
             assembly_name: "PImplementation".into(),
@@ -364,10 +367,20 @@ struct BugSchedule {
     test_task_id: u64,
 }
 
+/// One recorded execution, retained only for opt-in visual inspection.
+#[derive(Debug, Clone)]
+pub struct ScheduleSample {
+    pub number: usize,
+    pub outcome: String,
+    pub steps: usize,
+    pub trace: String,
+}
+
 /// What a checking run produced.
 #[derive(Debug, Clone, Default)]
 pub struct CheckResult {
     pub report: TestReport,
+    pub schedule_samples: Vec<ScheduleSample>,
     /// The runtime log of the first buggy schedule plus the report (`ReadableTrace`).
     pub readable_trace: Option<String>,
     /// The reproducible schedule of the first buggy schedule (`.schedule` file).
@@ -580,6 +593,7 @@ impl WorkerPool {
 pub struct Exploration {
     result: CheckResult,
     first_bug: Option<BugSchedule>,
+    samples: Vec<(usize, String, usize, BugSchedule)>,
     /// This worker's bug is the one reported.
     won: bool,
     time: Option<crate::checker::time::TimeOptions>,
@@ -708,7 +722,14 @@ impl<'p> Checker<'p> {
             xml_trace: xml.then_some(bug.test_task_id),
             ..Setup::default()
         };
-        let mut rt = Runtime::new(self.prog, &self.code, module, &config, &mut strategy, setup);
+        let inspected;
+        let code = if config.inspection_trace {
+            inspected = crate::checker::compile::compile_program_with_probes(self.prog);
+            &inspected
+        } else {
+            &self.code
+        };
+        let mut rt = Runtime::new(self.prog, code, module, &config, &mut strategy, setup);
         rt.run_test(main, &tc.name);
         if rt.bug.is_none() {
             rt.check_hot_monitors_at_termination();
@@ -800,6 +821,7 @@ impl<'p> Checker<'p> {
         let max_iterations = if is_replay { 1 } else { opts.iterations };
         let mut i = 0usize;
         let mut first_bug: Option<BugSchedule> = None;
+        let mut samples = Vec::new();
         let mut won = false;
         // `Task.Id`s are handed out in order: one for the engine, then per schedule one for
         // the test task and one per machine event handler run
@@ -921,6 +943,37 @@ impl<'p> Checker<'p> {
                 let steps = rt.strategy.scheduled_steps();
                 let reached_max = rt.strategy.has_reached_max_steps();
                 let fair = rt.strategy.is_fair();
+                // Keep a small, explicit sample of real executions, not a trace for every
+                // search prefix. Replay after exploration so logging does not slow search.
+                if opts.inspection_trace
+                    && schedule <= 12
+                    && steps <= 2000
+                    && (rt.ran_to_end() || bug_found || rt.bound_hit_at.is_some())
+                {
+                    let mut trace = rt.trace.clone();
+                    trace.is_fair = fair;
+                    trace.liveness_temperature_threshold = Some(config.liveness_temperature_threshold);
+                    samples.push((
+                        schedule,
+                        if bug_found {
+                            "failed"
+                        } else if rt.bound_hit_at.is_some() {
+                            "bounded"
+                        } else {
+                            "completed"
+                        }
+                        .to_string(),
+                        steps,
+                        BugSchedule {
+                            trace,
+                            bound_hit_at: rt.bound_hit_at,
+                            strategy_description: rt.bug_strategy_description.clone(),
+                            bug: rt.bug.clone(),
+                            report_text: String::new(),
+                            test_task_id,
+                        },
+                    ));
+                }
                 let r = &mut result.report;
                 if let Some(b) = &rt.bug {
                     r.num_bugs += 1;
@@ -1041,14 +1094,41 @@ impl<'p> Checker<'p> {
         result.scheduler_stats = strategy.scheduler_stats();
         result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
-        Ok(Exploration { result, first_bug, won, time })
+        Ok(Exploration { result, first_bug, samples, won, time })
     }
 
     /// Merges what the workers explored (see [`WorkerPool`]) and replays the reported bug
     /// with logging on to produce its traces: the end of [`Checker::check`].
     pub fn finish(&self, tc: &TestCase, opts: &CheckerOptions, parts: Vec<Exploration>) -> CheckResult {
         let several = parts.len() > 1;
-        let Exploration { mut result, first_bug, time, .. } = merge(parts);
+        let Exploration { mut result, first_bug, mut samples, time, .. } = merge(parts);
+        if opts.inspection_trace {
+            samples.sort_by_key(|s| s.0);
+            let (module, main) = self.prog.test_case_module(tc);
+            let assignment = self.prog.test_case_assignment(tc);
+            let config = run_config(opts);
+            let mut retained_bytes = 0;
+            for (number, outcome, steps, sample) in samples.into_iter().take(12) {
+                let (_, json, _) = self.logged_replay(
+                    tc,
+                    main.expect("checked main"),
+                    module,
+                    assignment,
+                    &config,
+                    &sample,
+                    true,
+                    false,
+                    time.as_ref(),
+                );
+                if let Some(trace) = json {
+                    if retained_bytes + trace.len() > 4_000_000 {
+                        continue;
+                    }
+                    retained_bytes += trace.len();
+                    result.schedule_samples.push(ScheduleSample { number, outcome, steps, trace });
+                }
+            }
+        }
         if several && !opts.full_exploration {
             // the run ends at the first bug; one another worker hit before it stopped is not
             // reported (the reporting worker's bug comes first)
@@ -1095,6 +1175,7 @@ impl<'p> Checker<'p> {
 /// The runtime configuration of a run with `opts`.
 fn run_config(opts: &CheckerOptions) -> Config {
     Config {
+        inspection_trace: opts.inspection_trace,
         max_unfair_steps: opts.max_unfair_steps,
         max_fair_steps: opts.max_fair_steps,
         liveness_enabled: true,
@@ -1124,6 +1205,7 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
     let mut merged = parts.next().expect("at least one worker");
     let result = &mut merged.result;
     for p in parts {
+        merged.samples.extend(p.samples);
         let r = p.result;
         result.report.merge(r.report);
         result.cancelled |= r.cancelled;

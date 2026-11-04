@@ -23,6 +23,8 @@
 //! The buffer is only valid during the call. When targeting WebAssembly the import is
 //! required; it may do nothing.
 
+mod model;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -75,6 +77,15 @@ fn progress(p: &snappea::driver::progress::Progress) {
 
 /// Runs one request (usable natively too, e.g. for tests).
 pub fn run(req: Request) -> Response {
+    // Private browser protocol: parser-derived diagrams, without another parser in JS.
+    if req.args.first().map(String::as_str) == Some("playground-model") {
+        return match model::inspect(&req.files) {
+            Ok(model) => {
+                Response { exit_code: 0, stdout: model.to_string(), stderr: String::new(), files: BTreeMap::new() }
+            }
+            Err(e) => invalid_request(&e),
+        };
+    }
     let cwd = req.cwd.unwrap_or_else(|| "/work".into());
     let mut mem = MemHost::new(&cwd);
     mem.seed = req.seed.unwrap_or(0);
@@ -177,6 +188,36 @@ mod tests {
         let trace = r.files.iter().find(|(k, _)| k.ends_with("/bug.txt")).map(|(_, v)| v.clone()).unwrap();
         assert!(trace.contains("<ErrorLog> Assertion Failed: m.p:2:40 no"), "{}", trace);
         assert!(r.files.keys().any(|k| k.ends_with(".trace.json")));
+    }
+
+    #[test]
+    fn inspection_retains_successful_schedules_without_changing_outcomes() {
+        let source = "machine Main { var value: int; start state S { entry { if ($) { value = 1; } else { value = 2; } assert value > 0; } } } test tc [main=Main]: {Main};";
+        let files = BTreeMap::from([("/work/m.p".to_string(), source.to_string())]);
+        let args: Vec<String> =
+            ["check", "m.p", "tc", "--timeout", "1s", "--seed", "7", "--warn", "all", "--no-mutation"]
+                .into_iter()
+                .map(String::from)
+                .collect();
+        let plain =
+            run(Request { args: args.clone(), files: files.clone(), cwd: None, seed: Some(7), progress: false });
+        let mut inspected_args = args;
+        inspected_args.push("--inspect-trace".into());
+        let inspected = run(Request { args: inspected_args, files, cwd: None, seed: Some(7), progress: false });
+        assert_eq!(plain.exit_code, 0, "{} {}", plain.stdout, plain.stderr);
+        assert_eq!(inspected.exit_code, plain.exit_code, "{} {}", inspected.stdout, inspected.stderr);
+        assert!(!plain.files.keys().any(|k| k.ends_with("schedules.json")));
+        let (_, data) = inspected.files.iter().find(|(k, _)| k.ends_with("schedules.json")).unwrap();
+        let data: serde_json::Value = serde_json::from_str(data).unwrap();
+        assert!(data["total"].as_u64().unwrap() >= 1);
+        let samples = data["samples"].as_array().unwrap();
+        assert!(!samples.is_empty() && samples.len() <= 12);
+        for sample in samples {
+            assert_eq!(sample["outcome"], "completed");
+            let trace = sample["trace"].as_str().unwrap();
+            assert!(trace.contains("Inspection"));
+            assert!(!trace.contains("AssertionFailure"));
+        }
     }
 
     #[test]

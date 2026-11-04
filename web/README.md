@@ -51,3 +51,64 @@ npm run test:html # verify published content is present in the HTML
   `design/time/RetryBudget`, `web/demos`); see `src/demos.ts`.
 - Projects are checked with `snappea check <every .p file> <test>`, so `.pproj` files are not used.
 - `.github/workflows/pages.yml` publishes `main` to GitHub Pages and maintainer PRs to `pr/<number>/`.
+
+The Model tab derives actors, assertions, and state diagrams from the Rust parser
+via the Wasm-only `playground-model` request. This reads the current files;
+comments and strings cannot create diagram nodes. Arrows represent explicit
+`on ... goto` transitions and `goto` statements reached through state actions or
+named statement calls (including conditional/loop/receive bodies). Conditions
+still apply; this is a declaration diagram, not a reachability proof or a list of
+enabled runtime choices. Foreign implementations are not expanded.
+
+Checks request `--inspect-trace`: the first failing schedule and a bounded sample
+of early executions are replayed with source probes, fields, active-frame locals,
+and writes (including unchanged values). Search uses its usual bytecode. Ordinary
+CLI and compatibility traces retain their format unless this option is requested.
+Captures are bounded at 10,000 snapshots and value previews at 500 characters;
+truncation is marked. `schedules.json` records the total explored count and up to
+12 early executions, limited to 2,000 scheduler choices each and 4 MB of retained
+JSON. Completed executions and step-bound stops qualify; search prefixes pruned
+at known states do not. The failure remains separately available regardless of
+sample limits. A checker that fails immediately may have no successful recordings.
+
+The single main navigation row contains Model, Replay, Messages, and Console
+(plus Files on phones). A source-file chooser replaces the editor's file-tab row.
+Replay combines a rule/result card, actor-state cards, and a source-linked execution
+notebook. The notebook shows nearby recorded events with the selected message
+payload or before/after write expanded inline. Receives link to their matching send;
+source links use the actual snapshot or the last captured statement for that actor.
+It does not infer an unrecorded causal explanation. Messages has the sequence view;
+there is no nested view selector or duplicated log. Run details holds statistics and
+downloads. Diagram JSON and variable-value disclosures remain removed.
+
+Model shows the combined state-machine map. Replay can open that same map with
+current states and events through an inline State machines disclosure. ELK runs in a
+worker (about 444 KB gzipped); React renders SVG directly. Source links, zoom,
+expansion and keyboard operation remain available. Layout stays stable during
+playback. Execution diagrams show individual actors, including rule observers,
+so two clients have separate states, inboxes, and captured values.
+
+Messages animate along the actual sender/receiver connection with their payload;
+delivery advances into the receiver's current state even when handling the event
+does not change that state. The full current payload appears below the diagram.
+Inbox contents persist until the matched receive. Writes show before/after values,
+and snapshot labels identify when values were captured. Reduced-motion preference
+replaces movement with a stationary message. State replay skips statement-only
+captures; Details and Log retain them. Editing files or changing tests marks the
+execution stale and pauses source links. Follow source preserves editor focus.
+
+Before checking, dashed connections show event compatibility, not resolved
+runtime destinations. Dynamic event expressions and calls through expressions
+are not expanded. After checking, connections represent recorded sends and rule
+observations across the selected execution. The schedule selector can replay a
+successful or bounded execution as well as the failure; no-failure recordings are
+not presented as proof that every possible schedule is safe.
+
+Playground examples live in `web/demos`, with readable names and expanded handlers.
+They are maintained separately from unchanged upstream compatibility fixtures;
+see `demos/README.md` for provenance and validation.
+
+`npm run test:replay` checks inbox pairing, payloads, distinct instances and capture
+positions. `npm run test:diagrams` exercises real ELK geometry and literal P labels.
+Rust tests check parser extraction, opt-in successful replay retention, unchanged
+execution outcomes and equal-value writes.

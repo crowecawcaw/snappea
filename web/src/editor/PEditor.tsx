@@ -39,7 +39,7 @@ interface Props {
   value: string;
   diagnostics: Diagnostic[];
   /** Bump `nonce` to scroll to `line` again. */
-  jump?: { line: number; nonce: number };
+  jump?: { line: number; nonce: number; focus?: boolean };
   onChange: (path: string, text: string) => void;
   onRun: () => void;
 }
@@ -112,7 +112,7 @@ export function PEditor({ path, value, diagnostics, jump, onChange, onRun }: Pro
     const doc = v.state.doc;
     const line = doc.line(Math.min(Math.max(jump.line, 1), doc.lines));
     v.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
-    v.focus();
+    if (jump.focus !== false) v.focus();
   }, [jump]);
 
   return <div className="editor" ref={host} />;

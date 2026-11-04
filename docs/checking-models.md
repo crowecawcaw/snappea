@@ -421,3 +421,20 @@ off.
 
 For installation and a first model, see the [command line guide](https://snappea.dev/docs/cli.html).
 For checking application events and logs, see [snappea observe](observe.md).
+
+### Inspect a failing execution
+
+Add `--inspect-trace` to `snappea check` to include
+source statements, machine fields, active-frame locals, and recorded writes in
+the failing execution's `bug.trace.json`. For example:
+
+```sh
+snappea check Model.p tcMain --inspect-trace
+```
+
+The Playground uses these captures for its walkthrough and variable history.
+Captures are taken while replaying the first failing schedule, so exploration
+uses the same model and scheduler. The normal trace format is unchanged without
+this option. Captures stop after 10,000 snapshots; long value previews are marked
+with an ellipsis. These snapshots describe the model execution, not application
+runtime state.

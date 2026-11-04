@@ -1,0 +1,16 @@
+# Delivery latencies (`snappea check --latency PTst/latency.toml`).
+# Ranges are "lo..hi" in us/ms/s.
+
+[profile.same-az]
+default = "0..0"            # anything unlisted, e.g. Timer -> holder
+Request    = "1ms..2ms"
+Response   = "1ms..2ms"
+
+[profile.cross-region]
+extends = "same-az"
+Request    = "60ms..90ms"
+Response   = "60ms..90ms"
+
+# Which profile each test case uses unless `--latency <file>:<profile>` names one.
+[tests]
+tcRetry = "same-az"

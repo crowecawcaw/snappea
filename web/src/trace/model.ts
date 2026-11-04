@@ -1,3 +1,4 @@
+import type { SourceLocation } from "../model/types";
 // Turns the checker's JSON bug trace (upstream PChecker format) into lanes and
 // steps for the sequence diagram.
 
@@ -20,7 +21,17 @@ export type StepKind =
   | "error"
   | "note";
 
+export interface Inspection {
+  write?: { scope: "fields" | "locals"; name: string; before: string; after: string; unchanged: boolean } | null;
+  source: SourceLocation;
+  machine: string;
+  state: string;
+  phase: "before" | "after";
+  fields: Record<string, string>;
+  locals: Record<string, string>;
+}
 export interface Step {
+  inspection?: Inspection;
   kind: StepKind;
   /** Lane the step happens on (the actor). */
   lane?: number;
@@ -75,6 +86,11 @@ export function parseTrace(json: string): Trace {
     const log = d.log ?? type;
     const payload = d.payload === "null" ? undefined : d.payload;
     switch (type) {
+      case "Inspection": {
+        const inspection = d.inspection as Inspection;
+        steps.push({ kind: "note", lane: lane(str(d.id)), label: inspection.source.text.split("\n")[0], log, inspection });
+        break;
+      }
       case "CreateMonitor":
         lane(str(d.monitor), true);
         break;

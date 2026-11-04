@@ -44,3 +44,12 @@ if (!last?.done || last.test_case !== "DefaultImpl" || !counted.stdout.includes(
   throw new Error(`expected progress snapshots: ${JSON.stringify(seen)} ${counted.stdout}`);
 }
 console.log("smoke test OK");
+// Parser-derived diagrams and replay inspection work for arbitrary editor sources.
+const files = { "/work/pingpong.p": model };
+const diagram = JSON.parse(p.run(["playground-model"], files).stdout);
+if (diagram.machines.find(m => m.name === "Main")?.states.length !== 2) throw new Error("missing parsed states");
+const inspected = p.run(["check", "pingpong.p", "--inspect-trace", "--timeout", "1s"], files, { seed: 1 });
+const entries = JSON.parse(inspected.files["/work/PCheckerOutput/DefaultImpl/bug.trace.json"]);
+if (!entries.some(e => e.details.inspection?.source.file === "pingpong.p")) throw new Error("missing source capture");
+if (!entries.some(e => e.details.inspection?.write?.name === "other")) throw new Error("missing recorded assignment");
+console.log("diagram and inspection smoke test OK");
