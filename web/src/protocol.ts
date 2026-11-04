@@ -40,7 +40,15 @@ export interface CompileResult {
   millis: number;
 }
 
+export interface ScheduleSamples {
+  total: number;
+  bugs: number;
+  limit: number;
+  samples: { number: number; outcome: "completed" | "bounded" | "failed"; steps: number; trace: string }[];
+}
+
 export interface CheckResult {
+  schedules?: ScheduleSamples;
   kind: "check";
   ok: boolean; // compiled and ran (bug or not)
   bug: boolean;

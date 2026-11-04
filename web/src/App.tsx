@@ -5,7 +5,7 @@ import { decodeShared, sharedFromHash, urlFor, MAX_SHARE_CHARS, type Shared } fr
 import { PEditor } from "./editor/PEditor";
 import type { CheckResult, Diagnostic, Files, Progress } from "./protocol";
 import { Runner } from "./runner";
-import { TraceView } from "./trace/TraceView";
+import { ScheduleExplorer } from "./trace/ScheduleExplorer";
 import { ModelOverview } from "./model/ModelOverview";
 import type { ModelInfo } from "./model/types";
 import { Logo } from "./site/Logo";
@@ -205,7 +205,7 @@ export function App() {
       setResultKey(JSON.stringify(files));
       setResultModel(compiled.model);
       if (r.diagnostics.length) setDiagnostics(r.diagnostics);
-      setTab(r.bug && r.traceJson ? "trace" : "console");
+      setTab(r.traceJson ? "trace" : "console");
     } catch (e) {
       const msg = String((e as Error).message ?? e);
       setRunError(msg === "cancelled" ? "Stopped." : `The checker crashed: ${msg}`);
@@ -596,8 +596,10 @@ export function App() {
               />
             )}
             {(tab === "trace" || tab === "log") && result?.traceJson && (
-              <TraceView
+              <ScheduleExplorer
                 json={result.traceJson}
+                schedules={result.schedules}
+                bug={result.bug}
                 model={resultModel}
                 stale={staleResult}
                 view={tab === "log" ? "log" : "diagram"}

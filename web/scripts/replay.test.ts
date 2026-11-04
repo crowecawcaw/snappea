@@ -47,7 +47,7 @@ test("system graph distinguishes compatible routes from state transitions", () =
   const generated = systemGraph(systemModel);
   assert.equal(generated.graph.layoutOptions?.["elk.algorithm"], "layered");
   assert.equal(generated.graph.edges?.length, 1);
-  assert.deepEqual(generated.edges.route0, { kind: "route", observed: false });
+  assert.deepEqual(generated.edges.route0, { kind: "route", observed: false, from: "Sender", to: "Receiver" });
   assert.equal(generated.sources.m0.file, "custom.p");
 });
 
@@ -61,9 +61,25 @@ test("system replay resolves implementation aliases and preserves simultaneous i
   assert.equal(Object.values(generated.nodes).some(n => n.machine === "Unused"), false);
   assert.equal(generated.graph.edges?.length, 1);
   assert.equal(generated.edges.route0.observed, true);
+  assert.equal(generated.graph.children?.length, 3);
+  assert.equal(generated.edges.route0.to, "AbstractAlias(2)");
+  assert.deepEqual(Object.values(generated.nodes).filter(n => n.kind === "machine").map(n => n.lane), [0,1,2]);
   assert.equal(replayStates(trace, 2).active.size, 2);
   trace.steps.push({ kind: "error", lane: 2, label: "failed", log: "failed" });
   const failed = replayStates(trace, 3);
   assert.equal(failed.active.size, 2);
   assert.equal(failed.failed, JSON.stringify(["Receiver", "Working"]));
+});
+
+import { activityAt } from "../src/model/activity.ts";
+test("delivery animation keeps the original sender and payload, even without a state transition", () => {
+  const trace = parseTrace(json);
+  const sent = activityAt(trace, 3)!;
+  const received = activityAt(trace, 4)!;
+  assert.equal(sent.fromId, "Main(1)");
+  assert.equal(received.fromId, sent.fromId);
+  assert.equal(received.toId, "Counter(2)");
+  assert.equal(received.payload, 1);
+  assert.equal(received.delivery, true);
+  assert.equal(framesAt(trace, 3).get(received.to!)?.state, framesAt(trace, 4).get(received.to!)?.state);
 });

@@ -125,8 +125,8 @@ Inputs:
                             code out.
 
 Output:
-      --inspect-trace       Include source statements and variable snapshots in a bug's
-                            JSON trace for visual replay. Exploration is unchanged.
+      --inspect-trace       Include source and values in replay traces; also retain a bounded
+                            sample of early executions in schedules.json. Search is unchanged.
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
       --coverage-file <FILE>
                             Write every statement, branch and event handler no test

@@ -26,21 +26,36 @@ machine Counter {
   }
 }
 
+// Each client reads once, then writes back the value it saw plus one.
+// Reading and writing are separate scheduler steps: the read may become stale.
 machine Client {
-  start state Run {
+  var counter: Counter;
+  var owner: Main;
+  var rememberedValue: int;
+
+  start state Reading {
     entry (input: (counter: Counter, owner: Main)) {
-      var rememberedValue: int;
-      send input.counter, ReadValue, this;
-      receive {
-        case ValueRead: (replyValue: int) {
-          rememberedValue = replyValue;
-        }
-      }
-      // The remembered value can already be stale when this write is handled.
-      send input.counter, WriteValue, rememberedValue + 1;
-      send input.owner, ClientFinished;
+      counter = input.counter;
+      owner = input.owner;
+      send counter, ReadValue, this;
+    }
+
+    on ValueRead do (replyValue: int) {
+      rememberedValue = replyValue;
+      goto Writing;
     }
   }
+
+  state Writing {
+    entry {
+      // Another client may have read the same value before this write arrives.
+      send counter, WriteValue, rememberedValue + 1;
+      send owner, ClientFinished;
+      goto Finished;
+    }
+  }
+
+  state Finished { }
 }
 
 machine Main {

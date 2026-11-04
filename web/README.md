@@ -60,43 +60,44 @@ named statement calls (including conditional/loop/receive bodies). Conditions
 still apply; this is a declaration diagram, not a reachability proof or a list of
 enabled runtime choices. Foreign implementations are not expanded.
 
-Checks request `--inspect-trace`: the first failing schedule is replayed with
-source probes, fields, active-frame locals, and writes (including unchanged
-values). Search itself uses the usual bytecode. Ordinary CLI and compatibility
-traces retain their format unless this option is requested. Captures are bounded
-at 10,000 snapshots and value previews at 500 characters; truncation is marked.
+Checks request `--inspect-trace`: the first failing schedule and a bounded sample
+of early executions are replayed with source probes, fields, active-frame locals,
+and writes (including unchanged values). Search uses its usual bytecode. Ordinary
+CLI and compatibility traces retain their format unless this option is requested.
+Captures are bounded at 10,000 snapshots and value previews at 500 characters;
+truncation is marked. `schedules.json` records the total explored count and up to
+12 early executions, limited to 2,000 scheduler choices each and 4 MB of retained
+JSON. Completed executions and step-bound stops qualify; search prefixes pruned
+at known states do not. The failure remains separately available regardless of
+sample limits. A checker that fails immediately may have no successful recordings.
 
-The Model tab opens directly to source-derived state diagrams. Trace opens to
-the active machine's state diagram, marking the state where a failure was detected.
-Trace > State diagram, Details, and Messages share a cursor. The Details view shows
-captured values and pending messages reconstructed from sends/receives; the
-variable history lets readers jump from writes to the surrounding messages.
-Snapshots explicitly retain their capture positions. Editing source or selecting
-another test marks the previous execution stale and pauses its source links.
-Follow source scrolls the editor without taking its keyboard focus.
+Both Model and Trace use the combined state-machine diagram. ELK.js runs in a
+worker (about 444 KB gzipped); React renders SVG directly. Source links, zoom,
+expansion and keyboard operation remain available. Layout stays stable during
+playback. Execution diagrams show individual actors, including rule observers,
+so two clients have separate states, inboxes, and captured values.
 
-`npm run test:replay` checks inbox reconstruction and snapshot capture positions.
-Rust tests in `snappea-wasm::model` check diagram extraction; interpreter tests
-check that inspection preserves execution and records equal-value writes.
+Messages animate along the actual sender/receiver connection with their payload;
+delivery advances into the receiver's current state even when handling the event
+does not change that state. The full current payload appears below the diagram.
+Inbox contents persist until the matched receive. Writes show before/after values,
+and snapshot labels identify when values were captured. Reduced-motion preference
+replaces movement with a stationary message. State replay skips statement-only
+captures; Details and Log retain them. Editing files or changing tests marks the
+execution stale and pauses source links. Follow source preserves editor focus.
 
-Model and Trace also offer **Together**, a combined diagram laid out by ELK.js
-in a dedicated worker, loaded only when requested (about 444 KB gzipped in the
-production build). Machine containers hold
-source states and transitions; ports and orthogonal paths connect machines.
-React renders the SVG directly, preserving source navigation, keyboard operation,
-and replay styling without interpreting another diagram language or inserting
-renderer-generated HTML. Stepping updates highlights without rerunning layout.
-Expand/zoom controls preserve readable labels on larger projects.
+Before checking, dashed connections show event compatibility, not resolved
+runtime destinations. Dynamic event expressions and calls through expressions
+are not expanded. After checking, connections represent recorded sends and rule
+observations across the selected execution. The schedule selector can replay a
+successful or bounded execution as well as the failure; no-failure recordings are
+not presented as proof that every possible schedule is safe.
 
-Before checking, dashed connections show event compatibility: an action sends a
-named event and another machine handles that event. These are possible links,
-not resolved destinations; dynamic event expressions and calls through expressions
-are not expanded. After checking, connections summarize actual sends in the whole
-recorded execution, using implementation names from snapshots where available.
-Only participating implementation machines are shown then. Instances are grouped
-by type with counts; highlighted states are the union of states occupied at the
-selected step. Rule observers remain available in the single-machine view.
+Playground examples live in `web/demos`, with readable names and expanded handlers.
+They are maintained separately from unchanged upstream compatibility fixtures;
+see `demos/README.md` for provenance and validation.
 
-`npm run test:diagrams` runs the real ELK engine against nested machines,
-internal transitions, and cross-machine port connections. It checks routed edge
-geometry and literal labels, including P's `$` / `$$` choice expressions.
+`npm run test:replay` checks inbox pairing, payloads, distinct instances and capture
+positions. `npm run test:diagrams` exercises real ELK geometry and literal P labels.
+Rust tests check parser extraction, opt-in successful replay retention, unchanged
+execution outcomes and equal-value writes.

@@ -1,3 +1,4 @@
+import lostUpdateSource from "../../../demos/hello/LostUpdate.p?raw";
 import { Island } from "../Island";
 import { links } from "../SiteHeader";
 import { Code } from "./Code";
@@ -24,36 +25,7 @@ export function FirstModel({ root }: { root: string }) {
           inbox, and the checker decides when it's delivered. Here the Counter serves reads and writes, and each
           Client reads, then writes back the value plus one:
         </p>
-        <Code lang="p" title="LostUpdate.p">{`
-machine Counter {
-var value: int;
-start state Serving {
-  on ReadValue do (client: Client) {
-    send client, ValueRead, value;
-  }
-  on WritValueRead do (v: int) { value = v; }
-  on ReadFinalValue do (testHarness: Main) {
-    send testHarness, ValueRead, value;
-  }
-}
-}
-
-machine Client {
-start state Run {
-  entry (input: (counter: Counter, owner: Main)) {
-    var rememberedValue: int;
-    send input.counter, ReadValue, this;
-    receive {
-      case ValueRead: (replyValue: int) {
-        rememberedValue = replyValue;
-      }
-    }
-    send input.counter, WritValueRead, v + 1;
-    send input.owner, ClientFinished;
-  }
-}
-}
-`}</Code>
+        <Code lang="p" title="LostUpdate.p">{lostUpdateSource.slice(lostUpdateSource.indexOf("machine Counter"), lostUpdateSource.indexOf("machine Main"))}</Code>
         <p>
           The test machine, <code>Main</code>, starts the Counter and two Clients. Once both Clients are done, it
           asserts that the counter reached 2:

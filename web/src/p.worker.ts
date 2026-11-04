@@ -99,6 +99,7 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
   });
   const dir = `${ROOT}/PCheckerOutput/${req.testCase}/`;
   const file = (name: string): string | undefined => r.files[dir + name];
+  const schedules = file("schedules.json") ? JSON.parse(file("schedules.json")!) : undefined;
   const console = `$ snappea ${shown.join(" ")}\n` + (r.stdout + r.stderr).trimEnd();
   return {
     kind: "check",
@@ -108,7 +109,8 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
     console,
     diagnostics: parseDiagnostics(console),
     testCase: req.testCase,
-    traceJson: file("bug.trace.json"),
+    traceJson: file("bug.trace.json") ?? schedules?.samples[0]?.trace,
+    schedules,
     traceText: file("bug.txt"),
     schedule: file("bug.schedule"),
     millis: performance.now() - t0,

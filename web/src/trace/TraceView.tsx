@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReplayStory } from "./ReplayStory";
 import { SystemDiagram } from "../model/SystemDiagram";
-import { StateDiagram } from "../model/StateDiagram";
 import type { ModelInfo } from "../model/types";
 import { explainStep, framesAt } from "./explain";
 import { visible } from "./filter";
 import { parseTrace, type Trace } from "./model";
 import { laneColors, SequenceDiagram } from "./SequenceDiagram";
 
-interface Props {
+export interface Props {
   json: string;
   model?: ModelInfo;
   stale?: boolean;
@@ -31,7 +30,6 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
   const color = useMemo(() => laneColors(trace.lanes), [trace]);
   const [cursor, setCursor] = useState(trace.steps.length - 1);
   const [mode, setMode] = useState<"story" | "sequence" | "states">(model ? "states" : "story");
-  const [system, setSystem] = useState(false);
   const [follow, setFollow] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(false);
@@ -42,7 +40,7 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
 
   const { rows: allRows, cols } = useMemo(() => visible(trace, focus), [trace, focus]);
   // Source snapshots are useful in the story; keep the communication diagram compact.
-  const rows = useMemo(() => mode === "sequence" ? allRows.filter(i => !trace.steps[i].inspection) : allRows, [allRows, mode, trace]);
+  const rows = useMemo(() => mode === "sequence" ? allRows.filter(i => !trace.steps[i].inspection) : mode === "states" && view !== "log" ? allRows.filter(i => !trace.steps[i].inspection || trace.steps[i].inspection?.write) : allRows, [allRows, mode, trace, view]);
   const pos = rows.indexOf(cursor);
   const lastPos = rows.length - 1;
 
@@ -101,7 +99,6 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
   }, [follow, source, stale, onOpenLocation]);
   const frames = useMemo(() => framesAt(trace, cursor), [trace, cursor]);
   const actor = step?.lane === undefined ? undefined : frames.get(step.lane);
-  const activeMachine = actor?.snapshot?.machine ?? (step?.lane === undefined ? undefined : trace.lanes[step.lane].id.replace(/\(.*$/, "").replace(/^.*\./, ""));
   const loc = trace.error ? LOC.exec(trace.error) : null;
   const list = (
     <StepList
@@ -116,6 +113,36 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
       }}
       onHover={setHover}
     />
+  );
+
+  const controls = (
+        <div className="trace-controls">
+          <button onClick={() => toPos(0)} title="First step" aria-label="First step" className="jump">⏮</button>
+          <button onClick={() => toPos(pos - 1)} title="Previous step" aria-label="Previous step">◀</button>
+          <button
+            className="primary"
+            onClick={() => {
+              if (!playing && pos >= lastPos) setCursor(rows[0]);
+              setPlaying(!playing);
+            }}
+            title={playing ? "Pause" : "Play"}
+          >
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button onClick={() => toPos(pos + 1)} title="Next step" aria-label="Next step">▶</button>
+          <button onClick={() => toPos(lastPos)} title="Last step" aria-label="Last step" className="jump">⏭</button>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(lastPos, 0)}
+            value={Math.max(pos, 0)}
+            onChange={(e) => toPos(Number(e.target.value))}
+            aria-label="Step"
+          />
+          <span className="muted">
+            {pos + 1}/{rows.length}
+          </span>
+        </div>
   );
 
   return (
@@ -146,35 +173,7 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
           )}
         </div>
       )}
-      {view === "diagram" && (
-        <div className="trace-controls">
-          <button onClick={() => toPos(0)} title="First step" aria-label="First step" className="jump">⏮</button>
-          <button onClick={() => toPos(pos - 1)} title="Previous step" aria-label="Previous step">◀</button>
-          <button
-            className="primary"
-            onClick={() => {
-              if (!playing && pos >= lastPos) setCursor(rows[0]);
-              setPlaying(!playing);
-            }}
-            title={playing ? "Pause" : "Play"}
-          >
-            {playing ? "Pause" : "Play"}
-          </button>
-          <button onClick={() => toPos(pos + 1)} title="Next step" aria-label="Next step">▶</button>
-          <button onClick={() => toPos(lastPos)} title="Last step" aria-label="Last step" className="jump">⏭</button>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(lastPos, 0)}
-            value={Math.max(pos, 0)}
-            onChange={(e) => toPos(Number(e.target.value))}
-            aria-label="Step"
-          />
-          <span className="muted">
-            {pos + 1}/{rows.length}
-          </span>
-        </div>
-      )}
+      {view === "diagram" && controls}
       {focus.size > 0 && (
         <div className="trace-focus">
           <span className="muted">Only steps of</span>
@@ -192,13 +191,12 @@ export function TraceView({ json, view, model, stale, onOpenLocation, onShowDiag
         list
       ) : mode === "story" ? <ReplayStory sourceAvailable={!stale} trace={trace} cursor={cursor} onSelect={go} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />
         : mode === "states" && model ? <div className="replay-state-panel">
-          {step && <div className={`state-replay-summary ${step.kind === "error" ? "failure" : ""}`} aria-live="polite">
+          {step?.kind === "error" && <div className={`state-replay-summary ${step.kind === "error" ? "failure" : ""}`} aria-live="polite">
             {step.kind === "error" && <strong>Check failed</strong>}
             <p>{step.kind === "error" ? (trace.error ?? step.label).replace(/^Assertion Failed:\s*[^\s]+\.p:\d+:\d+\s*/, "") : explainStep(trace, step)}</p>
             {step.kind === "error" && loc && <button className="link" disabled={stale} onClick={() => onOpenLocation(loc[1], Number(loc[2]))}>Open failed assertion</button>}
           </div>}
-          <div className="view-switch" aria-label="Diagram scope"><button aria-pressed={system} onClick={() => setSystem(true)}>Together</button><button aria-pressed={!system} onClick={() => setSystem(false)}>One machine</button></div>
-          {system ? <SystemDiagram model={model} trace={trace} cursor={cursor} readOnly={stale} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} /> : <StateDiagram failed={step?.kind === "error"} readOnly={stale} key={json} model={model} activeMachine={activeMachine} activeState={actor?.state} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />}
+          <SystemDiagram replayControls={controls} model={model} trace={trace} cursor={cursor} readOnly={stale} onOpen={s => { if (!stale) onOpenLocation(s.file, s.line); }} />
           {actor?.snapshot && <details className="model-reference"><summary>Variables in {trace.lanes[step.lane!].label}</summary><pre className="replay-code">{Object.entries({...actor.snapshot.fields, ...actor.snapshot.locals}).map(([name, value]) => `${name} = ${value}`).join("\n")}</pre><p className="capture-note">Last captured at step {actor.at! + 1}.</p></details>}
         </div> : (
         <>
