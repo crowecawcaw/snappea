@@ -71,11 +71,18 @@ JSON. Completed executions and step-bound stops qualify; search prefixes pruned
 at known states do not. The failure remains separately available regardless of
 sample limits. A checker that fails immediately may have no successful recordings.
 
-Model and Replay use the combined state-machine diagram. Replay has one view
-selector for state machines, messages, step details, or the event log; the message
-diagram does not repeat the log. A single failure summary leads the replay.
-Schedule statistics and downloads live under Run details. Diagram JSON and the
-per-actor variable disclosure below the canvas are not exposed. ELK.js runs in a
+The single main navigation row contains Model, Replay, Messages, and Console
+(plus Files on phones). A source-file chooser replaces the editor's file-tab row.
+Replay combines a rule/result card, actor-state cards, and a source-linked execution
+notebook. The notebook shows nearby recorded events with the selected message
+payload or before/after write expanded inline. Receives link to their matching send;
+source links use the actual snapshot or the last captured statement for that actor.
+It does not infer an unrecorded causal explanation. Messages has the sequence view;
+there is no nested view selector or duplicated log. Run details holds statistics and
+downloads. Diagram JSON and variable-value disclosures remain removed.
+
+Model shows the combined state-machine map. Replay can open that same map with
+current states and events through an inline State machines disclosure. ELK runs in a
 worker (about 444 KB gzipped); React renders SVG directly. Source links, zoom,
 expansion and keyboard operation remain available. Layout stays stable during
 playback. Execution diagrams show individual actors, including rule observers,

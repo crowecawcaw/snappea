@@ -616,3 +616,98 @@ button.loc { border: none; background: none; padding: 0; color: var(--accent); t
   .replay-toolbar { padding-top: 4px; padding-bottom: 3px; }
   .trace-controls { padding-bottom: 6px; }
 }
+
+/* Source-linked notebook: one navigation row, distinct rule / actor / event surfaces. */
+.ui-icon { flex: 0 0 auto; vertical-align: middle; }
+.out-tab { display: inline-flex; align-items: center; gap: 7px; }
+.out-tab .ui-icon { width: 15px; height: 15px; }
+.out-tabs { background: var(--panel); }
+.out-tab.active { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); border-radius: 8px 8px 0 0; color: var(--accent); }
+.model-heading h2 { display: flex; align-items: center; gap: 8px; }
+.model-overview > .system-diagram { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.verdict-label { display: flex; align-items: center; gap: 7px; }
+.checked-rule { font: 12px var(--mono); color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--panel)); padding: 5px 8px; border-radius: 5px; justify-self: start; max-width: 100%; overflow-wrap: anywhere; }
+.replay-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px 4px; background: var(--panel); }
+.replay-section-label { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12px; }
+.replay-tools + .trace-controls { background: var(--panel); }
+.notebook-workspace { flex: 1; min-height: 0; overflow: auto; padding: 14px; background: var(--bg); }
+.execution-notebook { display: grid; gap: 14px; }
+.execution-notebook h3 { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 0 0 10px; font-weight: 600; }
+.execution-notebook h3 > span { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--muted); }
+.actor-strip { border: 1px solid color-mix(in srgb, var(--lane-3) 25%, var(--border)); border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--lane-3) 5%, var(--panel)); }
+.actor-strip h3 { color: var(--lane-3); }
+.actor-strip-cards { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 3px; }
+.actor-state-card { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 10px; min-width: 118px; display: grid; gap: 5px; }
+.actor-state-card.current { border-color: var(--accent); box-shadow: inset 0 3px var(--accent); }
+.actor-state-card strong { display: flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
+.actor-state-card strong .ui-icon { width: 14px; height: 14px; color: var(--lane-3); }
+.actor-state-card > span { font: 11px var(--mono); }
+.actor-state-card small { font-size: 10px; color: var(--muted); }
+.notebook-events { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.notebook-events > ol { padding: 0; margin: 0; list-style: none; display: grid; gap: 8px; }
+.notebook-event { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.notebook-event.selected { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); box-shadow: inset 3px 0 var(--accent); }
+.notebook-event.failed.selected { border-color: var(--bad); box-shadow: inset 3px 0 var(--bad); background: var(--bad-bg); }
+.notebook-event-title { display: flex; align-items: center; gap: 9px; text-align: left; width: 100%; border: 0; border-radius: 0; background: transparent; padding: 10px 12px; color: var(--muted); min-height: 42px; }
+.notebook-event-title strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.notebook-event.selected .notebook-event-title { color: var(--fg); }
+.notebook-event.selected .notebook-event-title strong { font-weight: 600; }
+.notebook-event-title .ui-icon { color: var(--accent); width: 16px; height: 16px; }
+.notebook-event.failed .notebook-event-title .ui-icon { color: var(--bad); }
+.notebook-number { font: 10px var(--mono); border: 1px solid var(--border); background: var(--panel); border-radius: 50%; min-width: 23px; height: 23px; display: grid; place-items: center; flex: 0 0 auto; }
+.notebook-event-body { padding: 0 14px 12px 46px; }
+.notebook-event-body > p { font-size: 12px; line-height: 1.55; margin: 8px 0; color: var(--muted); overflow-wrap: anywhere; }
+.event-route { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font: 11px var(--mono); margin: 4px 0 10px; }
+.event-route > span { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.event-route > .ui-icon { color: var(--accent); }
+.event-payload { border: 1px solid color-mix(in srgb, var(--lane-4) 20%, var(--border)); background: color-mix(in srgb, var(--lane-4) 6%, var(--panel)); padding: 9px 11px; border-radius: 7px; }
+.event-payload > span { font-size: 10px; font-weight: 600; color: var(--lane-4); }
+.event-payload pre { margin: 5px 0 0; font: 12px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-write { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font: 12px var(--mono); padding: 8px 0; overflow-wrap: anywhere; }
+.event-write > span, .event-write > strong { background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; }
+.event-write > strong { background: var(--selection); color: var(--accent); }
+.event-write small { font: 10px var(--sans); color: var(--muted); }
+.notebook-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.notebook-links .link { font-size: 10px; display: inline-flex; align-items: center; gap: 5px; padding: 0; min-height: 28px; }
+.notebook-links .ui-icon { width: 13px; height: 13px; }
+.notebook-more { border: 0; background: none; font-size: 11px; color: var(--muted); width: 100%; padding: 5px; }
+.notebook-map { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--panel); }
+.notebook-map > summary { font-size: 12px; font-weight: 600; cursor: pointer; }
+.notebook-map > summary .ui-icon { margin-right: 6px; color: var(--accent); }
+.notebook-map > summary span { display: block; margin: 6px 0 0 26px; font-size: 11px; font-weight: 400; color: var(--muted); }
+@media (max-width: 600px) {
+  .out-tab { gap: 4px; padding: 0 9px; font-size: 12px; }
+  .out-tab .ui-icon { width: 13px; height: 13px; }
+  .out-tabs { overflow-x: auto; }
+  .notebook-workspace { padding: 9px; }
+  .notebook-event-body { padding-left: 12px; }
+  .actor-state-card { min-width: 104px; }
+  .replay-tools { padding-top: 6px; }
+}
+.source-file-bar { display: flex; align-items: center; gap: 9px; padding: 7px 14px; min-height: 46px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.source-file-bar > .ui-icon { color: var(--accent); }
+.source-file-bar label { color: var(--muted); font-size: 11px; }
+.source-file-bar select { width: auto; min-width: 0; max-width: 75%; font-size: 12px; min-height: 30px; flex: 1; }
+.source-file-bar button { margin-left: auto; min-height: 30px; min-width: 30px; }
+.notebook-event-title { justify-content: flex-start; }
+.notebook-event-title strong { font-size: 13px; }
+.notebook-event-body > p { font-size: 13px; }
+.notebook-links .link { font-size: 11px; }
+.actor-state-card strong { font-size: 12px; }
+.replay-verdict.passed { border-left-color: var(--good); background: color-mix(in srgb, var(--good) 7%, var(--panel)); }
+.replay-verdict.passed .verdict-label { color: var(--good); }
+.replay-verdict.passed .checked-rule { color: var(--accent); background: var(--selection); }
+.execution-notebook { grid-template-columns: minmax(0, 1fr); }
+.execution-notebook > *, .notebook-workspace { min-width: 0; }
+.actor-state-card { flex-shrink: 0; }
+.notebook-event-title strong { min-width: 0; }
+/* CSS chevrons avoid platform-specific emoji disclosure markers. */
+.run-details > summary, .notebook-map > summary { list-style: none; }
+.run-details > summary::-webkit-details-marker, .notebook-map > summary::-webkit-details-marker { display: none; }
+.run-details > summary::before, .notebook-map > summary::before { content: ""; display: inline-block; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: 9px; vertical-align: 2px; }
+.run-details[open] > summary::before, .notebook-map[open] > summary::before { transform: rotate(45deg); }
+@media (max-width: 600px) {
+  .out-tab { padding: 0 6px; gap: 3px; font-size: 11px; }
+  .out-tab .ui-icon { width: 12px; height: 12px; }
+  .out-tabs { scrollbar-width: thin; }
+}

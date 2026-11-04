@@ -8,10 +8,11 @@ import { Runner } from "./runner";
 import { ScheduleExplorer } from "./trace/ScheduleExplorer";
 import { ModelOverview } from "./model/ModelOverview";
 import type { ModelInfo } from "./model/types";
+import { Icon, type IconName } from "./ui/Icon";
 import { Logo } from "./site/Logo";
 
 /** Output tabs. "files" is the editor, which is a tab only on phones. */
-type Tab = "files" | "model" | "console" | "trace" | "log";
+type Tab = "files" | "model" | "console" | "trace" | "messages";
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000);
 const splitArgs = (s: string) => s.split(/\s+/).filter(Boolean);
@@ -19,7 +20,7 @@ const REPO = "https://github.com/crowecawcaw/snappea";
 const NARROW = "(max-width: 900px)";
 /** How long the URL waits for edits to settle before it is rewritten. */
 const URL_DEBOUNCE_MS = 500;
-const TAB_LABEL: Record<Tab, string> = { files: "Files", model: "Model", console: "Console", trace: "Replay", log: "Log" };
+const TAB_LABEL: Record<Tab, string> = { files: "Files", model: "Model", console: "Console", trace: "Replay", messages: "Messages" };
 
 export function App() {
   const runner = useMemo(() => new Runner(), []);
@@ -398,28 +399,10 @@ export function App() {
       <main className={`panes tab-${tab}`}>
         <section className="pane editor-pane">
           {narrow && blurb}
-          <div className="file-tabs" role="tablist">
-            {paths.map((p) => {
-              const slash = p.lastIndexOf("/");
-              const errs = errorsByFile.get(p);
-              return (
-                <button
-                  key={p}
-                  role="tab"
-                  aria-selected={p === open}
-                  className={p === open ? "file-tab active" : "file-tab"}
-                  onClick={() => setOpen(p)}
-                  title={p}
-                >
-                  {slash >= 0 && <span className="dir">{p.slice(0, slash + 1)}</span>}
-                  {p.slice(slash + 1)}
-                  {errs ? <span className="badge">{errs}</span> : null}
-                </button>
-              );
-            })}
-            <button className="file-tab add" onClick={addFile} title="New file" aria-label="New file">
-              +
-            </button>
+          <div className="source-file-bar">
+            <Icon name="code" /><label htmlFor="source-file">Source</label>
+            <select id="source-file" aria-label="Source file" value={open} onChange={e => setOpen(e.target.value)}>{paths.map(p => <option key={p} value={p}>{p}{errorsByFile.get(p) ? ` · ${errorsByFile.get(p)} errors` : ""}</option>)}</select>
+            <button className="ghost" onClick={addFile} title="New file" aria-label="New file">+</button>
           </div>
           {open && files[open] !== undefined && (
             <PEditor
@@ -533,16 +516,16 @@ export function App() {
 
           <div className="out-head">
             <div className="out-tabs" role="tablist">
-              {((narrow ? ["files", "model", "trace", "console"] : ["model", "trace", "console"]) as Tab[]).map((t) => (
+              {((narrow ? ["files", "model", "trace", "messages", "console"] : ["model", "trace", "messages", "console"]) as Tab[]).map((t) => (
                 <button
                   key={t}
                   role="tab"
                   aria-selected={tab === t}
                   className={tab === t ? "out-tab active" : "out-tab"}
                   onClick={() => setTab(t)}
-                  disabled={(t === "trace" || t === "log") && !result?.traceJson}
+                  disabled={(t === "trace" || t === "messages") && !result?.traceJson}
                 >
-                  {TAB_LABEL[t]}
+                  <Icon name={({ files: "code", model: "model", trace: "replay", messages: "message", console: "console" } as Record<Tab, IconName>)[t]} />{TAB_LABEL[t]}
                   {t === "files" && diagnostics.length > 0 && <span className="badge">{diagnostics.length}</span>}
                   {t === "trace" && result?.bug && <span className="bug-dot" aria-label="bug found" />}
                 </button>
@@ -564,7 +547,7 @@ export function App() {
                 </button>
               )}
             </div>
-            {showStatus && (tab !== "trace" || running || !!runError || compileErr) && (
+            {showStatus && ((tab !== "trace" && tab !== "messages") || running || !!runError || compileErr) && (
             <div className="status-line">
               <span className={`status ${statusClass}`}>{status}</span>
               {running && !!progress?.time_limit && (
@@ -595,7 +578,7 @@ export function App() {
                 empty={compileOk === false ? "" : "Press Check (Ctrl/⌘+Enter) to explore schedules of the selected test case."}
               />
             )}
-            {(tab === "trace" || tab === "log") && result?.traceJson && (
+            {(tab === "trace" || tab === "messages") && result?.traceJson && (
               <ScheduleExplorer
                 json={result.traceJson}
                 schedules={result.schedules}
@@ -603,9 +586,8 @@ export function App() {
                 downloads={downloads}
                 model={resultModel}
                 stale={staleResult}
-                view={tab === "log" ? "log" : "diagram"}
+                view={tab === "messages" ? "messages" : "diagram"}
                 onOpenLocation={openLocation}
-                onShowDiagram={() => setTab("trace")}
               />
             )}
           </div>
