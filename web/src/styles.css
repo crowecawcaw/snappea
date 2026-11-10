@@ -827,3 +827,12 @@ body.resizing iframe, body.resizing .editor { pointer-events: none; }
   .panes.tab-console .controls { display: none; }
   .app:has(.panes.tab-console) { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* Leave room under the sequence diagram so the floating zoom controls never cover its last steps. */
+.seq-body { display: block; margin-bottom: 64px; }
+
+/* Small phones: the logo mark alone, so the example title has room. */
+@media (max-width: 480px) {
+  .top .brand .wordmark { display: none; }
+  .demo-select { text-overflow: ellipsis; }
+}
