@@ -151,9 +151,21 @@ class TransportTest {
         long child = Long.parseLong(Files.readString(pid));
         // A killed child can briefly remain a zombie until init reaps it; a zombie
         // has no executable or open event stream and is already terminated.
+        // destroyForcibly only sends SIGKILL, so allow the kernel a moment to act on it.
         var stat = Path.of("/proc", Long.toString(child), "stat");
-        assertTrue(ProcessHandle.of(child).isEmpty() || !ProcessHandle.of(child).orElseThrow().isAlive()
-                || (Files.exists(stat) && Files.readString(stat).split(" ")[2].equals("Z")));
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+        boolean ended;
+        while (!(ended = terminated(child, stat)) && System.nanoTime() < deadline) Thread.sleep(20);
+        assertTrue(ended);
+    }
+
+    private static boolean terminated(long pid, Path stat) throws IOException {
+        if (ProcessHandle.of(pid).map(h -> !h.isAlive()).orElse(true)) return true;
+        try {
+            return Files.readString(stat).split(" ")[2].equals("Z");
+        } catch (java.nio.file.NoSuchFileException gone) {
+            return true;
+        }
     }
 
     @Test @EnabledOnOs(OS.LINUX)

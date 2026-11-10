@@ -34,7 +34,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
-    runs-on: ${{ matrix.os }}
+    # Ubuntu 26.04 (ubuntu-latest) has no Python 3.9 build; test 3.9 on 24.04.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.9' && 'ubuntu-24.04' || matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
