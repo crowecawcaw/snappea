@@ -533,7 +533,7 @@ export function App() {
         </button>
       )}
       {result && !running && !compileErr && <span className="muted">{(result.millis / 1000).toFixed(2)} s</span>}
-      {!narrow && downloads}
+      {!narrow && !result?.schedules && downloads}
     </div>
   );
 
@@ -662,7 +662,9 @@ export function App() {
               else return;
               e.preventDefault();
             }}
-          />
+          >
+            <i aria-hidden="true" />
+          </div>
         )}
 
         <section className="pane run-pane">
@@ -708,13 +710,14 @@ export function App() {
             {tab === "test" && (
               <div className="test-pane">
                 {!narrow && controls}
-                {statusLine}
+                {!(result?.traceJson && !running) && statusLine}
                 {result?.traceJson && !running ? (
                   <ScheduleExplorer
                     json={result.traceJson}
                     schedules={result.schedules}
                     bug={result.bug}
                     downloads={downloads}
+                    status={statusLine}
                     model={resultModel}
                     stale={staleResult}
                     view={testView === "sequence" ? "messages" : "diagram"}

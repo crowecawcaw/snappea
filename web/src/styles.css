@@ -795,3 +795,35 @@ body.resizing iframe, body.resizing .editor { pointer-events: none; }
   .out-tab { padding: 0 8px; gap: 5px; font-size: 13px; }
   .out-tab .ui-icon { width: 14px; height: 14px; }
 }
+
+/* Review polish: a compact Test tab so the execution keeps most of the height. */
+@media (min-width: 901px) {
+  .test-pane > .controls { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px var(--g); }
+  .test-pane > .controls .run-bar { flex: 1 1 320px; align-items: center; }
+  .test-pane > .controls .run-bar .lbl { display: none; }
+  .test-pane > .controls .run-bar .run { min-height: 34px; }
+  .test-pane > .controls .options { flex: 0 1 auto; min-width: 0; }
+  .test-pane > .controls .options[open] { flex-basis: 100%; }
+}
+.schedule-browser > .status-line { padding: 0; border: 0; flex: 0 0 auto; }
+.schedule-browser > label { margin-right: auto; }
+.schedule-browser select { width: auto; min-width: 12ch; }
+.replay-verdict { padding: 9px 16px; gap: 3px; }
+.replay-verdict > strong { font-size: 14px; }
+.trace-toolbar { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0; flex-wrap: wrap; }
+.trace-toolbar > .trace-controls { flex: 1 1 260px; padding: 0; border: 0; background: none; }
+.trace-toolbar .follow-source { white-space: nowrap; }
+
+/* Line up the file-tab bar with the main tab bar beside it. */
+.file-tabs { min-height: 47px; align-items: flex-end; }
+
+/* Divider grip, so it reads as draggable. */
+.divider > i { position: absolute; top: 50%; left: -2px; width: 4px; height: 28px; margin-top: -14px; border-radius: 2px; background: radial-gradient(circle, var(--muted) 1px, transparent 1.5px) 0 0 / 4px 5px; opacity: 0.55; pointer-events: none; }
+.divider:hover > i, body.resizing .divider > i { opacity: 0; }
+
+@media (max-width: 900px) {
+  .file-tabs { min-height: 0; }
+  /* The console has its own input line; hide the Check dock there. */
+  .panes.tab-console .controls { display: none; }
+  .app:has(.panes.tab-console) { padding-bottom: env(safe-area-inset-bottom); }
+}

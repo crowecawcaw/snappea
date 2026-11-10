@@ -9,12 +9,11 @@ export interface ConsoleEntry {
 const LOC_G = /([\w./-]+\.p):(\d+)(?::(\d+))?/g;
 
 export const CONSOLE_HELP = `Type a snappea command and press Enter. The project's files are in the working folder.
-  tests                      list test cases
-  check tcMain               check one test case
-  check tcMain --seed 7      check with a fixed seed
-  replay PCheckerOutput/tcMain/bug.schedule
-                             re-run the last bug found
-  --help                     every command and option
+  tests                  list test cases
+  check <test>           check one test case
+  check <test> --seed 7  check with a fixed seed
+  replay <schedule>      re-run a bug, e.g. the path Check printed
+  --help                 every command and option
 Also: ls, cat <file>, clear. ↑/↓ recall earlier commands.`;
 
 /**
@@ -33,6 +32,11 @@ export function Console({ entries, busy, onCommand, onStop, onOpenLocation }: {
   const [back, setBack] = useState(-1);
   const scroller = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
+
+  // Ready to type when the tab opens (not on touch screens, where it opens the keyboard).
+  useEffect(() => {
+    if (matchMedia("(hover: hover)").matches) field.current?.focus({ preventScroll: true });
+  }, []);
 
   // Follow new output.
   useEffect(() => {
@@ -105,7 +109,7 @@ export function Console({ entries, busy, onCommand, onStop, onOpenLocation }: {
               onStop();
             }
           }}
-          placeholder={busy ? "Running… (Ctrl+C to stop)" : "check tcMain --seed 7"}
+          placeholder={busy ? "Running… (Ctrl+C to stop)" : "Type a command, or help"}
           aria-label="Console command"
           spellCheck={false}
           autoCapitalize="off"
