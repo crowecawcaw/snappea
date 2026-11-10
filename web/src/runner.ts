@@ -1,6 +1,6 @@
 // Talks to p.worker.ts. A check that runs too long can be cancelled, which
 // replaces the worker.
-import type { CheckRequest, CheckResult, CompileResult, Files, Progress, Request, WorkerReply } from "./protocol";
+import type { CheckRequest, CheckResult, CompileResult, Files, Progress, Request, RunResult, WorkerReply } from "./protocol";
 
 type Pending = { resolve: (r: never) => void; reject: (e: Error) => void; onProgress?: (p: Progress) => void };
 
@@ -40,6 +40,11 @@ export class Runner {
   /** Checks a test case; `onProgress` sees it while it runs, a few times a second. */
   check(req: Omit<CheckRequest, "kind">, onProgress?: (p: Progress) => void): Promise<CheckResult> {
     return this.send({ kind: "check", ...req }, onProgress);
+  }
+
+  /** Runs a console command with the project in the working folder. */
+  run(files: Files, args: string[], onProgress?: (p: Progress) => void): Promise<RunResult> {
+    return this.send({ kind: "run", files, args }, onProgress);
   }
 
   /** Stops whatever is running and rejects every pending request. */

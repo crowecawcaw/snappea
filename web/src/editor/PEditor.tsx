@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorState, Prec, RangeSet, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { EditorView, GutterMarker, gutterLineClass, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { linter, lintGutter, setDiagnostics, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
+import { linter, setDiagnostics, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
 import { tags as t } from "@lezer/highlight";
 import { pLanguage } from "./pLanguage";
 import type { Diagnostic } from "../protocol";
@@ -30,8 +30,29 @@ const theme = EditorView.theme({
   ".cm-cursor": { borderLeftColor: "var(--fg)" },
   ".cm-tooltip": { backgroundColor: "var(--panel)", color: "var(--fg)", border: "1px solid var(--border)" },
   ".cm-flashLine": { backgroundColor: "var(--flash)" },
+  ".cm-lineNumbers .cm-gutterElement.cm-errorLineNumber": { color: "var(--bad)", fontWeight: "600" },
   // Wrapped lines hang under the first so soft-wrapped code still reads as code.
   "&.cm-lineWrapping .cm-line": { paddingLeft: "calc(2ch + 6px)", textIndent: "-2ch" },
+});
+
+/** Line numbers of lines with errors turn red; no separate lint gutter column. */
+const errorLineMarker = new (class extends GutterMarker {
+  elementClass = "cm-errorLineNumber";
+})();
+const setErrorLines = StateEffect.define<number[]>();
+const errorLines = StateField.define<RangeSet<GutterMarker>>({
+  create: () => RangeSet.empty,
+  update(set, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setErrorLines)) {
+        const doc = tr.state.doc;
+        const starts = [...new Set(e.value.filter((l) => l >= 1 && l <= doc.lines))].sort((a, b) => a - b);
+        return RangeSet.of(starts.map((l) => errorLineMarker.range(doc.line(l).from)));
+      }
+    }
+    return set.map(tr.changes);
+  },
+  provide: (f) => gutterLineClass.from(f),
 });
 
 interface Props {
@@ -54,15 +75,14 @@ export function PEditor({ path, value, diagnostics, jump, onChange, onRun }: Pro
 
   const extensions = useRef<Extension[]>([
     basicSetup,
-    keymap.of([
-      { key: "Mod-Enter", run: () => (handlers.current.onRun(), true) },
-      indentWithTab,
-    ]),
+    // Ahead of the default keymap, which binds Mod-Enter to "insert blank line".
+    Prec.highest(keymap.of([{ key: "Mod-Enter", run: () => (handlers.current.onRun(), true) }])),
+    keymap.of([indentWithTab]),
     pLanguage,
     EditorView.lineWrapping,
     syntaxHighlighting(highlight),
     theme,
-    lintGutter(),
+    errorLines,
     linter(null),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) handlers.current.onChange(current.current, u.state.doc.toString());
@@ -104,6 +124,7 @@ export function PEditor({ path, value, diagnostics, jump, onChange, onRun }: Pro
         return { from, to: Math.max(from + word, from === line.to ? from : from + 1), severity: "error", message: d.message };
       });
     v.dispatch(setDiagnostics(v.state, ds));
+    v.dispatch({ effects: setErrorLines.of(diagnostics.map((d) => d.line)) });
   }, [diagnostics, path, value]);
 
   useEffect(() => {

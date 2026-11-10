@@ -12,12 +12,14 @@ export interface Props {
   model?: ModelInfo;
   stale?: boolean;
   view: "diagram" | "messages";
+  /** Switches between the replay and the sequence diagram; without it no switch is shown. */
+  onViewChange?: (view: "diagram" | "messages") => void;
   onOpenLocation: (file: string, line: number, focus?: boolean) => void;
 }
 
 const LOC = /([\w./-]+\.p):(\d+):(\d+)/;
 /** Bug trace: step-through controls, machine focus, the diagram, and the step list. */
-export function TraceView({ json, view, model, stale, onOpenLocation }: Props) {
+export function TraceView({ json, view, model, stale, onViewChange, onOpenLocation }: Props) {
   const trace = useMemo(() => parseTrace(json), [json]);
   const color = useMemo(() => laneColors(trace.lanes), [trace]);
   const [cursor, setCursor] = useState(trace.steps.length - 1);
@@ -118,7 +120,10 @@ export function TraceView({ json, view, model, stale, onOpenLocation }: Props) {
         <strong>{trace.error ? trace.error.replace(/^Assertion Failed:\s*[^\s]+\.p:\d+:\d+\s*/, "") : "No failure in this recording"}</strong>
         {ruleSource && <button className="link" disabled={stale} onClick={() => onOpenLocation(ruleSource.file, ruleSource.line)}>{rule ? "Open assertion" : "Open source"} · {ruleSource.file}:{ruleSource.line}</button>}
       </div>}
-      <div className="replay-tools"><div className="replay-section-label"><Icon name={view === "messages" ? "message" : "replay"} />{view === "messages" ? "Message sequence" : "Replay execution"}</div><label className="follow-source"><input type="checkbox" checked={follow} disabled={stale} onChange={e => setFollow(e.target.checked)} />Follow source</label></div>
+      <div className="replay-tools">{onViewChange ? <div className="view-switch" role="group" aria-label="Execution view">
+        <button aria-pressed={view === "diagram"} onClick={() => onViewChange("diagram")} title="Step through the execution with each actor's state"><Icon name="replay" />Replay</button>
+        <button aria-pressed={view === "messages"} onClick={() => onViewChange("messages")} title="The same execution as a sequence diagram of messages between actors"><Icon name="message" />Sequence diagram</button>
+      </div> : <div className="replay-section-label"><Icon name={view === "messages" ? "message" : "replay"} />{view === "messages" ? "Sequence diagram" : "Replay execution"}</div>}<label className="follow-source"><input type="checkbox" checked={follow} disabled={stale} onChange={e => setFollow(e.target.checked)} />Follow source</label></div>
       {controls}
       {focus.size > 0 && (
         <div className="trace-focus">
