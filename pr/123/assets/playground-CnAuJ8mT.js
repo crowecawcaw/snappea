@@ -1,4 +1,4 @@
-import"./styles-CTC_z8e3.js";import{t as e}from"./react-Cl38tZm1.js";import{t}from"./client-B9kn7DV5.js";import{a as n,c as r,o as i,r as a,s as o,t as s}from"./pTokens-iJb68ucT.js";import{t as c}from"./jsx-runtime-BDbVtLcv.js";var l=e(),u=t(),d=Object.assign({"../demos/bank/PSpec/BankBalanceCorrect.p":`// Bank withdrawals: clients ask the server to debit accounts. The database owns the
+import"./styles-BXCRu4DL.js";import{t as e}from"./react-MZV-sySy.js";import{t}from"./client-BHoPnZeG.js";import{a as n,c as r,o as i,r as a,s as o,t as s}from"./pTokens-iJb68ucT.js";import{t as c}from"./jsx-runtime-DPk14AgX.js";var l=e(),u=t(),d=Object.assign({"../demos/bank/PSpec/BankBalanceCorrect.p":`// Bank withdrawals: clients ask the server to debit accounts. The database owns the
 // balances. The abstract-server test intentionally violates the minimum balance rule.
 // This observer checks a rule; it does not implement the system. Hot states require
 // eventual progress.
