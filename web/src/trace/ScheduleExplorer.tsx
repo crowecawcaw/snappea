@@ -1,15 +1,17 @@
-import { Icon } from "../ui/Icon";
 import { useEffect, useState } from "react";
 import type { ScheduleSamples } from "../protocol";
 import { TraceView, type Props } from "./TraceView";
 
-export function ScheduleExplorer({ schedules, bug, downloads, ...props }: Props & { schedules?: ScheduleSamples; bug: boolean; downloads?: React.ReactNode }) {
+/** `status` (the run verdict) shares the execution picker's row. */
+export function ScheduleExplorer({ schedules, bug, downloads, status, ...props }: Props & { schedules?: ScheduleSamples; bug: boolean; downloads?: React.ReactNode; status?: React.ReactNode }) {
   const [selected, setSelected] = useState("result");
   useEffect(() => setSelected("result"), [props.json, schedules]);
   const sample = schedules?.samples.find(s => String(s.number) === selected);
   return <div className="schedule-explorer">
+    {!schedules && status}
     {schedules && <div className="schedule-browser">
-      <label><Icon name="replay" />Execution <select aria-label="Execution" value={selected} onChange={e => setSelected(e.target.value)}>
+      {status}
+      <label>Execution <select aria-label="Execution" value={selected} onChange={e => setSelected(e.target.value)}>
         <option value="result">{bug ? "Failure" : "First recorded execution"}</option>
         {schedules.samples.filter(s => s.trace !== props.json).map(s => <option key={s.number} value={s.number}>#{s.number} · {s.outcome === "completed" ? "Completed, no failure" : s.outcome === "bounded" ? "Step limit reached" : "Failed"} · {s.steps} choices</option>)}
       </select></label>

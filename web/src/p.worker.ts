@@ -3,7 +3,7 @@
 // files in a fresh in-memory file system rooted at /work.
 import { loadP, type PTool, type PResult } from "../../crates/snappea-wasm/js/snappea.mjs";
 import wasmUrl from "./generated/snappea.wasm?url";
-import type { CheckResult, CompileResult, Diagnostic, Files, Request, WorkerReply } from "./protocol";
+import type { CheckResult, CompileResult, Diagnostic, Files, Request, RunResult, WorkerReply } from "./protocol";
 
 const ROOT = "/work";
 let tool: Promise<PTool> | undefined;
@@ -26,9 +26,31 @@ function sourceArgs(files: Files): string[] {
 const ERR_LOC = /\[([^\]\s]+\.p):(\d+):(\d+)\]\s*(.*)/;
 const PARSE_ERR = /\[([^\]\s]+\.p)\]\s*parse error: line (\d+):(\d+)\s*(.*)/;
 
+const ERROR = /^error(?:\[[\w-]+\])?:\s*(.*)/;
+const ARROW = /^\s*--> ([^\s:]+\.p):(\d+):(\d+)/;
+const HELP = /^\s*= (help|hint): (.*)/;
+
+/** Reads `snappea` diagnostics (`error: ...` then `--> a.p:3:5`) and the upstream `[a.p:3:5] ...` form. */
 function parseDiagnostics(text: string): Diagnostic[] {
   const out: Diagnostic[] = [];
+  let message: string | undefined;
   for (const line of text.split("\n")) {
+    const e = ERROR.exec(line);
+    if (e) {
+      message = e[1];
+      continue;
+    }
+    const at = message !== undefined ? ARROW.exec(line) : null;
+    if (at) {
+      out.push({ file: at[1].replace(`${ROOT}/`, ""), line: Number(at[2]), col: Number(at[3]), message: message! });
+      message = undefined;
+      continue;
+    }
+    const help = HELP.exec(line);
+    if (help && out.length && !out[out.length - 1].message.includes("\n")) {
+      out[out.length - 1].message += `\n${help[1]}: ${help[2]}`;
+      continue;
+    }
     const m = PARSE_ERR.exec(line) ?? ERR_LOC.exec(line);
     if (!m) continue;
     const parse = m.length === 5 && line.includes("parse error");
@@ -41,6 +63,13 @@ function parseDiagnostics(text: string): Diagnostic[] {
     });
   }
   return out;
+}
+
+/** Checker output (PCheckerOutput/...) from the last run, so `snappea replay` can use it. */
+let outputs: Files = {};
+
+function keepOutputs(files: Files) {
+  outputs = Object.fromEntries(Object.entries(files).filter(([k]) => k.startsWith(`${ROOT}/PCheckerOutput/`)));
 }
 
 let cache: { key: string; out: PResult; tests: string[]; console: string; diagnostics: Diagnostic[] } | undefined;
@@ -57,8 +86,16 @@ async function compile(files: Files) {
   return cache;
 }
 
-async function handle(id: number, req: Request): Promise<CompileResult | CheckResult> {
+async function handle(id: number, req: Request): Promise<CompileResult | CheckResult | RunResult> {
   const t0 = performance.now();
+  if (req.kind === "run") {
+    const r = (await p()).run(req.args, { ...outputs, ...toFs(req.files) }, {
+      seed: Math.floor(Math.random() * 1_000_000),
+      onProgress: (progress) => post({ id, progress }),
+    });
+    keepOutputs(r.files);
+    return { kind: "run", exitCode: r.exitCode, console: (r.stdout + r.stderr).trimEnd() };
+  }
   const c = await compile(req.files);
   if (req.kind === "compile") {
     return {
@@ -97,6 +134,7 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
     // delivered while the check runs: only this worker is busy
     onProgress: (progress) => post({ id, progress }),
   });
+  keepOutputs(r.files);
   const dir = `${ROOT}/PCheckerOutput/${req.testCase}/`;
   const file = (name: string): string | undefined => r.files[dir + name];
   const schedules = file("schedules.json") ? JSON.parse(file("schedules.json")!) : undefined;

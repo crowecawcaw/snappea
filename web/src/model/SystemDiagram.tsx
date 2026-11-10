@@ -12,6 +12,8 @@ export function SystemDiagram({ model, trace, cursor, onOpen, readOnly = false, 
   const data = useMemo(() => systemGraph(model, trace), [model, trace]);
   const [layout, setLayout] = useState<{ input: SystemGraph; graph?: ElkNode; error?: string }>();
   const [zoom, setZoom] = useState(1), [expanded, setExpanded] = useState(false);
+  // Fit the diagram to its box until the user zooms by hand.
+  const [fitted, setFitted] = useState(true);
   const viewport = useRef<HTMLDivElement>(null);
   const marker = useId().replace(/:/g, "");
   const replay = useMemo(() => replayStates(trace, cursor), [trace, cursor]);
@@ -27,6 +29,70 @@ export function SystemDiagram({ model, trace, cursor, onOpen, readOnly = false, 
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const ready = layout?.input === data;
   const width = layout?.graph?.width ?? 640, height = layout?.graph?.height ?? 300;
+  /** The zoom that shows the whole diagram: in the box's height, or its max-height when it grows with content. */
+  const fitZoom = () => {
+    const el = viewport.current;
+    if (!el) return 1;
+    const maxH = parseFloat(getComputedStyle(el).maxHeight);
+    const pad = 8;
+    const h = (maxH > 0 ? maxH : el.clientHeight) - pad;
+    return Math.max(0.1, Math.min(1, (el.clientWidth - pad) / width, h / height));
+  };
+  // Re-fit when the layout or the box changes, until the user zooms by hand.
+  const hasGraph = ready && !!layout?.graph;
+  useEffect(() => {
+    const el = viewport.current;
+    if (!fitted || !el || !hasGraph) return;
+    const fit = () => setZoom(fitZoom());
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitted, hasGraph, width, height]);
+  // Pinch to zoom (trackpads send ctrl+wheel; Safari also sends gesture events),
+  // keeping the point under the pointer in place.
+  useEffect(() => {
+    const el = viewport.current;
+    if (!el) return;
+    const zoomAt = (factor: number, x: number, y: number) => {
+      setFitted(false);
+      setZoom(z => {
+        const next = Math.min(4, Math.max(0.1, z * factor));
+        const r = el.getBoundingClientRect();
+        const px = x - r.left, py = y - r.top;
+        const ratio = next / z;
+        requestAnimationFrame(() => {
+          el.scrollLeft = (el.scrollLeft + px) * ratio - px;
+          el.scrollTop = (el.scrollTop + py) * ratio - py;
+        });
+        return next;
+      });
+    };
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      // Trackpad pinches send small deltas; cap mouse-wheel notches to a gentle step.
+      const delta = Math.max(-25, Math.min(25, e.deltaY * (e.deltaMode === 1 ? 5 : 1)));
+      zoomAt(Math.exp(-delta * 0.01), e.clientX, e.clientY);
+    };
+    let last = 1;
+    const gestureStart = (e: Event) => { e.preventDefault(); last = 1; };
+    const gestureChange = (e: Event) => {
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      e.preventDefault();
+      zoomAt(g.scale / last, g.clientX, g.clientY);
+      last = g.scale;
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    el.addEventListener("gesturestart", gestureStart);
+    el.addEventListener("gesturechange", gestureChange);
+    return () => {
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("gesturestart", gestureStart);
+      el.removeEventListener("gesturechange", gestureChange);
+    };
+  }, [hasGraph]);
   const open = (id: string) => { if (!readOnly && data.sources[id]) { setExpanded(false); onOpen(data.sources[id]); } };
   const keys = (id: string) => ({ role: "button", tabIndex: readOnly ? -1 : 0, "aria-disabled": readOnly, onClick: (event: React.MouseEvent) => { event.stopPropagation(); open(id); }, onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); open(id); } } });
   const drawLabels = (labels: ElkLabel[] = [], edge = false) => labels.map((l, i) => <g key={i} transform={`translate(${l.x ?? 0} ${l.y ?? 0})`}>
@@ -88,7 +154,7 @@ export function SystemDiagram({ model, trace, cursor, onOpen, readOnly = false, 
     </g>;
   })();
   return <div className={`system-diagram ${expanded ? "expanded" : ""}`} onKeyDown={e => { if (e.key === "Escape") setExpanded(false); }}>
-    <div className="model-toolbar"><strong>All machines</strong><div className="system-zoom"><button aria-label="Zoom out system map" onClick={() => setZoom(z => Math.max(.25, z - .25))}>−</button><button onClick={() => setZoom(Math.min((viewport.current?.clientWidth ?? width) / width, (viewport.current?.clientHeight ?? height) / height))}>Fit</button><button aria-label="Zoom in system map" onClick={() => setZoom(z => Math.min(4, z + .25))}>+</button><button onClick={() => setExpanded(x => !x)}>{expanded ? "Close expanded diagram" : "Expand"}</button></div></div>
+    <div className="model-toolbar"><strong>All machines</strong><div className="system-zoom"><button aria-label="Zoom out system map" title="Zoom out (or pinch)" onClick={() => { setFitted(false); setZoom(z => Math.max(.1, z / 1.25)); }}>−</button><button aria-pressed={fitted} title="Fit the diagram to the panel" onClick={() => { setFitted(true); setZoom(fitZoom()); }}>Fit</button><button aria-label="Zoom in system map" title="Zoom in (or pinch)" onClick={() => { setFitted(false); setZoom(z => Math.min(4, z * 1.25)); }}>+</button><button onClick={() => setExpanded(x => !x)}>{expanded ? "Close expanded diagram" : "Expand"}</button></div></div>
     {expanded && replayControls}
     <details className="diagram-help"><summary>Diagram key</summary>
     <div className="system-legend" aria-label="Diagram key"><span><i className="legend-state" />State changes</span><span><i className={trace ? "legend-route observed" : "legend-route"} />{trace ? "Observed event routes" : "Compatible event routes"}</span></div>

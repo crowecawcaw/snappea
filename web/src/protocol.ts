@@ -21,7 +21,14 @@ export interface CheckRequest {
   extraArgs: string[];
 }
 
-export type Request = CompileRequest | CheckRequest;
+/** A command typed in the console, e.g. `["tests"]` or `["check", "tcMain", "--seed", "4"]`. */
+export interface RunRequest {
+  kind: "run";
+  files: Files;
+  args: string[];
+}
+
+export type Request = CompileRequest | CheckRequest | RunRequest;
 
 export interface Diagnostic {
   file: string;
@@ -65,7 +72,14 @@ export interface CheckResult {
   millis: number;
 }
 
-export type Result = CompileResult | CheckResult;
+export interface RunResult {
+  kind: "run";
+  exitCode: number;
+  /** stdout and stderr, in that order. */
+  console: string;
+}
+
+export type Result = CompileResult | CheckResult | RunResult;
 
 export interface WorkerReply {
   id: number;
