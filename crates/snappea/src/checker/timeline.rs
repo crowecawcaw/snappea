@@ -198,6 +198,29 @@ impl Timeline {
         Timeline { config, ..Default::default() }
     }
 
+    /// Empties the timeline for a new schedule, keeping its memory.
+    pub fn reset(&mut self, config: TimelineConfig) {
+        self.config = config;
+        self.receivers.clear();
+        self.labels.clear();
+        self.receiver_hashes.clear();
+        self.label_hashes.clear();
+        self.receiver_keys.clear();
+        self.label_keys.clear();
+        self.fingerprint = 0;
+        // the per-receiver lists keep their memory: clear each one, not the outer list
+        for v in &mut self.seen {
+            v.clear();
+        }
+        self.pairs.clear();
+        for v in &mut self.seqs {
+            v.clear();
+        }
+        self.grams.clear();
+        self.deliveries.clear();
+        self.orders.clear();
+    }
+
     /// The index of name `s` in `table`, added if new. A name with a `key` is looked up by
     /// the key first, which saves comparing strings on every event.
     fn intern(

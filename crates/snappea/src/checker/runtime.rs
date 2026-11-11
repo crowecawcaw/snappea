@@ -386,6 +386,26 @@ pub struct Setup<'p> {
     /// `MessageFormat` formatting and Java `toString()` (by this formatter), 32-bit floats,
     /// `with` functions before exit actions, and unhandled events reported as exceptions.
     pub java_semantics: Option<&'p JavaFormatter<'p>>,
+    /// Memory from an earlier run of the same program (see [`Runtime::take_buffers`]).
+    pub buffers: Buffers,
+}
+
+/// Memory a run keeps for the next run of the same program, so that a search does not
+/// allocate and grow the same lists again for every schedule. Get it from a finished run
+/// with [`Runtime::take_buffers`] and pass it in [`Setup::buffers`].
+#[derive(Default)]
+pub struct Buffers {
+    machines: Vec<Machine>,
+    monitors: Vec<Monitor>,
+    ops: Vec<Operation>,
+    op_infos: Vec<OpInfo>,
+    #[allow(clippy::vec_box)]
+    spare_execs: Vec<Box<Exec>>,
+    trace_steps: Vec<ScheduleStep>,
+    timeline: Option<Timeline>,
+    /// The reference to each machine a run created, by `(is main, type, interface,
+    /// id)`. Machine ids restart with every run, so later runs create the same ones.
+    machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
 }
 
 pub struct Runtime<'p> {
@@ -451,6 +471,8 @@ pub struct Runtime<'p> {
     // boxed so that reusing one keeps its allocation, which machines hold as a Box
     #[allow(clippy::vec_box)]
     spare_execs: Vec<Box<Exec>>,
+    /// See [`Buffers::machine_refs`].
+    machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
 }
 
 impl<'p> Runtime<'p> {
@@ -473,7 +495,16 @@ impl<'p> Runtime<'p> {
             coverage,
             driver_facts,
             java_semantics,
+            buffers,
         } = setup;
+        let Buffers { machines, monitors, ops, op_infos, spare_execs, trace_steps, timeline, machine_refs } = buffers;
+        let timeline = match timeline {
+            Some(mut t) => {
+                t.reset(config.timeline);
+                t
+            }
+            None => Timeline::new(config.timeline),
+        };
         let mut globals: Vec<Value> =
             prog.global_params.iter().map(|v| default_value(&prog.var(*v).ty, prog)).collect();
         if let Some(a) = assignment {
@@ -493,14 +524,14 @@ impl<'p> Runtime<'p> {
             module,
             config,
             globals,
-            machines: Vec::with_capacity(16),
-            monitors: Vec::new(),
-            ops: Vec::with_capacity(16),
+            machines,
+            monitors,
+            ops,
             current: 0,
             strategy,
-            trace: ScheduleTrace::default(),
+            trace: ScheduleTrace { steps: trace_steps, ..ScheduleTrace::default() },
             log: Vec::new(),
-            timeline: Timeline::new(config.timeline),
+            timeline,
             bug: None,
             cancelled,
             stopped: false,
@@ -525,13 +556,45 @@ impl<'p> Runtime<'p> {
             java: java_semantics,
             next_op_id: 0,
             format_buf: String::new(),
-            op_infos: Vec::new(),
-            spare_execs: Vec::new(),
+            op_infos,
+            spare_execs,
+            machine_refs,
         }
     }
 
     /// Whether the schedule ran until nothing could run: not stopped by a bug, the step
     /// bound, cancellation, or the search cutting it at an explored state.
+    /// Empties the run's lists, keeping their memory for the next run (see [`Buffers`]).
+    /// Call it once the run's results have been read: it clears the machines, the
+    /// schedule trace and the timeline.
+    pub fn take_buffers(&mut self) -> Buffers {
+        for m in &mut self.machines {
+            if let Some(exec) = m.exec.take() {
+                self.spare_execs.push(exec);
+            }
+        }
+        for exec in &mut self.spare_execs {
+            exec.frames.clear();
+            exec.values.clear();
+            exec.iters.clear();
+            exec.pending = None;
+        }
+        self.machines.clear();
+        self.monitors.clear();
+        self.ops.clear();
+        self.trace.steps.clear();
+        Buffers {
+            machines: std::mem::take(&mut self.machines),
+            monitors: std::mem::take(&mut self.monitors),
+            ops: std::mem::take(&mut self.ops),
+            op_infos: std::mem::take(&mut self.op_infos),
+            spare_execs: std::mem::take(&mut self.spare_execs),
+            trace_steps: std::mem::take(&mut self.trace.steps),
+            timeline: Some(std::mem::take(&mut self.timeline)),
+            machine_refs: std::mem::take(&mut self.machine_refs),
+        }
+    }
+
     pub fn ran_to_end(&self) -> bool {
         self.fully_explored && self.bug.is_none()
     }
@@ -963,9 +1026,8 @@ impl<'p> Runtime<'p> {
             // The test task creates the main machine.
             self.schedule_next(SchedKind::Create)?;
             let iface = self.prog.machine(main).interface.unwrap_or(InterfaceId(0));
-            let name = self.prog.machine(main).name.clone();
             let (midx, _) =
-                self.instantiate_machine(main, iface, &name, Value::Null, crate::checker::time::Time::default());
+                self.instantiate_machine(main, iface, true, Value::Null, crate::checker::time::Time::default());
             let creator = format!("task '{}'", 1);
             let mname = self.machines[midx].name.clone();
             self.log(|_| format!("<CreateLog> {} was created by {}.", mname, creator));
@@ -1055,7 +1117,7 @@ impl<'p> Runtime<'p> {
         &mut self,
         decl: MachineId,
         iface: InterfaceId,
-        name: &str,
+        main: bool,
         payload: Value,
         clock: crate::checker::time::Time,
     ) -> (usize, u64) {
@@ -1065,9 +1127,19 @@ impl<'p> Runtime<'p> {
         }
         let idx = self.machines.len();
         let id = self.next_op_id;
-        let display: Rc<str> = Rc::from(format!("{}({})", name, id));
-        let permissions: Rc<[EventId]> = self.code.permissions[iface.idx()].clone();
-        let this = Rc::new(MachineRef { id, name: display.clone(), permissions });
+        // the main machine is named after its type, the others after their interface
+        let this = match self.machine_refs.get(&(main, decl, iface, id)) {
+            Some(r) => r.clone(),
+            None => {
+                let name = if main { &self.prog.machine(decl).name } else { &self.prog.interface(iface).name };
+                let display: Rc<str> = Rc::from(format!("{}({})", name, id));
+                let permissions: Rc<[EventId]> = self.code.permissions[iface.idx()].clone();
+                let r = Rc::new(MachineRef { id, name: display, permissions });
+                self.machine_refs.insert((main, decl, iface, id), r.clone());
+                r
+            }
+        };
+        let display = this.name.clone();
         let fields = self.code.field_defaults[decl.idx()].clone();
         let start = self.prog.machine(decl).start_state;
         self.machines.push(Machine {
@@ -1104,13 +1176,11 @@ impl<'p> Runtime<'p> {
 
     /// Completes a `new I(...)` once the `Create` scheduling point has passed.
     pub fn finish_create(&mut self, creator: usize, machine: MachineId, iface: InterfaceId, payload: Value) -> Value {
-        let prog = self.prog;
-        let name = &prog.interface(iface).name;
         let clock = self.machines[creator].clock.clone();
         if let Some(d) = self.driver_facts.as_mut() {
             d.record_create_payload(self.prog, self.machines[creator].decl, machine, &payload);
         }
-        let (idx, _) = self.instantiate_machine(machine, iface, name, payload, clock);
+        let (idx, _) = self.instantiate_machine(machine, iface, false, payload, clock);
         let created = self.machines[idx].name.clone();
         let creator_name = self.machines[creator].name.clone();
         self.log(|_| format!("<CreateLog> {} was created by {}.", created, creator_name));

@@ -859,6 +859,8 @@ impl<'p> Checker<'p> {
             .clone()
             .filter(|_| !is_replay)
             .map(|d| crate::checker::driver_facts::DriverFacts::new(d, main));
+        // memory each schedule leaves for the next (see `Buffers`)
+        let mut buffers = crate::checker::runtime::Buffers::default();
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -896,6 +898,7 @@ impl<'p> Checker<'p> {
                         }
                     }),
                     driver_facts: driver_facts.take(),
+                    buffers: std::mem::take(&mut buffers),
                     ..Setup::default()
                 };
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
@@ -1051,6 +1054,7 @@ impl<'p> Checker<'p> {
                     d.end_schedule(stopped, rt.bound_hit_at.is_some());
                     driver_facts = Some(d);
                 }
+                buffers = rt.take_buffers();
             }
             // a bug that ends the run ends it, deadline or not
             let ended_by_bug = !opts.full_exploration && result.report.num_bugs > 0;
