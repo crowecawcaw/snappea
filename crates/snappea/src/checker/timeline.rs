@@ -130,6 +130,22 @@ impl VectorTime {
     }
 }
 
+/// `prefix` followed by `parts` separated by [`S`]. Builds the strings of
+/// [`Timeline::tokens`] without `format!`, which feedback-guided search calls for every
+/// token of every schedule.
+fn join_token(prefix: &str, parts: &[&str]) -> String {
+    let len = prefix.len() + parts.iter().map(|p| p.len() + S.len_utf8()).sum::<usize>();
+    let mut t = String::with_capacity(len);
+    t.push_str(prefix);
+    for (i, p) in parts.iter().enumerate() {
+        if i > 0 {
+            t.push(S);
+        }
+        t.push_str(p);
+    }
+    t
+}
+
 /// A 128-bit hash of a receiver or label name, for [`Timeline::fingerprint`].
 fn name_hash(s: &str) -> u128 {
     let (mut hi, mut lo) = (0x4528_21e6_38d0_1377u64 ^ s.len() as u64, 0xbe54_66cf_34e9_0c6cu64 ^ s.len() as u64);
@@ -334,9 +350,7 @@ impl Timeline {
 
     fn causal_tokens(&self, prefix: &str, out: &mut Vec<String>) {
         for (co, a, b) in &self.orders {
-            out.push(
-                format!("{}{}{}{}{}", prefix, if *co { "co" } else { "hb" }, S, self.label(*a), S) + self.label(*b),
-            );
+            out.push(join_token(prefix, &[if *co { "co" } else { "hb" }, self.label(*a), self.label(*b)]));
         }
     }
 
@@ -358,16 +372,9 @@ impl Timeline {
         let mut v = Vec::new();
         match self.config.repr {
             TimelineRepr::Pairwise => {
+                v.reserve(self.pairs.len());
                 for (r, p, l) in &self.pairs {
-                    v.push(format!(
-                        "{}{}{}{}{}{}",
-                        self.receivers[*r as usize],
-                        S,
-                        self.label(*p),
-                        S,
-                        self.label(*l),
-                        S
-                    ));
+                    v.push(join_token("", &[&self.receivers[*r as usize], self.label(*p), self.label(*l), ""]));
                 }
             }
             TimelineRepr::KGram => self.kgram_tokens("", &mut v),

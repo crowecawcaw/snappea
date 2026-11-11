@@ -231,6 +231,19 @@ fn enabled_count(ops: &[OpInfo]) -> usize {
     ops.iter().filter(|o| o.enabled).count()
 }
 
+/// Flag `id` of a list of flags indexed by operation id (unset beyond its end).
+fn flag(flags: &[bool], id: u64) -> bool {
+    flags.get(id as usize).copied().unwrap_or(false)
+}
+
+fn set_flag(flags: &mut Vec<bool>, id: u64, value: bool) {
+    let i = id as usize;
+    if flags.len() <= i {
+        flags.resize(i + 1, false);
+    }
+    flags[i] = value;
+}
+
 fn nth_enabled(ops: &[OpInfo], n: usize) -> u64 {
     ops.iter().filter(|o| o.enabled).nth(n).expect("n is below the enabled count").id
 }
@@ -356,6 +369,10 @@ pub struct PctStrategy {
     max_switch_points: usize,
     schedule_length: usize,
     prioritized: Vec<u64>,
+    /// Whether each operation id is in `prioritized`, and whether it is enabled at this
+    /// step: operation ids are small, so flags indexed by id replace list searches.
+    in_prioritized: Vec<bool>,
+    enabled_now: Vec<bool>,
     /// Kept sorted (upstream uses a `SortedSet<int>`).
     change_points: Vec<usize>,
     rng: SharedRandom,
@@ -369,13 +386,16 @@ impl PctStrategy {
             max_switch_points,
             schedule_length: 0,
             prioritized: Vec::new(),
+            in_prioritized: Vec::new(),
+            enabled_now: Vec::new(),
             change_points: Vec::new(),
             rng,
         }
     }
 
-    fn highest_priority_enabled(&self, enabled: &[u64]) -> Option<u64> {
-        self.prioritized.iter().copied().find(|p| enabled.contains(p))
+    /// The first of `prioritized` that is enabled (see `enabled_now`).
+    fn highest_priority_enabled(&self) -> Option<u64> {
+        self.prioritized.iter().copied().find(|p| flag(&self.enabled_now, *p))
     }
 
     fn add_point(&mut self, p: usize) {
@@ -402,28 +422,32 @@ impl PctStrategy {
 
 impl Strategy for PctStrategy {
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
-        let enabled = enabled_ids(ops);
-        if enabled.is_empty() {
+        let enabled = enabled_count(ops);
+        if enabled == 0 {
             return None;
         }
         if self.prioritized.is_empty() {
             self.prioritized.push(current);
+            set_flag(&mut self.in_prioritized, current, true);
         }
-        for op in &enabled {
-            if !self.prioritized.contains(op) {
+        self.enabled_now.clear();
+        for op in ops.iter().filter(|o| o.enabled) {
+            set_flag(&mut self.enabled_now, op.id, true);
+            if !flag(&self.in_prioritized, op.id) {
                 let idx = self.rng.borrow_mut().next_below(self.prioritized.len() as i32) as usize + 1;
-                self.prioritized.insert(idx, *op);
+                self.prioritized.insert(idx, op.id);
+                set_flag(&mut self.in_prioritized, op.id, true);
             }
         }
         if self.change_points.binary_search(&self.steps).is_ok() {
-            if enabled.len() == 1 {
+            if enabled == 1 {
                 self.move_change_point_forward();
-            } else if let Some(p) = self.highest_priority_enabled(&enabled) {
+            } else if let Some(p) = self.highest_priority_enabled() {
                 self.prioritized.retain(|x| *x != p);
                 self.prioritized.push(p);
             }
         }
-        let next = self.highest_priority_enabled(&enabled);
+        let next = self.highest_priority_enabled();
         self.steps += 1;
         next
     }
@@ -441,6 +465,7 @@ impl Strategy for PctStrategy {
         self.schedule_length = self.schedule_length.max(self.steps);
         self.steps = 0;
         self.prioritized.clear();
+        self.in_prioritized.clear();
         self.change_points.clear();
         let mut range: Vec<usize> = (0..self.schedule_length).collect();
         let mut idx = range.len();
