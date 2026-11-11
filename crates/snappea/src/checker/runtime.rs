@@ -1341,15 +1341,14 @@ impl<'p> Runtime<'p> {
     /// `AnnounceInternal`: delivers an event to the monitors observing the sender's interface.
     pub fn announce_internal(&mut self, sender: usize, e: &Event) -> Result<(), Stop> {
         let iface = self.machines[sender].iface;
-        let mut targets = Vec::new();
-        for (mon, ifaces) in &self.monitor_map {
-            if ifaces.contains(&iface) {
-                if let Some(i) = self.monitors.iter().position(|m| m.decl == *mon) {
-                    targets.push(i);
-                }
+        // runs every send, so it indexes instead of collecting the targets first (the
+        // monitor map and the monitors do not change while monitors run)
+        for k in 0..self.monitor_map.len() {
+            let (mon, ref ifaces) = self.monitor_map[k];
+            if !ifaces.contains(&iface) {
+                continue;
             }
-        }
-        for i in targets {
+            let Some(i) = self.monitors.iter().position(|m| m.decl == mon) else { continue };
             if self.prog.machine(self.monitors[i].decl).observes.contains(&e.id) {
                 self.monitor_event(i, e.clone(), Some(sender))?;
             }
@@ -1832,8 +1831,9 @@ impl<'p> Runtime<'p> {
         self.cov_goto(m, target);
         let name = self.machines[m].name.clone();
         let cur = self.log_state_name(m);
-        let mname = self.prog.machine(self.machines[m].decl).cs_name.clone();
-        let tname = self.prog.state(target).name.clone();
+        let prog = self.prog;
+        let mname = &prog.machine(self.machines[m].decl).cs_name;
+        let tname = &prog.state(target).name;
         self.log(|_| {
             format!(
                 "<GotoLog> {} is transitioning from state '{}' to state 'PImplementation.{}.{}'.",
@@ -1846,7 +1846,7 @@ impl<'p> Runtime<'p> {
                 log: Some(format!("{} is transitioning from state '{}' to state '{}'.", name, short_cur, tname)),
                 id: Some(name.to_string()),
                 start_state: Some(short_cur),
-                end_state: Some(tname.clone()),
+                end_state: Some(tname.to_string()),
                 ..Default::default()
             };
             self.jlog("GotoState", d, true);

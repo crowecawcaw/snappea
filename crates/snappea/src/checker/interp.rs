@@ -829,9 +829,8 @@ impl<'p> Runtime<'p> {
         // loop and the others before the part they stand for. The bound is checked as if
         // the units were counted one at a time, so it is reported with the counter just
         // over it.
-        macro_rules! charge {
+        macro_rules! check_bound {
             ($n:expr) => {
-                *work += $n;
                 if limit > 0 && *work > limit {
                     *work = (*work + 1 - $n).max(limit + 1);
                     self.step_work = *work;
@@ -841,13 +840,29 @@ impl<'p> Runtime<'p> {
                 }
             };
         }
+        // Each instruction compares the counter with one threshold: the work bound or the
+        // next cancellation poll, whichever comes first.
         let mut next_poll = self.next_cancel_work;
+        let threshold = |next_poll: u64| if limit > 0 { next_poll.min(limit + 1) } else { next_poll };
+        let mut stop_at = threshold(next_poll);
+        macro_rules! charge {
+            ($n:expr) => {
+                *work += $n;
+                if *work >= stop_at {
+                    check_bound!($n);
+                }
+            };
+        }
         loop {
-            charge!(1);
-            if *work >= next_poll {
-                self.check_cancelled()?;
-                next_poll = work.saturating_add(4096);
-                self.next_cancel_work = next_poll;
+            *work += 1;
+            if *work >= stop_at {
+                check_bound!(1);
+                if *work >= next_poll {
+                    self.check_cancelled()?;
+                    next_poll = work.saturating_add(4096);
+                    self.next_cancel_work = next_poll;
+                }
+                stop_at = threshold(next_poll);
             }
             // Inspection is only active in the logged replay, never during search.
             let stack = &mut exec.values;
@@ -1480,26 +1495,29 @@ impl<'p> Runtime<'p> {
                         .from_source(crate::checker::runtime::P_CHECKER_CORE)
                         .into());
                 };
+                // names for the error messages only
                 let name = self.machines[m].name.clone();
-                let state = self.machine_state_name(m);
                 let ev_id = match &event {
                     Value::Event(e) => *e,
                     Value::Null => {
                         let msg = format!(
                             "Machine cannot send a null event. Machine {} trying to send null event in state {}.",
-                            name, state
+                            name,
+                            self.machine_state_name(m)
                         );
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Events.Event", prog).into()),
                 };
-                let ev_name = self.event_name(ev_id).to_string();
+                let ev_name = self.event_name(ev_id);
                 let target = match target {
                     Value::Machine(r) => r,
                     Value::Null => {
                         let msg = format!(
                             "Target in send cannot be null. Machine {} trying to send event {} to null target in state {}.",
-                            name, ev_name, state
+                            name,
+                            ev_name,
+                            self.machine_state_name(m)
                         );
                         return Err(self.report_bug(msg).into());
                     }
