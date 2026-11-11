@@ -59,7 +59,7 @@ pub enum OpStatus {
 #[derive(Debug, Clone)]
 pub struct Operation {
     pub id: u64,
-    pub name: String,
+    pub name: Rc<str>,
     pub status: OpStatus,
     pub skip_next_receive: bool,
     /// Index into `Runtime::machines`, `None` for the test task.
@@ -493,9 +493,9 @@ impl<'p> Runtime<'p> {
             module,
             config,
             globals,
-            machines: Vec::new(),
+            machines: Vec::with_capacity(16),
             monitors: Vec::new(),
-            ops: Vec::new(),
+            ops: Vec::with_capacity(16),
             current: 0,
             strategy,
             trace: ScheduleTrace::default(),
@@ -769,7 +769,7 @@ impl<'p> Runtime<'p> {
         &mut self.ops[i]
     }
 
-    fn new_op(&mut self, name: String, machine: Option<usize>) -> u64 {
+    fn new_op(&mut self, name: Rc<str>, machine: Option<usize>) -> u64 {
         let id = self.next_op_id;
         self.next_op_id += 1;
         self.ops.push(Operation {
@@ -897,7 +897,7 @@ impl<'p> Runtime<'p> {
 
     fn check_deadlock(&mut self) -> Result<(), Stop> {
         let blocked: Vec<String> =
-            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).map(|o| o.name.clone()).collect();
+            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).map(|o| o.name.to_string()).collect();
         if blocked.is_empty() {
             return Ok(());
         }
@@ -1068,8 +1068,7 @@ impl<'p> Runtime<'p> {
         let display: Rc<str> = Rc::from(format!("{}({})", name, id));
         let permissions: Rc<[EventId]> = self.code.permissions[iface.idx()].clone();
         let this = Rc::new(MachineRef { id, name: display.clone(), permissions });
-        let fields =
-            self.prog.machine(decl).fields.iter().map(|v| default_value(&self.prog.var(*v).ty, self.prog)).collect();
+        let fields = self.code.field_defaults[decl.idx()].clone();
         let start = self.prog.machine(decl).start_state;
         self.machines.push(Machine {
             id,
@@ -1091,7 +1090,7 @@ impl<'p> Runtime<'p> {
             clock,
             vt: VectorTime::new(id),
         });
-        let op = self.new_op(display.to_string(), Some(idx));
+        let op = self.new_op(display, Some(idx));
         debug_assert_eq!(op, id);
         (idx, id)
     }
@@ -1105,12 +1104,13 @@ impl<'p> Runtime<'p> {
 
     /// Completes a `new I(...)` once the `Create` scheduling point has passed.
     pub fn finish_create(&mut self, creator: usize, machine: MachineId, iface: InterfaceId, payload: Value) -> Value {
-        let name = self.prog.interface(iface).name.clone();
+        let prog = self.prog;
+        let name = &prog.interface(iface).name;
         let clock = self.machines[creator].clock.clone();
         if let Some(d) = self.driver_facts.as_mut() {
             d.record_create_payload(self.prog, self.machines[creator].decl, machine, &payload);
         }
-        let (idx, _) = self.instantiate_machine(machine, iface, &name, payload, clock);
+        let (idx, _) = self.instantiate_machine(machine, iface, name, payload, clock);
         let created = self.machines[idx].name.clone();
         let creator_name = self.machines[creator].name.clone();
         self.log(|_| format!("<CreateLog> {} was created by {}.", created, creator_name));
@@ -1924,13 +1924,7 @@ impl<'p> Runtime<'p> {
                     satisfied: false,
                 });
             }
-            let fields = self
-                .prog
-                .machine(decl)
-                .fields
-                .iter()
-                .map(|v| default_value(&self.prog.var(*v).ty, self.prog))
-                .collect();
+            let fields = self.code.field_defaults[decl.idx()].clone();
             let idx = self.monitors.len();
             self.monitors.push(Monitor {
                 decl,
@@ -1963,8 +1957,7 @@ impl<'p> Runtime<'p> {
     /// Creates a monitor of type `decl` outside a test (as PObserve does) and runs its
     /// start state's entry action. Returns its index in `Runtime::monitors`.
     pub fn start_monitor(&mut self, decl: MachineId) -> Result<usize, Stop> {
-        let fields =
-            self.prog.machine(decl).fields.iter().map(|v| default_value(&self.prog.var(*v).ty, self.prog)).collect();
+        let fields = self.code.field_defaults[decl.idx()].clone();
         let idx = self.monitors.len();
         self.monitors.push(Monitor {
             decl,

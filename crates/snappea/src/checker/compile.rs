@@ -21,6 +21,9 @@ pub struct Code {
     /// The name each function is reported by (its generated method name, `Anon_3`, `_Foo`),
     /// indexed by [`FunId`].
     pub action_names: Vec<Rc<str>>,
+    /// The default values of each machine's fields, indexed by `MachineId`. Values are
+    /// copy-on-write, so new machines share them.
+    pub field_defaults: Vec<Vec<crate::checker::value::Value>>,
 }
 
 impl Code {
@@ -72,7 +75,12 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         .map(|i| Rc::from(prog.interface_receives(crate::sema::InterfaceId(i as u32))))
         .collect();
     let action_names = prog.funs.iter().map(|f| Rc::from(f.action_name())).collect();
-    Code { funs, permissions, probes, action_names }
+    let field_defaults = prog
+        .machines
+        .iter()
+        .map(|m| m.fields.iter().map(|v| crate::checker::value::default_value(&prog.var(*v).ty, prog)).collect())
+        .collect();
+    Code { funs, permissions, probes, action_names, field_defaults }
 }
 
 /// For each parameter of `code`, whether the function never reads it, and cannot expose
