@@ -18,6 +18,9 @@ pub struct Code {
     pub permissions: Vec<Rc<[crate::sema::EventId]>>,
     /// Code coverage probes, indexed by [`Op::Probe`] (empty unless compiled with them).
     pub probes: Vec<Probe>,
+    /// The name each function is reported by (its generated method name, `Anon_3`, `_Foo`),
+    /// indexed by [`FunId`].
+    pub action_names: Vec<Rc<str>>,
 }
 
 impl Code {
@@ -68,7 +71,8 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
     let permissions = (0..prog.interfaces.len())
         .map(|i| Rc::from(prog.interface_receives(crate::sema::InterfaceId(i as u32))))
         .collect();
-    Code { funs, permissions, probes }
+    let action_names = prog.funs.iter().map(|f| Rc::from(f.action_name())).collect();
+    Code { funs, permissions, probes, action_names }
 }
 
 /// For each parameter of `code`, whether the function never reads it, and cannot expose

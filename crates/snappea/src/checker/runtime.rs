@@ -208,7 +208,7 @@ pub struct Exec {
     pub values: Vec<Value>,
     pub pending: Option<Pending>,
     /// Name of the action for diagnostics.
-    pub action: String,
+    pub action: Rc<str>,
     pub iters: Vec<ActiveIter>,
 }
 
@@ -443,9 +443,12 @@ pub struct Runtime<'p> {
     /// See [`Setup::java_semantics`].
     pub(crate) java: Option<&'p JavaFormatter<'p>>,
     next_op_id: u64,
-    action_names: Vec<String>,
     /// Scratch buffer for rendering `format` arguments, reused to avoid reallocating.
     pub(crate) format_buf: String,
+    /// The operations offered to the strategy, rebuilt at every scheduling step.
+    op_infos: Vec<OpInfo>,
+    /// Finished actions whose buffers [`Runtime::new_exec`] reuses.
+    spare_execs: Vec<Exec>,
 }
 
 impl<'p> Runtime<'p> {
@@ -482,8 +485,6 @@ impl<'p> Runtime<'p> {
                 }
             }
         }
-        // Actions are reported by their generated method name (`Anon_3`, `_Foo`).
-        let action_names = prog.funs.iter().map(|f| f.action_name()).collect();
         Runtime {
             prog,
             code,
@@ -521,8 +522,9 @@ impl<'p> Runtime<'p> {
             failure: None,
             java: java_semantics,
             next_op_id: 0,
-            action_names,
             format_buf: String::new(),
+            op_infos: Vec::new(),
+            spare_execs: Vec::new(),
         }
     }
 
@@ -539,7 +541,7 @@ impl<'p> Runtime<'p> {
     }
 
     pub fn fun_name(&self, f: FunId) -> &str {
-        &self.action_names[f.idx()]
+        &self.code.action_names[f.idx()]
     }
 
     /// Adds a line to the text log; `line` runs only when the log is produced. The line
@@ -841,14 +843,23 @@ impl<'p> Runtime<'p> {
         self.op_mut(cur).kind = kind;
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
-        let infos: Vec<OpInfo> = self
-            .ops
-            .iter()
-            .map(|o| OpInfo { id: o.id, enabled: o.status == OpStatus::Enabled, kind: o.kind, receiver: o.receiver })
-            .collect();
-        let mut infos = infos;
+        // reuse one buffer for the whole schedule: this runs at every step
+        let mut infos = std::mem::take(&mut self.op_infos);
+        infos.clear();
+        infos.extend(self.ops.iter().map(|o| OpInfo {
+            id: o.id,
+            enabled: o.status == OpStatus::Enabled,
+            kind: o.kind,
+            receiver: o.receiver,
+        }));
+        let r = self.schedule_from(&mut infos);
+        self.op_infos = infos;
+        r
+    }
+
+    fn schedule_from(&mut self, infos: &mut [OpInfo]) -> Result<(), Stop> {
         if self.time.as_ref().is_some_and(|t| t.opts.timed) {
-            self.filter_timed(&mut infos);
+            self.filter_timed(infos);
         }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
@@ -859,7 +870,7 @@ impl<'p> Runtime<'p> {
             }
         }
         let current = self.current;
-        match self.strategy.next_operation(current, &infos) {
+        match self.strategy.next_operation(current, infos) {
             Some(next) => {
                 self.step_work = 0;
                 self.next_cancel_work = 4096;
@@ -1730,20 +1741,34 @@ impl<'p> Runtime<'p> {
             self.xlog("Action", &attrs, None);
         }
         let arg = if self.prog.fun(f).params.is_empty() { Value::Null } else { self.take_payload(m, e) };
-        let exec = self.new_exec(f, vec![arg]);
+        let exec = self.new_exec(f, arg);
         self.machines[m].exec = Some(exec);
     }
 
-    pub fn new_exec(&self, f: FunId, args: Vec<Value>) -> Exec {
-        let mut exec = Exec { action: self.fun_name(f).to_string(), ..Exec::default() };
+    /// A new action that runs `f` with argument `arg` (ignored when `f` takes none). Reuses
+    /// the buffers of a finished action, so starting an action does not allocate.
+    pub fn new_exec(&mut self, f: FunId, arg: Value) -> Exec {
+        let mut exec = self.spare_execs.pop().unwrap_or_default();
+        exec.action = self.code.action_names[f.idx()].clone();
         if let Some(code) = self.code.get(f) {
             // room for the locals and a typical operand stack and call depth
-            exec.values = Vec::with_capacity(code.frame_size as usize + 32);
-            let nargs = args.len();
-            exec.values.extend(args);
+            exec.values.reserve(code.frame_size as usize + 32);
+            let nargs = if self.prog.fun(f).params.is_empty() { 0 } else { 1 };
+            if nargs == 1 {
+                exec.values.push(arg);
+            }
             exec.push_frame(code.clone(), f, nargs);
         }
         exec
+    }
+
+    /// Keeps the buffers of a finished action for [`Runtime::new_exec`].
+    pub(crate) fn recycle_exec(&mut self, mut exec: Exec) {
+        exec.frames.clear();
+        exec.values.clear();
+        exec.iters.clear();
+        exec.pending = None;
+        self.spare_execs.push(exec);
     }
 
     fn enter_state(&mut self, m: usize, e: Event) {
@@ -2020,7 +2045,7 @@ impl<'p> Runtime<'p> {
                 _ => e.payload.clone(),
             }
         };
-        let exec = self.new_exec(f, vec![arg]);
+        let exec = self.new_exec(f, arg);
         match self.run_exec(Actor::Monitor(mon), exec)? {
             ExecOutcome::Finished(_) | ExecOutcome::Unwound => Ok(()),
             // creating machines, sending and receiving throw in a monitor

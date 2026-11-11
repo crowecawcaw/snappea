@@ -438,21 +438,26 @@ impl<'p> Runtime<'p> {
     /// Runs (or resumes) an action until it finishes, unwinds or reaches a scheduling point.
     pub fn run_exec(&mut self, actor: Actor, mut exec: Exec) -> Result<ExecOutcome, Stop> {
         let r = self.run_exec_inner(actor, &mut exec);
+        if let Ok(Flow::Yield(kind)) = r {
+            return Ok(ExecOutcome::Yield(exec, kind));
+        }
+        let outcome = self.exec_outcome(actor, &exec, r);
+        self.recycle_exec(exec);
+        outcome
+    }
+
+    fn exec_outcome(&mut self, actor: Actor, exec: &Exec, r: Result<Flow, Fault>) -> Result<ExecOutcome, Stop> {
         match r {
             Ok(Flow::Finished(v)) => Ok(ExecOutcome::Finished(v)),
-            Ok(Flow::Yield(kind)) => Ok(ExecOutcome::Yield(exec, kind)),
+            Ok(Flow::Yield(_)) => unreachable!("run_exec returns yields"),
             Ok(Flow::Unwound) => {
                 if let (Actor::Machine(m), true) = (actor, self.xml.is_some()) {
                     // `raise`/`goto` return through a `PNonStandardReturnException`
                     const TY: &str = "PChecker.Runtime.Exceptions.PNonStandardReturnException";
                     let text = format!("{}: Exception of type '{}' was thrown.", TY, TY);
                     let (id, state) = (self.machines[m].name.to_string(), self.machine_state_name(m));
-                    let attrs = [
-                        ("id", id.as_str()),
-                        ("state", state.as_str()),
-                        ("action", exec.action.as_str()),
-                        ("type", TY),
-                    ];
+                    let attrs =
+                        [("id", id.as_str()), ("state", state.as_str()), ("action", &*exec.action), ("type", TY)];
                     self.xlog("ExceptionThrown", &attrs, Some(&text));
                     let handled: Vec<_> =
                         attrs.iter().copied().filter(|(k, v)| *k != "state" || !v.is_empty()).collect();

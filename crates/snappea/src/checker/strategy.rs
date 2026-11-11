@@ -225,6 +225,16 @@ fn enabled_ids(ops: &[OpInfo]) -> Vec<u64> {
     ops.iter().filter(|o| o.enabled).map(|o| o.id).collect()
 }
 
+/// The number of enabled operations. With [`nth_enabled`], picks an operation without
+/// building the list of enabled ones; the random strategies run this every step.
+fn enabled_count(ops: &[OpInfo]) -> usize {
+    ops.iter().filter(|o| o.enabled).count()
+}
+
+fn nth_enabled(ops: &[OpInfo], n: usize) -> u64 {
+    ops.iter().filter(|o| o.enabled).nth(n).expect("n is below the enabled count").id
+}
+
 // ---------------------------------------------------------------------------
 
 pub struct RandomStrategy {
@@ -241,13 +251,13 @@ impl RandomStrategy {
 
 impl Strategy for RandomStrategy {
     fn next_operation(&mut self, _current: u64, ops: &[OpInfo]) -> Option<u64> {
-        let enabled = enabled_ids(ops);
-        if enabled.is_empty() {
+        let enabled = enabled_count(ops);
+        if enabled == 0 {
             return None;
         }
-        let idx = self.rng.borrow_mut().next_below(enabled.len() as i32) as usize;
+        let idx = self.rng.borrow_mut().next_below(enabled as i32) as usize;
         self.steps += 1;
-        Some(enabled[idx])
+        Some(nth_enabled(ops, idx))
     }
     fn next_bool(&mut self, max: i32) -> bool {
         let r = self.rng.borrow_mut().next_below(max) == 0;
@@ -301,19 +311,19 @@ impl ProbabilisticRandomStrategy {
 
 impl Strategy for ProbabilisticRandomStrategy {
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
-        let enabled = enabled_ids(ops);
-        if enabled.is_empty() {
+        let enabled = enabled_count(ops);
+        if enabled == 0 {
             return None;
         }
         self.inner.steps += 1;
-        if enabled.len() > 1 {
+        if enabled > 1 {
             let current_enabled = ops.iter().any(|o| o.id == current && o.enabled);
             if !self.should_current_change() && current_enabled {
                 return Some(current);
             }
         }
-        let idx = self.inner.rng.borrow_mut().next_below(enabled.len() as i32) as usize;
-        Some(enabled[idx])
+        let idx = self.inner.rng.borrow_mut().next_below(enabled as i32) as usize;
+        Some(nth_enabled(ops, idx))
     }
     fn next_bool(&mut self, max: i32) -> bool {
         self.inner.next_bool(max)
