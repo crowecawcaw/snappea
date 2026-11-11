@@ -340,6 +340,17 @@ because no test case reached the failing schedule within its schedules;
 schedules, so no test case can detect it as written. Some mutants cannot be detected by
 any test: `x < n` and `x <= n` behave the same if `x` never equals `n`.
 
+A mutant that keeps the model from finishing is stopped early. Before the mutants run,
+each test case runs 100 schedules of the unchanged model; when at most 40% of those
+reach the step bound and at least 90% of a mutant's schedules (after at least 10) do, the
+mutant stops and counts as detected by the step bound. Such a change, like an increment
+turned into a decrement in a retry loop, breaks the model too badly to be a useful
+finding, and running it out costs more than every other mutant. The console adds one
+line, `3 of them only by running every schedule to the step bound: no spec checks that
+the model makes progress.`, and JSON has the count as `detected_by_step_bound`: a
+liveness spec would make those real detections. A model whose schedules mostly reach the
+bound anyway, such as a server that never stops, has none.
+
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
 the test cases, then the mutants, and reports neither coverage nor scenarios. It has a
 5 minute time limit by default and exits with 1 when a mutant goes undetected (or a

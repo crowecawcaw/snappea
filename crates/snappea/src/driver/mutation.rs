@@ -8,6 +8,12 @@
 //! every mutant has had about the same share. A mutant's turns depend only on its own
 //! results and a fixed seed, so its verdict for a given number of turns does not depend
 //! on the machine; the time limit only decides how many turns it gets.
+//!
+//! A mutant that keeps the model from finishing, so that nearly every schedule runs to
+//! the step bound while the unchanged model's schedules mostly end, is stopped after a
+//! few schedules (see [`runaway`]). It counts as detected, by the step bound: a change
+//! that breaks the model this badly is not the gap mutation testing looks for, and
+//! running it to the end is what makes mutation testing slow.
 
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -30,12 +36,23 @@ use crate::syntax::Span;
 pub const SCHEDULES: usize = 1000;
 /// Schedules of one turn: one test case, for one mutant, in one round.
 pub const TURN: usize = 100;
+/// Schedules of a turn before a mutant can be stopped as a runaway (see [`runaway`]).
+pub const RUNAWAY_SAMPLE: usize = 10;
+
+/// Whether a mutant whose `hits` of `schedules` schedules stopped at the step bound keeps
+/// the model from finishing: at least [`RUNAWAY_SAMPLE`] schedules, at least 90% of them at
+/// the bound, while at most 40% of the unchanged model's (`baseline`) were. A model whose
+/// schedules mostly run to the bound anyway (a server that never stops) has no runaways.
+pub fn runaway(hits: usize, schedules: usize, baseline: f64) -> bool {
+    schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9 && baseline <= 0.4
+}
 
 /// What the test cases found for one mutant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
-    /// A test case failed with the change.
-    Detected { test: String },
+    /// A test case failed with the change, or (`step_bound`) the change made nearly every
+    /// schedule run to the step bound (see [`runaway`]).
+    Detected { test: String, step_bound: bool },
     /// Every test case that ran the changed code passed.
     Undetected {
         tests: Vec<String>,
@@ -69,6 +86,11 @@ impl Report {
 
     pub fn detected(&self) -> usize {
         self.count(|v| matches!(v, Verdict::Detected { .. }))
+    }
+
+    /// Mutants detected only because their schedules ran to the step bound.
+    pub fn step_bound(&self) -> usize {
+        self.count(|v| matches!(v, Verdict::Detected { step_bound: true, .. }))
     }
 
     pub fn not_tested(&self) -> usize {
@@ -122,6 +144,13 @@ impl Report {
             suppressed,
             self.seconds
         )];
+        let bound = self.step_bound();
+        if bound > 0 {
+            out.push(format!(
+                "{} of them only by running every schedule to the step bound: no spec checks that the model makes progress.",
+                bound
+            ));
+        }
         let undetected = self.undetected();
         if !undetected.is_empty() {
             out.push("Not detected by any test case (every test case still passes with the change):".into());
@@ -179,6 +208,7 @@ impl Report {
                 "schedules": schedules,
                 "search_complete": complete,
             })).collect::<Vec<_>>(),
+            "detected_by_step_bound": self.step_bound(),
             "suppressed": self.suppressed(),
             "not_tested": self.not_tested(),
             "time_limit_reached": self.time_limit_reached,
@@ -243,6 +273,20 @@ pub fn run(
         full_exploration: false,
         ..engine_options(cfg, cfg.seed.unwrap_or(0))
     };
+    // how often each test case's schedules run to the step bound without a change, for
+    // the test cases a mutant runs
+    let mut baseline = vec![1.0; passed.len()];
+    let base = Checker::new(prog);
+    for t in 0..passed.len() {
+        if states.iter().any(|s| !s.suppressed && s.covering.contains(&t)) {
+            let mut out = Watch::new(Box::new(Deadline { host: &*host, deadline }), 1.0);
+            if let Ok(res) = base.check(&passed[t].0, &opts, &mut out) {
+                if !res.cancelled && out.schedules > 0 {
+                    baseline[t] = out.hits as f64 / out.schedules as f64;
+                }
+            }
+        }
+    }
     let threads = host.threads();
     let mut time_limit_reached = false;
     let testable = states.iter().filter(|s| !s.suppressed).count();
@@ -257,7 +301,7 @@ pub fn run(
         if round.is_empty() {
             break;
         }
-        let job = Mutants { prog, mutants: &mutants, states: &states, passed, opts: &opts };
+        let job = Mutants { prog, mutants: &mutants, states: &states, passed, opts: &opts, baseline: &baseline };
         let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, round.len());
         let results = match threads {
             Some(threads) if workers > 1 => {
@@ -269,7 +313,7 @@ pub fn run(
                     let mut out = Deadline { host: &*host, deadline };
                     match job.turn(*i, turn, &mut out) {
                         Some(r) => {
-                            detected += usize::from(r.bug);
+                            detected += usize::from(r.bug || r.step_bound);
                             results.push((k, r));
                         }
                         None => break,
@@ -322,6 +366,8 @@ struct State {
     schedules: usize,
     /// The test case that detected it.
     detected: Option<usize>,
+    /// It was detected by running its schedules to the step bound.
+    step_bound: bool,
     /// Test cases that ran it.
     ran: Vec<usize>,
 }
@@ -338,6 +384,8 @@ struct Turn {
 #[derive(Debug, Clone, Copy)]
 struct TurnResult {
     bug: bool,
+    /// Its schedules ran to the step bound (see [`runaway`]); counts as a bug.
+    step_bound: bool,
     schedules: usize,
     complete: bool,
 }
@@ -363,8 +411,9 @@ impl State {
         if !self.ran.contains(&t) {
             self.ran.push(t);
         }
-        if r.bug {
+        if r.bug || r.step_bound {
             self.detected = Some(t);
+            self.step_bound = r.step_bound && !r.bug;
         }
         if r.complete {
             self.complete[turn.test] = true;
@@ -376,7 +425,7 @@ impl State {
             return Verdict::Suppressed;
         }
         if let Some(t) = self.detected {
-            return Verdict::Detected { test: passed[t].0.name.clone() };
+            return Verdict::Detected { test: passed[t].0.name.clone(), step_bound: self.step_bound };
         }
         if self.turns == 0 {
             return Verdict::NotTested;
@@ -398,6 +447,8 @@ struct Mutants<'a> {
     states: &'a [State],
     passed: &'a [(TestCase, Hits)],
     opts: &'a CheckerOptions,
+    /// Share of each test case's schedules that run to the step bound without a change.
+    baseline: &'a [f64],
 }
 
 impl Mutants<'_> {
@@ -408,20 +459,24 @@ impl Mutants<'_> {
         }
         let prog = mutation::apply(self.prog, &self.mutants[i]);
         let checker = Checker::new(&prog);
-        let tc = &self.passed[self.states[i].covering[turn.test]].0;
+        let t = self.states[i].covering[turn.test];
+        let tc = &self.passed[t].0;
         // each visit to a test case explores other schedules
         let seed = self.opts.seed.wrapping_add(turn.visit.wrapping_mul(7919));
         let opts = CheckerOptions { seed, ..self.opts.clone() };
-        let res = match checker.check(tc, &opts, out) {
+        let mut watch = Watch::new(Box::new(Forward(out)), self.baseline[t]);
+        let res = match checker.check(tc, &opts, &mut watch) {
             Ok(res) => res,
             // a change the checker cannot run is one a test case notices
-            Err(_) => return Some(TurnResult { bug: true, schedules: 0, complete: false }),
+            Err(_) => return Some(TurnResult { bug: true, step_bound: false, schedules: 0, complete: false }),
         };
-        if res.report.num_bugs == 0 && res.cancelled {
+        let step_bound = watch.runaway;
+        if res.report.num_bugs == 0 && res.cancelled && !step_bound {
             return None;
         }
         Some(TurnResult {
             bug: res.report.num_bugs > 0,
+            step_bound,
             schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
             complete: res.exhaustive.as_ref().is_some_and(|x| x.complete()),
         })
@@ -466,7 +521,7 @@ impl Mutants<'_> {
         let mut main = || loop {
             match rx.recv_timeout(Duration::from_millis(20)) {
                 Ok(r) => {
-                    *detected += usize::from(r.1.bug);
+                    *detected += usize::from(r.1.bug || r.1.step_bound);
                     results.push(r);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -479,6 +534,46 @@ impl Mutants<'_> {
         };
         (threads.run)(jobs, &mut main);
         results
+    }
+}
+
+/// Engine output that counts the schedules that run to the step bound, and stops the
+/// exploration once they show a runaway (see [`runaway`]) against `baseline`.
+struct Watch<'a> {
+    inner: Box<dyn Output + 'a>,
+    baseline: f64,
+    schedules: usize,
+    hits: usize,
+    runaway: bool,
+}
+
+impl<'a> Watch<'a> {
+    fn new(inner: Box<dyn Output + 'a>, baseline: f64) -> Self {
+        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false }
+    }
+}
+
+impl Output for Watch<'_> {
+    fn line(&mut self, _: &str) {}
+    fn error(&mut self, _: &str) {}
+    fn schedule_bounded(&mut self, hit: bool) {
+        self.schedules += 1;
+        self.hits += usize::from(hit);
+        self.runaway |= runaway(self.hits, self.schedules, self.baseline);
+    }
+    fn cancelled(&mut self) -> bool {
+        self.runaway || self.inner.cancelled()
+    }
+}
+
+/// Engine output that passes cancellation through from another.
+struct Forward<'a>(&'a mut dyn Output);
+
+impl Output for Forward<'_> {
+    fn line(&mut self, _: &str) {}
+    fn error(&mut self, _: &str) {}
+    fn cancelled(&mut self) -> bool {
+        self.0.cancelled()
     }
 }
 
@@ -525,7 +620,7 @@ mod tests {
 
     fn pass(state: &mut State, complete: bool) -> Turn {
         let turn = state.next_turn().unwrap();
-        state.record(turn, TurnResult { bug: false, schedules: TURN, complete });
+        state.record(turn, TurnResult { bug: false, step_bound: false, schedules: TURN, complete });
         turn
     }
 
@@ -549,6 +644,31 @@ mod tests {
     }
 
     #[test]
+    fn a_runaway_needs_nearly_every_schedule_at_the_bound_and_a_model_that_ends() {
+        // too few schedules to tell
+        assert!(!runaway(RUNAWAY_SAMPLE - 1, RUNAWAY_SAMPLE - 1, 0.0));
+        assert!(runaway(RUNAWAY_SAMPLE, RUNAWAY_SAMPLE, 0.0));
+        assert!(runaway(9, 10, 0.4));
+        assert!(!runaway(8, 10, 0.0));
+        // the unchanged model runs to the bound often too
+        assert!(!runaway(10, 10, 0.5));
+    }
+
+    #[test]
+    fn a_step_bound_result_ends_the_turns_as_detected() {
+        let mut s = state(2);
+        let turn = s.next_turn().unwrap();
+        s.record(turn, TurnResult { bug: false, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        assert!(s.next_turn().is_none());
+        assert_eq!((s.detected, s.step_bound), (Some(0), true));
+        // a bug in the same turn is the stronger result
+        let mut s = state(1);
+        let turn = s.next_turn().unwrap();
+        s.record(turn, TurnResult { bug: true, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        assert_eq!((s.detected, s.step_bound), (Some(0), false));
+    }
+
+    #[test]
     fn a_complete_search_or_a_bug_ends_the_turns() {
         let mut s = state(2);
         assert_eq!(pass(&mut s, true).test, 0);
@@ -561,7 +681,7 @@ mod tests {
         assert!(s.next_turn().is_none());
         let mut s = state(2);
         let turn = s.next_turn().unwrap();
-        s.record(turn, TurnResult { bug: true, schedules: 3, complete: false });
+        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false });
         assert!(s.next_turn().is_none());
         assert_eq!(s.detected, Some(0));
     }
