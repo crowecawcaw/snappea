@@ -1735,8 +1735,13 @@ impl<'p> Runtime<'p> {
             exec.pending = Some(Pending::ReceiveFound { cases, event: e });
             return Ok(Flow::Yield(SchedKind::Receive));
         }
-        let names: Vec<String> = wait.iter().map(|e| self.event_name(*e).to_string()).collect();
-        let event_names = if names.len() == 1 {
+        // the names are for the logs only; a search runs without them
+        let logged = self.logging || self.json_enabled();
+        let names: Vec<String> =
+            if logged { wait.iter().map(|e| self.event_name(*e).to_string()).collect() } else { Vec::new() };
+        let event_names = if !logged {
+            String::new()
+        } else if names.len() == 1 {
             // the single-type overload logs the full type name
             format!("'{}'", event_cs_full_name(self.prog, wait[0]))
         } else {

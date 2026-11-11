@@ -190,9 +190,11 @@ pub struct Timeline {
     /// [`name_hash`] of each receiver and label.
     receiver_hashes: Vec<u128>,
     label_hashes: Vec<u128>,
-    /// The caller's key of each receiver and label, if it gave one (see [`Timeline::record_keyed`]).
-    receiver_keys: Vec<Option<u64>>,
-    label_keys: Vec<Option<u64>>,
+    /// The index of each receiver and label by the caller's key, if it gave one (see
+    /// [`Timeline::record_keyed`]); `u32::MAX` for a key not seen yet. Keys are machine
+    /// and event ids, which are small, so a list indexed by key does.
+    receiver_keys: Vec<u32>,
+    label_keys: Vec<u32>,
     /// The sum of the hashes of the distinct tokens so far (see [`Timeline::fingerprint`]).
     fingerprint: u128,
     /// Pairwise: the labels seen so far by each receiver, as a bitset.
@@ -245,28 +247,28 @@ impl Timeline {
 
     /// The index of name `s` in `table`, added if new. A name with a `key` is looked up by
     /// the key first, which saves comparing strings on every event.
-    fn intern(
-        table: &mut Vec<Rc<str>>,
-        hashes: &mut Vec<u128>,
-        keys: &mut Vec<Option<u64>>,
-        key: Option<u64>,
-        s: &str,
-    ) -> u32 {
-        if let Some(i) = key.and_then(|k| keys.iter().position(|x| *x == Some(k))) {
-            return i as u32;
+    fn intern(table: &mut Vec<Rc<str>>, hashes: &mut Vec<u128>, keys: &mut Vec<u32>, key: Option<u64>, s: &str) -> u32 {
+        // keys beyond this fall back to comparing names
+        const MAX_KEY: u64 = 1 << 16;
+        let key = key.filter(|k| *k < MAX_KEY).map(|k| k as usize);
+        if let Some(&i) = key.and_then(|k| keys.get(k)).filter(|i| **i != u32::MAX) {
+            return i;
         }
-        match table.iter().position(|x| &**x == s) {
-            Some(i) => {
-                keys[i] = keys[i].or(key);
-                i as u32
-            }
+        let i = match table.iter().position(|x| &**x == s) {
+            Some(i) => i as u32,
             None => {
                 table.push(Rc::from(s));
                 hashes.push(name_hash(s));
-                keys.push(key);
                 (table.len() - 1) as u32
             }
+        };
+        if let Some(k) = key {
+            if keys.len() <= k {
+                keys.resize(k + 1, u32::MAX);
+            }
+            keys[k] = i;
         }
+        i
     }
 
     pub fn record(&mut self, receiver: &str, label: &str, time: Option<Rc<VectorTime>>) {
