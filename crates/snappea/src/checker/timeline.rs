@@ -130,12 +130,54 @@ impl VectorTime {
     }
 }
 
+/// A 128-bit hash of a receiver or label name, for [`Timeline::fingerprint`].
+fn name_hash(s: &str) -> u128 {
+    use std::hash::Hasher;
+    let lane = |seed: u8| {
+        let mut h = std::hash::DefaultHasher::new();
+        h.write_u8(seed);
+        h.write(s.as_bytes());
+        h.finish() as u128
+    };
+    (lane(0) << 64) | lane(1)
+}
+
+/// The SplitMix64 finalizer: a fast, well-mixing bijection on 64 bits.
+fn mix64(mut x: u64) -> u64 {
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+/// A 128-bit hash of one token: its kind followed by the hashes of its parts. The parts
+/// are already random (see [`name_hash`]), so a fast mix suffices: the two 64-bit halves
+/// of the result chain independent halves of the name hashes. Both halves see every small
+/// part (kind, length, flag) in full.
+fn token_hash(parts: &[u128]) -> u128 {
+    let (mut hi, mut lo) = (0x243f_6a88_85a3_08d3u64, 0x1319_8a2e_0370_7344u64);
+    for p in parts {
+        hi = mix64(hi ^ (*p >> 64) as u64 ^ *p as u64);
+        lo = mix64(lo ^ *p as u64);
+    }
+    ((hi as u128) << 64) | lo as u128
+}
+
 /// The timeline of one schedule.
 #[derive(Debug, Default, Clone)]
 pub struct Timeline {
     pub config: TimelineConfig,
     receivers: Vec<Rc<str>>,
     labels: Vec<Rc<str>>,
+    /// [`name_hash`] of each receiver and label.
+    receiver_hashes: Vec<u128>,
+    label_hashes: Vec<u128>,
+    /// The caller's key of each receiver and label, if it gave one (see [`Timeline::record_keyed`]).
+    receiver_keys: Vec<Option<u64>>,
+    label_keys: Vec<Option<u64>>,
+    /// The sum of the hashes of the distinct tokens so far (see [`Timeline::fingerprint`]).
+    fingerprint: u128,
     /// Pairwise: labels seen so far, per receiver.
     seen: Vec<Vec<u32>>,
     /// Pairwise: `(receiver, previous label, label)`.
@@ -155,28 +197,67 @@ impl Timeline {
         Timeline { config, ..Default::default() }
     }
 
-    fn intern(table: &mut Vec<Rc<str>>, s: &str) -> u32 {
+    /// The index of name `s` in `table`, added if new. A name with a `key` is looked up by
+    /// the key first, which saves comparing strings on every event.
+    fn intern(
+        table: &mut Vec<Rc<str>>,
+        hashes: &mut Vec<u128>,
+        keys: &mut Vec<Option<u64>>,
+        key: Option<u64>,
+        s: &str,
+    ) -> u32 {
+        if let Some(i) = key.and_then(|k| keys.iter().position(|x| *x == Some(k))) {
+            return i as u32;
+        }
         match table.iter().position(|x| &**x == s) {
-            Some(i) => i as u32,
+            Some(i) => {
+                keys[i] = keys[i].or(key);
+                i as u32
+            }
             None => {
                 table.push(Rc::from(s));
+                hashes.push(name_hash(s));
+                keys.push(key);
                 (table.len() - 1) as u32
             }
         }
     }
 
-    /// `OnDequeueEvent`: `receiver` dequeued an event labelled `label`; `time` is its clock
-    /// after the delivery (only tracked for the causal representations).
     pub fn record(&mut self, receiver: &str, label: &str, time: Option<Rc<VectorTime>>) {
-        let r = Self::intern(&mut self.receivers, receiver);
-        let l = Self::intern(&mut self.labels, label);
+        self.record_keyed((None, receiver), (None, label), time)
+    }
+
+    /// [`Timeline::record`] with optional keys for the receiver and label: the same key
+    /// must always come with the same name (a machine id with its name, say).
+    pub fn record_keyed(
+        &mut self,
+        (receiver_key, receiver): (Option<u64>, &str),
+        (label_key, label): (Option<u64>, &str),
+        time: Option<Rc<VectorTime>>,
+    ) {
+        let r = Self::intern(
+            &mut self.receivers,
+            &mut self.receiver_hashes,
+            &mut self.receiver_keys,
+            receiver_key,
+            receiver,
+        );
+        let l = Self::intern(&mut self.labels, &mut self.label_hashes, &mut self.label_keys, label_key, label);
         let repr = self.config.repr;
         if repr == TimelineRepr::Pairwise {
             if self.seen.len() <= r as usize {
                 self.seen.resize(r as usize + 1, Vec::new());
             }
             for prev in &self.seen[r as usize] {
-                self.pairs.insert((r, *prev, l));
+                if self.pairs.insert((r, *prev, l)) {
+                    let parts = [
+                        0,
+                        self.receiver_hashes[r as usize],
+                        self.label_hashes[*prev as usize],
+                        self.label_hashes[l as usize],
+                    ];
+                    self.fingerprint = self.fingerprint.wrapping_add(token_hash(&parts));
+                }
             }
             if !self.seen[r as usize].contains(&l) {
                 self.seen[r as usize].push(l);
@@ -190,7 +271,12 @@ impl Timeline {
             seq.push(l);
             let k = self.config.kgram.max(1);
             for len in 1..=k.min(seq.len()) {
-                self.grams.insert((r, seq[seq.len() - len..].to_vec()));
+                let gram = &seq[seq.len() - len..];
+                if self.grams.insert((r, gram.to_vec())) {
+                    let mut parts = vec![1, self.receiver_hashes[r as usize], len as u128];
+                    parts.extend(gram.iter().map(|l| self.label_hashes[*l as usize]));
+                    self.fingerprint = self.fingerprint.wrapping_add(token_hash(&parts));
+                }
             }
         }
         if repr.causal() {
@@ -208,7 +294,11 @@ impl Timeline {
                 } else {
                     (true, l, *pl)
                 };
-                self.orders.insert(token);
+                if self.orders.insert(token) {
+                    let (co, a, b) = token;
+                    let parts = [2, co as u128, self.label_hashes[a as usize], self.label_hashes[b as usize]];
+                    self.fingerprint = self.fingerprint.wrapping_add(token_hash(&parts));
+                }
             }
             self.deliveries.push((r, l, time));
         }
@@ -271,6 +361,14 @@ impl Timeline {
     pub fn abstract_timeline(&self) -> String {
         self.tokens().join(";")
     }
+
+    /// A 128-bit fingerprint of the abstract timeline. Schedules with the same
+    /// [`Timeline::tokens`] have the same fingerprint, and different ones, with
+    /// overwhelming probability, different fingerprints. It is kept up to date as events
+    /// are recorded, so reading it costs nothing; use it to count distinct timelines.
+    pub fn fingerprint(&self) -> u128 {
+        self.fingerprint
+    }
 }
 
 #[cfg(test)]
@@ -316,6 +414,52 @@ mod tests {
         t.record("B(2)", "x", Some(Rc::new(b)));
         t.record("C(3)", "a", Some(Rc::new(VectorTime::new(3))));
         assert_eq!(t.tokens(), vec!["co\u{1f}a\u{1f}y", "hb\u{1f}a\u{1f}x", "hb\u{1f}y\u{1f}x"]);
+    }
+
+    /// Fingerprints agree exactly when the token sets agree, for every representation and
+    /// whatever order the receivers and labels were first seen in.
+    #[test]
+    fn fingerprints_match_tokens() {
+        let runs: [&[(&str, &str)]; 6] = [
+            &[("A(1)", "x"), ("A(1)", "y"), ("A(1)", "x")],
+            &[("B(2)", "z"), ("A(1)", "x"), ("A(1)", "y"), ("A(1)", "x")],
+            &[("A(1)", "x"), ("A(1)", "x"), ("A(1)", "y")],
+            &[("A(1)", "y"), ("A(1)", "x"), ("A(1)", "y"), ("A(1)", "x")],
+            &[("A(1)", "x"), ("B(2)", "y"), ("A(1)", "y"), ("A(1)", "x")],
+            &[],
+        ];
+        for repr in [TimelineRepr::Pairwise, TimelineRepr::KGram, TimelineRepr::Causal, TimelineRepr::Hybrid] {
+            let timelines: Vec<Timeline> = runs
+                .iter()
+                .map(|run| {
+                    let mut t = tl(repr);
+                    for (i, (r, l)) in run.iter().enumerate() {
+                        let mut vt = VectorTime::new(i as u64 % 2);
+                        vt.increment(i as u64 % 2);
+                        t.record(r, l, Some(Rc::new(vt)));
+                    }
+                    t
+                })
+                .collect();
+            for a in &timelines {
+                for b in &timelines {
+                    assert_eq!(a.tokens() == b.tokens(), a.fingerprint() == b.fingerprint(), "{:?}", repr);
+                }
+            }
+            // keys only speed up the lookup of names
+            for (run, unkeyed) in runs.iter().zip(&timelines) {
+                let mut t = tl(repr);
+                for (i, (r, l)) in run.iter().enumerate() {
+                    let mut vt = VectorTime::new(i as u64 % 2);
+                    vt.increment(i as u64 % 2);
+                    let key = |s: &str| Some(s.bytes().map(u64::from).sum());
+                    let label_key = if i % 3 == 0 { None } else { key(l) };
+                    t.record_keyed((key(r), r), (label_key, l), Some(Rc::new(vt)));
+                }
+                assert_eq!(t.tokens(), unkeyed.tokens());
+                assert_eq!(t.fingerprint(), unkeyed.fingerprint());
+            }
+        }
     }
 
     #[test]

@@ -1482,14 +1482,19 @@ impl<'p> Runtime<'p> {
                         let ev = self.xml_event(e.id);
                         self.xlog("DequeueEvent", &[("id", &name), ("state", &state), ("event", &ev)], None);
                     }
-                    let mut label = event_cs_name(self.prog, e.id).to_string();
-                    if self.timeline.config.payload && e.payload != Value::Null {
-                        label = format!(
+                    let event_name = event_cs_name(self.prog, e.id);
+                    let label: std::borrow::Cow<str> = if self.timeline.config.payload && e.payload != Value::Null {
+                        format!(
                             "{}#{}",
-                            label,
+                            event_name,
                             crate::checker::feedback::stable_hash(&e.payload.to_display(self.prog))
-                        );
-                    }
+                        )
+                        .into()
+                    } else {
+                        event_name.into()
+                    };
+                    // events with a payload label have no key: the label depends on the payload
+                    let label_key = matches!(label, std::borrow::Cow::Borrowed(_)).then_some(e.id.0 as u64);
                     let time = if self.timeline.config.repr.causal() {
                         if let Some(vt) = &e.vt {
                             self.machines[m].vt.merge(vt);
@@ -1498,7 +1503,8 @@ impl<'p> Runtime<'p> {
                     } else {
                         None
                     };
-                    self.timeline.record(&name, &label, time);
+                    let receiver_key = self.machines[m].id;
+                    self.timeline.record_keyed((Some(receiver_key), &name), (label_key, &label), time);
                     self.time_receive(m, &e);
                     self.machines[m].stage = Stage::Handle(e);
                 }
