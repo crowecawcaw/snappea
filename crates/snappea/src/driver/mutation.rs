@@ -326,13 +326,17 @@ pub fn run(
                 continue;
             }
             baseline[t] = out.hits as f64 / out.schedules as f64;
+            let fair = step_cap(out.longest, opts.max_fair_steps);
+            // a liveness spec may stay hot for the same share of the shorter bound
+            let hot = opts.liveness_temperature_threshold.map(|n| n * fair / opts.max_fair_steps.max(1));
             let capped = CheckerOptions {
-                max_fair_steps: step_cap(out.longest, opts.max_fair_steps),
+                max_fair_steps: fair,
                 max_unfair_steps: step_cap(out.longest, opts.max_unfair_steps),
+                liveness_temperature_threshold: hot,
                 ..opts.clone()
             };
-            // only if the unchanged model still passes with it: a shorter bound also
-            // shortens how long a liveness spec may stay hot
+            // only if the unchanged model still passes with it, so a liveness spec is not
+            // reported only because it may stay hot for less long
             let mut out = Deadline { host: &*host, deadline };
             if base.check(&passed[t].0, &capped, &mut out).is_ok_and(|r| !r.cancelled && r.report.num_bugs == 0) {
                 test_opts[t] = capped;

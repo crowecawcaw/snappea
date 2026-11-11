@@ -355,7 +355,8 @@ the model makes progress.`, and JSON has the count as `detected_by_step_bound`: 
 liveness spec would make those real detections. A model whose schedules mostly reach the
 bound anyway, such as a server that never stops, has none. Those 100 schedules also set
 each test case's step bound for its mutants: 10 times the longest of them that ended,
-when the unchanged model still passes with it. A mutant that loops then stops at that
+with the liveness threshold scaled to match, when the unchanged model still passes with
+them. A mutant that loops then stops at that
 bound in milliseconds instead of running to the full bound.
 
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
