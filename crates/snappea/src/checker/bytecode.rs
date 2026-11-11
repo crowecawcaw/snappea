@@ -191,6 +191,14 @@ pub enum Op {
     JumpIfTrueElsePop(u32),
     /// `PushNull; Return`.
     ReturnNull,
+    /// `Format; Print` (`print format(...)`), emitted only when `base` cannot fail to
+    /// format with `nargs` arguments. Builds the string only when a log shows it (or, in
+    /// Java semantics, where formatting can fail on the values).
+    PrintFormat {
+        base: Rc<str>,
+        nargs: u32,
+        types: Rc<[PType]>,
+    },
     /// `Format`, as an argument of a call whose callee never reads that parameter (see
     /// `compile::unread_params`): pops the arguments and pushes `null` instead of building
     /// the string. Emitted only when `base` cannot fail to format with `nargs` arguments,

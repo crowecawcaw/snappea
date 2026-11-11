@@ -570,6 +570,15 @@ impl<'p> Runtime<'p> {
         }
     }
 
+    /// Logs a `print`ed line; `text` may be `None` when neither log is produced.
+    fn print(&mut self, text: Option<String>) {
+        let text = text.unwrap_or_default();
+        self.log(|_| format!("<PrintLog> {}", text));
+        if self.json_enabled() {
+            self.jlog("Print", crate::checker::jsonlog::Details { log: Some(text), ..Default::default() }, false);
+        }
+    }
+
     fn actor_name(&self, actor: Actor) -> String {
         match actor {
             Actor::Machine(m) => self.machines[m].name.to_string(),
@@ -1048,6 +1057,20 @@ impl<'p> Runtime<'p> {
                     stack.truncate(at);
                     stack.push(Value::Str(Rc::from(text)));
                 }
+                Op::PrintFormat { base, nargs, types } => {
+                    let at = stack.len() - *nargs as usize;
+                    let text = match self.logging || self.json_enabled() || java {
+                        true => Some(self.format(base, &stack[at..], types)?),
+                        false => None,
+                    };
+                    stack.truncate(at);
+                    charge!(1);
+                    if !java {
+                        self.step_work = *work;
+                        self.print(text);
+                        *work = self.step_work;
+                    }
+                }
                 Op::UnreadFormat { base, nargs, types } => {
                     let at = stack.len() - *nargs as usize;
                     let v = match java {
@@ -1448,15 +1471,8 @@ impl<'p> Runtime<'p> {
             }
             Op::Print => {
                 let msg = pop(stack);
-                let text = msg.to_display(prog);
-                self.log(|_| format!("<PrintLog> {}", text));
-                if self.json_enabled() {
-                    self.jlog(
-                        "Print",
-                        crate::checker::jsonlog::Details { log: Some(text), ..Default::default() },
-                        false,
-                    );
-                }
+                let text = (self.logging || self.json_enabled()).then(|| msg.to_display(prog));
+                self.print(text);
             }
             Op::Create { iface, has_payload } => {
                 let payload = if *has_payload { pop(stack) } else { Value::Null };
@@ -1864,7 +1880,12 @@ mod tests {
 
     /// [`run`], in Java semantics if `java`.
     fn run_with(prog: &Program, code: &Code, max_work_per_step: u64, java: bool) -> (Option<String>, Vec<String>, u64) {
-        run_full(prog, code, max_work_per_step, java).0
+        run_full(prog, code, max_work_per_step, java, true).0
+    }
+
+    /// [`run`] without the text log, as a search runs: `print` builds no text.
+    fn run_quiet(prog: &Program, code: &Code, max_work_per_step: u64) -> (Option<String>, Vec<String>, u64) {
+        run_full(prog, code, max_work_per_step, false, false).0
     }
 
     /// [`run_with`], collecting coverage; also returns the code coverage probes that ran.
@@ -1873,10 +1894,11 @@ mod tests {
         code: &Code,
         max_work_per_step: u64,
         java: bool,
+        logging: bool,
     ) -> ((Option<String>, Vec<String>, u64), crate::checker::coverage::ProbeSet) {
         let tc = prog.test_cases().into_iter().next().expect("a test case");
         let (module, main) = prog.test_case_module(&tc);
-        let config = Config { max_work_per_step, ..Config::default() };
+        let config = Config { max_work_per_step, logging, ..Config::default() };
         let rng = Rc::new(std::cell::RefCell::new(crate::checker::random::RandomValueGenerator::new(0)));
         let mut strategy = crate::checker::strategy::RandomStrategy::new(1000, rng);
         let formatter = crate::checker::javafmt::JavaFormatter::new(prog);
@@ -1916,7 +1938,7 @@ mod tests {
         for bound in 1..1500 {
             assert_eq!(run(&a.program, &fused, bound), run(&a.program, &probed, bound), "{}", bound);
         }
-        let (_, hit) = run_full(&a.program, &probed, 0, false);
+        let (_, hit) = run_full(&a.program, &probed, 0, false, true);
         let missed: Vec<String> = (0..probed.probes.len() as u32)
             .filter(|i| !hit.contains(*i))
             .map(|i| format!("{:?}", probed.probes[i as usize].kind))
@@ -1968,8 +1990,13 @@ mod tests {
             let a = analyze(&src);
             let (fused, plain) = (compile_program(&a.program), compile_program_plain(&a.program));
             assert_eq!(unread_formats(&fused), 1);
+            assert!(fused.funs.iter().flatten().flat_map(|c| &c.ops).any(|op| matches!(op, Op::PrintFormat { .. })));
             for bound in 1..bounds {
                 assert_eq!(run(&a.program, &fused, bound), run(&a.program, &plain, bound), "{} {}", index, bound);
+                // without a log, `print format(...)` builds no string but counts the same work
+                let quiet = run_quiet(&a.program, &fused, bound);
+                assert_eq!(quiet, run_quiet(&a.program, &plain, bound), "{} {}", index, bound);
+                assert_eq!(quiet.2, run(&a.program, &plain, bound).2, "{} {}", index, bound);
             }
         }
     }

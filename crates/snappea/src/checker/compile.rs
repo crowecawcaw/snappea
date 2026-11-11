@@ -175,6 +175,7 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::ReturnNull
             | Op::Assert
             | Op::Print
+            | Op::PrintFormat { .. }
             | Op::Probe(_)
             | Op::ConditionProbe { .. } => Some([None, None]),
         };
@@ -321,6 +322,9 @@ impl<'a> Compiler<'a> {
                 (1, Op::IntCmpJumpIfFalse { op: *op, rhs: *rhs, target: *target })
             }
             ([.., Op::PushNull], Op::Return) => (1, Op::ReturnNull),
+            ([.., Op::Format { base, nargs, types }], Op::Print) if format_cannot_fail(base, *nargs as usize) => {
+                (1, Op::PrintFormat { base: base.clone(), nargs: *nargs, types: types.clone() })
+            }
             _ => return op,
         };
         match fused {
