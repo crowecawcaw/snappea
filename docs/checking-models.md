@@ -331,10 +331,14 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
-Each mutant runs only the test cases that ran the changed code. They share 1000
-schedules, in turns of 100: each round gives every mutant not yet detected one turn on
-the next of its test cases (and every test case gets at least one turn). The seed is
-fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
+Each mutant runs only the test cases that ran the changed code, in turns of 100
+schedules. First every mutant gets one turn on each of its test cases. Then the
+undetected ones get more turns, round robin over their test cases, up to a budget
+learned from the first turns: 10 times the schedules that 95% of the detected mutants
+needed, at most 1000 (and 1000 when fewer than 20 were detected). Most mutants a test
+case detects, it detects within a few schedules, so on most models the budget is a few
+hundred schedules and the run ends sooner; JSON gives it as `schedules_per_mutant`. The
+seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
 because no test case reached the failing schedule within its schedules;
 `search_complete: true` in JSON means every one of its test cases explored all of its
 schedules, so no test case can detect it as written. Some mutants cannot be detected by
@@ -360,8 +364,8 @@ case named `lint` or `mutation` is selected with a glob (`snappea check 'mutatio
 In `snappea check`, mutation testing stops at its time limit, 30 seconds by default
 (`--mutation-timeout 2m` changes it, `--no-mutation` skips it). Because the schedules
 go round robin, a run the time limit stops has given every mutant about the same share:
-on a large model, each may get only its first turn. Undetected mutants with fewer than
-1000 schedules are marked `(only 100 schedules)` in the console and have a smaller
+on a large model, each may get only its first turn. Undetected mutants with fewer
+schedules than the budget are marked `(only 100 schedules)` in the console and have a smaller
 `schedules` in JSON; raise the limit for a stronger result. Mutation testing is skipped
 when a test case fails: fix the bug first. Undetected mutants do not change the exit
 status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with

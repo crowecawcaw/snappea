@@ -5,7 +5,9 @@
 //! A mutant runs only the test cases that ran the code it changes. The schedules are
 //! explored in rounds: each round gives every mutant still undetected one turn of
 //! [`TURN`] schedules on the next of its test cases, so when the time limit stops the run,
-//! every mutant has had about the same share. With several workers there is no wait at
+//! every mutant has had about the same share. The first phase gives each mutant one turn
+//! per test case; the second gives the undetected ones more, up to a [`budget`] learned
+//! from how many schedules the first phase's detections needed. With several workers there is no wait at
 //! the end of a round: a free worker takes the next turn of the mutant with the fewest
 //! turns, so one slow turn holds up only its own mutant. A mutant's turns depend only on its own
 //! results and a fixed seed, so its verdict for a given number of turns does not depend
@@ -34,7 +36,8 @@ use crate::host::{Host, Job};
 use crate::sema::{Program, TestCase};
 use crate::syntax::Span;
 
-/// Schedules a mutant gets in all, shared by the test cases that run its code.
+/// Most schedules a mutant gets in all, shared by the test cases that run its code; the
+/// learned budget (see [`budget`]) is often less.
 pub const SCHEDULES: usize = 1000;
 /// Schedules of one turn: one test case, for one mutant, in one round.
 pub const TURN: usize = 100;
@@ -47,6 +50,26 @@ pub const RUNAWAY_SAMPLE: usize = 10;
 /// schedules mostly run to the bound anyway (a server that never stops) has no runaways.
 pub fn runaway(hits: usize, schedules: usize, baseline: f64) -> bool {
     schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9 && baseline <= 0.4
+}
+
+/// Detected mutants needed before the budget is learned from them (see [`budget`]).
+pub const BUDGET_SAMPLE: usize = 20;
+/// How many times the schedules most detected mutants needed an undetected mutant gets
+/// (see [`budget`]).
+pub const BUDGET_FACTOR: usize = 10;
+
+/// Schedules an undetected mutant gets in all, learned from `needed`: the schedules each
+/// mutant detected in its first turns ran before a test case failed. It is
+/// [`BUDGET_FACTOR`] times what 95% of them needed, in whole turns, at most [`SCHEDULES`];
+/// with fewer than [`BUDGET_SAMPLE`] it is [`SCHEDULES`]. Most mutants a test case detects
+/// at all, it detects early; the rest of the schedules mostly confirm survivors.
+pub fn budget(needed: &mut [usize]) -> usize {
+    if needed.len() < BUDGET_SAMPLE {
+        return SCHEDULES;
+    }
+    needed.sort_unstable();
+    let p95 = needed[(needed.len() * 95).div_ceil(100) - 1];
+    (p95 * BUDGET_FACTOR).div_ceil(TURN).clamp(1, SCHEDULES / TURN) * TURN
 }
 
 /// What the test cases found for one mutant.
@@ -75,6 +98,8 @@ pub struct Report {
     pub verdicts: Vec<Verdict>,
     pub seconds: f64,
     pub time_limit_reached: bool,
+    /// Schedules each undetected mutant could get (see [`budget`]).
+    pub budget: usize,
 }
 
 /// An undetected mutant: the test cases it ran, its schedules, and whether their
@@ -108,10 +133,10 @@ impl Report {
         self.mutants.len() - self.not_tested() - self.suppressed()
     }
 
-    /// Undetected mutants the time limit left with fewer than [`SCHEDULES`] schedules and
-    /// an incomplete search.
+    /// Undetected mutants the time limit left with fewer schedules than the budget and an
+    /// incomplete search.
     pub fn short(&self) -> usize {
-        self.undetected().iter().filter(|(_, _, n, complete)| *n < SCHEDULES && !complete).count()
+        self.undetected().iter().filter(|(_, _, n, complete)| *n < self.budget && !complete).count()
     }
 
     /// The mutants no test case detected, by file and line.
@@ -161,7 +186,7 @@ impl Report {
             let width = list.iter().map(|(m, ..)| location(m).len()).max().unwrap_or(0);
             for (m, _, schedules, complete) in list {
                 // the time limit left it a lighter check
-                let short = if *schedules < SCHEDULES && !complete {
+                let short = if *schedules < self.budget && !complete {
                     format!(" (only {} schedules)", schedules)
                 } else {
                     String::new()
@@ -180,7 +205,7 @@ impl Report {
                     "{} undetected mutant{} got fewer than {} schedules",
                     short,
                     plural(short),
-                    SCHEDULES
+                    self.budget
                 ));
             }
             if n > 0 {
@@ -214,7 +239,7 @@ impl Report {
             "suppressed": self.suppressed(),
             "not_tested": self.not_tested(),
             "time_limit_reached": self.time_limit_reached,
-            "schedules_per_mutant": SCHEDULES,
+            "schedules_per_mutant": self.budget,
             "seconds": (self.seconds * 1000.0).round() / 1000.0,
         })
     }
@@ -300,42 +325,37 @@ pub fn run(
     }
     let covering: Vec<Vec<usize>> = states.iter().map(|s| s.covering.clone()).collect();
     let job = Mutants { prog, mutants: &mutants, covering: &covering, passed, opts: &opts, baseline: &baseline };
-    let pending = states.iter().filter(|s| s.next_turn().is_some()).count();
+    let pending = states.iter().filter(|s| s.next_turn(0).is_some()).count();
     let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, pending.max(1));
-    match threads {
-        Some(threads) if workers > 1 => {
-            time_limit_reached =
-                job.run_threads(host, threads, workers, deadline, &order, &mut states, &mut progress, &mut detected);
+    // first one turn on each covering test case, then more turns up to a budget learned
+    // from how many schedules the detected mutants needed
+    let mut max_turns = 0;
+    for phase in 0..2 {
+        if phase == 1 {
+            let mut needed: Vec<usize> = states.iter().filter_map(|s| s.needed).collect();
+            max_turns = budget(&mut needed) / TURN;
         }
-        _ => loop {
-            let round: Vec<(usize, Turn)> =
-                order.iter().filter_map(|&i| states[i].next_turn().map(|t| (i, t))).collect();
-            if round.is_empty() {
-                break;
-            }
-            let mut finished = true;
-            for (i, turn) in round {
-                let mut out = Deadline { host: &*host, deadline };
-                match job.turn(i, &turn, &mut out) {
-                    Some(r) => {
-                        detected += usize::from(r.bug || r.step_bound);
-                        states[i].record(turn, r);
-                    }
-                    None => {
-                        finished = false;
-                        break;
-                    }
-                }
-                report_detected(host, &mut progress, detected);
-            }
-            if !finished || host.now() >= deadline {
-                time_limit_reached = true;
-                break;
-            }
-        },
+        time_limit_reached = match threads {
+            Some(threads) if workers > 1 => job.run_threads(
+                host,
+                threads,
+                workers,
+                deadline,
+                max_turns,
+                &order,
+                &mut states,
+                &mut progress,
+                &mut detected,
+            ),
+            _ => job.run_rounds(host, deadline, max_turns, &order, &mut states, &mut progress, &mut detected),
+        };
+        if time_limit_reached {
+            break;
+        }
     }
     let verdicts = states.iter().map(|s| s.verdict(passed)).collect();
-    let report = Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached };
+    let report =
+        Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached, budget: max_turns * TURN };
     if let Some(t) = progress.as_mut() {
         let (detected, tested) = (report.detected(), report.tested());
         t.finish(host, |phase| *phase = Phase::Mutation { detected, mutants: tested });
@@ -369,6 +389,8 @@ struct State {
     detected: Option<usize>,
     /// It was detected by running its schedules to the step bound.
     step_bound: bool,
+    /// The schedules it ran until a test case failed, if one did after running some.
+    needed: Option<usize>,
     /// Test cases that ran it.
     ran: Vec<usize>,
 }
@@ -392,11 +414,12 @@ struct TurnResult {
 }
 
 impl State {
-    /// The next turn, or none when the mutant is done: detected, suppressed, out of
-    /// schedules, or every search complete. A mutant gets at least one turn per test case.
-    fn next_turn(&self) -> Option<Turn> {
+    /// The next turn, or none when the mutant is done: detected, suppressed, out of its
+    /// `max_turns` turns, or every search complete. A mutant gets at least one turn per
+    /// test case.
+    fn next_turn(&self, max_turns: usize) -> Option<Turn> {
         let k = self.covering.len();
-        let turns = (SCHEDULES / TURN).max(k);
+        let turns = max_turns.max(k);
         if self.suppressed || self.detected.is_some() || self.turns >= turns || self.complete.iter().all(|c| *c) {
             return None;
         }
@@ -415,6 +438,9 @@ impl State {
         if r.bug || r.step_bound {
             self.detected = Some(t);
             self.step_bound = r.step_bound && !r.bug;
+            if r.bug && r.schedules > 0 {
+                self.needed = Some(self.schedules);
+            }
         }
         if r.complete {
             self.complete[turn.test] = true;
@@ -454,6 +480,40 @@ struct Mutants<'a> {
 }
 
 impl Mutants<'_> {
+    /// Takes the turns of every mutant in rounds on this thread, in `order` each round,
+    /// until each is done (see [`State::next_turn`]) or `deadline`, recording them in
+    /// `states`; returns whether the deadline stopped it. Counts the mutants detected in
+    /// `detected`.
+    #[allow(clippy::too_many_arguments)]
+    fn run_rounds(
+        &self,
+        host: &mut dyn Host,
+        deadline: f64,
+        max_turns: usize,
+        order: &[usize],
+        states: &mut [State],
+        progress: &mut Option<Tracker>,
+        detected: &mut usize,
+    ) -> bool {
+        loop {
+            let round: Vec<(usize, Turn)> =
+                order.iter().filter_map(|&i| states[i].next_turn(max_turns).map(|t| (i, t))).collect();
+            if round.is_empty() {
+                return false;
+            }
+            for (i, turn) in round {
+                let mut out = Deadline { host: &*host, deadline };
+                let Some(r) = self.turn(i, &turn, &mut out) else { return true };
+                *detected += usize::from(r.bug || r.step_bound);
+                states[i].record(turn, r);
+                report_detected(host, progress, *detected);
+            }
+            if host.now() >= deadline {
+                return true;
+            }
+        }
+    }
+
     /// Takes `turn` for mutant `i`; `None` when `out` was cancelled first.
     fn turn(&self, i: usize, turn: &Turn, out: &mut dyn Output) -> Option<TurnResult> {
         if out.cancelled() {
@@ -484,8 +544,9 @@ impl Mutants<'_> {
         })
     }
 
-    /// Takes the turns of every mutant on `workers` threads, until each is done or
-    /// `deadline`, recording them in `states`; returns whether the deadline stopped it.
+    /// Takes the turns of every mutant on `workers` threads, until each is done (see
+    /// [`State::next_turn`]) or `deadline`, recording them in `states`; returns whether
+    /// the deadline stopped it.
     /// A worker takes the waiting turn of the mutant with the fewest turns (then the first
     /// in `order`), so a slow turn holds up only its own mutant, not the other workers.
     /// Counts the mutants detected in `detected`.
@@ -496,6 +557,7 @@ impl Mutants<'_> {
         threads: crate::host::Threads,
         workers: usize,
         deadline: f64,
+        max_turns: usize,
         order: &[usize],
         states: &mut [State],
         progress: &mut Option<Tracker>,
@@ -515,7 +577,7 @@ impl Mutants<'_> {
         let entry = |i: usize, s: &State, t: Turn| std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit));
         let mut waiting = std::collections::BinaryHeap::new();
         for &i in order {
-            if let Some(t) = states[i].next_turn() {
+            if let Some(t) = states[i].next_turn(max_turns) {
                 waiting.push(entry(i, &states[i], t));
             }
         }
@@ -562,7 +624,7 @@ impl Mutants<'_> {
                     states[i].record(turn, r);
                     let mut q = queue.0.lock().unwrap();
                     q.running -= 1;
-                    if let Some(t) = states[i].next_turn() {
+                    if let Some(t) = states[i].next_turn(max_turns) {
                         q.waiting.push(entry(i, &states[i], t));
                         queue.1.notify_one();
                     }
@@ -672,7 +734,7 @@ mod tests {
     }
 
     fn pass(state: &mut State, complete: bool) -> Turn {
-        let turn = state.next_turn().unwrap();
+        let turn = state.next_turn(SCHEDULES / TURN).unwrap();
         state.record(turn, TurnResult { bug: false, step_bound: false, schedules: TURN, complete });
         turn
     }
@@ -681,7 +743,7 @@ mod tests {
     fn turns_cycle_through_the_test_cases_until_the_budget_is_spent() {
         let mut s = state(3);
         let mut turns = Vec::new();
-        while s.next_turn().is_some() {
+        while s.next_turn(SCHEDULES / TURN).is_some() {
             let t = pass(&mut s, false);
             turns.push((t.test, t.visit));
         }
@@ -690,7 +752,7 @@ mod tests {
         assert_eq!(s.schedules, SCHEDULES);
         // more test cases than turns: one turn each
         let mut s = state(SCHEDULES / TURN + 2);
-        while s.next_turn().is_some() {
+        while s.next_turn(SCHEDULES / TURN).is_some() {
             pass(&mut s, false);
         }
         assert_eq!(s.ran.len(), SCHEDULES / TURN + 2);
@@ -710,13 +772,13 @@ mod tests {
     #[test]
     fn a_step_bound_result_ends_the_turns_as_detected() {
         let mut s = state(2);
-        let turn = s.next_turn().unwrap();
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
         s.record(turn, TurnResult { bug: false, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
-        assert!(s.next_turn().is_none());
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
         assert_eq!((s.detected, s.step_bound), (Some(0), true));
         // a bug in the same turn is the stronger result
         let mut s = state(1);
-        let turn = s.next_turn().unwrap();
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
         s.record(turn, TurnResult { bug: true, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
         assert_eq!((s.detected, s.step_bound), (Some(0), false));
     }
@@ -731,11 +793,35 @@ mod tests {
         let mut s = state(2);
         pass(&mut s, true);
         pass(&mut s, true);
-        assert!(s.next_turn().is_none());
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
         let mut s = state(2);
-        let turn = s.next_turn().unwrap();
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
         s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false });
-        assert!(s.next_turn().is_none());
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
         assert_eq!(s.detected, Some(0));
+    }
+
+    #[test]
+    fn the_first_phase_gives_one_turn_per_test_case() {
+        let mut s = state(3);
+        while s.next_turn(0).is_some() {
+            pass(&mut s, false);
+        }
+        assert_eq!(s.turns, 3);
+        // and the budget adds more
+        assert!(s.next_turn(5).is_some());
+    }
+
+    #[test]
+    fn the_budget_is_ten_times_what_most_detected_mutants_needed() {
+        // too few to learn from
+        assert_eq!(budget(&mut [1; BUDGET_SAMPLE - 1]), SCHEDULES);
+        // 95% need at most 3 schedules: 30, in one turn
+        let mut needed = vec![3; 19];
+        needed.push(100);
+        assert_eq!(budget(&mut needed), TURN);
+        let mut needed = [25; 20];
+        assert_eq!(budget(&mut needed), 300);
+        assert_eq!(budget(&mut [400; 20]), SCHEDULES);
     }
 }
