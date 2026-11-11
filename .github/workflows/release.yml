@@ -7,7 +7,9 @@
 #                   already exists (a re-run of a release that got as far as tagging).
 #   build           the snappea binary for five targets, from this run's commit with the
 #                   version applied (scripts/release.py set), so `snappea --version` is the
-#                   release. Archives snappea-vX.Y.Z-<target>.tar.gz (.zip on Windows). If
+#                   release. Targets that run on their runner are built twice for
+#                   profile-guided optimization (scripts/pgo.py): an instrumented build
+#                   checks the tutorial models, and its profile guides the release build. Archives snappea-vX.Y.Z-<target>.tar.gz (.zip on Windows). If
 #                   the tag exists, the archives are downloaded from its GitHub release
 #                   instead: the tag's committed checksums name those exact files.
 #   prepare         SHA256SUMS of the archives. Commits the release (Cargo.toml, the Java
@@ -119,12 +121,13 @@ jobs:
       matrix:
         include:
           # Linux: glibc 2.17 or newer, through cargo-zigbuild.
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, zig: true, run: true }
+          # pgo: profile-guided optimization, for targets the runner can run.
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, zig: true, run: true, pgo: true }
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, zig: true }
           - { target: x86_64-apple-darwin, os: macos-latest }
-          - { target: aarch64-apple-darwin, os: macos-latest, run: true }
+          - { target: aarch64-apple-darwin, os: macos-latest, run: true, pgo: true }
           # Static CRT: no Visual C++ redistributable needed.
-          - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true, rustflags: "-C target-feature=+crt-static" }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true, pgo: true, rustflags: "-C target-feature=+crt-static" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
@@ -160,6 +163,8 @@ jobs:
         if: needs.version.outputs.tagged != 'true'
         with:
           targets: ${{ matrix.target }}
+          # llvm-profdata, for scripts/pgo.py
+          components: ${{ matrix.pgo && 'llvm-tools' || '' }}
       - name: Install cargo-zigbuild
         if: needs.version.outputs.tagged != 'true' && matrix.zig
         run: pip install cargo-zigbuild==0.23.4 ziglang==0.16.0
@@ -172,14 +177,36 @@ jobs:
       - name: Build
         if: needs.version.outputs.tagged != 'true'
         env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
+          FLAGS: ${{ matrix.rustflags }}
           ZIG: ${{ matrix.zig }}
+          PGO: ${{ matrix.pgo }}
         run: |
-          if [ "$ZIG" = true ]; then
-            cargo zigbuild --release --locked -p snappea --bin snappea --target "${TARGET}.2.17"
+          set -euo pipefail
+          build() {
+            if [ "$ZIG" = true ]; then
+              cargo zigbuild --release --locked -p snappea --bin snappea --target "${TARGET}.2.17" "$@"
+            else
+              cargo build --release --locked -p snappea --bin snappea --target "$TARGET" "$@"
+            fi
+          }
+          if [ "$PGO" = true ]; then
+            # Every flag but the profile one stays the same, so the profile matches.
+            profile="$RUNNER_TEMP/pgo"
+            export RUSTFLAGS="$FLAGS -Cprofile-generate=$profile"
+            if [ "$ZIG" = true ]; then
+              # zig cc needs the profiler runtime passed differently (see the script)
+              triple=$(echo "$TARGET" | tr 'a-z-' 'A-Z_')
+              export "CARGO_TARGET_${triple}_LINKER=$PWD/scripts/pgo-zig-linker.sh"
+              export PGO_ZIG_TARGET="${TARGET%%-*}-linux-gnu.2.17"
+            fi
+            build --target-dir target/pgo-instrumented
+            python scripts/pgo.py train "target/pgo-instrumented/${TARGET}/release/snappea${EXE}" "$profile/merged.profdata"
+            unset "CARGO_TARGET_${triple:-NONE}_LINKER" PGO_ZIG_TARGET
+            export RUSTFLAGS="$FLAGS -Cprofile-use=$profile/merged.profdata"
           else
-            cargo build --release --locked -p snappea --bin snappea --target "$TARGET"
+            export RUSTFLAGS="$FLAGS"
           fi
+          build
       - name: Check the version it reports
         if: needs.version.outputs.tagged != 'true' && matrix.run
         run: |
