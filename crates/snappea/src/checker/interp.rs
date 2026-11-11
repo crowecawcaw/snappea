@@ -358,6 +358,19 @@ fn int_bin(op: BinOp, a: Value, b: Value, java: bool) -> Result<Value, Exception
     bin(op, a, b, java)
 }
 
+/// The value of operand `o` without copying it: `owned` holds it when it was on the stack.
+/// `locals` are the frame's slots.
+#[inline(always)]
+fn in_place<'a>(o: Operand, owned: &'a Option<Value>, locals: &'a [Value], fields: &'a [Value]) -> &'a Value {
+    match o {
+        Operand::Stack => owned.as_ref().expect("operand popped"),
+        Operand::Local(slot) => &locals[slot as usize],
+        Operand::Field(slot) => &fields[slot as usize],
+        // only arithmetic and comparisons take literals
+        Operand::Int(_) => unreachable!("an int literal as a collection operand"),
+    }
+}
+
 /// A binary operation (`Op::Bin`). P floats are Java `float`s in the PObserve backend.
 fn bin(op: BinOp, a: Value, b: Value, java: bool) -> Result<Value, Exception> {
     Ok(match arith(op, a, b)? {
@@ -1006,9 +1019,11 @@ impl<'p> Runtime<'p> {
                     }
                     Op::MapGetOf { map, key, java_null } => {
                         charge!(map.work() + key.work());
-                        let k = self.operand(actor, stack, base, *key);
-                        let m = self.operand(actor, stack, base, *map);
-                        let v = map_get(&m, &k, *java_null && java, prog)?;
+                        let k = (*key == Operand::Stack).then(|| pop(stack));
+                        let m = (*map == Operand::Stack).then(|| pop(stack));
+                        let (locals, fields) = (&stack[base..], self.fields(actor));
+                        let (m, k) = (in_place(*map, &m, locals, fields), in_place(*key, &k, locals, fields));
+                        let v = map_get(m, k, *java_null && java, prog)?;
                         stack.push(v);
                     }
                     Op::Sizeof => {
@@ -1017,12 +1032,14 @@ impl<'p> Runtime<'p> {
                     }
                     Op::SizeofOf(c) => {
                         charge!(c.work());
-                        let v = size_of(&self.operand(actor, stack, base, *c))?;
+                        let owned = (*c == Operand::Stack).then(|| pop(stack));
+                        let v = size_of(in_place(*c, &owned, &stack[base..], self.fields(actor)))?;
                         stack.push(v);
                     }
                     Op::KeysSizeof(m) => {
                         charge!(m.work());
-                        let n = map_of(&self.operand(actor, stack, base, *m), prog)?.len();
+                        let owned = (*m == Operand::Stack).then(|| pop(stack));
+                        let n = map_of(in_place(*m, &owned, &stack[base..], self.fields(actor)), prog)?.len();
                         charge!(1);
                         stack.push(Value::Int(n as i64));
                     }
