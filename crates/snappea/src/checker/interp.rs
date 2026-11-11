@@ -833,44 +833,66 @@ impl<'p> Runtime<'p> {
     /// Runs the innermost frame until it calls or returns, or until the action finishes,
     /// unwinds, fails or reaches a scheduling point. Every instruction is one unit of work.
     fn run_frame(&mut self, actor: Actor, exec: &mut Exec) -> Result<Flow, Fault> {
-        // `step_work` lives in a local while the frame runs, so that it can stay in a
-        // register; it is written back around every call that may log or run monitors.
-        let mut work = self.step_work;
-        let flow = self.run_ops(actor, exec, &mut work);
-        self.step_work = work;
+        // While the frame runs, `step_work` is kept as the units `left` before `stop_at`:
+        // the work bound or the next cancellation poll, whichever comes first. Each
+        // instruction then only decrements `left` and tests its sign, which keeps the
+        // threshold out of the loop's registers. `step_work` is `stop_at - left`, written
+        // back around every call that may log or run monitors.
+        let mut stop_at = self.work_threshold(self.next_cancel_work);
+        let mut left = stop_at as i64 - self.step_work as i64;
+        let flow = self.run_ops(actor, exec, &mut left, &mut stop_at);
+        self.step_work = (stop_at as i64 - left) as u64;
         flow
     }
 
+    /// The counter value at which an instruction must check the work bound or poll for
+    /// cancellation (see [`Runtime::run_frame`]).
+    fn work_threshold(&self, next_poll: u64) -> u64 {
+        let limit = self.config.max_work_per_step;
+        if limit > 0 {
+            next_poll.min(limit + 1)
+        } else {
+            next_poll
+        }
+    }
+
     #[inline(always)]
-    fn run_ops(&mut self, actor: Actor, exec: &mut Exec, work: &mut u64) -> Result<Flow, Fault> {
+    fn run_ops(&mut self, actor: Actor, exec: &mut Exec, left: &mut i64, stop_at: &mut u64) -> Result<Flow, Fault> {
         let limit = self.config.max_work_per_step;
         let prog = self.prog;
         let java = self.java_semantics();
         let inspecting = self.config.inspection_trace && self.json_enabled();
+        // `step_work` while the frame runs, and setting it
+        macro_rules! work {
+            () => {
+                (*stop_at as i64 - *left) as u64
+            };
+        }
+        macro_rules! set_work {
+            ($w:expr) => {
+                *left = *stop_at as i64 - $w as i64
+            };
+        }
         // Counts `n` units of work. A fused instruction counts its first unit with the
         // loop and the others before the part they stand for. The bound is checked as if
         // the units were counted one at a time, so it is reported with the counter just
         // over it.
         macro_rules! check_bound {
             ($n:expr) => {
-                if limit > 0 && *work > limit {
-                    *work = (*work + 1 - $n).max(limit + 1);
-                    self.step_work = *work;
+                let work = work!();
+                if limit > 0 && work > limit {
+                    self.step_work = (work + 1 - $n).max(limit + 1);
                     let bug = self.work_bound_exceeded(actor);
-                    *work = self.step_work;
+                    set_work!(self.step_work);
                     return Err(bug);
                 }
             };
         }
-        // Each instruction compares the counter with one threshold: the work bound or the
-        // next cancellation poll, whichever comes first.
         let mut next_poll = self.next_cancel_work;
-        let threshold = |next_poll: u64| if limit > 0 { next_poll.min(limit + 1) } else { next_poll };
-        let mut stop_at = threshold(next_poll);
         macro_rules! charge {
             ($n:expr) => {
-                *work += $n;
-                if *work >= stop_at {
+                *left -= $n as i64;
+                if *left <= 0 {
                     check_bound!($n);
                 }
             };
@@ -882,6 +904,8 @@ impl<'p> Runtime<'p> {
             };
             let frame = &exec.frames[frame_idx];
             let code = frame.code.clone();
+            // taken once per frame: the compiler cannot tell that calls leave it unchanged
+            let ops: &[Op] = &code.ops;
             let fun = frame.fun;
             let base = frame.base;
             let mut pc = frame.pc;
@@ -898,20 +922,22 @@ impl<'p> Runtime<'p> {
                 }};
             }
             loop {
-                *work += 1;
-                if *work >= stop_at {
+                *left -= 1;
+                if *left <= 0 {
                     check_bound!(1);
-                    if *work >= next_poll {
+                    let work = work!();
+                    if work >= next_poll {
                         self.check_cancelled()?;
                         next_poll = work.saturating_add(4096);
                         self.next_cancel_work = next_poll;
                     }
-                    stop_at = threshold(next_poll);
+                    *stop_at = self.work_threshold(next_poll);
+                    set_work!(work);
                 }
                 // Inspection is only active in the logged replay, never during search.
                 let stack = &mut exec.values;
                 // every code block ends with a `Return`
-                let op = &code.ops[pc];
+                let op = &ops[pc];
                 pc += 1;
                 match op {
                     Op::Probe(id) => {
@@ -923,13 +949,13 @@ impl<'p> Runtime<'p> {
                         }
                         // probes count no work (see `Op::Probe`); any bound the charge above
                         // crossed, the next instruction would cross too
-                        *work -= 1;
+                        *left += 1;
                         if let Some(c) = self.coverage.as_mut() {
                             c.probe_hit(*id);
                         }
                     }
                     Op::ConditionProbe { yes, no } => {
-                        *work -= 1;
+                        *left += 1;
                         if let Some(c) = self.coverage.as_mut() {
                             c.probe_hit(if matches!(stack.last(), Some(Value::Bool(true))) { *yes } else { *no });
                         }
@@ -1088,9 +1114,9 @@ impl<'p> Runtime<'p> {
                         stack.truncate(at);
                         charge!(1);
                         if !java {
-                            self.step_work = *work;
+                            self.step_work = work!();
                             self.print(text);
-                            *work = self.step_work;
+                            set_work!(self.step_work);
                         }
                     }
                     Op::Bin(op) => {
@@ -1176,9 +1202,9 @@ impl<'p> Runtime<'p> {
                             continue 'frames;
                         }
                         let at = stack.len() - nargs;
-                        self.step_work = *work;
+                        self.step_work = work!();
                         let v = self.call_foreign(actor, *fun, &stack[at..]);
-                        *work = self.step_work;
+                        set_work!(self.step_work);
                         let v = v?;
                         stack.truncate(at);
                         stack.push(v);
@@ -1219,11 +1245,40 @@ impl<'p> Runtime<'p> {
                             }
                         }
                     }
-                    _ => {
+                    // Listed rather than `_`, so the dispatch needs no range check.
+                    Op::SetGet
+                    | Op::Keys
+                    | Op::Values
+                    | Op::Format { .. }
+                    | Op::Neg
+                    | Op::Cast { .. }
+                    | Op::CoerceFloat
+                    | Op::CoerceInt
+                    | Op::CoerceInterface { .. }
+                    | Op::ChooseBool
+                    | Op::ChooseInt
+                    | Op::ChooseSeq
+                    | Op::ChooseSet
+                    | Op::ChooseMap
+                    | Op::Store { .. }
+                    | Op::Insert { .. }
+                    | Op::Add { .. }
+                    | Op::Remove { .. }
+                    | Op::Assert
+                    | Op::Print
+                    | Op::Create { .. }
+                    | Op::Send { .. }
+                    | Op::Raise { .. }
+                    | Op::Announce { .. }
+                    | Op::Goto { .. }
+                    | Op::Receive { .. }
+                    | Op::ForeachInit { .. }
+                    | Op::CallEmpty { .. }
+                    | Op::UnreadFormat { .. } => {
                         exec.frames[frame_idx].pc = pc;
-                        self.step_work = *work;
+                        self.step_work = work!();
                         let flow = self.other_op(actor, exec, frame_idx, op);
-                        *work = self.step_work;
+                        set_work!(self.step_work);
                         match flow? {
                             Flow::Continue => pc = exec.frames[frame_idx].pc,
                             flow => return Ok(flow),
