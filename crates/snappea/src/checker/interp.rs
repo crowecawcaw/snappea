@@ -1375,6 +1375,7 @@ impl<'p> Runtime<'p> {
             }
             Op::Insert { root, path } => {
                 let value = pop(stack);
+                let mut shifted = 0u64;
                 let index = pop(stack);
                 let keys = pop_n(stack, key_count(path));
                 if path.is_empty() {
@@ -1390,6 +1391,9 @@ impl<'p> Runtime<'p> {
                         if i < 0 || i as usize > s.len() {
                             return Err(insert_oor().into());
                         }
+                        // moving the later elements is work too: an endless loop that
+                        // inserts into a growing list must reach the work bound
+                        shifted = (s.len() - i as usize) as u64;
                         Rc::make_mut(s).insert(i as usize, value);
                     }
                     Value::Map(m) => {
@@ -1403,6 +1407,7 @@ impl<'p> Runtime<'p> {
                     Value::Null => return Err(nre().into()),
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Values.PSeq", prog).into()),
                 }
+                self.step_work += shifted;
             }
             Op::Add { root, path } => {
                 let value = pop(stack);
@@ -1424,6 +1429,7 @@ impl<'p> Runtime<'p> {
                 }
             }
             Op::Remove { root, path } => {
+                let mut shifted = 0u64;
                 let value = pop(stack);
                 let keys = pop_n(stack, key_count(path));
                 if path.is_empty() {
@@ -1439,6 +1445,7 @@ impl<'p> Runtime<'p> {
                         if i < 0 || i as usize >= s.len() {
                             return Err(index_oor().into());
                         }
+                        shifted = (s.len() - 1 - i as usize) as u64;
                         Rc::make_mut(s).remove(i as usize);
                     }
                     Value::Map(m) => {
@@ -1450,6 +1457,7 @@ impl<'p> Runtime<'p> {
                     Value::Null => return Err(nre().into()),
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Values.PSeq", prog).into()),
                 }
+                self.step_work += shifted;
             }
             Op::Assert => {
                 let msg = pop(stack);
@@ -2004,6 +2012,46 @@ mod tests {
                 assert_eq!(quiet.2, run(&a.program, &plain, bound).2, "{} {}", index, bound);
             }
         }
+    }
+
+    /// Moving the elements after an insert or remove counts as work, so an endless loop
+    /// that inserts at the front of a growing list reaches the work bound after a few
+    /// thousand inserts instead of slowing down without end.
+    #[test]
+    fn shifting_list_elements_counts_toward_the_work_bound() {
+        let a = analyze(
+            "machine Main {
+              start state S {
+                entry {
+                  var s: seq[int]; var i: int;
+                  while (true) { s += (0, i); i = i + 1; }
+                }
+              }
+            }
+            test tc [main=Main]: { Main };",
+        );
+        let code = compile_program(&a.program);
+        let start = std::time::Instant::now();
+        let (bug, _, work) = run(&a.program, &code, crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP);
+        assert!(bug.is_some_and(|b| b.contains("possible infinite loop")));
+        assert!(work > crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP);
+        // without counting the shifts this would take hours
+        assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
+        // removing shifts the elements after it too
+        let a = analyze(
+            "machine Main {
+              start state S {
+                entry {
+                  var s: seq[int]; var i: int;
+                  while (i < 1000) { s += (0, i); i = i + 1; }
+                  s -= (0);
+                }
+              }
+            }
+            test tc [main=Main]: { Main };",
+        );
+        let (_, _, small) = run(&a.program, &compile_program(&a.program), 0);
+        assert!(small > 1000 * 999 / 2 + 999, "{}", small);
     }
 
     /// The `UnreadFormat` instructions in `code`.
