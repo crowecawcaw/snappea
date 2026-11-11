@@ -3,6 +3,10 @@
 
 use std::io::{self, Write};
 
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut host = snappea::cli::NativeHost::new();
