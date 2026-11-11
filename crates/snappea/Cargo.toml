@@ -24,7 +24,7 @@ emit = ["dep:serde", "dep:serde_json"]
 # library (`snappea::syntax`, `snappea::sema`, `snappea::checker`, `snappea::project`, `snappea::driver`).
 test = ["dep:snappea-syntax", "dep:snappea-lint", "emit", "dep:regex", "dep:roxmltree", "dep:rustc-hash", "dep:sha2"]
 # The `snappea` and `snappea-compat` binaries, and the library they run on.
-cli = ["dep:snappea-syntax", "dep:snappea-lint", "serde_json/preserve_order", "dep:roxmltree", "dep:rustc-hash", "dep:serde_json", "dep:sha2"]
+cli = ["dep:mimalloc", "dep:snappea-syntax", "dep:snappea-lint", "serde_json/preserve_order", "dep:roxmltree", "dep:rustc-hash", "dep:serde_json", "dep:sha2"]
 
 [[bin]]
 name = "snappea"
@@ -45,6 +45,11 @@ rustc-hash = { workspace = true, optional = true }
 serde = { version = "1", optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { version = "0.11", optional = true }
+
+# The binaries allocate with mimalloc: the checker allocates and frees many small values
+# per schedule, and mimalloc's per-thread free lists reuse that memory quickly.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
 
 [dev-dependencies]
 serde = { workspace = true }

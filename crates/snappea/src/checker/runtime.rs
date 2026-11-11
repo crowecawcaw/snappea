@@ -59,7 +59,7 @@ pub enum OpStatus {
 #[derive(Debug, Clone)]
 pub struct Operation {
     pub id: u64,
-    pub name: String,
+    pub name: Rc<str>,
     pub status: OpStatus,
     pub skip_next_receive: bool,
     /// Index into `Runtime::machines`, `None` for the test task.
@@ -208,7 +208,7 @@ pub struct Exec {
     pub values: Vec<Value>,
     pub pending: Option<Pending>,
     /// Name of the action for diagnostics.
-    pub action: String,
+    pub action: Rc<str>,
     pub iters: Vec<ActiveIter>,
 }
 
@@ -231,7 +231,7 @@ pub struct Machine {
     /// `UnhandledEventException` log lines).
     pub popped_from: Option<StateId>,
     pub stage: Stage,
-    pub exec: Option<Exec>,
+    pub exec: Option<Box<Exec>>,
     /// Event delivered to a blocked `receive`.
     pub received: Option<Event>,
     pub this: Rc<MachineRef>,
@@ -386,6 +386,26 @@ pub struct Setup<'p> {
     /// `MessageFormat` formatting and Java `toString()` (by this formatter), 32-bit floats,
     /// `with` functions before exit actions, and unhandled events reported as exceptions.
     pub java_semantics: Option<&'p JavaFormatter<'p>>,
+    /// Memory from an earlier run of the same program (see [`Runtime::take_buffers`]).
+    pub buffers: Buffers,
+}
+
+/// Memory a run keeps for the next run of the same program, so that a search does not
+/// allocate and grow the same lists again for every schedule. Get it from a finished run
+/// with [`Runtime::take_buffers`] and pass it in [`Setup::buffers`].
+#[derive(Default)]
+pub struct Buffers {
+    machines: Vec<Machine>,
+    monitors: Vec<Monitor>,
+    ops: Vec<Operation>,
+    op_infos: Vec<OpInfo>,
+    #[allow(clippy::vec_box)]
+    spare_execs: Vec<Box<Exec>>,
+    trace_steps: Vec<ScheduleStep>,
+    timeline: Option<Timeline>,
+    /// The reference to each machine a run created, by `(is main, type, interface,
+    /// id)`. Machine ids restart with every run, so later runs create the same ones.
+    machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
 }
 
 pub struct Runtime<'p> {
@@ -443,9 +463,16 @@ pub struct Runtime<'p> {
     /// See [`Setup::java_semantics`].
     pub(crate) java: Option<&'p JavaFormatter<'p>>,
     next_op_id: u64,
-    action_names: Vec<String>,
     /// Scratch buffer for rendering `format` arguments, reused to avoid reallocating.
     pub(crate) format_buf: String,
+    /// The operations offered to the strategy, rebuilt at every scheduling step.
+    op_infos: Vec<OpInfo>,
+    /// Finished actions whose buffers [`Runtime::new_exec`] reuses.
+    // boxed so that reusing one keeps its allocation, which machines hold as a Box
+    #[allow(clippy::vec_box)]
+    spare_execs: Vec<Box<Exec>>,
+    /// See [`Buffers::machine_refs`].
+    machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
 }
 
 impl<'p> Runtime<'p> {
@@ -468,7 +495,16 @@ impl<'p> Runtime<'p> {
             coverage,
             driver_facts,
             java_semantics,
+            buffers,
         } = setup;
+        let Buffers { machines, monitors, ops, op_infos, spare_execs, trace_steps, timeline, machine_refs } = buffers;
+        let timeline = match timeline {
+            Some(mut t) => {
+                t.reset(config.timeline);
+                t
+            }
+            None => Timeline::new(config.timeline),
+        };
         let mut globals: Vec<Value> =
             prog.global_params.iter().map(|v| default_value(&prog.var(*v).ty, prog)).collect();
         if let Some(a) = assignment {
@@ -482,22 +518,20 @@ impl<'p> Runtime<'p> {
                 }
             }
         }
-        // Actions are reported by their generated method name (`Anon_3`, `_Foo`).
-        let action_names = prog.funs.iter().map(|f| f.action_name()).collect();
         Runtime {
             prog,
             code,
             module,
             config,
             globals,
-            machines: Vec::new(),
-            monitors: Vec::new(),
-            ops: Vec::new(),
+            machines,
+            monitors,
+            ops,
             current: 0,
             strategy,
-            trace: ScheduleTrace::default(),
+            trace: ScheduleTrace { steps: trace_steps, ..ScheduleTrace::default() },
             log: Vec::new(),
-            timeline: Timeline::new(config.timeline),
+            timeline,
             bug: None,
             cancelled,
             stopped: false,
@@ -521,13 +555,46 @@ impl<'p> Runtime<'p> {
             failure: None,
             java: java_semantics,
             next_op_id: 0,
-            action_names,
             format_buf: String::new(),
+            op_infos,
+            spare_execs,
+            machine_refs,
         }
     }
 
     /// Whether the schedule ran until nothing could run: not stopped by a bug, the step
     /// bound, cancellation, or the search cutting it at an explored state.
+    /// Empties the run's lists, keeping their memory for the next run (see [`Buffers`]).
+    /// Call it once the run's results have been read: it clears the machines, the
+    /// schedule trace and the timeline.
+    pub fn take_buffers(&mut self) -> Buffers {
+        for m in &mut self.machines {
+            if let Some(exec) = m.exec.take() {
+                self.spare_execs.push(exec);
+            }
+        }
+        for exec in &mut self.spare_execs {
+            exec.frames.clear();
+            exec.values.clear();
+            exec.iters.clear();
+            exec.pending = None;
+        }
+        self.machines.clear();
+        self.monitors.clear();
+        self.ops.clear();
+        self.trace.steps.clear();
+        Buffers {
+            machines: std::mem::take(&mut self.machines),
+            monitors: std::mem::take(&mut self.monitors),
+            ops: std::mem::take(&mut self.ops),
+            op_infos: std::mem::take(&mut self.op_infos),
+            spare_execs: std::mem::take(&mut self.spare_execs),
+            trace_steps: std::mem::take(&mut self.trace.steps),
+            timeline: Some(std::mem::take(&mut self.timeline)),
+            machine_refs: std::mem::take(&mut self.machine_refs),
+        }
+    }
+
     pub fn ran_to_end(&self) -> bool {
         self.fully_explored && self.bug.is_none()
     }
@@ -539,7 +606,7 @@ impl<'p> Runtime<'p> {
     }
 
     pub fn fun_name(&self, f: FunId) -> &str {
-        &self.action_names[f.idx()]
+        &self.code.action_names[f.idx()]
     }
 
     /// Adds a line to the text log; `line` runs only when the log is produced. The line
@@ -765,7 +832,7 @@ impl<'p> Runtime<'p> {
         &mut self.ops[i]
     }
 
-    fn new_op(&mut self, name: String, machine: Option<usize>) -> u64 {
+    fn new_op(&mut self, name: Rc<str>, machine: Option<usize>) -> u64 {
         let id = self.next_op_id;
         self.next_op_id += 1;
         self.ops.push(Operation {
@@ -841,14 +908,23 @@ impl<'p> Runtime<'p> {
         self.op_mut(cur).kind = kind;
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
-        let infos: Vec<OpInfo> = self
-            .ops
-            .iter()
-            .map(|o| OpInfo { id: o.id, enabled: o.status == OpStatus::Enabled, kind: o.kind, receiver: o.receiver })
-            .collect();
-        let mut infos = infos;
+        // reuse one buffer for the whole schedule: this runs at every step
+        let mut infos = std::mem::take(&mut self.op_infos);
+        infos.clear();
+        infos.extend(self.ops.iter().map(|o| OpInfo {
+            id: o.id,
+            enabled: o.status == OpStatus::Enabled,
+            kind: o.kind,
+            receiver: o.receiver,
+        }));
+        let r = self.schedule_from(&mut infos);
+        self.op_infos = infos;
+        r
+    }
+
+    fn schedule_from(&mut self, infos: &mut [OpInfo]) -> Result<(), Stop> {
         if self.time.as_ref().is_some_and(|t| t.opts.timed) {
-            self.filter_timed(&mut infos);
+            self.filter_timed(infos);
         }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
@@ -859,7 +935,7 @@ impl<'p> Runtime<'p> {
             }
         }
         let current = self.current;
-        match self.strategy.next_operation(current, &infos) {
+        match self.strategy.next_operation(current, infos) {
             Some(next) => {
                 self.step_work = 0;
                 self.next_cancel_work = 4096;
@@ -884,7 +960,7 @@ impl<'p> Runtime<'p> {
 
     fn check_deadlock(&mut self) -> Result<(), Stop> {
         let blocked: Vec<String> =
-            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).map(|o| o.name.clone()).collect();
+            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).map(|o| o.name.to_string()).collect();
         if blocked.is_empty() {
             return Ok(());
         }
@@ -950,9 +1026,8 @@ impl<'p> Runtime<'p> {
             // The test task creates the main machine.
             self.schedule_next(SchedKind::Create)?;
             let iface = self.prog.machine(main).interface.unwrap_or(InterfaceId(0));
-            let name = self.prog.machine(main).name.clone();
             let (midx, _) =
-                self.instantiate_machine(main, iface, &name, Value::Null, crate::checker::time::Time::default());
+                self.instantiate_machine(main, iface, true, Value::Null, crate::checker::time::Time::default());
             let creator = format!("task '{}'", 1);
             let mname = self.machines[midx].name.clone();
             self.log(|_| format!("<CreateLog> {} was created by {}.", mname, creator));
@@ -1042,7 +1117,7 @@ impl<'p> Runtime<'p> {
         &mut self,
         decl: MachineId,
         iface: InterfaceId,
-        name: &str,
+        main: bool,
         payload: Value,
         clock: crate::checker::time::Time,
     ) -> (usize, u64) {
@@ -1052,11 +1127,20 @@ impl<'p> Runtime<'p> {
         }
         let idx = self.machines.len();
         let id = self.next_op_id;
-        let display: Rc<str> = Rc::from(format!("{}({})", name, id));
-        let permissions: Rc<[EventId]> = self.code.permissions[iface.idx()].clone();
-        let this = Rc::new(MachineRef { id, name: display.clone(), permissions });
-        let fields =
-            self.prog.machine(decl).fields.iter().map(|v| default_value(&self.prog.var(*v).ty, self.prog)).collect();
+        // the main machine is named after its type, the others after their interface
+        let this = match self.machine_refs.get(&(main, decl, iface, id)) {
+            Some(r) => r.clone(),
+            None => {
+                let name = if main { &self.prog.machine(decl).name } else { &self.prog.interface(iface).name };
+                let display: Rc<str> = Rc::from(format!("{}({})", name, id));
+                let permissions: Rc<[EventId]> = self.code.permissions[iface.idx()].clone();
+                let r = Rc::new(MachineRef { id, name: display, permissions });
+                self.machine_refs.insert((main, decl, iface, id), r.clone());
+                r
+            }
+        };
+        let display = this.name.clone();
+        let fields = self.code.field_defaults[decl.idx()].clone();
         let start = self.prog.machine(decl).start_state;
         self.machines.push(Machine {
             id,
@@ -1078,7 +1162,7 @@ impl<'p> Runtime<'p> {
             clock,
             vt: VectorTime::new(id),
         });
-        let op = self.new_op(display.to_string(), Some(idx));
+        let op = self.new_op(display, Some(idx));
         debug_assert_eq!(op, id);
         (idx, id)
     }
@@ -1092,12 +1176,11 @@ impl<'p> Runtime<'p> {
 
     /// Completes a `new I(...)` once the `Create` scheduling point has passed.
     pub fn finish_create(&mut self, creator: usize, machine: MachineId, iface: InterfaceId, payload: Value) -> Value {
-        let name = self.prog.interface(iface).name.clone();
         let clock = self.machines[creator].clock.clone();
         if let Some(d) = self.driver_facts.as_mut() {
             d.record_create_payload(self.prog, self.machines[creator].decl, machine, &payload);
         }
-        let (idx, _) = self.instantiate_machine(machine, iface, &name, payload, clock);
+        let (idx, _) = self.instantiate_machine(machine, iface, false, payload, clock);
         let created = self.machines[idx].name.clone();
         let creator_name = self.machines[creator].name.clone();
         self.log(|_| format!("<CreateLog> {} was created by {}.", created, creator_name));
@@ -1328,15 +1411,14 @@ impl<'p> Runtime<'p> {
     /// `AnnounceInternal`: delivers an event to the monitors observing the sender's interface.
     pub fn announce_internal(&mut self, sender: usize, e: &Event) -> Result<(), Stop> {
         let iface = self.machines[sender].iface;
-        let mut targets = Vec::new();
-        for (mon, ifaces) in &self.monitor_map {
-            if ifaces.contains(&iface) {
-                if let Some(i) = self.monitors.iter().position(|m| m.decl == *mon) {
-                    targets.push(i);
-                }
+        // runs every send, so it indexes instead of collecting the targets first (the
+        // monitor map and the monitors do not change while monitors run)
+        for k in 0..self.monitor_map.len() {
+            let (mon, ref ifaces) = self.monitor_map[k];
+            if !ifaces.contains(&iface) {
+                continue;
             }
-        }
-        for i in targets {
+            let Some(i) = self.monitors.iter().position(|m| m.decl == mon) else { continue };
             if self.prog.machine(self.monitors[i].decl).observes.contains(&e.id) {
                 self.monitor_event(i, e.clone(), Some(sender))?;
             }
@@ -1471,14 +1553,19 @@ impl<'p> Runtime<'p> {
                         let ev = self.xml_event(e.id);
                         self.xlog("DequeueEvent", &[("id", &name), ("state", &state), ("event", &ev)], None);
                     }
-                    let mut label = event_cs_name(self.prog, e.id).to_string();
-                    if self.timeline.config.payload && e.payload != Value::Null {
-                        label = format!(
+                    let event_name = event_cs_name(self.prog, e.id);
+                    let label: std::borrow::Cow<str> = if self.timeline.config.payload && e.payload != Value::Null {
+                        format!(
                             "{}#{}",
-                            label,
+                            event_name,
                             crate::checker::feedback::stable_hash(&e.payload.to_display(self.prog))
-                        );
-                    }
+                        )
+                        .into()
+                    } else {
+                        event_name.into()
+                    };
+                    // events with a payload label have no key: the label depends on the payload
+                    let label_key = matches!(label, std::borrow::Cow::Borrowed(_)).then_some(e.id.0 as u64);
                     let time = if self.timeline.config.repr.causal() {
                         if let Some(vt) = &e.vt {
                             self.machines[m].vt.merge(vt);
@@ -1487,7 +1574,8 @@ impl<'p> Runtime<'p> {
                     } else {
                         None
                     };
-                    self.timeline.record(&name, &label, time);
+                    let receiver_key = self.machines[m].id;
+                    self.timeline.record_keyed((Some(receiver_key), &name), (label_key, &label), time);
                     self.time_receive(m, &e);
                     self.machines[m].stage = Stage::Handle(e);
                 }
@@ -1730,20 +1818,34 @@ impl<'p> Runtime<'p> {
             self.xlog("Action", &attrs, None);
         }
         let arg = if self.prog.fun(f).params.is_empty() { Value::Null } else { self.take_payload(m, e) };
-        let exec = self.new_exec(f, vec![arg]);
+        let exec = self.new_exec(f, arg);
         self.machines[m].exec = Some(exec);
     }
 
-    pub fn new_exec(&self, f: FunId, args: Vec<Value>) -> Exec {
-        let mut exec = Exec { action: self.fun_name(f).to_string(), ..Exec::default() };
+    /// A new action that runs `f` with argument `arg` (ignored when `f` takes none). Reuses
+    /// the buffers of a finished action, so starting an action does not allocate.
+    pub fn new_exec(&mut self, f: FunId, arg: Value) -> Box<Exec> {
+        let mut exec = self.spare_execs.pop().unwrap_or_default();
+        exec.action = self.code.action_names[f.idx()].clone();
         if let Some(code) = self.code.get(f) {
             // room for the locals and a typical operand stack and call depth
-            exec.values = Vec::with_capacity(code.frame_size as usize + 32);
-            let nargs = args.len();
-            exec.values.extend(args);
+            exec.values.reserve(code.frame_size as usize + 32);
+            let nargs = if self.prog.fun(f).params.is_empty() { 0 } else { 1 };
+            if nargs == 1 {
+                exec.values.push(arg);
+            }
             exec.push_frame(code.clone(), f, nargs);
         }
         exec
+    }
+
+    /// Keeps the buffers of a finished action for [`Runtime::new_exec`].
+    pub(crate) fn recycle_exec(&mut self, mut exec: Box<Exec>) {
+        exec.frames.clear();
+        exec.values.clear();
+        exec.iters.clear();
+        exec.pending = None;
+        self.spare_execs.push(exec);
     }
 
     fn enter_state(&mut self, m: usize, e: Event) {
@@ -1799,8 +1901,9 @@ impl<'p> Runtime<'p> {
         self.cov_goto(m, target);
         let name = self.machines[m].name.clone();
         let cur = self.log_state_name(m);
-        let mname = self.prog.machine(self.machines[m].decl).cs_name.clone();
-        let tname = self.prog.state(target).name.clone();
+        let prog = self.prog;
+        let mname = &prog.machine(self.machines[m].decl).cs_name;
+        let tname = &prog.state(target).name;
         self.log(|_| {
             format!(
                 "<GotoLog> {} is transitioning from state '{}' to state 'PImplementation.{}.{}'.",
@@ -1813,7 +1916,7 @@ impl<'p> Runtime<'p> {
                 log: Some(format!("{} is transitioning from state '{}' to state '{}'.", name, short_cur, tname)),
                 id: Some(name.to_string()),
                 start_state: Some(short_cur),
-                end_state: Some(tname.clone()),
+                end_state: Some(tname.to_string()),
                 ..Default::default()
             };
             self.jlog("GotoState", d, true);
@@ -1891,13 +1994,7 @@ impl<'p> Runtime<'p> {
                     satisfied: false,
                 });
             }
-            let fields = self
-                .prog
-                .machine(decl)
-                .fields
-                .iter()
-                .map(|v| default_value(&self.prog.var(*v).ty, self.prog))
-                .collect();
+            let fields = self.code.field_defaults[decl.idx()].clone();
             let idx = self.monitors.len();
             self.monitors.push(Monitor {
                 decl,
@@ -1930,8 +2027,7 @@ impl<'p> Runtime<'p> {
     /// Creates a monitor of type `decl` outside a test (as PObserve does) and runs its
     /// start state's entry action. Returns its index in `Runtime::monitors`.
     pub fn start_monitor(&mut self, decl: MachineId) -> Result<usize, Stop> {
-        let fields =
-            self.prog.machine(decl).fields.iter().map(|v| default_value(&self.prog.var(*v).ty, self.prog)).collect();
+        let fields = self.code.field_defaults[decl.idx()].clone();
         let idx = self.monitors.len();
         self.monitors.push(Monitor {
             decl,
@@ -2020,7 +2116,7 @@ impl<'p> Runtime<'p> {
                 _ => e.payload.clone(),
             }
         };
-        let exec = self.new_exec(f, vec![arg]);
+        let exec = self.new_exec(f, arg);
         match self.run_exec(Actor::Monitor(mon), exec)? {
             ExecOutcome::Finished(_) | ExecOutcome::Unwound => Ok(()),
             // creating machines, sending and receiving throw in a monitor
@@ -2559,7 +2655,7 @@ impl Exec {
 /// Outcome of running an action.
 pub enum ExecOutcome {
     Finished(Value),
-    Yield(Exec, SchedKind),
+    Yield(Box<Exec>, SchedKind),
     /// A raise or goto unwound the action.
     Unwound,
 }

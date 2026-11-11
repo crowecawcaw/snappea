@@ -84,7 +84,7 @@ fn merged_statistics_are_those_of_all_workers() {
         assert_eq!(m.total_fair_steps, sum(|r| r.report.total_fair_steps));
         assert_eq!(m.min_fair_steps, alone.iter().filter_map(|r| r.report.min_fair_steps).min());
         assert_eq!(m.max_fair_steps, alone.iter().filter_map(|r| r.report.max_fair_steps).max());
-        let timelines: BTreeSet<String> = alone.iter().flat_map(|r| r.report.timelines.clone()).collect();
+        let timelines: BTreeSet<u128> = alone.iter().flat_map(|r| r.report.timelines.clone()).collect();
         assert_eq!(m.timelines, timelines);
         // scenario coverage, in attachment order
         let names: Vec<&str> = m.scenarios.iter().map(|s| s.name.as_str()).collect();
@@ -92,7 +92,7 @@ fn merged_statistics_are_those_of_all_workers() {
         let triggered = sum(|r| r.report.scenarios[0].trigger_count);
         assert!(triggered > 0 && triggered < 203, "{}", triggered);
         assert_eq!(m.scenarios[0].trigger_count, triggered);
-        let satisfying: BTreeSet<String> =
+        let satisfying: BTreeSet<u128> =
             alone.iter().flat_map(|r| r.report.scenarios[0].satisfying_timelines.clone()).collect();
         assert_eq!(m.scenarios[0].satisfying_timelines, satisfying);
         assert_eq!(m.scenarios[1].trigger_count, 0);

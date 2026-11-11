@@ -436,23 +436,28 @@ fn arith(op: BinOp, a: Value, b: Value) -> Result<Value, Exception> {
 
 impl<'p> Runtime<'p> {
     /// Runs (or resumes) an action until it finishes, unwinds or reaches a scheduling point.
-    pub fn run_exec(&mut self, actor: Actor, mut exec: Exec) -> Result<ExecOutcome, Stop> {
+    pub fn run_exec(&mut self, actor: Actor, mut exec: Box<Exec>) -> Result<ExecOutcome, Stop> {
         let r = self.run_exec_inner(actor, &mut exec);
+        if let Ok(Flow::Yield(kind)) = r {
+            return Ok(ExecOutcome::Yield(exec, kind));
+        }
+        let outcome = self.exec_outcome(actor, &exec, r);
+        self.recycle_exec(exec);
+        outcome
+    }
+
+    fn exec_outcome(&mut self, actor: Actor, exec: &Exec, r: Result<Flow, Fault>) -> Result<ExecOutcome, Stop> {
         match r {
             Ok(Flow::Finished(v)) => Ok(ExecOutcome::Finished(v)),
-            Ok(Flow::Yield(kind)) => Ok(ExecOutcome::Yield(exec, kind)),
+            Ok(Flow::Yield(_)) => unreachable!("run_exec returns yields"),
             Ok(Flow::Unwound) => {
                 if let (Actor::Machine(m), true) = (actor, self.xml.is_some()) {
                     // `raise`/`goto` return through a `PNonStandardReturnException`
                     const TY: &str = "PChecker.Runtime.Exceptions.PNonStandardReturnException";
                     let text = format!("{}: Exception of type '{}' was thrown.", TY, TY);
                     let (id, state) = (self.machines[m].name.to_string(), self.machine_state_name(m));
-                    let attrs = [
-                        ("id", id.as_str()),
-                        ("state", state.as_str()),
-                        ("action", exec.action.as_str()),
-                        ("type", TY),
-                    ];
+                    let attrs =
+                        [("id", id.as_str()), ("state", state.as_str()), ("action", &*exec.action), ("type", TY)];
                     self.xlog("ExceptionThrown", &attrs, Some(&text));
                     let handled: Vec<_> =
                         attrs.iter().copied().filter(|(k, v)| *k != "state" || !v.is_empty()).collect();
@@ -562,6 +567,15 @@ impl<'p> Runtime<'p> {
             // `halt` is received without a case: re-raise it (`case PHalt _hv: RaiseEvent(_hv)`).
             self.machines[m].pending_transition = Transition::Raise(e);
             Flow::Unwound
+        }
+    }
+
+    /// Logs a `print`ed line; `text` may be `None` when neither log is produced.
+    fn print(&mut self, text: Option<String>) {
+        let text = text.unwrap_or_default();
+        self.log(|_| format!("<PrintLog> {}", text));
+        if self.json_enabled() {
+            self.jlog("Print", crate::checker::jsonlog::Details { log: Some(text), ..Default::default() }, false);
         }
     }
 
@@ -824,9 +838,8 @@ impl<'p> Runtime<'p> {
         // loop and the others before the part they stand for. The bound is checked as if
         // the units were counted one at a time, so it is reported with the counter just
         // over it.
-        macro_rules! charge {
+        macro_rules! check_bound {
             ($n:expr) => {
-                *work += $n;
                 if limit > 0 && *work > limit {
                     *work = (*work + 1 - $n).max(limit + 1);
                     self.step_work = *work;
@@ -836,13 +849,29 @@ impl<'p> Runtime<'p> {
                 }
             };
         }
+        // Each instruction compares the counter with one threshold: the work bound or the
+        // next cancellation poll, whichever comes first.
         let mut next_poll = self.next_cancel_work;
+        let threshold = |next_poll: u64| if limit > 0 { next_poll.min(limit + 1) } else { next_poll };
+        let mut stop_at = threshold(next_poll);
+        macro_rules! charge {
+            ($n:expr) => {
+                *work += $n;
+                if *work >= stop_at {
+                    check_bound!($n);
+                }
+            };
+        }
         loop {
-            charge!(1);
-            if *work >= next_poll {
-                self.check_cancelled()?;
-                next_poll = work.saturating_add(4096);
-                self.next_cancel_work = next_poll;
+            *work += 1;
+            if *work >= stop_at {
+                check_bound!(1);
+                if *work >= next_poll {
+                    self.check_cancelled()?;
+                    next_poll = work.saturating_add(4096);
+                    self.next_cancel_work = next_poll;
+                }
+                stop_at = threshold(next_poll);
             }
             // Inspection is only active in the logged replay, never during search.
             let stack = &mut exec.values;
@@ -1027,6 +1056,20 @@ impl<'p> Runtime<'p> {
                     let text = self.format(base, &stack[at..], types)?;
                     stack.truncate(at);
                     stack.push(Value::Str(Rc::from(text)));
+                }
+                Op::PrintFormat { base, nargs, types } => {
+                    let at = stack.len() - *nargs as usize;
+                    let text = match self.logging || self.json_enabled() || java {
+                        true => Some(self.format(base, &stack[at..], types)?),
+                        false => None,
+                    };
+                    stack.truncate(at);
+                    charge!(1);
+                    if !java {
+                        self.step_work = *work;
+                        self.print(text);
+                        *work = self.step_work;
+                    }
                 }
                 Op::UnreadFormat { base, nargs, types } => {
                     let at = stack.len() - *nargs as usize;
@@ -1436,15 +1479,8 @@ impl<'p> Runtime<'p> {
             }
             Op::Print => {
                 let msg = pop(stack);
-                let text = msg.to_display(prog);
-                self.log(|_| format!("<PrintLog> {}", text));
-                if self.json_enabled() {
-                    self.jlog(
-                        "Print",
-                        crate::checker::jsonlog::Details { log: Some(text), ..Default::default() },
-                        false,
-                    );
-                }
+                let text = (self.logging || self.json_enabled()).then(|| msg.to_display(prog));
+                self.print(text);
             }
             Op::Create { iface, has_payload } => {
                 let payload = if *has_payload { pop(stack) } else { Value::Null };
@@ -1483,26 +1519,29 @@ impl<'p> Runtime<'p> {
                         .from_source(crate::checker::runtime::P_CHECKER_CORE)
                         .into());
                 };
+                // names for the error messages only
                 let name = self.machines[m].name.clone();
-                let state = self.machine_state_name(m);
                 let ev_id = match &event {
                     Value::Event(e) => *e,
                     Value::Null => {
                         let msg = format!(
                             "Machine cannot send a null event. Machine {} trying to send null event in state {}.",
-                            name, state
+                            name,
+                            self.machine_state_name(m)
                         );
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Events.Event", prog).into()),
                 };
-                let ev_name = self.event_name(ev_id).to_string();
+                let ev_name = self.event_name(ev_id);
                 let target = match target {
                     Value::Machine(r) => r,
                     Value::Null => {
                         let msg = format!(
                             "Target in send cannot be null. Machine {} trying to send event {} to null target in state {}.",
-                            name, ev_name, state
+                            name,
+                            ev_name,
+                            self.machine_state_name(m)
                         );
                         return Err(self.report_bug(msg).into());
                     }
@@ -1704,8 +1743,13 @@ impl<'p> Runtime<'p> {
             exec.pending = Some(Pending::ReceiveFound { cases, event: e });
             return Ok(Flow::Yield(SchedKind::Receive));
         }
-        let names: Vec<String> = wait.iter().map(|e| self.event_name(*e).to_string()).collect();
-        let event_names = if names.len() == 1 {
+        // the names are for the logs only; a search runs without them
+        let logged = self.logging || self.json_enabled();
+        let names: Vec<String> =
+            if logged { wait.iter().map(|e| self.event_name(*e).to_string()).collect() } else { Vec::new() };
+        let event_names = if !logged {
+            String::new()
+        } else if names.len() == 1 {
             // the single-type overload logs the full type name
             format!("'{}'", event_cs_full_name(self.prog, wait[0]))
         } else {
@@ -1849,7 +1893,12 @@ mod tests {
 
     /// [`run`], in Java semantics if `java`.
     fn run_with(prog: &Program, code: &Code, max_work_per_step: u64, java: bool) -> (Option<String>, Vec<String>, u64) {
-        run_full(prog, code, max_work_per_step, java).0
+        run_full(prog, code, max_work_per_step, java, true).0
+    }
+
+    /// [`run`] without the text log, as a search runs: `print` builds no text.
+    fn run_quiet(prog: &Program, code: &Code, max_work_per_step: u64) -> (Option<String>, Vec<String>, u64) {
+        run_full(prog, code, max_work_per_step, false, false).0
     }
 
     /// [`run_with`], collecting coverage; also returns the code coverage probes that ran.
@@ -1858,10 +1907,11 @@ mod tests {
         code: &Code,
         max_work_per_step: u64,
         java: bool,
+        logging: bool,
     ) -> ((Option<String>, Vec<String>, u64), crate::checker::coverage::ProbeSet) {
         let tc = prog.test_cases().into_iter().next().expect("a test case");
         let (module, main) = prog.test_case_module(&tc);
-        let config = Config { max_work_per_step, ..Config::default() };
+        let config = Config { max_work_per_step, logging, ..Config::default() };
         let rng = Rc::new(std::cell::RefCell::new(crate::checker::random::RandomValueGenerator::new(0)));
         let mut strategy = crate::checker::strategy::RandomStrategy::new(1000, rng);
         let formatter = crate::checker::javafmt::JavaFormatter::new(prog);
@@ -1901,7 +1951,7 @@ mod tests {
         for bound in 1..1500 {
             assert_eq!(run(&a.program, &fused, bound), run(&a.program, &probed, bound), "{}", bound);
         }
-        let (_, hit) = run_full(&a.program, &probed, 0, false);
+        let (_, hit) = run_full(&a.program, &probed, 0, false, true);
         let missed: Vec<String> = (0..probed.probes.len() as u32)
             .filter(|i| !hit.contains(*i))
             .map(|i| format!("{:?}", probed.probes[i as usize].kind))
@@ -1953,8 +2003,13 @@ mod tests {
             let a = analyze(&src);
             let (fused, plain) = (compile_program(&a.program), compile_program_plain(&a.program));
             assert_eq!(unread_formats(&fused), 1);
+            assert!(fused.funs.iter().flatten().flat_map(|c| &c.ops).any(|op| matches!(op, Op::PrintFormat { .. })));
             for bound in 1..bounds {
                 assert_eq!(run(&a.program, &fused, bound), run(&a.program, &plain, bound), "{} {}", index, bound);
+                // without a log, `print format(...)` builds no string but counts the same work
+                let quiet = run_quiet(&a.program, &fused, bound);
+                assert_eq!(quiet, run_quiet(&a.program, &plain, bound), "{} {}", index, bound);
+                assert_eq!(quiet.2, run(&a.program, &plain, bound).2, "{} {}", index, bound);
             }
         }
     }

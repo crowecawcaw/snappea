@@ -140,7 +140,9 @@ pub struct TestReport {
     pub max_fair_steps_hit_in_fair: usize,
     pub max_unfair_steps_hit_in_fair: usize,
     pub max_unfair_steps_hit_in_unfair: usize,
-    pub timelines: BTreeSet<String>,
+    /// Fingerprints of the distinct abstract timelines explored (see
+    /// [`crate::checker::timeline::Timeline::fingerprint`]).
+    pub timelines: BTreeSet<u128>,
     /// Scenario coverage, per scenario (in attachment order).
     pub scenarios: Vec<ScenarioCoverage>,
 }
@@ -151,8 +153,8 @@ pub struct ScenarioCoverage {
     pub name: String,
     /// Schedules that satisfied the scenario.
     pub trigger_count: usize,
-    /// Distinct abstract timelines of the satisfying schedules.
-    pub satisfying_timelines: BTreeSet<String>,
+    /// Fingerprints of the distinct abstract timelines of the satisfying schedules.
+    pub satisfying_timelines: BTreeSet<u128>,
     /// Most distinct states reached in one schedule.
     pub max_states_reached: usize,
     pub total_states: usize,
@@ -861,6 +863,8 @@ impl<'p> Checker<'p> {
             .clone()
             .filter(|_| !is_replay)
             .map(|d| crate::checker::driver_facts::DriverFacts::new(d, main));
+        // memory each schedule leaves for the next (see `Buffers`)
+        let mut buffers = crate::checker::runtime::Buffers::default();
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -898,6 +902,7 @@ impl<'p> Checker<'p> {
                         }
                     }),
                     driver_facts: driver_facts.take(),
+                    buffers: std::mem::take(&mut buffers),
                     ..Setup::default()
                 };
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
@@ -1003,7 +1008,7 @@ impl<'p> Checker<'p> {
                         r.max_unfair_steps_hit_in_unfair += 1;
                     }
                 }
-                let abstract_timeline = rt.timeline.abstract_timeline();
+                let abstract_timeline = rt.timeline.fingerprint();
                 // scenario coverage (all attached scenarios are tracked, even if never reached)
                 for sc in &rt.scenarios {
                     let cov = r.scenario(&sc.name);
@@ -1013,7 +1018,7 @@ impl<'p> Checker<'p> {
                     }
                     if sc.satisfied {
                         cov.trigger_count += 1;
-                        cov.satisfying_timelines.insert(abstract_timeline.clone());
+                        cov.satisfying_timelines.insert(abstract_timeline);
                     }
                 }
                 r.timelines.insert(abstract_timeline);
@@ -1056,6 +1061,7 @@ impl<'p> Checker<'p> {
                     d.end_schedule(stopped, rt.bound_hit_at.is_some());
                     driver_facts = Some(d);
                 }
+                buffers = rt.take_buffers();
             }
             // a bug that ends the run ends it, deadline or not
             let ended_by_bug = !opts.full_exploration && result.report.num_bugs > 0;
