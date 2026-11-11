@@ -231,7 +231,7 @@ pub struct Machine {
     /// `UnhandledEventException` log lines).
     pub popped_from: Option<StateId>,
     pub stage: Stage,
-    pub exec: Option<Exec>,
+    pub exec: Option<Box<Exec>>,
     /// Event delivered to a blocked `receive`.
     pub received: Option<Event>,
     pub this: Rc<MachineRef>,
@@ -448,7 +448,9 @@ pub struct Runtime<'p> {
     /// The operations offered to the strategy, rebuilt at every scheduling step.
     op_infos: Vec<OpInfo>,
     /// Finished actions whose buffers [`Runtime::new_exec`] reuses.
-    spare_execs: Vec<Exec>,
+    // boxed so that reusing one keeps its allocation, which machines hold as a Box
+    #[allow(clippy::vec_box)]
+    spare_execs: Vec<Box<Exec>>,
 }
 
 impl<'p> Runtime<'p> {
@@ -1753,7 +1755,7 @@ impl<'p> Runtime<'p> {
 
     /// A new action that runs `f` with argument `arg` (ignored when `f` takes none). Reuses
     /// the buffers of a finished action, so starting an action does not allocate.
-    pub fn new_exec(&mut self, f: FunId, arg: Value) -> Exec {
+    pub fn new_exec(&mut self, f: FunId, arg: Value) -> Box<Exec> {
         let mut exec = self.spare_execs.pop().unwrap_or_default();
         exec.action = self.code.action_names[f.idx()].clone();
         if let Some(code) = self.code.get(f) {
@@ -1769,7 +1771,7 @@ impl<'p> Runtime<'p> {
     }
 
     /// Keeps the buffers of a finished action for [`Runtime::new_exec`].
-    pub(crate) fn recycle_exec(&mut self, mut exec: Exec) {
+    pub(crate) fn recycle_exec(&mut self, mut exec: Box<Exec>) {
         exec.frames.clear();
         exec.values.clear();
         exec.iters.clear();
@@ -2590,7 +2592,7 @@ impl Exec {
 /// Outcome of running an action.
 pub enum ExecOutcome {
     Finished(Value),
-    Yield(Exec, SchedKind),
+    Yield(Box<Exec>, SchedKind),
     /// A raise or goto unwound the action.
     Unwound,
 }

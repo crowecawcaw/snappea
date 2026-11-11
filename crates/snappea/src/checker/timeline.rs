@@ -132,14 +132,15 @@ impl VectorTime {
 
 /// A 128-bit hash of a receiver or label name, for [`Timeline::fingerprint`].
 fn name_hash(s: &str) -> u128 {
-    use std::hash::Hasher;
-    let lane = |seed: u8| {
-        let mut h = std::hash::DefaultHasher::new();
-        h.write_u8(seed);
-        h.write(s.as_bytes());
-        h.finish() as u128
-    };
-    (lane(0) << 64) | lane(1)
+    let (mut hi, mut lo) = (0x4528_21e6_38d0_1377u64 ^ s.len() as u64, 0xbe54_66cf_34e9_0c6cu64 ^ s.len() as u64);
+    for chunk in s.as_bytes().chunks(8) {
+        let mut word = [0u8; 8];
+        word[..chunk.len()].copy_from_slice(chunk);
+        let w = u64::from_le_bytes(word);
+        hi = mix64(hi ^ w).wrapping_add(0x9e37_79b9_7f4a_7c15);
+        lo = mix64(lo.rotate_left(29) ^ w);
+    }
+    ((mix64(hi) as u128) << 64) | mix64(lo) as u128
 }
 
 /// The SplitMix64 finalizer: a fast, well-mixing bijection on 64 bits.

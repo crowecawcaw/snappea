@@ -436,7 +436,7 @@ fn arith(op: BinOp, a: Value, b: Value) -> Result<Value, Exception> {
 
 impl<'p> Runtime<'p> {
     /// Runs (or resumes) an action until it finishes, unwinds or reaches a scheduling point.
-    pub fn run_exec(&mut self, actor: Actor, mut exec: Exec) -> Result<ExecOutcome, Stop> {
+    pub fn run_exec(&mut self, actor: Actor, mut exec: Box<Exec>) -> Result<ExecOutcome, Stop> {
         let r = self.run_exec_inner(actor, &mut exec);
         if let Ok(Flow::Yield(kind)) = r {
             return Ok(ExecOutcome::Yield(exec, kind));
