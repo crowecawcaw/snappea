@@ -81,6 +81,7 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         if unread.iter().flatten().any(|u| *u) {
             funs = compile_all(&unread);
         }
+        skip_empty_calls(&mut funs);
     }
     let permissions = (0..prog.interfaces.len())
         .map(|i| Rc::from(prog.interface_receives(crate::sema::InterfaceId(i as u32))))
@@ -92,6 +93,21 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         .map(|m| m.fields.iter().map(|v| crate::checker::value::default_value(&prog.var(*v).ty, prog)).collect())
         .collect();
     Code { funs, permissions, probes, action_names, field_defaults }
+}
+
+/// Rewrites calls of functions whose code is just `ReturnNull` to `CallEmpty`.
+fn skip_empty_calls(funs: &mut [Option<Rc<CodeBlock>>]) {
+    let empty: Vec<bool> =
+        funs.iter().map(|c| c.as_deref().is_some_and(|c| matches!(c.ops[..], [Op::ReturnNull]))).collect();
+    for code in funs.iter_mut().flatten() {
+        let code = Rc::get_mut(code).expect("code is not shared yet");
+        for op in &mut code.ops {
+            match *op {
+                Op::Call { fun, nargs } if empty[fun.idx()] => *op = Op::CallEmpty { nargs },
+                _ => {}
+            }
+        }
+    }
 }
 
 /// For each parameter of `code`, whether the function never reads it, and cannot expose
@@ -114,6 +130,7 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             // calls, scheduling points, leaving the action, and choices (which consult the
             // strategy)
             Op::Call { .. }
+            | Op::CallEmpty { .. }
             | Op::Create { .. }
             | Op::Send { .. }
             | Op::Raise { .. }

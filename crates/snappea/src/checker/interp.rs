@@ -1257,6 +1257,17 @@ impl<'p> Runtime<'p> {
         let inspecting = self.config.inspection_trace && self.json_enabled();
         let stack = &mut exec.values;
         match op {
+            Op::CallEmpty { nargs } => {
+                // the callee's `PushNull; Return`, counted as `charge!` would
+                self.step_work += 2;
+                let limit = self.config.max_work_per_step;
+                if limit > 0 && self.step_work > limit {
+                    self.step_work = (self.step_work - 1).max(limit + 1);
+                    return Err(self.work_bound_exceeded(actor));
+                }
+                stack.truncate(stack.len() - *nargs as usize);
+                stack.push(Value::Null);
+            }
             Op::SetGet => {
                 let idx = pop(stack);
                 let base = pop(stack);
@@ -2050,11 +2061,13 @@ mod tests {
                     j = sizeof(keys(m)) + m[sizeof(s)];
                     print format(\"{0} {1}\", total, sizeof(keys(m)));
                     helper();
+                    nothing(i, total + 1);
                     log(format(\"{0} {1}\", m[k], total / d), i);
                     i = i + 1;
                   }
                 }
               }
+              fun nothing(a: int, b: int) { }
               fun helper() { var z: int; if (z >= 0) { z = 1; } }
               fun log(msg: string, n: int) { msg = \"\"; if (n > 1) { n = 1; } }
             }
@@ -2077,6 +2090,7 @@ mod tests {
             assert!(has(|op| matches!(op, Op::KeyAt { map: Operand::Field(_), .. })));
             assert!(has(|op| matches!(op, Op::Move { src: Operand::Field(_), .. })));
             assert!(has(|op| matches!(op, Op::StoreLocalConsts(_))));
+            assert!(has(|op| matches!(op, Op::CallEmpty { nargs: 2 })));
             for bound in 1..bounds {
                 assert_eq!(run(&a.program, &fused, bound), run(&a.program, &plain, bound), "{} {}", index, bound);
                 // without a log, `print format(...)` builds no string but counts the same work

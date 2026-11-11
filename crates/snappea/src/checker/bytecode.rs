@@ -205,6 +205,12 @@ pub enum Op {
     JumpIfTrueElsePop(u32),
     /// `PushNull; Return`.
     ReturnNull,
+    /// `Call` of a function whose code is just `ReturnNull` (such as a logging helper
+    /// whose `print` is commented out): pops the arguments and pushes null without
+    /// entering a frame. Counts as `Call; PushNull; Return`.
+    CallEmpty {
+        nargs: u32,
+    },
     /// `Format; Print` (`print format(...)`), emitted only when `base` cannot fail to
     /// format with `nargs` arguments. Builds the string only when a log shows it (or, in
     /// Java semantics, where formatting can fail on the values).
