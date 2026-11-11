@@ -5,7 +5,9 @@
 //! A mutant runs only the test cases that ran the code it changes. The schedules are
 //! explored in rounds: each round gives every mutant still undetected one turn of
 //! [`TURN`] schedules on the next of its test cases, so when the time limit stops the run,
-//! every mutant has had about the same share. A mutant's turns depend only on its own
+//! every mutant has had about the same share. With several workers there is no wait at
+//! the end of a round: a free worker takes the next turn of the mutant with the fewest
+//! turns, so one slow turn holds up only its own mutant. A mutant's turns depend only on its own
 //! results and a fixed seed, so its verdict for a given number of turns does not depend
 //! on the machine; the time limit only decides how many turns it gets.
 //!
@@ -16,7 +18,7 @@
 //! running it to the end is what makes mutation testing slow.
 
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -296,42 +298,41 @@ pub fn run(
     if let Some(t) = progress.as_mut() {
         t.tick(host, |_| {});
     }
-    loop {
-        let round: Vec<(usize, Turn)> = order.iter().filter_map(|&i| states[i].next_turn().map(|t| (i, t))).collect();
-        if round.is_empty() {
-            break;
+    let covering: Vec<Vec<usize>> = states.iter().map(|s| s.covering.clone()).collect();
+    let job = Mutants { prog, mutants: &mutants, covering: &covering, passed, opts: &opts, baseline: &baseline };
+    let pending = states.iter().filter(|s| s.next_turn().is_some()).count();
+    let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, pending.max(1));
+    match threads {
+        Some(threads) if workers > 1 => {
+            time_limit_reached =
+                job.run_threads(host, threads, workers, deadline, &order, &mut states, &mut progress, &mut detected);
         }
-        let job = Mutants { prog, mutants: &mutants, states: &states, passed, opts: &opts, baseline: &baseline };
-        let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, round.len());
-        let results = match threads {
-            Some(threads) if workers > 1 => {
-                job.round_threads(host, threads, workers, deadline, &round, &mut progress, &mut detected)
+        _ => loop {
+            let round: Vec<(usize, Turn)> =
+                order.iter().filter_map(|&i| states[i].next_turn().map(|t| (i, t))).collect();
+            if round.is_empty() {
+                break;
             }
-            _ => {
-                let mut results = Vec::new();
-                for (k, (i, turn)) in round.iter().enumerate() {
-                    let mut out = Deadline { host: &*host, deadline };
-                    match job.turn(*i, turn, &mut out) {
-                        Some(r) => {
-                            detected += usize::from(r.bug || r.step_bound);
-                            results.push((k, r));
-                        }
-                        None => break,
+            let mut finished = true;
+            for (i, turn) in round {
+                let mut out = Deadline { host: &*host, deadline };
+                match job.turn(i, &turn, &mut out) {
+                    Some(r) => {
+                        detected += usize::from(r.bug || r.step_bound);
+                        states[i].record(turn, r);
                     }
-                    report_detected(host, &mut progress, detected);
+                    None => {
+                        finished = false;
+                        break;
+                    }
                 }
-                results
+                report_detected(host, &mut progress, detected);
             }
-        };
-        let finished = results.len() == round.len();
-        for (k, r) in results {
-            let (i, turn) = round[k];
-            states[i].record(turn, r);
-        }
-        if !finished || host.now() >= deadline {
-            time_limit_reached = true;
-            break;
-        }
+            if !finished || host.now() >= deadline {
+                time_limit_reached = true;
+                break;
+            }
+        },
     }
     let verdicts = states.iter().map(|s| s.verdict(passed)).collect();
     let report = Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached };
@@ -444,7 +445,8 @@ impl State {
 struct Mutants<'a> {
     prog: &'a Program,
     mutants: &'a [Mutant],
-    states: &'a [State],
+    /// The test cases that ran each mutant's code (see [`State::covering`]).
+    covering: &'a [Vec<usize>],
     passed: &'a [(TestCase, Hits)],
     opts: &'a CheckerOptions,
     /// Share of each test case's schedules that run to the step bound without a change.
@@ -459,7 +461,7 @@ impl Mutants<'_> {
         }
         let prog = mutation::apply(self.prog, &self.mutants[i]);
         let checker = Checker::new(&prog);
-        let t = self.states[i].covering[turn.test];
+        let t = self.covering[i][turn.test];
         let tc = &self.passed[t].0;
         // each visit to a test case explores other schedules
         let seed = self.opts.seed.wrapping_add(turn.visit.wrapping_mul(7919));
@@ -482,33 +484,68 @@ impl Mutants<'_> {
         })
     }
 
-    /// Takes the turns of `round` on `workers` threads, until `deadline`; returns the
-    /// results by position in `round`. Counts the mutants detected in `detected`.
+    /// Takes the turns of every mutant on `workers` threads, until each is done or
+    /// `deadline`, recording them in `states`; returns whether the deadline stopped it.
+    /// A worker takes the waiting turn of the mutant with the fewest turns (then the first
+    /// in `order`), so a slow turn holds up only its own mutant, not the other workers.
+    /// Counts the mutants detected in `detected`.
     #[allow(clippy::too_many_arguments)]
-    fn round_threads(
+    fn run_threads(
         &self,
         host: &mut dyn Host,
         threads: crate::host::Threads,
         workers: usize,
         deadline: f64,
-        round: &[(usize, Turn)],
+        order: &[usize],
+        states: &mut [State],
         progress: &mut Option<Tracker>,
         detected: &mut usize,
-    ) -> Vec<(usize, TurnResult)> {
-        let next = AtomicUsize::new(0);
+    ) -> bool {
+        let mut rank = vec![0; states.len()];
+        for (r, &i) in order.iter().enumerate() {
+            rank[i] = r;
+        }
+        // waiting turns as (turns taken, rank, mutant, test, visit), smallest first
+        type Waiting = std::cmp::Reverse<(usize, usize, usize, usize, u32)>;
+        struct Queue {
+            waiting: std::collections::BinaryHeap<Waiting>,
+            running: usize,
+            closed: bool,
+        }
+        let entry = |i: usize, s: &State, t: Turn| std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit));
+        let mut waiting = std::collections::BinaryHeap::new();
+        for &i in order {
+            if let Some(t) = states[i].next_turn() {
+                waiting.push(entry(i, &states[i], t));
+            }
+        }
+        let closed = waiting.is_empty();
+        let queue = (std::sync::Mutex::new(Queue { waiting, running: 0, closed }), std::sync::Condvar::new());
         let cancelled = AtomicBool::new(false);
-        let (tx, rx) = mpsc::channel::<(usize, TurnResult)>();
+        let (tx, rx) = mpsc::channel::<(usize, Turn, TurnResult)>();
         let jobs: Vec<Job<'_>> = (0..workers)
             .map(|_| {
-                let (tx, next, cancelled) = (tx.clone(), &next, &cancelled);
+                let (tx, queue, cancelled) = (tx.clone(), &queue, &cancelled);
                 Box::new(move || {
                     let mut out = Flag(cancelled);
                     loop {
-                        let k = next.fetch_add(1, Ordering::Relaxed);
-                        let Some((i, turn)) = round.get(k) else { break };
-                        match self.turn(*i, turn, &mut out) {
+                        let next = {
+                            let mut q = queue.0.lock().unwrap();
+                            loop {
+                                if let Some(std::cmp::Reverse((_, _, i, test, visit))) = q.waiting.pop() {
+                                    q.running += 1;
+                                    break Some((i, Turn { test, visit }));
+                                }
+                                if q.closed {
+                                    break None;
+                                }
+                                q = queue.1.wait(q).unwrap();
+                            }
+                        };
+                        let Some((i, turn)) = next else { break };
+                        match self.turn(i, &turn, &mut out) {
                             Some(r) => {
-                                let _ = tx.send((k, r));
+                                let _ = tx.send((i, turn, r));
                             }
                             None => break,
                         }
@@ -517,23 +554,39 @@ impl Mutants<'_> {
             })
             .collect();
         drop(tx);
-        let mut results = Vec::new();
+        let mut time_limit_reached = false;
         let mut main = || loop {
             match rx.recv_timeout(Duration::from_millis(20)) {
-                Ok(r) => {
-                    *detected += usize::from(r.1.bug || r.1.step_bound);
-                    results.push(r);
+                Ok((i, turn, r)) => {
+                    *detected += usize::from(r.bug || r.step_bound);
+                    states[i].record(turn, r);
+                    let mut q = queue.0.lock().unwrap();
+                    q.running -= 1;
+                    if let Some(t) = states[i].next_turn() {
+                        q.waiting.push(entry(i, &states[i], t));
+                        queue.1.notify_one();
+                    }
+                    if q.waiting.is_empty() && q.running == 0 {
+                        q.closed = true;
+                        queue.1.notify_all();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
             report_detected(host, progress, *detected);
-            if host.now() >= deadline {
-                cancelled.store(true, Ordering::Relaxed);
+            if host.now() >= deadline && !cancelled.load(Ordering::Relaxed) {
+                let mut q = queue.0.lock().unwrap();
+                if !q.closed {
+                    time_limit_reached = true;
+                    q.closed = true;
+                    cancelled.store(true, Ordering::Relaxed);
+                    queue.1.notify_all();
+                }
             }
         };
         (threads.run)(jobs, &mut main);
-        results
+        time_limit_reached
     }
 }
 
