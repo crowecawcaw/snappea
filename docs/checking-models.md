@@ -334,10 +334,10 @@ case did not take: forcing a condition that was always true changes nothing.
 Each mutant runs only the test cases that ran the changed code, in turns of 100
 schedules. First every mutant gets one turn on each of its test cases. Then the
 undetected ones get more turns, round robin over their test cases, up to a budget
-learned from the first turns: 10 times the schedules that 95% of the detected mutants
+learned from the first turns: 3 times the schedules that 95% of the detected mutants
 needed, at most 1000 (and 1000 when fewer than 20 were detected). Most mutants a test
-case detects, it detects within a few schedules, so on most models the budget is a few
-hundred schedules and the run ends sooner; JSON gives it as `schedules_per_mutant`. The
+case detects, it detects within a few schedules, so the budget is usually a few hundred
+schedules, often no more than the first turns already gave, and the run ends sooner; JSON gives it as `schedules_per_mutant`. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
 because no test case reached the failing schedule within its schedules;
 `search_complete: true` in JSON means every one of its test cases explored all of its

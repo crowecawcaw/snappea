@@ -56,7 +56,7 @@ pub fn runaway(hits: usize, schedules: usize, baseline: f64) -> bool {
 pub const BUDGET_SAMPLE: usize = 20;
 /// How many times the schedules most detected mutants needed an undetected mutant gets
 /// (see [`budget`]).
-pub const BUDGET_FACTOR: usize = 10;
+pub const BUDGET_FACTOR: usize = 3;
 
 /// Schedules an undetected mutant gets in all, learned from `needed`: the schedules each
 /// mutant detected in its first turns ran before a test case failed. It is
@@ -813,14 +813,14 @@ mod tests {
     }
 
     #[test]
-    fn the_budget_is_ten_times_what_most_detected_mutants_needed() {
+    fn the_budget_is_a_multiple_of_what_most_detected_mutants_needed() {
         // too few to learn from
         assert_eq!(budget(&mut [1; BUDGET_SAMPLE - 1]), SCHEDULES);
-        // 95% need at most 3 schedules: 30, in one turn
+        // 95% need at most 3 schedules: 9, in one turn
         let mut needed = vec![3; 19];
         needed.push(100);
         assert_eq!(budget(&mut needed), TURN);
-        let mut needed = [25; 20];
+        let mut needed = [80; 20];
         assert_eq!(budget(&mut needed), 300);
         assert_eq!(budget(&mut [400; 20]), SCHEDULES);
     }
