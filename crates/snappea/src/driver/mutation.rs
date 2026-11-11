@@ -44,12 +44,18 @@ pub const TURN: usize = 100;
 /// Schedules of a turn before a mutant can be stopped as a runaway (see [`runaway`]).
 pub const RUNAWAY_SAMPLE: usize = 10;
 
-/// Whether a mutant whose `hits` of `schedules` schedules stopped at the step bound keeps
-/// the model from finishing: at least [`RUNAWAY_SAMPLE`] schedules, at least 90% of them at
-/// the bound, while at most 40% of the unchanged model's (`baseline`) were. A model whose
+/// Whether a mutant whose `hits` of `schedules` schedules stopped at the step bound, the
+/// first `leading` of them in a row, keeps the model from finishing, while at most 40% of
+/// the unchanged model's schedules (`baseline`) did: at least 90% of at least
+/// [`RUNAWAY_SAMPLE`] schedules at the bound, or sooner, enough leading ones in a row that
+/// the unchanged model would do it less than 1% of the time (at least 2). A model whose
 /// schedules mostly run to the bound anyway (a server that never stops) has no runaways.
-pub fn runaway(hits: usize, schedules: usize, baseline: f64) -> bool {
-    schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9 && baseline <= 0.4
+pub fn runaway(hits: usize, schedules: usize, leading: usize, baseline: f64) -> bool {
+    if baseline > 0.4 {
+        return false;
+    }
+    let row = leading >= 2 && baseline.powi(leading as i32) < 0.01;
+    row || (schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9)
 }
 
 /// How many times the longest schedule of the unchanged model that ended a mutant's
@@ -692,11 +698,13 @@ struct Watch<'a> {
     runaway: bool,
     /// Steps of the longest schedule that ended.
     longest: Option<usize>,
+    /// Schedules at the bound before the first that ended.
+    leading: usize,
 }
 
 impl<'a> Watch<'a> {
     fn new(inner: Box<dyn Output + 'a>, baseline: f64) -> Self {
-        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false, longest: None }
+        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false, longest: None, leading: 0 }
     }
 }
 
@@ -709,7 +717,10 @@ impl Output for Watch<'_> {
         if !hit {
             self.longest = self.longest.max(Some(steps));
         }
-        self.runaway |= runaway(self.hits, self.schedules, self.baseline);
+        if hit && self.leading + 1 == self.schedules {
+            self.leading += 1;
+        }
+        self.runaway |= runaway(self.hits, self.schedules, self.leading, self.baseline);
     }
     fn cancelled(&mut self) -> bool {
         self.runaway || self.inner.cancelled()
@@ -796,12 +807,17 @@ mod tests {
     #[test]
     fn a_runaway_needs_nearly_every_schedule_at_the_bound_and_a_model_that_ends() {
         // too few schedules to tell
-        assert!(!runaway(RUNAWAY_SAMPLE - 1, RUNAWAY_SAMPLE - 1, 0.0));
-        assert!(runaway(RUNAWAY_SAMPLE, RUNAWAY_SAMPLE, 0.0));
-        assert!(runaway(9, 10, 0.4));
-        assert!(!runaway(8, 10, 0.0));
+        assert!(!runaway(1, 1, 1, 0.0));
+        assert!(runaway(9, 10, 0, 0.4));
+        assert!(!runaway(8, 10, 0, 0.0));
+        // the first ones in a row: 0.2^3 < 1%, 0.4^5 > 1%
+        assert!(!runaway(2, 2, 2, 0.2));
+        assert!(runaway(3, 3, 3, 0.2));
+        assert!(!runaway(5, 5, 5, 0.4));
+        assert!(runaway(6, 6, 6, 0.4));
+        assert!(runaway(2, 2, 2, 0.0));
         // the unchanged model runs to the bound often too
-        assert!(!runaway(10, 10, 0.5));
+        assert!(!runaway(10, 10, 10, 0.5));
     }
 
     #[test]
@@ -834,6 +850,15 @@ mod tests {
         s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false });
         assert!(s.next_turn(SCHEDULES / TURN).is_none());
         assert_eq!(s.detected, Some(0));
+    }
+
+    #[test]
+    fn mutants_stop_at_ten_times_the_longest_schedule_that_ended() {
+        assert_eq!(step_cap(Some(300), 100_000), 3000);
+        assert_eq!(step_cap(Some(50_000), 100_000), 100_000);
+        // no schedule ended: keep the bound
+        assert_eq!(step_cap(None, 10_000), 10_000);
+        assert_eq!(step_cap(Some(0), 10_000), STEP_FACTOR);
     }
 
     #[test]

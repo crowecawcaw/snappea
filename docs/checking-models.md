@@ -345,9 +345,11 @@ schedules, so no test case can detect it as written. Some mutants cannot be dete
 any test: `x < n` and `x <= n` behave the same if `x` never equals `n`.
 
 A mutant that keeps the model from finishing is stopped early. Before the mutants run,
-each test case runs 100 schedules of the unchanged model; when at most 40% of those
-reach the step bound and at least 90% of a mutant's schedules (after at least 10) do, the
-mutant stops and counts as detected by the step bound. Such a change, like an increment
+each test case runs 100 schedules of the unchanged model. When at most 40% of those
+reach the step bound and a mutant's do far more often, the mutant stops and counts as
+detected by the step bound: at least 90% of at least 10 schedules, or sooner, its first
+schedules all at the bound, as many in a row as the unchanged model would reach less
+than 1% of the time (2 when it never does). Such a change, like an increment
 turned into a decrement in a retry loop, breaks the model too badly to be a useful
 finding, and running it out costs more than every other mutant. The console adds one
 line, `3 of them only by running every schedule to the step bound: no spec checks that
