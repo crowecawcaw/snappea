@@ -195,10 +195,13 @@ pub struct Timeline {
     label_keys: Vec<Option<u64>>,
     /// The sum of the hashes of the distinct tokens so far (see [`Timeline::fingerprint`]).
     fingerprint: u128,
-    /// Pairwise: labels seen so far, per receiver.
-    seen: Vec<Vec<u32>>,
-    /// Pairwise: `(receiver, previous label, label)`.
-    pairs: FxHashSet<(u32, u32, u32)>,
+    /// Pairwise: the labels seen so far by each receiver, as a bitset.
+    seen: Vec<Vec<u64>>,
+    /// Pairwise: the tokens `(receiver, previous label, label)`, as a bitset of previous
+    /// labels per receiver and label: each event checks all previous labels at once.
+    pairs: Vec<Vec<Vec<u64>>>,
+    /// Pairwise: the number of tokens in `pairs`.
+    pair_count: usize,
     /// K-gram: delivery sequence per receiver.
     seqs: Vec<Vec<u32>>,
     /// K-gram: `(receiver, gram)`.
@@ -228,7 +231,10 @@ impl Timeline {
         for v in &mut self.seen {
             v.clear();
         }
-        self.pairs.clear();
+        for v in self.pairs.iter_mut().flatten() {
+            v.clear();
+        }
+        self.pair_count = 0;
         for v in &mut self.seqs {
             v.clear();
         }
@@ -285,23 +291,32 @@ impl Timeline {
         let l = Self::intern(&mut self.labels, &mut self.label_hashes, &mut self.label_keys, label_key, label);
         let repr = self.config.repr;
         if repr == TimelineRepr::Pairwise {
-            if self.seen.len() <= r as usize {
-                self.seen.resize(r as usize + 1, Vec::new());
+            let (ri, li) = (r as usize, l as usize);
+            let words = self.labels.len().div_ceil(64);
+            if self.seen.len() <= ri {
+                self.seen.resize(ri + 1, Vec::new());
+                self.pairs.resize(ri + 1, Vec::new());
             }
-            for prev in &self.seen[r as usize] {
-                if self.pairs.insert((r, *prev, l)) {
-                    let parts = [
-                        0,
-                        self.receiver_hashes[r as usize],
-                        self.label_hashes[*prev as usize],
-                        self.label_hashes[l as usize],
-                    ];
+            if self.pairs[ri].len() <= li {
+                self.pairs[ri].resize(li + 1, Vec::new());
+            }
+            let seen = &mut self.seen[ri];
+            seen.resize(words, 0);
+            let pairs = &mut self.pairs[ri][li];
+            pairs.resize(words, 0);
+            // the pairs (prev, l) for every label prev seen before, l included if seen
+            for (w, (seen_word, pair_word)) in seen.iter().zip(pairs.iter_mut()).enumerate() {
+                let mut new = seen_word & !*pair_word;
+                *pair_word |= new;
+                while new != 0 {
+                    let prev = w * 64 + new.trailing_zeros() as usize;
+                    new &= new - 1;
+                    self.pair_count += 1;
+                    let parts = [0, self.receiver_hashes[ri], self.label_hashes[prev], self.label_hashes[li]];
                     self.fingerprint = self.fingerprint.wrapping_add(token_hash(&parts));
                 }
             }
-            if !self.seen[r as usize].contains(&l) {
-                self.seen[r as usize].push(l);
-            }
+            seen[li / 64] |= 1 << (li % 64);
         }
         if repr.kgram() {
             if self.seqs.len() <= r as usize {
@@ -372,9 +387,21 @@ impl Timeline {
         let mut v = Vec::new();
         match self.config.repr {
             TimelineRepr::Pairwise => {
-                v.reserve(self.pairs.len());
-                for (r, p, l) in &self.pairs {
-                    v.push(join_token("", &[&self.receivers[*r as usize], self.label(*p), self.label(*l), ""]));
+                v.reserve(self.pair_count);
+                for (r, by_label) in self.pairs.iter().enumerate() {
+                    for (l, prevs) in by_label.iter().enumerate() {
+                        for (w, word) in prevs.iter().enumerate() {
+                            let mut bits = *word;
+                            while bits != 0 {
+                                let p = w * 64 + bits.trailing_zeros() as usize;
+                                bits &= bits - 1;
+                                v.push(join_token(
+                                    "",
+                                    &[&self.receivers[r], self.label(p as u32), self.label(l as u32), ""],
+                                ));
+                            }
+                        }
+                    }
                 }
             }
             TimelineRepr::KGram => self.kgram_tokens("", &mut v),
