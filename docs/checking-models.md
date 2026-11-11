@@ -353,7 +353,10 @@ finding, and running it out costs more than every other mutant. The console adds
 line, `3 of them only by running every schedule to the step bound: no spec checks that
 the model makes progress.`, and JSON has the count as `detected_by_step_bound`: a
 liveness spec would make those real detections. A model whose schedules mostly reach the
-bound anyway, such as a server that never stops, has none.
+bound anyway, such as a server that never stops, has none. Those 100 schedules also set
+each test case's step bound for its mutants: 10 times the longest of them that ended,
+when the unchanged model still passes with it. A mutant that loops then stops at that
+bound in milliseconds instead of running to the full bound.
 
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
 the test cases, then the mutants, and reports neither coverage nor scenarios. It has a

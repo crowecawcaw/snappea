@@ -52,6 +52,19 @@ pub fn runaway(hits: usize, schedules: usize, baseline: f64) -> bool {
     schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9 && baseline <= 0.4
 }
 
+/// How many times the longest schedule of the unchanged model that ended a mutant's
+/// schedules may run (see [`step_cap`]).
+pub const STEP_FACTOR: usize = 10;
+
+/// The step bound for the mutants of a test case whose unchanged schedules that ended took
+/// at most `longest` steps: [`STEP_FACTOR`] times that, but no more than `bound`, and none
+/// (`bound`) when no schedule ended. A mutant that runs far longer than the model ever
+/// does is stopped there instead of at the step bound, which can be thousands of times
+/// longer.
+pub fn step_cap(longest: Option<usize>, bound: usize) -> usize {
+    longest.map_or(bound, |n| (n.max(1) * STEP_FACTOR).min(bound))
+}
+
 /// Detected mutants needed before the budget is learned from them (see [`budget`]).
 pub const BUDGET_SAMPLE: usize = 20;
 /// How many times the schedules most detected mutants needed an undetected mutant gets
@@ -300,17 +313,29 @@ pub fn run(
         full_exploration: false,
         ..engine_options(cfg, cfg.seed.unwrap_or(0))
     };
-    // how often each test case's schedules run to the step bound without a change, for
-    // the test cases a mutant runs
+    // for the test cases a mutant runs: how often their schedules run to the step bound
+    // without a change, and the step bound for their mutants (see [`step_cap`])
     let mut baseline = vec![1.0; passed.len()];
+    let mut test_opts = vec![opts.clone(); passed.len()];
     let base = Checker::new(prog);
     for t in 0..passed.len() {
         if states.iter().any(|s| !s.suppressed && s.covering.contains(&t)) {
             let mut out = Watch::new(Box::new(Deadline { host: &*host, deadline }), 1.0);
-            if let Ok(res) = base.check(&passed[t].0, &opts, &mut out) {
-                if !res.cancelled && out.schedules > 0 {
-                    baseline[t] = out.hits as f64 / out.schedules as f64;
-                }
+            let Ok(res) = base.check(&passed[t].0, &opts, &mut out) else { continue };
+            if res.cancelled || out.schedules == 0 {
+                continue;
+            }
+            baseline[t] = out.hits as f64 / out.schedules as f64;
+            let capped = CheckerOptions {
+                max_fair_steps: step_cap(out.longest, opts.max_fair_steps),
+                max_unfair_steps: step_cap(out.longest, opts.max_unfair_steps),
+                ..opts.clone()
+            };
+            // only if the unchanged model still passes with it: a shorter bound also
+            // shortens how long a liveness spec may stay hot
+            let mut out = Deadline { host: &*host, deadline };
+            if base.check(&passed[t].0, &capped, &mut out).is_ok_and(|r| !r.cancelled && r.report.num_bugs == 0) {
+                test_opts[t] = capped;
             }
         }
     }
@@ -324,7 +349,7 @@ pub fn run(
         t.tick(host, |_| {});
     }
     let covering: Vec<Vec<usize>> = states.iter().map(|s| s.covering.clone()).collect();
-    let job = Mutants { prog, mutants: &mutants, covering: &covering, passed, opts: &opts, baseline: &baseline };
+    let job = Mutants { prog, mutants: &mutants, covering: &covering, passed, opts: &test_opts, baseline: &baseline };
     let pending = states.iter().filter(|s| s.next_turn(0).is_some()).count();
     let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, pending.max(1));
     // first one turn on each covering test case, then more turns up to a budget learned
@@ -474,7 +499,8 @@ struct Mutants<'a> {
     /// The test cases that ran each mutant's code (see [`State::covering`]).
     covering: &'a [Vec<usize>],
     passed: &'a [(TestCase, Hits)],
-    opts: &'a CheckerOptions,
+    /// The options of each test case's mutant runs.
+    opts: &'a [CheckerOptions],
     /// Share of each test case's schedules that run to the step bound without a change.
     baseline: &'a [f64],
 }
@@ -524,8 +550,8 @@ impl Mutants<'_> {
         let t = self.covering[i][turn.test];
         let tc = &self.passed[t].0;
         // each visit to a test case explores other schedules
-        let seed = self.opts.seed.wrapping_add(turn.visit.wrapping_mul(7919));
-        let opts = CheckerOptions { seed, ..self.opts.clone() };
+        let seed = self.opts[t].seed.wrapping_add(turn.visit.wrapping_mul(7919));
+        let opts = CheckerOptions { seed, ..self.opts[t].clone() };
         let mut watch = Watch::new(Box::new(Forward(out)), self.baseline[t]);
         let res = match checker.check(tc, &opts, &mut watch) {
             Ok(res) => res,
@@ -660,20 +686,25 @@ struct Watch<'a> {
     schedules: usize,
     hits: usize,
     runaway: bool,
+    /// Steps of the longest schedule that ended.
+    longest: Option<usize>,
 }
 
 impl<'a> Watch<'a> {
     fn new(inner: Box<dyn Output + 'a>, baseline: f64) -> Self {
-        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false }
+        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false, longest: None }
     }
 }
 
 impl Output for Watch<'_> {
     fn line(&mut self, _: &str) {}
     fn error(&mut self, _: &str) {}
-    fn schedule_bounded(&mut self, hit: bool) {
+    fn schedule_bounded(&mut self, hit: bool, steps: usize) {
         self.schedules += 1;
         self.hits += usize::from(hit);
+        if !hit {
+            self.longest = self.longest.max(Some(steps));
+        }
         self.runaway |= runaway(self.hits, self.schedules, self.baseline);
     }
     fn cancelled(&mut self) -> bool {
