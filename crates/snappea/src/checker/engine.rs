@@ -341,6 +341,10 @@ pub trait Output {
     /// A completed exploration schedule (one-based across workers), including its bug.
     /// Replays used to render traces do not emit this callback.
     fn schedule_finished(&mut self, _schedule: usize, _bug: Option<&str>) {}
+    /// Whether the schedule just finished stopped at the step bound rather than ending,
+    /// and its steps. Mutation testing uses it to spot a change that keeps every schedule
+    /// running.
+    fn schedule_bounded(&mut self, _hit: bool, _steps: usize) {}
     /// Polled before every schedule; returning true stops exploration (timeouts).
     fn cancelled(&mut self) -> bool {
         false
@@ -942,6 +946,9 @@ impl<'p> Checker<'p> {
                 // GatherTestingStatistics
                 let steps = rt.strategy.scheduled_steps();
                 let reached_max = rt.strategy.has_reached_max_steps();
+                if !is_replay {
+                    out.borrow_mut().schedule_bounded(reached_max, steps);
+                }
                 let fair = rt.strategy.is_fair();
                 // Keep a small, explicit sample of real executions, not a trace for every
                 // search prefix. Replay after exploration so logging does not slow search.

@@ -969,6 +969,47 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(h.stdout.contains("Mutation testing skipped: a test case failed."), "{}", h.stdout);
 }
 
+/// A worker that counts to 3 by sending itself a step; the spec checks the final count
+/// but not that the worker ever finishes.
+const LOOP: &str = "event eStep;\n\
+     event eDone: int;\n\
+     machine Worker {\n\
+       var count: int;\n\
+       start state S {\n\
+         entry { send this, eStep; }\n\
+         on eStep do {\n\
+           count = count + 1;\n\
+           if (count < 3) { send this, eStep; } else { announce eDone, count; }\n\
+         }\n\
+       }\n\
+     }\n\
+     spec Done observes eDone {\n\
+       start state S { on eDone do (n: int) { assert n == 3, \"wrong count\"; } }\n\
+     }\n\
+     machine Driver { start state S { entry { new Worker(); } } }\n\
+     test tcWork [main=Driver]: assert Done in { Worker, Driver };\n";
+
+#[test]
+fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bound() {
+    let mut h = host();
+    h.add_file("loop.p", LOOP);
+    // forcing `count < 3` to true or making the count go down keeps every schedule
+    // running to the step bound, while the worker always finishes without a change
+    assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--json"]), 0, "{}", h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let m = &v["mutation"];
+    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(8), Some(4)), "{}", m);
+    assert_eq!(m["detected_by_step_bound"], 2, "{}", m);
+    let listed: Vec<_> = m["undetected"].as_array().unwrap().iter().map(|u| u["mutation"].clone()).collect();
+    assert!(!listed.contains(&serde_json::json!("condition-true")), "{}", m);
+    assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--format", "text"]), 0);
+    assert!(
+        h.stdout.contains("2 of them only by running every schedule to the step bound: no spec checks"),
+        "{}",
+        h.stdout
+    );
+}
+
 /// A lock server whose release frees the lock even when it hands it to a waiting client;
 /// `{client}` is how each client uses the lock.
 fn lock_model(client: &str) -> String {

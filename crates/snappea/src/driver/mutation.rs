@@ -5,12 +5,22 @@
 //! A mutant runs only the test cases that ran the code it changes. The schedules are
 //! explored in rounds: each round gives every mutant still undetected one turn of
 //! [`TURN`] schedules on the next of its test cases, so when the time limit stops the run,
-//! every mutant has had about the same share. A mutant's turns depend only on its own
+//! every mutant has had about the same share. The first phase gives each mutant one turn
+//! per test case; the second gives the undetected ones more, up to a [`budget`] learned
+//! from how many schedules the first phase's detections needed. With several workers there is no wait at
+//! the end of a round: a free worker takes the next turn of the mutant with the fewest
+//! turns, so one slow turn holds up only its own mutant. A mutant's turns depend only on its own
 //! results and a fixed seed, so its verdict for a given number of turns does not depend
 //! on the machine; the time limit only decides how many turns it gets.
+//!
+//! A mutant that keeps the model from finishing, so that nearly every schedule runs to
+//! the step bound while the unchanged model's schedules mostly end, is stopped after a
+//! few schedules (see [`runaway`]). It counts as detected, by the step bound: a change
+//! that breaks the model this badly is not the gap mutation testing looks for, and
+//! running it to the end is what makes mutation testing slow.
 
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -26,16 +36,67 @@ use crate::host::{Host, Job};
 use crate::sema::{Program, TestCase};
 use crate::syntax::Span;
 
-/// Schedules a mutant gets in all, shared by the test cases that run its code.
+/// Most schedules a mutant gets in all, shared by the test cases that run its code; the
+/// learned budget (see [`budget`]) is often less.
 pub const SCHEDULES: usize = 1000;
 /// Schedules of one turn: one test case, for one mutant, in one round.
 pub const TURN: usize = 100;
+/// Schedules of a turn before a mutant can be stopped as a runaway (see [`runaway`]).
+pub const RUNAWAY_SAMPLE: usize = 10;
+
+/// Whether a mutant whose `hits` of `schedules` schedules stopped at the step bound, the
+/// first `leading` of them in a row, keeps the model from finishing, while at most 40% of
+/// the unchanged model's schedules (`baseline`) did: at least 90% of at least
+/// [`RUNAWAY_SAMPLE`] schedules at the bound, or sooner, enough leading ones in a row that
+/// the unchanged model would do it less than 1% of the time (at least 2). A model whose
+/// schedules mostly run to the bound anyway (a server that never stops) has no runaways.
+pub fn runaway(hits: usize, schedules: usize, leading: usize, baseline: f64) -> bool {
+    if baseline > 0.4 {
+        return false;
+    }
+    let row = leading >= 2 && baseline.powi(leading as i32) < 0.01;
+    row || (schedules >= RUNAWAY_SAMPLE && hits * 10 >= schedules * 9)
+}
+
+/// How many times the longest schedule of the unchanged model that ended a mutant's
+/// schedules may run (see [`step_cap`]).
+pub const STEP_FACTOR: usize = 10;
+
+/// The step bound for the mutants of a test case whose unchanged schedules that ended took
+/// at most `longest` steps: [`STEP_FACTOR`] times that, but no more than `bound`, and none
+/// (`bound`) when no schedule ended. A mutant that runs far longer than the model ever
+/// does is stopped there instead of at the step bound, which can be thousands of times
+/// longer.
+pub fn step_cap(longest: Option<usize>, bound: usize) -> usize {
+    longest.map_or(bound, |n| (n.max(1) * STEP_FACTOR).min(bound))
+}
+
+/// Detected mutants needed before the budget is learned from them (see [`budget`]).
+pub const BUDGET_SAMPLE: usize = 20;
+/// How many times the schedules most detected mutants needed an undetected mutant gets
+/// (see [`budget`]).
+pub const BUDGET_FACTOR: usize = 3;
+
+/// Schedules an undetected mutant gets in all, learned from `needed`: the schedules each
+/// mutant detected in its first turns ran before a test case failed. It is
+/// [`BUDGET_FACTOR`] times what 95% of them needed, in whole turns, at most [`SCHEDULES`];
+/// with fewer than [`BUDGET_SAMPLE`] it is [`SCHEDULES`]. Most mutants a test case detects
+/// at all, it detects early; the rest of the schedules mostly confirm survivors.
+pub fn budget(needed: &mut [usize]) -> usize {
+    if needed.len() < BUDGET_SAMPLE {
+        return SCHEDULES;
+    }
+    needed.sort_unstable();
+    let p95 = needed[(needed.len() * 95).div_ceil(100) - 1];
+    (p95 * BUDGET_FACTOR).div_ceil(TURN).clamp(1, SCHEDULES / TURN) * TURN
+}
 
 /// What the test cases found for one mutant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
-    /// A test case failed with the change.
-    Detected { test: String },
+    /// A test case failed with the change, or (`step_bound`) the change made nearly every
+    /// schedule run to the step bound (see [`runaway`]).
+    Detected { test: String, step_bound: bool },
     /// Every test case that ran the changed code passed.
     Undetected {
         tests: Vec<String>,
@@ -56,6 +117,8 @@ pub struct Report {
     pub verdicts: Vec<Verdict>,
     pub seconds: f64,
     pub time_limit_reached: bool,
+    /// Schedules each undetected mutant could get (see [`budget`]).
+    pub budget: usize,
 }
 
 /// An undetected mutant: the test cases it ran, its schedules, and whether their
@@ -71,6 +134,11 @@ impl Report {
         self.count(|v| matches!(v, Verdict::Detected { .. }))
     }
 
+    /// Mutants detected only because their schedules ran to the step bound.
+    pub fn step_bound(&self) -> usize {
+        self.count(|v| matches!(v, Verdict::Detected { step_bound: true, .. }))
+    }
+
     pub fn not_tested(&self) -> usize {
         self.count(|v| *v == Verdict::NotTested)
     }
@@ -84,10 +152,10 @@ impl Report {
         self.mutants.len() - self.not_tested() - self.suppressed()
     }
 
-    /// Undetected mutants the time limit left with fewer than [`SCHEDULES`] schedules and
-    /// an incomplete search.
+    /// Undetected mutants the time limit left with fewer schedules than the budget and an
+    /// incomplete search.
     pub fn short(&self) -> usize {
-        self.undetected().iter().filter(|(_, _, n, complete)| *n < SCHEDULES && !complete).count()
+        self.undetected().iter().filter(|(_, _, n, complete)| *n < self.budget && !complete).count()
     }
 
     /// The mutants no test case detected, by file and line.
@@ -122,6 +190,13 @@ impl Report {
             suppressed,
             self.seconds
         )];
+        let bound = self.step_bound();
+        if bound > 0 {
+            out.push(format!(
+                "{} of them only by running every schedule to the step bound: no spec checks that the model makes progress.",
+                bound
+            ));
+        }
         let undetected = self.undetected();
         if !undetected.is_empty() {
             out.push("Not detected by any test case (every test case still passes with the change):".into());
@@ -130,7 +205,7 @@ impl Report {
             let width = list.iter().map(|(m, ..)| location(m).len()).max().unwrap_or(0);
             for (m, _, schedules, complete) in list {
                 // the time limit left it a lighter check
-                let short = if *schedules < SCHEDULES && !complete {
+                let short = if *schedules < self.budget && !complete {
                     format!(" (only {} schedules)", schedules)
                 } else {
                     String::new()
@@ -149,7 +224,7 @@ impl Report {
                     "{} undetected mutant{} got fewer than {} schedules",
                     short,
                     plural(short),
-                    SCHEDULES
+                    self.budget
                 ));
             }
             if n > 0 {
@@ -179,10 +254,11 @@ impl Report {
                 "schedules": schedules,
                 "search_complete": complete,
             })).collect::<Vec<_>>(),
+            "detected_by_step_bound": self.step_bound(),
             "suppressed": self.suppressed(),
             "not_tested": self.not_tested(),
             "time_limit_reached": self.time_limit_reached,
-            "schedules_per_mutant": SCHEDULES,
+            "schedules_per_mutant": self.budget,
             "seconds": (self.seconds * 1000.0).round() / 1000.0,
         })
     }
@@ -243,6 +319,36 @@ pub fn run(
         full_exploration: false,
         ..engine_options(cfg, cfg.seed.unwrap_or(0))
     };
+    // for the test cases a mutant runs: how often their schedules run to the step bound
+    // without a change, and the step bound for their mutants (see [`step_cap`])
+    let mut baseline = vec![1.0; passed.len()];
+    let mut test_opts = vec![opts.clone(); passed.len()];
+    let base = Checker::new(prog);
+    for t in 0..passed.len() {
+        if states.iter().any(|s| !s.suppressed && s.covering.contains(&t)) {
+            let mut out = Watch::new(Box::new(Deadline { host: &*host, deadline }), 1.0);
+            let Ok(res) = base.check(&passed[t].0, &opts, &mut out) else { continue };
+            if res.cancelled || out.schedules == 0 {
+                continue;
+            }
+            baseline[t] = out.hits as f64 / out.schedules as f64;
+            let fair = step_cap(out.longest, opts.max_fair_steps);
+            // a liveness spec may stay hot for the same share of the shorter bound
+            let hot = opts.liveness_temperature_threshold.map(|n| n * fair / opts.max_fair_steps.max(1));
+            let capped = CheckerOptions {
+                max_fair_steps: fair,
+                max_unfair_steps: step_cap(out.longest, opts.max_unfair_steps),
+                liveness_temperature_threshold: hot,
+                ..opts.clone()
+            };
+            // only if the unchanged model still passes with it, so a liveness spec is not
+            // reported only because it may stay hot for less long
+            let mut out = Deadline { host: &*host, deadline };
+            if base.check(&passed[t].0, &capped, &mut out).is_ok_and(|r| !r.cancelled && r.report.num_bugs == 0) {
+                test_opts[t] = capped;
+            }
+        }
+    }
     let threads = host.threads();
     let mut time_limit_reached = false;
     let testable = states.iter().filter(|s| !s.suppressed).count();
@@ -252,45 +358,39 @@ pub fn run(
     if let Some(t) = progress.as_mut() {
         t.tick(host, |_| {});
     }
-    loop {
-        let round: Vec<(usize, Turn)> = order.iter().filter_map(|&i| states[i].next_turn().map(|t| (i, t))).collect();
-        if round.is_empty() {
-            break;
+    let covering: Vec<Vec<usize>> = states.iter().map(|s| s.covering.clone()).collect();
+    let job = Mutants { prog, mutants: &mutants, covering: &covering, passed, opts: &test_opts, baseline: &baseline };
+    let pending = states.iter().filter(|s| s.next_turn(0).is_some()).count();
+    let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, pending.max(1));
+    // first one turn on each covering test case, then more turns up to a budget learned
+    // from how many schedules the detected mutants needed
+    let mut max_turns = 0;
+    for phase in 0..2 {
+        if phase == 1 {
+            let mut needed: Vec<usize> = states.iter().filter_map(|s| s.needed).collect();
+            max_turns = budget(&mut needed) / TURN;
         }
-        let job = Mutants { prog, mutants: &mutants, states: &states, passed, opts: &opts };
-        let workers = threads.map_or(1, |t| cfg.workers.unwrap_or(t.available)).clamp(1, round.len());
-        let results = match threads {
-            Some(threads) if workers > 1 => {
-                job.round_threads(host, threads, workers, deadline, &round, &mut progress, &mut detected)
-            }
-            _ => {
-                let mut results = Vec::new();
-                for (k, (i, turn)) in round.iter().enumerate() {
-                    let mut out = Deadline { host: &*host, deadline };
-                    match job.turn(*i, turn, &mut out) {
-                        Some(r) => {
-                            detected += usize::from(r.bug);
-                            results.push((k, r));
-                        }
-                        None => break,
-                    }
-                    report_detected(host, &mut progress, detected);
-                }
-                results
-            }
+        time_limit_reached = match threads {
+            Some(threads) if workers > 1 => job.run_threads(
+                host,
+                threads,
+                workers,
+                deadline,
+                max_turns,
+                &order,
+                &mut states,
+                &mut progress,
+                &mut detected,
+            ),
+            _ => job.run_rounds(host, deadline, max_turns, &order, &mut states, &mut progress, &mut detected),
         };
-        let finished = results.len() == round.len();
-        for (k, r) in results {
-            let (i, turn) = round[k];
-            states[i].record(turn, r);
-        }
-        if !finished || host.now() >= deadline {
-            time_limit_reached = true;
+        if time_limit_reached {
             break;
         }
     }
     let verdicts = states.iter().map(|s| s.verdict(passed)).collect();
-    let report = Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached };
+    let report =
+        Report { mutants, verdicts, seconds: host.now() - start, time_limit_reached, budget: max_turns * TURN };
     if let Some(t) = progress.as_mut() {
         let (detected, tested) = (report.detected(), report.tested());
         t.finish(host, |phase| *phase = Phase::Mutation { detected, mutants: tested });
@@ -322,6 +422,10 @@ struct State {
     schedules: usize,
     /// The test case that detected it.
     detected: Option<usize>,
+    /// It was detected by running its schedules to the step bound.
+    step_bound: bool,
+    /// The schedules it ran until a test case failed, if one did after running some.
+    needed: Option<usize>,
     /// Test cases that ran it.
     ran: Vec<usize>,
 }
@@ -338,16 +442,19 @@ struct Turn {
 #[derive(Debug, Clone, Copy)]
 struct TurnResult {
     bug: bool,
+    /// Its schedules ran to the step bound (see [`runaway`]); counts as a bug.
+    step_bound: bool,
     schedules: usize,
     complete: bool,
 }
 
 impl State {
-    /// The next turn, or none when the mutant is done: detected, suppressed, out of
-    /// schedules, or every search complete. A mutant gets at least one turn per test case.
-    fn next_turn(&self) -> Option<Turn> {
+    /// The next turn, or none when the mutant is done: detected, suppressed, out of its
+    /// `max_turns` turns, or every search complete. A mutant gets at least one turn per
+    /// test case.
+    fn next_turn(&self, max_turns: usize) -> Option<Turn> {
         let k = self.covering.len();
-        let turns = (SCHEDULES / TURN).max(k);
+        let turns = max_turns.max(k);
         if self.suppressed || self.detected.is_some() || self.turns >= turns || self.complete.iter().all(|c| *c) {
             return None;
         }
@@ -363,8 +470,12 @@ impl State {
         if !self.ran.contains(&t) {
             self.ran.push(t);
         }
-        if r.bug {
+        if r.bug || r.step_bound {
             self.detected = Some(t);
+            self.step_bound = r.step_bound && !r.bug;
+            if r.bug && r.schedules > 0 {
+                self.needed = Some(self.schedules);
+            }
         }
         if r.complete {
             self.complete[turn.test] = true;
@@ -376,7 +487,7 @@ impl State {
             return Verdict::Suppressed;
         }
         if let Some(t) = self.detected {
-            return Verdict::Detected { test: passed[t].0.name.clone() };
+            return Verdict::Detected { test: passed[t].0.name.clone(), step_bound: self.step_bound };
         }
         if self.turns == 0 {
             return Verdict::NotTested;
@@ -395,12 +506,50 @@ impl State {
 struct Mutants<'a> {
     prog: &'a Program,
     mutants: &'a [Mutant],
-    states: &'a [State],
+    /// The test cases that ran each mutant's code (see [`State::covering`]).
+    covering: &'a [Vec<usize>],
     passed: &'a [(TestCase, Hits)],
-    opts: &'a CheckerOptions,
+    /// The options of each test case's mutant runs.
+    opts: &'a [CheckerOptions],
+    /// Share of each test case's schedules that run to the step bound without a change.
+    baseline: &'a [f64],
 }
 
 impl Mutants<'_> {
+    /// Takes the turns of every mutant in rounds on this thread, in `order` each round,
+    /// until each is done (see [`State::next_turn`]) or `deadline`, recording them in
+    /// `states`; returns whether the deadline stopped it. Counts the mutants detected in
+    /// `detected`.
+    #[allow(clippy::too_many_arguments)]
+    fn run_rounds(
+        &self,
+        host: &mut dyn Host,
+        deadline: f64,
+        max_turns: usize,
+        order: &[usize],
+        states: &mut [State],
+        progress: &mut Option<Tracker>,
+        detected: &mut usize,
+    ) -> bool {
+        loop {
+            let round: Vec<(usize, Turn)> =
+                order.iter().filter_map(|&i| states[i].next_turn(max_turns).map(|t| (i, t))).collect();
+            if round.is_empty() {
+                return false;
+            }
+            for (i, turn) in round {
+                let mut out = Deadline { host: &*host, deadline };
+                let Some(r) = self.turn(i, &turn, &mut out) else { return true };
+                *detected += usize::from(r.bug || r.step_bound);
+                states[i].record(turn, r);
+                report_detected(host, progress, *detected);
+            }
+            if host.now() >= deadline {
+                return true;
+            }
+        }
+    }
+
     /// Takes `turn` for mutant `i`; `None` when `out` was cancelled first.
     fn turn(&self, i: usize, turn: &Turn, out: &mut dyn Output) -> Option<TurnResult> {
         if out.cancelled() {
@@ -408,52 +557,93 @@ impl Mutants<'_> {
         }
         let prog = mutation::apply(self.prog, &self.mutants[i]);
         let checker = Checker::new(&prog);
-        let tc = &self.passed[self.states[i].covering[turn.test]].0;
+        let t = self.covering[i][turn.test];
+        let tc = &self.passed[t].0;
         // each visit to a test case explores other schedules
-        let seed = self.opts.seed.wrapping_add(turn.visit.wrapping_mul(7919));
-        let opts = CheckerOptions { seed, ..self.opts.clone() };
-        let res = match checker.check(tc, &opts, out) {
+        let seed = self.opts[t].seed.wrapping_add(turn.visit.wrapping_mul(7919));
+        let opts = CheckerOptions { seed, ..self.opts[t].clone() };
+        let mut watch = Watch::new(Box::new(Forward(out)), self.baseline[t]);
+        let res = match checker.check(tc, &opts, &mut watch) {
             Ok(res) => res,
             // a change the checker cannot run is one a test case notices
-            Err(_) => return Some(TurnResult { bug: true, schedules: 0, complete: false }),
+            Err(_) => return Some(TurnResult { bug: true, step_bound: false, schedules: 0, complete: false }),
         };
-        if res.report.num_bugs == 0 && res.cancelled {
+        let step_bound = watch.runaway;
+        if res.report.num_bugs == 0 && res.cancelled && !step_bound {
             return None;
         }
         Some(TurnResult {
             bug: res.report.num_bugs > 0,
+            step_bound,
             schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
             complete: res.exhaustive.as_ref().is_some_and(|x| x.complete()),
         })
     }
 
-    /// Takes the turns of `round` on `workers` threads, until `deadline`; returns the
-    /// results by position in `round`. Counts the mutants detected in `detected`.
+    /// Takes the turns of every mutant on `workers` threads, until each is done (see
+    /// [`State::next_turn`]) or `deadline`, recording them in `states`; returns whether
+    /// the deadline stopped it.
+    /// A worker takes the waiting turn of the mutant with the fewest turns (then the first
+    /// in `order`), so a slow turn holds up only its own mutant, not the other workers.
+    /// Counts the mutants detected in `detected`.
     #[allow(clippy::too_many_arguments)]
-    fn round_threads(
+    fn run_threads(
         &self,
         host: &mut dyn Host,
         threads: crate::host::Threads,
         workers: usize,
         deadline: f64,
-        round: &[(usize, Turn)],
+        max_turns: usize,
+        order: &[usize],
+        states: &mut [State],
         progress: &mut Option<Tracker>,
         detected: &mut usize,
-    ) -> Vec<(usize, TurnResult)> {
-        let next = AtomicUsize::new(0);
+    ) -> bool {
+        let mut rank = vec![0; states.len()];
+        for (r, &i) in order.iter().enumerate() {
+            rank[i] = r;
+        }
+        // waiting turns as (turns taken, rank, mutant, test, visit), smallest first
+        type Waiting = std::cmp::Reverse<(usize, usize, usize, usize, u32)>;
+        struct Queue {
+            waiting: std::collections::BinaryHeap<Waiting>,
+            running: usize,
+            closed: bool,
+        }
+        let entry = |i: usize, s: &State, t: Turn| std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit));
+        let mut waiting = std::collections::BinaryHeap::new();
+        for &i in order {
+            if let Some(t) = states[i].next_turn(max_turns) {
+                waiting.push(entry(i, &states[i], t));
+            }
+        }
+        let closed = waiting.is_empty();
+        let queue = (std::sync::Mutex::new(Queue { waiting, running: 0, closed }), std::sync::Condvar::new());
         let cancelled = AtomicBool::new(false);
-        let (tx, rx) = mpsc::channel::<(usize, TurnResult)>();
+        let (tx, rx) = mpsc::channel::<(usize, Turn, TurnResult)>();
         let jobs: Vec<Job<'_>> = (0..workers)
             .map(|_| {
-                let (tx, next, cancelled) = (tx.clone(), &next, &cancelled);
+                let (tx, queue, cancelled) = (tx.clone(), &queue, &cancelled);
                 Box::new(move || {
                     let mut out = Flag(cancelled);
                     loop {
-                        let k = next.fetch_add(1, Ordering::Relaxed);
-                        let Some((i, turn)) = round.get(k) else { break };
-                        match self.turn(*i, turn, &mut out) {
+                        let next = {
+                            let mut q = queue.0.lock().unwrap();
+                            loop {
+                                if let Some(std::cmp::Reverse((_, _, i, test, visit))) = q.waiting.pop() {
+                                    q.running += 1;
+                                    break Some((i, Turn { test, visit }));
+                                }
+                                if q.closed {
+                                    break None;
+                                }
+                                q = queue.1.wait(q).unwrap();
+                            }
+                        };
+                        let Some((i, turn)) = next else { break };
+                        match self.turn(i, &turn, &mut out) {
                             Some(r) => {
-                                let _ = tx.send((k, r));
+                                let _ = tx.send((i, turn, r));
                             }
                             None => break,
                         }
@@ -462,23 +652,89 @@ impl Mutants<'_> {
             })
             .collect();
         drop(tx);
-        let mut results = Vec::new();
+        let mut time_limit_reached = false;
         let mut main = || loop {
             match rx.recv_timeout(Duration::from_millis(20)) {
-                Ok(r) => {
-                    *detected += usize::from(r.1.bug);
-                    results.push(r);
+                Ok((i, turn, r)) => {
+                    *detected += usize::from(r.bug || r.step_bound);
+                    states[i].record(turn, r);
+                    let mut q = queue.0.lock().unwrap();
+                    q.running -= 1;
+                    if let Some(t) = states[i].next_turn(max_turns) {
+                        q.waiting.push(entry(i, &states[i], t));
+                        queue.1.notify_one();
+                    }
+                    if q.waiting.is_empty() && q.running == 0 {
+                        q.closed = true;
+                        queue.1.notify_all();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
             report_detected(host, progress, *detected);
-            if host.now() >= deadline {
-                cancelled.store(true, Ordering::Relaxed);
+            if host.now() >= deadline && !cancelled.load(Ordering::Relaxed) {
+                let mut q = queue.0.lock().unwrap();
+                if !q.closed {
+                    time_limit_reached = true;
+                    q.closed = true;
+                    cancelled.store(true, Ordering::Relaxed);
+                    queue.1.notify_all();
+                }
             }
         };
         (threads.run)(jobs, &mut main);
-        results
+        time_limit_reached
+    }
+}
+
+/// Engine output that counts the schedules that run to the step bound, and stops the
+/// exploration once they show a runaway (see [`runaway`]) against `baseline`.
+struct Watch<'a> {
+    inner: Box<dyn Output + 'a>,
+    baseline: f64,
+    schedules: usize,
+    hits: usize,
+    runaway: bool,
+    /// Steps of the longest schedule that ended.
+    longest: Option<usize>,
+    /// Schedules at the bound before the first that ended.
+    leading: usize,
+}
+
+impl<'a> Watch<'a> {
+    fn new(inner: Box<dyn Output + 'a>, baseline: f64) -> Self {
+        Watch { inner, baseline, schedules: 0, hits: 0, runaway: false, longest: None, leading: 0 }
+    }
+}
+
+impl Output for Watch<'_> {
+    fn line(&mut self, _: &str) {}
+    fn error(&mut self, _: &str) {}
+    fn schedule_bounded(&mut self, hit: bool, steps: usize) {
+        self.schedules += 1;
+        self.hits += usize::from(hit);
+        if !hit {
+            self.longest = self.longest.max(Some(steps));
+        }
+        if hit && self.leading + 1 == self.schedules {
+            self.leading += 1;
+        }
+        self.runaway |= runaway(self.hits, self.schedules, self.leading, self.baseline);
+    }
+    fn cancelled(&mut self) -> bool {
+        self.runaway || self.inner.cancelled()
+    }
+}
+
+/// Engine output that passes cancellation through from another.
+struct Forward<'a>(&'a mut dyn Output);
+
+impl Output for Forward<'_> {
+    fn line(&mut self, _: &str) {}
+    fn error(&mut self, _: &str) {}
+    fn cancelled(&mut self) -> bool {
+        self.0.cancelled()
     }
 }
 
@@ -524,8 +780,8 @@ mod tests {
     }
 
     fn pass(state: &mut State, complete: bool) -> Turn {
-        let turn = state.next_turn().unwrap();
-        state.record(turn, TurnResult { bug: false, schedules: TURN, complete });
+        let turn = state.next_turn(SCHEDULES / TURN).unwrap();
+        state.record(turn, TurnResult { bug: false, step_bound: false, schedules: TURN, complete });
         turn
     }
 
@@ -533,7 +789,7 @@ mod tests {
     fn turns_cycle_through_the_test_cases_until_the_budget_is_spent() {
         let mut s = state(3);
         let mut turns = Vec::new();
-        while s.next_turn().is_some() {
+        while s.next_turn(SCHEDULES / TURN).is_some() {
             let t = pass(&mut s, false);
             turns.push((t.test, t.visit));
         }
@@ -542,10 +798,40 @@ mod tests {
         assert_eq!(s.schedules, SCHEDULES);
         // more test cases than turns: one turn each
         let mut s = state(SCHEDULES / TURN + 2);
-        while s.next_turn().is_some() {
+        while s.next_turn(SCHEDULES / TURN).is_some() {
             pass(&mut s, false);
         }
         assert_eq!(s.ran.len(), SCHEDULES / TURN + 2);
+    }
+
+    #[test]
+    fn a_runaway_needs_nearly_every_schedule_at_the_bound_and_a_model_that_ends() {
+        // too few schedules to tell
+        assert!(!runaway(1, 1, 1, 0.0));
+        assert!(runaway(9, 10, 0, 0.4));
+        assert!(!runaway(8, 10, 0, 0.0));
+        // the first ones in a row: 0.2^3 < 1%, 0.4^5 > 1%
+        assert!(!runaway(2, 2, 2, 0.2));
+        assert!(runaway(3, 3, 3, 0.2));
+        assert!(!runaway(5, 5, 5, 0.4));
+        assert!(runaway(6, 6, 6, 0.4));
+        assert!(runaway(2, 2, 2, 0.0));
+        // the unchanged model runs to the bound often too
+        assert!(!runaway(10, 10, 10, 0.5));
+    }
+
+    #[test]
+    fn a_step_bound_result_ends_the_turns_as_detected() {
+        let mut s = state(2);
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
+        s.record(turn, TurnResult { bug: false, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
+        assert_eq!((s.detected, s.step_bound), (Some(0), true));
+        // a bug in the same turn is the stronger result
+        let mut s = state(1);
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
+        s.record(turn, TurnResult { bug: true, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        assert_eq!((s.detected, s.step_bound), (Some(0), false));
     }
 
     #[test]
@@ -558,11 +844,44 @@ mod tests {
         let mut s = state(2);
         pass(&mut s, true);
         pass(&mut s, true);
-        assert!(s.next_turn().is_none());
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
         let mut s = state(2);
-        let turn = s.next_turn().unwrap();
-        s.record(turn, TurnResult { bug: true, schedules: 3, complete: false });
-        assert!(s.next_turn().is_none());
+        let turn = s.next_turn(SCHEDULES / TURN).unwrap();
+        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false });
+        assert!(s.next_turn(SCHEDULES / TURN).is_none());
         assert_eq!(s.detected, Some(0));
+    }
+
+    #[test]
+    fn mutants_stop_at_ten_times_the_longest_schedule_that_ended() {
+        assert_eq!(step_cap(Some(300), 100_000), 3000);
+        assert_eq!(step_cap(Some(50_000), 100_000), 100_000);
+        // no schedule ended: keep the bound
+        assert_eq!(step_cap(None, 10_000), 10_000);
+        assert_eq!(step_cap(Some(0), 10_000), STEP_FACTOR);
+    }
+
+    #[test]
+    fn the_first_phase_gives_one_turn_per_test_case() {
+        let mut s = state(3);
+        while s.next_turn(0).is_some() {
+            pass(&mut s, false);
+        }
+        assert_eq!(s.turns, 3);
+        // and the budget adds more
+        assert!(s.next_turn(5).is_some());
+    }
+
+    #[test]
+    fn the_budget_is_a_multiple_of_what_most_detected_mutants_needed() {
+        // too few to learn from
+        assert_eq!(budget(&mut [1; BUDGET_SAMPLE - 1]), SCHEDULES);
+        // 95% need at most 3 schedules: 9, in one turn
+        let mut needed = vec![3; 19];
+        needed.push(100);
+        assert_eq!(budget(&mut needed), TURN);
+        let mut needed = [80; 20];
+        assert_eq!(budget(&mut needed), 300);
+        assert_eq!(budget(&mut [400; 20]), SCHEDULES);
     }
 }

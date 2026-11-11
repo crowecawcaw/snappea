@@ -331,14 +331,35 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
-Each mutant runs only the test cases that ran the changed code. They share 1000
-schedules, in turns of 100: each round gives every mutant not yet detected one turn on
-the next of its test cases (and every test case gets at least one turn). The seed is
-fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
+Each mutant runs only the test cases that ran the changed code, in turns of 100
+schedules. First every mutant gets one turn on each of its test cases. Then the
+undetected ones get more turns, round robin over their test cases, up to a budget
+learned from the first turns: 3 times the schedules that 95% of the detected mutants
+needed, at most 1000 (and 1000 when fewer than 20 were detected). Most mutants a test
+case detects, it detects within a few schedules, so the budget is usually a few hundred
+schedules, often no more than the first turns already gave, and the run ends sooner; JSON gives it as `schedules_per_mutant`. The
+seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
 because no test case reached the failing schedule within its schedules;
 `search_complete: true` in JSON means every one of its test cases explored all of its
 schedules, so no test case can detect it as written. Some mutants cannot be detected by
 any test: `x < n` and `x <= n` behave the same if `x` never equals `n`.
+
+A mutant that keeps the model from finishing is stopped early. Before the mutants run,
+each test case runs 100 schedules of the unchanged model. When at most 40% of those
+reach the step bound and a mutant's do far more often, the mutant stops and counts as
+detected by the step bound: at least 90% of at least 10 schedules, or sooner, its first
+schedules all at the bound, as many in a row as the unchanged model would reach less
+than 1% of the time (2 when it never does). Such a change, like an increment
+turned into a decrement in a retry loop, breaks the model too badly to be a useful
+finding, and running it out costs more than every other mutant. The console adds one
+line, `3 of them only by running every schedule to the step bound: no spec checks that
+the model makes progress.`, and JSON has the count as `detected_by_step_bound`: a
+liveness spec would make those real detections. A model whose schedules mostly reach the
+bound anyway, such as a server that never stops, has none. Those 100 schedules also set
+each test case's step bound for its mutants: 10 times the longest of them that ended,
+with the liveness threshold scaled to match, when the unchanged model still passes with
+them. A mutant that loops then stops at that
+bound in milliseconds instead of running to the full bound.
 
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
 the test cases, then the mutants, and reports neither coverage nor scenarios. It has a
@@ -349,8 +370,8 @@ case named `lint` or `mutation` is selected with a glob (`snappea check 'mutatio
 In `snappea check`, mutation testing stops at its time limit, 30 seconds by default
 (`--mutation-timeout 2m` changes it, `--no-mutation` skips it). Because the schedules
 go round robin, a run the time limit stops has given every mutant about the same share:
-on a large model, each may get only its first turn. Undetected mutants with fewer than
-1000 schedules are marked `(only 100 schedules)` in the console and have a smaller
+on a large model, each may get only its first turn. Undetected mutants with fewer
+schedules than the budget are marked `(only 100 schedules)` in the console and have a smaller
 `schedules` in JSON; raise the limit for a stronger result. Mutation testing is skipped
 when a test case fails: fix the bug first. Undetected mutants do not change the exit
 status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
