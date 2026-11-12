@@ -18,8 +18,9 @@ event eConfirmReq: tHoldRef;
 event eConfirmResp: (hold: int, ok: bool);
 // From the hold's expiry timer.
 event eExpire: (seat: int, hold: int);
-// The customer cancels its own hold.
-event eReleaseReq: (seat: int, hold: int);
+// The customer cancels its own hold; the store answers once the cancel is done.
+event eReleaseReq: (client: Customer, seat: int, hold: int);
+event eReleaseResp;
 
 // The fixed design: confirm succeeds only while this hold still holds the seat.
 machine SeatStore {
@@ -58,13 +59,14 @@ machine SeatStore {
         announce eExpired, (seat = e.seat, hold = e.hold);
       }
     }
-    on eReleaseReq do (r: (seat: int, hold: int)) {
+    on eReleaseReq do (r: (client: Customer, seat: int, hold: int)) {
       // A cancel that arrives after the hold expired, possibly while a later hold has
       // the seat, must not free it either.
       if (r.seat in held && held[r.seat] == r.hold) {
         held -= (r.seat);
         announce eHoldReleased, (seat = r.seat, hold = r.hold);
       }
+      send r.client, eReleaseResp;
     }
   }
 }

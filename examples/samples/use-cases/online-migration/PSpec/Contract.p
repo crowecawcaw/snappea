@@ -81,7 +81,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
       }
     }
     on eOldRead do {
-      assert !cutover, "old store served a read after cutover";
+      assert !cutover, "cutover broken: old store served a read after cutover";
     }
     on eNewApplied do (p: (key: int, row: tRow)) {
       assert Committed(p.key, p.row),
@@ -99,7 +99,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
       foreach (key in keys(oldRows)) {
         assert key in newRows, format("at cutover key {0} is missing from new", key);
         assert Visible(newRows[key]) == Visible(oldRows[key]),
-          format("new store lost a change before cutover: key {0} reads {1} from new but {2} from old", key,
+          format("cutover broken: new store lost a change: key {0} reads {1} from new but {2} from old", key,
                  Visible(newRows[key]), Visible(oldRows[key]));
       }
     }

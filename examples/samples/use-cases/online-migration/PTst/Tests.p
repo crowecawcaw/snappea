@@ -239,7 +239,7 @@ test tcBugResurrectedDelete [main=BugResurrectedDelete]:
   assert MigrationSafety, MigrationCompletes in
   { BugResurrectedDelete, OldStore, InsertIfAbsentNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: old store served a read after cutover
+// expect-bug: cutover broken
 test tcBugCutoverWithoutDrain [main=BugCutoverWithoutDrain]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverWithoutDrain, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };

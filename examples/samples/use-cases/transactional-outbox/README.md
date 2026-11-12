@@ -28,6 +28,12 @@ or nothing); fetching unsent rows, which registers the relay for a wake-up if th
 are none (LISTEN/NOTIFY); marking one row sent; the consumer's apply-and-record-id
 (one local transaction). Publish and mark are separate, so a crash can fall between.
 
+The model makes "fetch, and register for a wake-up if empty" one step. In Postgres
+that means running `LISTEN` before the `SELECT` on the same connection; listening
+after an empty `SELECT` loses a commit that lands in between, and the relay sleeps
+with an unsent row (see the `flawed/lost-wakeup` sample). A poll with a timeout
+avoids the problem at the cost of latency.
+
 **Two relays, deliberately.** The model runs two relays at once rather than
 promising one: during a rolling deploy, or when a supervisor restarts a relay it
 thinks is dead while the old process still runs, two relays exist, and preventing
@@ -58,11 +64,12 @@ at-least-once either way, so the design tolerates duplicates instead.
 ## Run
 
 ```sh
-snappea check tcTwoRelays tcRelayCrashAfterPublish tcOrdersWhileRelayRuns
+snappea check tcTwoRelays tcRelayCrashAfterPublish tcOrdersWhileRelayRuns --timeout 30s
 snappea check tcBugDualWrite tcBugNoDedup   # each exits 1 as above
 ```
 
-Each passing test explores every schedule in about two seconds or less.
+With `--timeout`, each passing test explores every schedule in about two seconds or
+less. Without it, `tcTwoRelays` may stop early once coverage stops growing.
 
 ## Bounds and omissions
 

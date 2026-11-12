@@ -73,12 +73,13 @@ The backfill reads a row and then writes it: two steps, with writers in between.
 | `tcGeneratedMigration` | Two keys, two writers each putting or deleting either key, a reader of key 1, 2 or 3 (never written) | Keys do not leak into each other; reading a missing key | passes, sampled |
 | `tcBugBlindBackfill` | Unconditional copy, as in `tcBackfillRacesWriter` | **Expected to fail**: `new store lost` (a write that returned, or a change at cutover) | fails |
 | `tcBugResurrectedDelete` | Insert-if-absent, hard deletes, as in `tcDeleteDuringBackfill` | **Expected to fail**: `new store lost` (the delete) | fails |
-| `tcBugCutoverWithoutDrain` | A router that flips at once, as in `tcReadsAcrossCutover` | **Expected to fail**: `old store served a read after cutover` | fails |
+| `tcBugCutoverWithoutDrain` | A router that flips at once, as in `tcReadsAcrossCutover` | **Expected to fail**: `cutover broken` (either symptom below) | fails |
 
 The first two negative controls fail with whichever symptom the search reaches first:
 `new store lost write 1: it returned, but new lacks version 2 of key 1`, or
-`new store lost a change before cutover: key 1 reads 10 from new but 20 from old`
-(`-1` for the delete).
+`cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old`
+(`-1` for the delete). Without the drain the search reports either that same
+cutover-time difference or `cutover broken: old store served a read after cutover`.
 
 ## Run
 

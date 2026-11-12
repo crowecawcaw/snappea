@@ -95,7 +95,7 @@ spec ChargesResolved observes eCharged, eSold, eRefunded {
 }
 
 // Progress: every checkout the driver starts ends, with the outcome the store's history
-// justifies, and every hold is eventually sold or expired (no seat stays held forever,
+// justifies, and every hold is eventually sold, expired or cancelled (no seat stays held forever,
 // even when its customer walks away). The driver announces eCheckoutStarted with what
 // the customer wants, so a customer that never acts, or asks for the wrong seat, fails.
 enum tOutcome { HoldRejected, Bought, LostHold, Abandoned, Cancelled }
@@ -172,6 +172,8 @@ spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldReje
       assert p.hold in due, format("checkout {0} ended before the store decided", p.hold);
       assert p.outcome == due[p.hold],
         format("checkout {0} reported {1}, the store decided {2}", p.hold, p.outcome, due[p.hold]);
+      assert p.outcome != Cancelled || !(p.hold in liveHolds),
+        format("checkout {0} cancelled, but its hold still has the seat", p.hold);
       started -= (p.hold);
       unfinished = unfinished - 1;
       Settle();

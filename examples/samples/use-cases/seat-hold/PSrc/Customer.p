@@ -48,8 +48,8 @@ machine Customer {
       }
       if (r.ok && cancels) {
         // Clicked cancel: free the seat now rather than wait for expiry.
-        send store, eReleaseReq, (seat = seat, hold = hold);
-        goto Done, Cancelled;
+        send store, eReleaseReq, (client = this, seat = seat, hold = hold);
+        goto Cancelling;
       }
       if (r.ok) {
         send payments, eCharge, (client = this, hold = hold);
@@ -57,6 +57,10 @@ machine Customer {
       }
       goto Done, HoldRejected;
     }
+  }
+
+  state Cancelling {
+    on eReleaseResp do { goto Done, Cancelled; }
   }
 
   state Paying {

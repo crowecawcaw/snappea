@@ -21,7 +21,8 @@ between payment and confirmation, and another customer can hold the seat meanwhi
 - Every charge ends in exactly one of a sale or a refund.
 - Every checkout ends with the outcome the store's decisions justify, and every hold
   is eventually sold, expired or cancelled, even when the customer walks away.
-- A late expiry timer or a late cancel never frees a seat that a later hold has.
+- A cancel is answered only once its hold no longer has the seat, and a late expiry
+  timer or a late cancel never frees a seat that a later hold has.
 
 **Atomic primitives** (one transaction on the seat's row each): hold (free → held),
 confirm (held by this hold → sold), expire and cancel (held by this hold → free). Payment and

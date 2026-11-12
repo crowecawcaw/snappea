@@ -64,12 +64,13 @@ then a refused late write.
 ## Run
 
 ```sh
-snappea check tcTwoClientsContend tcHolderCrashes tcPausedHolderWritesLate
+snappea check tcTwoClientsContend tcHolderCrashes tcPausedHolderWritesLate --timeout 30s
 snappea check tcBugStorageIgnoresTokens   # exits 1 with the late write above
 ```
 
-`tcTwoClientsContend` explores every schedule in about 10 seconds, the others in a
-few seconds.
+With `--timeout 30s`, `tcTwoClientsContend` explores every schedule (about 22,000)
+in about 10 seconds, the others in a few seconds. Without `--timeout` the runs share
+10s, so the first two are sampled.
 
 ## Bounds and omissions
 
