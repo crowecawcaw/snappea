@@ -24,7 +24,7 @@ observes InWarmUpState, InReadyState, InBeansGrindingState, InCoffeeBrewingState
     on InWarmUpState goto WarmUp;
   }
 
-  state WarmUp {
+  hot state WarmUp {
     on ErrorHappened goto Error;
     on InReadyState goto Ready;
   }
@@ -35,12 +35,12 @@ observes InWarmUpState, InReadyState, InBeansGrindingState, InCoffeeBrewingState
     on ErrorHappened goto Error;
   }
 
-  state BeanGrinding {
+  hot state BeanGrinding {
     on InCoffeeBrewingState goto MakingCoffee;
     on ErrorHappened goto Error;
   }
 
-  state MakingCoffee {
+  hot state MakingCoffee {
     on InReadyState goto Ready;
     on ErrorHappened goto Error;
   }

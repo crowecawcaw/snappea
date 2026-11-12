@@ -74,21 +74,18 @@ machine FailureDetector {
       var nodesDown: set[Node];
       // one more attempt finished
       attempts = attempts + 1;
-      // check if there are nodes that have not responded
-      if (sizeof(respondedThisRound) < sizeof(alive) ) {
-        // maximum number of attempts == 3
-        if(attempts < 3) {
-          // try again by re-pinging the nodes that have not responded
-          goto SendPingsToAllNodes;
-        }
-
-        else {
-          // inform clients about the nodes down
-          nodesDown = ComputeNodesDownAndUpdateAliveSet();
-          // notification to the client is assumed to be a reliable send so that the client gets an updated view
-          ReliableBroadcast(clients, NotifyNodesDown, nodesDown);
-        }
+      // the Pong handler cancels the timer once every alive node has responded
+      assert sizeof(respondedThisRound) < sizeof(alive), "timed out after every alive node responded";
+      // maximum number of attempts == 3
+      if(attempts < 3) {
+        // try again by re-pinging the nodes that have not responded
+        goto SendPingsToAllNodes;
       }
+
+      // inform clients about the nodes down
+      nodesDown = ComputeNodesDownAndUpdateAliveSet();
+      // notification to the client is assumed to be a reliable send so that the client gets an updated view
+      ReliableBroadcast(clients, NotifyNodesDown, nodesDown);
 
       // lets reset and restart the failure detection
       goto ResetAndStartAgain;

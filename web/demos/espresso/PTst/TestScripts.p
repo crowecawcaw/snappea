@@ -26,12 +26,9 @@ assert EspressoMachineModesOfOperation in (union EspressoMachine, Users, {
 
 // MULTI-PARAMETER TESTS
 
-// Test multiple users, each with their own coffee machine, with varying operations
-test param (nUsers in [1, 2, 3], nOps in [3, 5, 7]) tcMultiUserOperations [main=TestWithMultipleUsers]:
-assert EspressoMachineModesOfOperation in (union EspressoMachine, Users, {
-  TestWithMultipleUsers
-}
-);
+// The spec follows one coffee machine's modes, so each test drives a single machine.
+// Two machines would interleave their announcements and look like one machine
+// skipping modes.
 
 // Test resource constraints with different levels
 test param (waterLevel in [0, 25, 50, 100], beanLevel in [0, 25, 50]) tcResourceConstraints [main=TestWithResourceConstraints]:

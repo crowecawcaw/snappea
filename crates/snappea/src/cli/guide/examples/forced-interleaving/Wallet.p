@@ -3,6 +3,7 @@
 event eSpent: (id: string, amount: int, ok: bool);
 event eBalance: (balance: int);
 
+// snappea-lint: allow unselected-spec -- test_wallet.py checks recorded wallet calls against this spec
 spec WalletContract observes eSpent, eBalance {
   var balance: int;
   var results: map[string, bool];

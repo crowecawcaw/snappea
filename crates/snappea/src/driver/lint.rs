@@ -4,29 +4,52 @@ use crate::driver::check::Gate;
 use crate::host::{Color, Exit, Host, Stream};
 use crate::project::Sources;
 use crate::sema::diag::{render_coded, render_snippet, render_with_level};
+use crate::sema::Program;
 use crate::syntax::SourceMap;
 use snappea_lint::Finding;
 
 /// Print all unsuppressed lint findings. Does not execute models or write artifacts.
-pub fn run(host: &mut dyn Host, sources: &Sources) -> Result<usize, Exit> {
+pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usize, Exit> {
     let sm = sources.source_map();
-    let findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
+    let findings = findings(host, &sm, prog)?;
     Ok(report(host, &sm, &findings))
+}
+
+/// The unsuppressed findings of the source rules and of the rules on the type-checked
+/// program `prog` ([`snappea_lint::PROGRAM_RULES`]), in source order.
+fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<Finding>, Exit> {
+    let mut findings = snappea_lint::lint(sm).map_err(|e| syntax_error(host, sm, e))?;
+    findings.extend(program_findings(sm, prog));
+    findings.sort_by(|a, b| (a.span.file, a.span.start, a.rule).cmp(&(b.span.file, b.span.start, b.rule)));
+    Ok(findings)
+}
+
+/// The unsuppressed findings of [`snappea_lint::PROGRAM_RULES`] on `prog`.
+pub fn program_findings(sm: &SourceMap, prog: &Program) -> Vec<Finding> {
+    let marked = snappea_lint::driver_machines(sm).unwrap_or_default();
+    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
+    let mut findings: Vec<Finding> = crate::checker::checked::lints(prog, &prog.test_cases(), &drivers)
+        .into_iter()
+        .filter(|f| !f.span.is_dummy())
+        .map(|f| Finding::new(f.rule, f.span, f.message))
+        .collect();
+    let _ = snappea_lint::suppress_program_findings(sm, &mut findings);
+    findings
 }
 
 /// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and stop
 /// the check (exit status 2); with [`Gate::Warn`] they print as warnings and the check
 /// goes on. Returns how many findings there were.
-pub fn gate(host: &mut dyn Host, sources: &Sources, gate: Gate) -> Result<usize, Exit> {
+pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
     if gate == Gate::Deny {
-        if run(host, sources)? == 0 {
+        if run(host, sources, prog)? == 0 {
             return Ok(0);
         }
         host.write(Stream::Err, &format!("{}\n", WARN_HINT), None);
         return Err(Exit(2));
     }
     let sm = sources.source_map();
-    let findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
+    let findings = findings(host, &sm, prog)?;
     for f in &findings {
         let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)));
         host.write(Stream::Err, &text, Some(Color::Yellow));
@@ -73,6 +96,9 @@ pub fn help(rule: &str) -> String {
         "no-model-machine" => return "put modeled behavior in a separate `machine` and include it with the entry driver in the test module; for an intentional trace-only configuration, suppress this rule immediately before its test or implementation declaration, or before `machine Main` for the implicit default configuration".to_string(),
         "unobserved-handler" => "add the event to the monitor's `observes` list, or remove the handler",
         "scenario-never-accepts" => "mark the state the scenario should reach `cold`",
+        "unchecked-state" => "assert on the field in a spec or the test driver, send it in an event a spec observes, or remove it if the model does not need it",
+        "unchecked-event" => "make a spec observe the event and assert on it, or have the machine that receives it act on it; remove the send if nothing should",
+        "no-progress-spec" => "add a spec with a `hot` state the model leaves only by answering (for example, hot while a request is pending), and select it with `assert` in the test",
         "scenario-cold-start" => "mark the start state `hot` (or leave it unmarked) and mark the accepting state `cold`",
         _ => return suppress,
     };

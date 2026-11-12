@@ -14,6 +14,7 @@ spec SafetyLeaderCompleteness observes BecomeLeader {
   }
 
   state MonitoringLeaderChange {
+    // snappea-lint: allow unused-payload-field -- this rule compares logs; SafetyOneLeader checks the term and leader
     on BecomeLeader do (payload: (term:int, leader:Server, log: seq[ServerLog], commitIndex: int)) {
       // check all already-committed logs is remain committed in the new leader's log
       var i: int;

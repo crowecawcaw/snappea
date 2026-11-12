@@ -47,20 +47,20 @@ machine Proposer {
     }
 
     on PrepareResponse do (response: PrepareResponseData) {
-      // The acceptors then get back to us, saying whether they have accepted our proposal
-      if (response.promised == ballotNumber) {
-        // If this acceptor has already accepted a proposal, we drop the one we're proposing and drive that forward instead.
-        if (response.acceptedBallot > highestAcceptedBallot) {
-          highestAcceptedBallot = response.acceptedBallot;
-          valueToPropose = response.acceptedValue;
-        }
+      // The acceptors then get back to us, saying they have promised our proposal; an
+      // acceptor that will not promise does not reply
+      assert response.promised == ballotNumber, format("promise for ballot {0}, but we proposed {1}", response.promised, ballotNumber);
+      // If this acceptor has already accepted a proposal, we drop the one we're proposing and drive that forward instead.
+      if (response.acceptedBallot > highestAcceptedBallot) {
+        highestAcceptedBallot = response.acceptedBallot;
+        valueToPropose = response.acceptedValue;
+      }
 
-        // Add this acceptor to the set of acceptors who have ACKed our proposal
-        prepareAcknowledgements += (response.acceptor);
-        // If more than half the acceptors have ACKed our proposal, we've been elected 'leader' and its time to move to phase 2
-        if (sizeof(prepareAcknowledgements) >= majority) {
-          goto Accept;
-        }
+      // Add this acceptor to the set of acceptors who have ACKed our proposal
+      prepareAcknowledgements += (response.acceptor);
+      // If more than half the acceptors have ACKed our proposal, we've been elected 'leader' and its time to move to phase 2
+      if (sizeof(prepareAcknowledgements) >= majority) {
+        goto Accept;
       }
     }
   }
@@ -78,13 +78,13 @@ machine Proposer {
 
     // Then get responses from the acceptors
     on AcceptResponse do (response: AcceptResponseData) {
-      if (response.accepted == ballotNumber) {
-        // Add this acceptor to the set that have accepted our value
-        acceptAcknowledgements += (response.acceptor);
-        // And when more than half agree, it's been decided and it's time to teach
-        if (sizeof(acceptAcknowledgements) >= majority) {
-          goto Teach;
-        }
+      // an acceptor that will not accept our ballot does not reply
+      assert response.accepted == ballotNumber, format("accept for ballot {0}, but we proposed {1}", response.accepted, ballotNumber);
+      // Add this acceptor to the set that have accepted our value
+      acceptAcknowledgements += (response.acceptor);
+      // And when more than half agree, it's been decided and it's time to teach
+      if (sizeof(acceptAcknowledgements) >= majority) {
+        goto Teach;
       }
     }
 

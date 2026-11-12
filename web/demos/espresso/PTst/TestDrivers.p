@@ -23,7 +23,6 @@ machine TestWithCrazyUser {
 
 // Parameters for comprehensive testing scenarios
 param nOps : int;
-param nUsers : int;
 param waterLevel : int;
 param beanLevel : int;
 param enableSteamer : bool;
@@ -34,30 +33,6 @@ machine TestWithConfig {
     entry {
       // create a crazy user
       new CrazyUser((coffeeMaker = new CoffeeMakerControlPanel(), nOps = nOps));
-    }
-  }
-}
-
-// Test driver for multiple users, each with their own coffee machine
-machine TestWithMultipleUsers {
-  var i: int;
-  start state Init {
-    entry {
-      var coffeeMaker: CoffeeMakerControlPanel;
-
-      i = 0;
-      while (i < nUsers) {
-        coffeeMaker = new CoffeeMakerControlPanel();
-
-        if (i % 2 == 0) {
-          new SaneUser(coffeeMaker);
-        }
-        else {
-          new CrazyUser((coffeeMaker = coffeeMaker, nOps = nOps));
-        }
-
-        i = i + 1;
-      }
     }
   }
 }

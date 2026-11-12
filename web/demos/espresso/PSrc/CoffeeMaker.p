@@ -46,7 +46,12 @@ machine EspressoCoffeeMaker {
     }
 
     on WarmUpRequest do {
-      send controller, WarmUpCompleted;
+      if (!HeaterWorks()) {
+        send controller, WarmerError;
+      }
+      else {
+        send controller, WarmUpCompleted;
+      }
     }
 
     on GrindBeansRequest do {
@@ -84,6 +89,10 @@ machine EspressoCoffeeMaker {
   }
 
   fun HasWater() : bool {
+    return $;
+  }
+
+  fun HeaterWorks() : bool {
     return $;
   }
 }

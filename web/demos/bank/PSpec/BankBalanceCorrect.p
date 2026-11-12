@@ -86,6 +86,7 @@ spec BankBalanceIsAlwaysCorrect observes WithdrawRequest,  WithdrawResponse, Spe
 
 // GuaranteedWithDrawProgress checks the liveness (or progress) property that all withdraw
 // requests submitted by the client are eventually responded.
+// snappea-lint: allow unused-payload-field -- progress only needs request ids; the safety spec checks the rest
 spec GuaranteedWithDrawProgress observes WithdrawRequest, WithdrawResponse {
   // keep track of the pending withdraw requests
   var pendingWithdrawals: set[int];

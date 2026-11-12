@@ -27,7 +27,7 @@ machine Client {
 
   state SendWriteTransaction {
     entry {
-      currTransaction = ChooseRandomTransaction(id * 100 + N /* hack for creating unique transaction id*/);
+      currTransaction = ChooseRandomTransaction(id);
       send coordinator, WriteTransRequest, (client = this, transaction = currTransaction);
     }
 
@@ -42,7 +42,8 @@ machine Client {
         // await response from the participant
         receive {
           case ReadTransResponse: (readResp: ReadTransResponseData) {
-            assert readResp.key == currTransaction.key && readResp.value == currTransaction.value,
+            // a crashed participant answers TIMEOUT; a live one must have the committed value
+            assert readResp.status == TIMEOUT || readResp.key == currTransaction.key && readResp.value == currTransaction.value,
             format ("Record read is not same as what was written by the client:: read - {0}, written - {1}",
             readResp.value, currTransaction.value);
           }
@@ -58,8 +59,12 @@ machine Client {
   }
 }
 
-fun ChooseRandomTransaction(uniqueId: int): Transaction {
-  return (key = format("{0}", choose(10)), value = choose(10), transactionId = uniqueId);
+// Each client writes its own keys, so no other client's write can land between a write
+// and the read that checks it.
+// Transaction ids come in any order and can repeat, as retried or delayed requests would:
+// the coordinator must reject repeats and participants must reject stale writes.
+fun ChooseRandomTransaction(clientId: int): Transaction {
+  return (key = format("{0}-{1}", clientId, choose(10)), value = choose(10), transactionId = clientId * 100 + choose(10));
 }
 
 // two phase commit client module

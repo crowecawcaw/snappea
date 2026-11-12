@@ -4,6 +4,8 @@ personas: ["application-developer", "coding-agent"]
 questions:
   - "Which modeling mistakes do lints detect?"
   - "How do I fix or suppress a finding?"
+  - "Which model state and events can no test notice?"
+  - "Why does a test need a hot spec?"
 ---
 
 # Linting P models
@@ -50,6 +52,9 @@ model covers every requirement or faithfully represents the implementation.
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
+| `unchecked-state` | A model or spec field is written, but no assertion, condition, spec or sent event depends on it. | Assert on it in a spec or the driver, send it in an observed event, or remove it. |
+| `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
+| `no-progress-spec` | A test's driver waits for the model's responses, but none of its specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
 
 ### Permissive monitors
 
@@ -190,6 +195,77 @@ scenario RefundAfterPay observes ePay, eRefund {
   state Paid { on eRefund goto Done; }
   cold state Done {}
 }
+```
+
+### Unchecked state and events
+
+A test fails only through a check: an assertion (in the model, a driver or a spec), a
+condition that decides what runs next, a send, or an operation that can fail. The
+type-checked model is analyzed for what each of those depends on, through assignments,
+function calls and returns, `new` payloads and event payloads into any machine. A
+field nothing depends on can hold any value and every test passes:
+
+```p
+machine Server {
+  var served: int;
+  var log: seq[int];              // error[unchecked-state]: nothing reads it
+  start state S {
+    on eReq do (c: Client) {
+      served = served + 1;
+      log += (sizeof(log), served);
+      announce eServed, served;   // a spec checks `served`
+      send c, eAck;               // error[unchecked-event]: no spec observes eAck,
+    }                             // and the client's handler does nothing
+  }
+}
+```
+
+`unchecked-state` reports fields of model machines and specs that are written but
+that no check depends on, at the field's declaration. `unchecked-event` reports
+an event the model sends or announces that no spec observes and that no machine acts
+on: its handlers (in every machine) neither assert, change state, create machines,
+nor write or send anything a check depends on. An event a machine handles in some states
+but not others counts as checked, since it can fail as unhandled; so does `halt`.
+Driver machines (see [mark driver machines](#mark-driver-machines)) and a test's main
+machine are not reported: they are the checks. The analysis over-approximates:
+collections count as one value and every handler of an event receives every payload
+sent with it, so a field it reports is unchecked in every test, and one it does not
+report may still be checked only weakly. A field kept for debugging or printing is a
+fine reason to suppress:
+
+```p
+  // snappea-lint: allow unchecked-state -- trace for debugging only
+  var log: seq[int];
+```
+
+Mutation testing skips the changes these findings explain (see
+[mutation testing](checking-models.md#mutation-testing)).
+
+### No progress spec
+
+A safety spec checks what the model does, not that it does anything. A test whose
+driver waits for the model's responses (handles or `receive`s an event a model machine
+sends) passes when the model never answers, unless one of its specs has a `hot` state:
+
+```p
+spec EveryRequestAnswered observes eReq, eResp {
+  var pending: int;
+  start cold state Idle { on eReq do { pending = pending + 1; goto Waiting; } }
+  hot state Waiting {
+    on eReq do { pending = pending + 1; }
+    on eResp do { pending = pending - 1; if (pending == 0) { goto Idle; } }
+  }
+}
+
+test tcServe [main=Driver]: assert Safety, EveryRequestAnswered in { Server, Driver };
+```
+
+`no-progress-spec` reports such a test at its declaration. A test meant to check only
+safety, for example alongside another test that checks progress, can suppress it:
+
+```p
+// snappea-lint: allow no-progress-spec -- tcServeLiveness checks progress
+test tcServe [main=Driver]: assert Safety in { Server, Driver };
 ```
 
 ## Suppress intentional findings

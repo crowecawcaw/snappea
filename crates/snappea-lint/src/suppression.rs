@@ -13,13 +13,24 @@ pub const MUTATIONS: &[&str] = &[
 ];
 
 /// Whether `id` names mutation testing: `mutation`, or `mutation:<kind>`.
+fn is_program_rule(id: &str) -> bool {
+    crate::PROGRAM_RULES.iter().any(|(r, _)| *r == id)
+}
+
+/// The scopes `// snappea-lint: allow` comments give rules of [`crate::PROGRAM_RULES`],
+/// with the rule each allows.
+pub fn program_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
+    directives(ctx, &|_| true).0.into_iter().filter(|(_, id)| is_program_rule(id)).collect()
+}
+
 fn is_mutation(id: &str) -> bool {
     id == "mutation" || id.strip_prefix("mutation:").is_some_and(|k| MUTATIONS.contains(&k))
 }
 
 pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) {
-    let (allowed, invalid) =
-        directives(ctx, &|id| rules.iter().any(|r| r.id() == id) || id == "coverage" || is_mutation(id));
+    let (allowed, invalid) = directives(ctx, &|id| {
+        rules.iter().any(|r| r.id() == id) || id == "coverage" || is_mutation(id) || is_program_rule(id)
+    });
     findings.retain(|f| {
         !allowed
             .iter()
@@ -100,11 +111,13 @@ pub fn mutation_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
 
 /// The source scopes intentionally omitted from `snappea check` coverage requirements.
 pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<Span> {
-    directives(ctx, &|id| id == "coverage" || rules.iter().any(|rule| rule.id() == id) || is_mutation(id))
-        .0
-        .into_iter()
-        .filter_map(|(span, id)| (id == "coverage").then_some(span))
-        .collect()
+    directives(ctx, &|id| {
+        id == "coverage" || rules.iter().any(|rule| rule.id() == id) || is_mutation(id) || is_program_rule(id)
+    })
+    .0
+    .into_iter()
+    .filter_map(|(span, id)| (id == "coverage").then_some(span))
+    .collect()
 }
 
 /// Every `snappea-lint: allow` directive: the scope and ID it allows, and the findings
@@ -118,6 +131,7 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<(Span, St
             TopDecl::RefinementTest { span, .. } | TopDecl::Implementation { span, .. } => scopes.push(*span),
             TopDecl::Machine(m) => {
                 scopes.push(m.span);
+                scopes.extend(m.vars.iter().map(|v| v.span));
                 for s in &m.states {
                     scopes.push(s.span);
                     for i in &s.items {
@@ -188,7 +202,7 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<(Span, St
                         }
                     } else {
                         invalid.push(bad(
-                            "lint suppression must precede a machine, test, implementation, state, handler, function, or statement",
+                            "lint suppression must precede a machine, test, implementation, state, handler, field, function, or statement",
                         ));
                     }
                 });

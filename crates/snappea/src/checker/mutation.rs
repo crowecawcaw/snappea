@@ -99,12 +99,17 @@ pub struct Mutant {
     /// Why the change would not change a value when no test case ran a `changes` probe,
     /// e.g. `the operands are never equal`.
     pub unchanged: &'static str,
+    /// The variable the changed statement only writes, when no check depends on it (see
+    /// [`crate::checker::checked`]): no test case can notice the change, so it is not run.
+    pub unchecked: Option<String>,
 }
 
 impl Mutant {
     /// Whether the change would have changed a value in a run with code coverage `hits`.
     pub fn changed(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
-        hits.ran(self.probe) && (self.changes.is_empty() || self.changes.iter().any(|p| hits.ran(*p)))
+        self.unchecked.is_none()
+            && hits.ran(self.probe)
+            && (self.changes.is_empty() || self.changes.iter().any(|p| hits.ran(*p)))
     }
 }
 
@@ -195,12 +200,22 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
         changes_at.entry((p.fun, p.span)).or_default().push(id as u32);
     }
     let sm: &SourceMap = &prog.sources;
+    let checked = crate::checker::checked::analyze(prog);
     let mut out = Vec::new();
     for (i, f) in prog.funs.iter().enumerate() {
         let fun = FunId(i as u32);
         let Some(body) = f.body.clone().filter(|_| funs.get(i).copied().unwrap_or(false)) else { continue };
         let mut body = body;
         let context = fun_context(prog, fun);
+        // statements that only write a value no check depends on
+        let mut unchecked: FxHashMap<Span, String> = FxHashMap::default();
+        crate::checker::checked::visit_stmts(&body, &mut |s| {
+            if checked.removable(s) {
+                if let Some(v) = crate::checker::checked::written(s) {
+                    unchecked.insert(s.span, prog.var(v).name.clone());
+                }
+            }
+        });
         // emptying a body of one statement is the same as removing it
         let effects = body.stmts.iter().filter(|s| !matches!(s.kind, StmtKind::Return(_) | StmtKind::Nop)).count();
         if effects >= 2 && !f.span.is_dummy() {
@@ -219,6 +234,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                     coarse: true,
                     changes: Vec::new(),
                     unchanged: "",
+                    unchecked: None,
                 });
             }
         }
@@ -268,6 +284,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 coarse,
                 changes,
                 unchanged,
+                unchecked: unchecked.get(&stmt).cloned(),
             });
         });
     }
@@ -437,7 +454,7 @@ fn has_choice(e: &Expr) -> bool {
 }
 
 /// Calls `f` with `e` and each expression in it.
-fn visit_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
+pub(crate) fn visit_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
     f(e);
     match &e.kind {
         ExprKind::Tuple(es) | ExprKind::NamedTuple(es) | ExprKind::FunCall { args: es, .. } => {
