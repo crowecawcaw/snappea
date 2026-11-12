@@ -57,9 +57,11 @@ machine TokenSession {
           send p.primary, eWrite, (client = this, session = p.session, value = next);
           // A write's LSN is above every LSN committed before it, so above the token.
           receive { case eWriteAck: (lsn: int) { token = lsn; } }
+          // snappea-lint: allow mutation:swap-operator -- the values only need to be distinct; counting down works as well
           next = next + 1;
         } else {
           send p.route[reads], eReadAtLeast, (client = this, session = p.session, minLsn = token);
+          // snappea-lint: allow mutation -- only steers which replica the next read uses; any routing is allowed, so the contract cannot tell
           reads = reads + 1;
           // The replica answered at or past the token, so this never moves it back.
           receive { case eReadAtResp: (r: (value: int, lsn: int)) { token = r.lsn; } }

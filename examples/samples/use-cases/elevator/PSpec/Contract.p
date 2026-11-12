@@ -75,8 +75,8 @@ event eMoveCommanded: (dir: int);
 // Scheduling (bounded waiting): each move goes
 // toward a registered request; the car reverses only when no registered request lies
 // ahead in its direction, so it cannot pass a waiting floor back and forth.
-spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMoveCommanded, eMotorStopped,
-    eDoorOpened {
+spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMoveCommanded, eMotorStarted,
+    eMotorStopped, eDoorOpened {
   var floor: int;
   var floors: int;
   var unrequested: int;
@@ -86,6 +86,8 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMov
   var registered: set[int];
   var inFlightTotal: int;
   var dir: int;
+  // the move the controller commanded and the motor has not started yet
+  var commanded: bool;
 
   start state Init {
     on eElevatorPlanned do (p: (floor: int, floors: int, requests: int)) {
@@ -98,6 +100,7 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMov
     on eRequested do { assert false, "request before the elevator was planned"; }
     on eCallRegistered do { assert false, "call registered before the elevator was planned"; }
     on eMoveCommanded do { assert false, "move commanded before the elevator was planned"; }
+    on eMotorStarted do { assert false, "motor started before the elevator was planned"; }
     on eMotorStopped do { assert false, "motor stopped before the elevator was planned"; }
     on eDoorOpened do { assert false, "doors opened before the elevator was planned"; }
   }
@@ -123,7 +126,13 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMov
       assert Ahead(m.dir), format("car left floor {0} in direction {1}, away from every request", floor, m.dir);
       assert m.dir == dir || dir == 0 || !Ahead(dir),
         format("car reversed at floor {0} with a request still ahead", floor);
+      assert !commanded, "move commanded while the last one had not started";
+      commanded = true;
       dir = m.dir;
+    }
+    on eMotorStarted do (m: (dir: int)) {
+      assert commanded && m.dir == dir, format("motor started in direction {0} without that command", m.dir);
+      commanded = false;
     }
     on eMotorStopped do (m: (floor: int)) {
       floor = m.floor;
@@ -139,6 +148,7 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMov
     on eRequested do { assert false, "request after every planned request was served"; }
     on eCallRegistered do { assert false, "call registered after every request was served"; }
     on eMoveCommanded do { assert false, "car moved after every request was served"; }
+    on eMotorStarted do { assert false, "motor started after every request was served"; }
     ignore eMotorStopped, eDoorOpened;
   }
 

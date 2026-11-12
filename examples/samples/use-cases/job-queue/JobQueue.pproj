@@ -1,0 +1,9 @@
+<!-- Work queue with visibility timeouts and receipt handles. See README.md. -->
+<Project>
+<ProjectName>JobQueue</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

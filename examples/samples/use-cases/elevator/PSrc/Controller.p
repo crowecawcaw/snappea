@@ -91,15 +91,16 @@ machine Controller {
     goto Moving;
   }
 
+  // Called only after Dispatch served the current floor, so no request equals `floor`.
   fun NextDirection(): int {
     var f: int;
     var above: bool;
     var below: bool;
+    // snappea-lint: allow mutation:swap-operator -- no request equals the current floor here, so > and >= (< and <=) agree
     foreach (f in requests) {
       if (f > floor) { above = true; }
       if (f < floor) { below = true; }
     }
-    if (dir == 1 && above) { return 1; }
     if (dir == -1 && below) { return -1; }
     if (above) { return 1; }
     return -1;

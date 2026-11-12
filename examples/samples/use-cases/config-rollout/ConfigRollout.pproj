@@ -1,0 +1,9 @@
+<!-- Staged config rollout with canary and rollback. See README.md. -->
+<Project>
+<ProjectName>ConfigRollout</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

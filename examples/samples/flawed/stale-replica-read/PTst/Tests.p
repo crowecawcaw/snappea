@@ -18,10 +18,11 @@ fun Ops2(a: tOp, b: tOp) : seq[tOp] {
   return s;
 }
 
-// Read-your-writes: one session writes, then reads.
+// Read-your-writes: one session writes twice, then reads: it must see its second write.
 fun WriteThenRead() : map[int, seq[tOp]] {
   var plans: map[int, seq[tOp]];
-  plans[1] = Ops2(Write, Read);
+  plans[1] = Ops2(Write, Write);
+  plans[1] += (2, Read);
   return plans;
 }
 
