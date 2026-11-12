@@ -28,7 +28,8 @@ enum CoffeeMakerState {
   NotWarmedUp,
   Ready,
   NoBeansError,
-  NoWaterError
+  NoWaterError,
+  HeaterError
 }
 
 /*
@@ -68,6 +69,11 @@ machine CoffeeMakerControlPanel {
     }
 
     on WarmUpCompleted goto CoffeeMakerReady;
+
+    on WarmerError goto EncounteredError with {
+      coffeeMakerState = HeaterError;
+      print "The heater is broken! Please repair it and reset the machine!";
+    }
 
     // grounds door is opened or closed will handle it later after the coffee maker has warmed up
     defer OpenGroundsDoor, CloseGroundsDoor;
@@ -184,6 +190,9 @@ machine CoffeeMakerControlPanel {
 
     // grounds door is open cannot handle these requests just ignore them
     ignore EspressoButtonPressed, SteamerButtonOn, SteamerButtonOff;
+
+    // ignore errors from an earlier steam request; the door was opened after it finished
+    ignore BeansDepleted, WaterDepleted;
   }
 
   state EncounteredError {
@@ -220,6 +229,7 @@ machine CoffeeMakerControlPanel {
 
   fun StopSteamer() {
     // send an event to maker to stop steaming
+    // snappea-lint: allow unchecked-event -- the model has no steamer state to change; the real maker stops the steamer here
     send coffeeMaker, StopSteamerRequest;
   }
 

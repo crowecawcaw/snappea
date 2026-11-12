@@ -96,6 +96,7 @@ machine Coordinator {
         return;
       }
 
+      seenTransIds += (wTrans.transaction.transactionId);
       currentWriteTransReq = wTrans;
       BroadcastToAllParticipants(PrepareRequest, wTrans.transaction);
       //start timer while waiting for responses from all participants

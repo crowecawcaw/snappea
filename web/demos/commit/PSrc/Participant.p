@@ -51,8 +51,8 @@ machine Participant {
       prepareReq.transactionId, pendingWriteTrans);
       // add the transaction to the pending transactions set
       pendingWriteTrans[prepareReq.transactionId] = prepareReq;
-      // non-deterministically pick whether to accept or reject the transaction
-      if (!(prepareReq.key in kvStore) || (prepareReq.key in kvStore && prepareReq.transactionId > kvStore[prepareReq.key].transactionId)) {
+      // accept the transaction unless it is older than the value already stored for the key
+      if (!(prepareReq.key in kvStore) || prepareReq.transactionId > kvStore[prepareReq.key].transactionId) {
         send coordinator, PrepareResponse, (participant = this, transactionId = prepareReq.transactionId, status = SUCCESS);
       }
       else {
@@ -61,19 +61,21 @@ machine Participant {
     }
 
     on ReadTransRequest do (request: ReadTransRequestData) {
-      if(request.key in kvStore) {
-        // read successful as the key exists
-        send request.client, ReadTransResponse, (key = request.key, value = kvStore[request.key].value, status = SUCCESS);
-      }
-
-      else {
-        // read failed as the key does not exist
-        send request.client, ReadTransResponse, (key = "", value = -1, status = ERROR);
-      }
+      // clients read only keys they wrote, after the write committed on every participant
+      assert request.key in kvStore, format ("read of key {0}, which was never committed", request.key);
+      send request.client, ReadTransResponse, (key = request.key, value = kvStore[request.key].value, status = SUCCESS);
     }
 
-    on ShutDown do {
-      raise halt;
+    on ShutDown goto Crashed;
+  }
+
+  // A crashed participant takes no part in transactions. A read sent to it fails fast,
+  // as a refused connection would, so the client is not left waiting forever.
+  state Crashed {
+    on ReadTransRequest do (request: ReadTransRequestData) {
+      send request.client, ReadTransResponse, (key = request.key, value = -1, status = TIMEOUT);
     }
+
+    ignore PrepareRequest, CommitTrans, AbortTrans, ShutDown;
   }
 }
