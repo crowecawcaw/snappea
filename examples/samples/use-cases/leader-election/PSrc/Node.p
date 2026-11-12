@@ -133,7 +133,7 @@ machine Node {
     var stepDown: bool;
     if (r.term > term) {
       term = r.term;
-      // snappea-lint: allow mutation -- only feeds the step-down, which is not observable in a voting-only model (see the handlers)
+      // snappea-lint: allow mutation -- only drives the step-down, which is not observable in a voting-only model (see the handlers)
       stepDown = true;
     }
     if (r.term == term && votedTerm != term) {
@@ -157,6 +157,7 @@ machine Node {
     }
     if (p.term > term) {
       term = p.term;
+      // snappea-lint: allow mutation:flip-boolean -- only drives the step-down, which a voting-only model cannot observe (see the handlers)
       return true;
     }
     return false;

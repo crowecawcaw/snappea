@@ -119,12 +119,7 @@ spec AllCommitted observes eGroupPlanned, eCommitted {
   }
 
   state Done {
-    // A late duplicate can re-commit the final offset after everything is done.
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks generations and members
-    on eCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
-      assert p.offset == records,
-        format("partition {0} committed offset {1} after it was fully committed", p.partition, p.offset);
-    }
+    on eCommitted do { assert false, "commit after every partition was fully committed"; }
     on eGroupPlanned do { assert false, "work planned twice"; }
   }
 }

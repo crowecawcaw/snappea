@@ -36,13 +36,13 @@ machine Controller {
 
   state Idle {
     on eCall do (c: (floor: int)) {
-      requests += (c.floor);
+      Register(c.floor);
       Dispatch();
     }
   }
 
   state Moving {
-    on eCall do (c: (floor: int)) { requests += (c.floor); }
+    on eCall do (c: (floor: int)) { Register(c.floor); }
     on eArrivedAt do (a: (floor: int)) {
       floor = a.floor;
       Dispatch();
@@ -50,7 +50,7 @@ machine Controller {
   }
 
   state Opening {
-    on eCall do (c: (floor: int)) { requests += (c.floor); }
+    on eCall do (c: (floor: int)) { Register(c.floor); }
     on eDoorOpenAck do {
       // Doors are open: passengers get on and off. Then close them.
       send door, eClose, this;
@@ -59,7 +59,7 @@ machine Controller {
   }
 
   state Closing {
-    on eCall do (c: (floor: int)) { requests += (c.floor); }
+    on eCall do (c: (floor: int)) { Register(c.floor); }
     on eDoorObstructed do {
       // Something is in the doorway: the doors stayed open. Try again.
       send door, eClose, this;
@@ -70,6 +70,11 @@ machine Controller {
   }
 
   // Decide the next step with the doors closed and the car stopped.
+  fun Register(f: int) {
+    announce eCallRegistered, (floor = f,);
+    requests += (f);
+  }
+
   fun Dispatch() {
     if (floor in requests) {
       // Served by this opening; a press arriving from now on needs another one.
@@ -81,6 +86,7 @@ machine Controller {
       goto Idle;
     }
     dir = NextDirection();
+    announce eMoveCommanded, (dir = dir,);
     send motor, eMove, (ctl = this, dir = dir);
     goto Moving;
   }

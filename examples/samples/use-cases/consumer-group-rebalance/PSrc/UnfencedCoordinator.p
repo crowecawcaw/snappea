@@ -15,7 +15,6 @@ machine UnfencedCoordinator {
       partitions = n;
     }
     on eJoin do (j: (consumer: machine, id: int)) {
-      if (j.id in members) { return; }
       members[j.id] = j.consumer;
       order += (sizeof(order), j.id);
       Rebalance();

@@ -4,13 +4,16 @@
 // replica the load balancer picks.
 //
 // Real atomic primitives: the primary's commit; a replica applying one log record; a
-// replica serving one read. Replication is asynchronous: shipping races with reads.
+// replica serving one read. Replication is asynchronous: each replica's log stream is a
+// LogShipper, a link that delivers records in order but with any delay, so reads race
+// with it.
 
 event eWrite: (client: machine, session: int, value: int);
 event eWriteAck: int;
 event eReplicate: (lsn: int, value: int);
 
 machine Primary {
+  // One log shipper per replica.
   var replicas: seq[machine];
   var lsn: int;
 
@@ -25,5 +28,15 @@ machine Primary {
         send replica, eReplicate, (lsn = lsn, value = w.value);
       }
     }
+  }
+}
+
+// The replication link to one replica: in order, any delay.
+machine LogShipper {
+  var replica: machine;
+
+  start state Shipping {
+    entry (r: machine) { replica = r; }
+    on eReplicate do (r: (lsn: int, value: int)) { send replica, eReplicate, r; }
   }
 }

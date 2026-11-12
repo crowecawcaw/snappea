@@ -43,11 +43,13 @@ machine SessionReplica {
   }
 }
 
+// Like Session, plus the token. `route` is the replica for each read, as before.
 machine TokenSession {
   start state Run {
-    entry (p: (session: int, primary: machine, replicas: seq[machine], ops: seq[tOp], firstValue: int)) {
+    entry (p: (session: int, primary: machine, route: seq[machine], ops: seq[tOp], firstValue: int)) {
       var op: tOp;
       var next: int;
+      var reads: int;
       var token: int;
       next = p.firstValue;
       foreach (op in p.ops) {
@@ -57,8 +59,8 @@ machine TokenSession {
           receive { case eWriteAck: (lsn: int) { token = lsn; } }
           next = next + 1;
         } else {
-          send p.replicas[choose(sizeof(p.replicas))], eReadAtLeast,
-            (client = this, session = p.session, minLsn = token);
+          send p.route[reads], eReadAtLeast, (client = this, session = p.session, minLsn = token);
+          reads = reads + 1;
           // The replica answered at or past the token, so this never moves it back.
           receive { case eReadAtResp: (r: (value: int, lsn: int)) { token = r.lsn; } }
         }

@@ -18,11 +18,14 @@ machine Replica {
   }
 }
 
+// Runs its operations in order. `route` is the replica the load balancer sends each of
+// its reads to (the test driver plays the load balancer).
 machine Session {
   start state Run {
-    entry (p: (session: int, primary: machine, replicas: seq[machine], ops: seq[tOp], firstValue: int)) {
+    entry (p: (session: int, primary: machine, route: seq[machine], ops: seq[tOp], firstValue: int)) {
       var op: tOp;
       var next: int;
+      var reads: int;
       next = p.firstValue;
       foreach (op in p.ops) {
         if (op == Write) {
@@ -30,8 +33,8 @@ machine Session {
           receive { case eWriteAck: (lsn: int) { } }
           next = next + 1;
         } else {
-          // The load balancer: any replica.
-          send p.replicas[choose(sizeof(p.replicas))], eRead, (client = this, session = p.session);
+          send p.route[reads], eRead, (client = this, session = p.session);
+          reads = reads + 1;
           receive { case eReadResp: (v: int) { } }
         }
       }

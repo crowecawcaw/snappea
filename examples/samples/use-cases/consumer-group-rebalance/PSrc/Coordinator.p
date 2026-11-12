@@ -32,11 +32,9 @@ machine Coordinator {
       partitions = n;
     }
     on eJoin do (j: (consumer: machine, id: int)) {
-      if (j.id in members) {
-        // Still a member: it was fenced because a rebalance happened, and that
-        // generation's assignment is already on its way to it. Nothing to do.
-        return;
-      }
+      // Only a non-member rejoins. A member fenced by a newer generation got that
+      // generation's assignment before the rejection (messages from the coordinator
+      // arrive in order), so it drops the stale rejection instead of rejoining.
       members[j.id] = j.consumer;
       order += (sizeof(order), j.id);
       Rebalance();

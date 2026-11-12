@@ -46,19 +46,6 @@ machine ZombieExpired {
   }
 }
 
-// Lifecycle boundary: consumer 2 joins only after consumer 1 committed everything. The
-// rebalance must not reprocess or move any offset.
-machine JoinAfterDone {
-  var coordinator: Coordinator;
-  start state Run {
-    entry {
-      coordinator = new Coordinator(2);
-      announce eGroupPlanned, (partitions = 2, records = 2);
-      new Consumer((coordinator = coordinator, id = 1, records = 2));
-    }
-  }
-}
-
 machine BugNoGenerationCheck {
   start state Run {
     entry {

@@ -1,6 +1,9 @@
-// Drivers. Sessions, replicas and the primary are the design under test; the drivers
-// announce every session's plan, then start two replicas, the primary and the sessions.
-// Session s writes the values 10*s + 1, 10*s + 2, ...
+// Drivers. Sessions, replicas, log shippers and the primary are the design under test;
+// the drivers announce every session's plan, then start the replicas, the primary and
+// the sessions. Session s writes the values 10*s + 1, 10*s + 2, ... The drivers also
+// play the load balancer: with two replicas, a session's first read goes to replica 0
+// and its second to replica 1 (the unlucky routing for monotonic reads); with one
+// replica, every read goes to it.
 
 fun Ops1(a: tOp) : seq[tOp] {
   var s: seq[tOp];
@@ -40,31 +43,51 @@ fun TwoWritersReading() : map[int, seq[tOp]] {
   return plans;
 }
 
-fun TwoReplicas() : seq[machine] {
+fun Replicas(n: int) : seq[machine] {
   var r: seq[machine];
-  r += (0, new Replica());
-  r += (1, new Replica());
+  while (sizeof(r) < n) { r += (sizeof(r), new Replica()); }
   return r;
 }
 
-fun TwoSessionReplicas() : seq[machine] {
+fun SessionReplicas(n: int) : seq[machine] {
   var r: seq[machine];
-  r += (0, new SessionReplica());
-  r += (1, new SessionReplica());
+  while (sizeof(r) < n) { r += (sizeof(r), new SessionReplica()); }
   return r;
+}
+
+// Read i goes to replica i, or to the last replica.
+fun Route(replicas: seq[machine]) : seq[machine] {
+  var route: seq[machine];
+  while (sizeof(route) < 2) {
+    if (sizeof(route) < sizeof(replicas)) {
+      route += (sizeof(route), replicas[sizeof(route)]);
+    } else {
+      route += (sizeof(route), replicas[sizeof(replicas) - 1]);
+    }
+  }
+  return route;
+}
+
+fun Shippers(replicas: seq[machine]) : seq[machine] {
+  var s: seq[machine];
+  var r: machine;
+  foreach (r in replicas) { s += (sizeof(s), new LogShipper(r)); }
+  return s;
 }
 
 machine LoadBalancedReads {
   start state Init {
-    entry (plans: map[int, seq[tOp]]) {
+    entry (p: (plans: map[int, seq[tOp]], replicas: int)) {
+      var plans: map[int, seq[tOp]];
       var replicas: seq[machine];
       var primary: machine;
       var s: int;
+      plans = p.plans;
       announce eSessionsPlanned, plans;
-      replicas = TwoReplicas();
-      primary = new Primary(replicas);
+      replicas = Replicas(p.replicas);
+      primary = new Primary(Shippers(replicas));
       foreach (s in keys(plans)) {
-        new Session((session = s, primary = primary, replicas = replicas, ops = plans[s], firstValue = 10 * s + 1));
+        new Session((session = s, primary = primary, route = Route(replicas), ops = plans[s], firstValue = 10 * s + 1));
       }
     }
   }
@@ -72,40 +95,44 @@ machine LoadBalancedReads {
 
 machine TokenReads {
   start state Init {
-    entry (plans: map[int, seq[tOp]]) {
+    entry (p: (plans: map[int, seq[tOp]], replicas: int)) {
+      var plans: map[int, seq[tOp]];
       var replicas: seq[machine];
       var primary: machine;
       var s: int;
+      plans = p.plans;
       announce eSessionsPlanned, plans;
-      replicas = TwoSessionReplicas();
-      primary = new Primary(replicas);
+      replicas = SessionReplicas(p.replicas);
+      primary = new Primary(Shippers(replicas));
       foreach (s in keys(plans)) {
-        new TokenSession((session = s, primary = primary, replicas = replicas, ops = plans[s], firstValue = 10 * s + 1));
+        new TokenSession((session = s, primary = primary, route = Route(replicas), ops = plans[s], firstValue = 10 * s + 1));
       }
     }
   }
 }
 
 // Test mains take no payload, so each test has a one-line main that picks the plan.
-machine BugReadYourWrites { start state Init { entry { new LoadBalancedReads(WriteThenRead()); } } }
-machine BugMonotonicReads { start state Init { entry { new LoadBalancedReads(ReadTwiceWhileWriting()); } } }
-machine FixedReadYourWrites { start state Init { entry { new TokenReads(WriteThenRead()); } } }
-machine FixedMonotonicReads { start state Init { entry { new TokenReads(ReadTwiceWhileWriting()); } } }
-machine FixedTwoWriters { start state Init { entry { new TokenReads(TwoWritersReading()); } } }
+// Read-your-writes and two writers need only one lagging replica; monotonic reads need
+// two replicas at different points.
+machine BugReadYourWrites { start state Init { entry { new LoadBalancedReads((plans = WriteThenRead(), replicas = 1)); } } }
+machine BugMonotonicReads { start state Init { entry { new LoadBalancedReads((plans = ReadTwiceWhileWriting(), replicas = 2)); } } }
+machine FixedReadYourWrites { start state Init { entry { new TokenReads((plans = WriteThenRead(), replicas = 1)); } } }
+machine FixedMonotonicReads { start state Init { entry { new TokenReads((plans = ReadTwiceWhileWriting(), replicas = 2)); } } }
+machine FixedTwoWriters { start state Init { entry { new TokenReads((plans = TwoWritersReading(), replicas = 1)); } } }
 
 test tcFixedReadYourWrites [main=FixedReadYourWrites]:
-  assert SessionGuarantees in { FixedReadYourWrites, TokenReads, Primary, SessionReplica, TokenSession };
+  assert SessionGuarantees in { FixedReadYourWrites, TokenReads, Primary, LogShipper, SessionReplica, TokenSession };
 
 test tcFixedMonotonicReads [main=FixedMonotonicReads]:
-  assert SessionGuarantees in { FixedMonotonicReads, TokenReads, Primary, SessionReplica, TokenSession };
+  assert SessionGuarantees in { FixedMonotonicReads, TokenReads, Primary, LogShipper, SessionReplica, TokenSession };
 
 test tcFixedTwoWriters [main=FixedTwoWriters]:
-  assert SessionGuarantees in { FixedTwoWriters, TokenReads, Primary, SessionReplica, TokenSession };
+  assert SessionGuarantees in { FixedTwoWriters, TokenReads, Primary, LogShipper, SessionReplica, TokenSession };
 
 // expect-bug: read-your-writes violated
 test tcBugReadYourWrites [main=BugReadYourWrites]:
-  assert SessionGuarantees in { BugReadYourWrites, LoadBalancedReads, Primary, Replica, Session };
+  assert SessionGuarantees in { BugReadYourWrites, LoadBalancedReads, Primary, LogShipper, Replica, Session };
 
 // expect-bug: monotonic reads violated
 test tcBugMonotonicReads [main=BugMonotonicReads]:
-  assert SessionGuarantees in { BugMonotonicReads, LoadBalancedReads, Primary, Replica, Session };
+  assert SessionGuarantees in { BugMonotonicReads, LoadBalancedReads, Primary, LogShipper, Replica, Session };

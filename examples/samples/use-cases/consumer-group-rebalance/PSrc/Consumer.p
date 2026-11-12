@@ -4,7 +4,9 @@
 // between means the record is processed again by the next owner (at-least-once).
 //
 // A new assignment replaces the current work at once (eager rebalance). Replies tagged
-// with an older generation, or for another partition, are leftovers and are dropped.
+// with an older generation are leftovers and are dropped. Within one generation the
+// consumer waits for each reply before its next request, so a reply with the current
+// generation is always for the current partition.
 // A rejected commit means the consumer was fenced: it rejoins the group.
 
 // From the application (the test driver): shut down cleanly.
@@ -46,12 +48,12 @@ machine Consumer {
     }
     on eAssignment do (a: (gen: int, partitions: seq[int])) { Adopt(a); }
     on eFetched do (r: (gen: int, partition: int, offset: int)) {
-      if (r.gen != gen || r.partition != partition) { return; }
+      if (r.gen != gen) { return; }
       offset = r.offset;
       Process();
     }
     on eCommitResp do (r: (gen: int, partition: int, ok: bool)) {
-      if (r.gen != gen || r.partition != partition) { return; }
+      if (r.gen != gen) { return; }
       if (!r.ok) {
         // Fenced: this consumer missed a rebalance or was expelled.
         send coordinator, eJoin, (consumer = this, id = id);

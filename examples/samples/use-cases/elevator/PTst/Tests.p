@@ -96,11 +96,11 @@ fun Floors2(a: int, b: int): seq[int] {
   return s;
 }
 
-// Three floors, the car stopped at floor 0 with doors closed.
-fun StartElevator(a: seq[int], b: seq[int], obstructions: int) {
+// Three floors, the car stopped at floor `first` with doors closed.
+fun StartElevator(first: int, a: seq[int], b: seq[int], obstructions: int) {
   var ctl: Controller;
-  announce eElevatorPlanned, (floor = 0, floors = 3, requests = sizeof(a) + sizeof(b));
-  ctl = new Controller((motor = new Motor(0), door = new Door(obstructions), floor = 0));
+  announce eElevatorPlanned, (floor = first, floors = 3, requests = sizeof(a) + sizeof(b));
+  ctl = new Controller((motor = new Motor(first), door = new Door(obstructions), floor = first));
   new Passenger((ctl = ctl, floors = a));
   new Passenger((ctl = ctl, floors = b));
 }
@@ -108,7 +108,7 @@ fun StartElevator(a: seq[int], b: seq[int], obstructions: int) {
 // Two passengers: one rides from floor 2 down to 0, the other wants floor 1.
 machine TwoPassengers {
   start state Init {
-    entry { StartElevator(Floors2(2, 0), Floors1(1), 0); }
+    entry { StartElevator(0, Floors2(2, 0), Floors1(1), 0); }
   }
 }
 
@@ -116,15 +116,16 @@ machine TwoPassengers {
 // are opening, open, or closing; it must still get a door opening of its own.
 machine CallWhileClosing {
   start state Init {
-    entry { StartElevator(Floors1(0), Floors1(0), 0); }
+    entry { StartElevator(0, Floors1(0), Floors1(0), 0); }
   }
 }
 
-// One passenger calls the car to floor 2; the other presses floor 1 at any moment:
-// before the car leaves, while it moves toward floor 1, or after it passed.
+// The car is at floor 2. One passenger calls it to floor 0; the other presses floor 1
+// at any moment: before the car leaves, while it moves toward floor 1, or after it
+// passed.
 machine CallWhilePassing {
   start state Init {
-    entry { StartElevator(Floors1(2), Floors1(1), 0); }
+    entry { StartElevator(2, Floors1(0), Floors1(1), 0); }
   }
 }
 
@@ -132,15 +133,15 @@ machine CallWhilePassing {
 // must still serve the other floor.
 machine ObstructedDoor {
   start state Init {
-    entry { StartElevator(Floors2(0, 1), Floors1(0), 2); }
+    entry { StartElevator(0, Floors2(0, 1), Floors1(0), 2); }
   }
 }
 
-// Two passengers pressing three floors chosen from three, with or without one door
-// obstruction.
+// From any start floor, two passengers pressing three floors chosen from three, with
+// or without one door obstruction.
 machine GeneratedRides {
   start state Init {
-    entry { StartElevator(Floors2(choose(3), choose(3)), Floors1(choose(3)), choose(2)); }
+    entry { StartElevator(choose(3), Floors2(choose(3), choose(3)), Floors1(choose(3)), choose(2)); }
   }
 }
 

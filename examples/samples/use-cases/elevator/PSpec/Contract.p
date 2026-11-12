@@ -64,14 +64,28 @@ spec DoorsAndMotion observes eElevatorPlanned, eMotorStarted, eMotorStopped, eDo
   }
 }
 
-// Progress: every requested floor is eventually served: the doors open there after
-// the request. A request for the floor the doors are already open at is served only
-// by a later opening (the passenger pressed because the doors were closing).
-spec RequestsServed observes eElevatorPlanned, eRequested, eMotorStopped, eDoorOpened {
+// Controller: received the button press for `floor` (its commit point for a request).
+event eCallRegistered: (floor: int);
+// Controller: commanded the motor to move one floor in direction `dir`. Scheduling is
+// judged here, against what the controller knew when it decided.
+event eMoveCommanded: (dir: int);
+
+// Progress: every press reaches the controller, and every floor the controller
+// registered is eventually served: the doors open there after the registration.
+// Scheduling (bounded waiting): each move goes
+// toward a registered request; the car reverses only when no registered request lies
+// ahead in its direction, so it cannot pass a waiting floor back and forth.
+spec RequestsServed observes eElevatorPlanned, eRequested, eCallRegistered, eMoveCommanded, eMotorStopped,
+    eDoorOpened {
   var floor: int;
   var floors: int;
   var unrequested: int;
-  var pending: set[int];
+  // presses made but not yet received by the controller, per floor
+  var inFlight: map[int, int];
+  // floors the controller knows about and has not served
+  var registered: set[int];
+  var inFlightTotal: int;
+  var dir: int;
 
   start state Init {
     on eElevatorPlanned do (p: (floor: int, floors: int, requests: int)) {
@@ -82,6 +96,8 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eMotorStopped, eDoorO
       goto Pending;
     }
     on eRequested do { assert false, "request before the elevator was planned"; }
+    on eCallRegistered do { assert false, "call registered before the elevator was planned"; }
+    on eMoveCommanded do { assert false, "move commanded before the elevator was planned"; }
     on eMotorStopped do { assert false, "motor stopped before the elevator was planned"; }
     on eDoorOpened do { assert false, "doors opened before the elevator was planned"; }
   }
@@ -92,20 +108,46 @@ spec RequestsServed observes eElevatorPlanned, eRequested, eMotorStopped, eDoorO
       assert r.floor >= 0 && r.floor < floors, format("request for floor {0}, outside the building", r.floor);
       assert unrequested > 0, "more requests than planned";
       unrequested = unrequested - 1;
-      pending += (r.floor);
+      inFlightTotal = inFlightTotal + 1;
+      if (!(r.floor in inFlight)) { inFlight[r.floor] = 0; }
+      inFlight[r.floor] = inFlight[r.floor] + 1;
+    }
+    on eCallRegistered do (c: (floor: int)) {
+      assert c.floor in inFlight && inFlight[c.floor] > 0,
+        format("controller registered floor {0}, which nobody pressed", c.floor);
+      inFlight[c.floor] = inFlight[c.floor] - 1;
+      inFlightTotal = inFlightTotal - 1;
+      registered += (c.floor);
+    }
+    on eMoveCommanded do (m: (dir: int)) {
+      assert Ahead(m.dir), format("car left floor {0} in direction {1}, away from every request", floor, m.dir);
+      assert m.dir == dir || dir == 0 || !Ahead(dir),
+        format("car reversed at floor {0} with a request still ahead", floor);
+      dir = m.dir;
     }
     on eMotorStopped do (m: (floor: int)) {
       floor = m.floor;
     }
     on eDoorOpened do {
-      pending -= (floor);
-      if (unrequested == 0 && sizeof(pending) == 0) { goto Served; }
+      registered -= (floor);
+      if (unrequested == 0 && inFlightTotal == 0 && sizeof(registered) == 0) { goto Served; }
     }
   }
 
   state Served {
     on eElevatorPlanned do { assert false, "elevator planned twice"; }
     on eRequested do { assert false, "request after every planned request was served"; }
+    on eCallRegistered do { assert false, "call registered after every request was served"; }
+    on eMoveCommanded do { assert false, "car moved after every request was served"; }
     ignore eMotorStopped, eDoorOpened;
+  }
+
+  // Is a registered request in direction d from the car's floor?
+  fun Ahead(d: int): bool {
+    var f: int;
+    foreach (f in registered) {
+      if ((f - floor) * d > 0) { return true; }
+    }
+    return false;
   }
 }

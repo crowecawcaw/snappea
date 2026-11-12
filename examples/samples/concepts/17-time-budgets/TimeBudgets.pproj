@@ -1,0 +1,9 @@
+<!-- A retry policy that must finish within the caller's deadline. See README.md. -->
+<Project>
+<ProjectName>TimeBudgets</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
