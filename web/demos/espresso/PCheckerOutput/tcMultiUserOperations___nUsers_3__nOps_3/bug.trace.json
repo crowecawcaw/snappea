@@ -1,0 +1,767 @@
+[
+  {
+    "type": "CreateMonitor",
+    "details": {
+      "log": "EspressoMachineModesOfOperation was created.",
+      "payload": "null",
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 1
+      }
+    }
+  },
+  {
+    "type": "MonitorStateTransition",
+    "details": {
+      "log": "EspressoMachineModesOfOperation enters state \u0027StartUp\u0027.",
+      "state": "StartUp",
+      "payload": "null",
+      "isEntry": true,
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "TestWithMultipleUsers(1) was created by task \u00271\u0027.",
+      "id": "TestWithMultipleUsers(1)",
+      "payload": "null",
+      "clock": {
+        "TestWithMultipleUsers(1)": 1
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "TestWithMultipleUsers(1) enters state \u0027Init\u0027.",
+      "id": "TestWithMultipleUsers(1)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "TestWithMultipleUsers(1)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) was created by TestWithMultipleUsers(1).",
+      "id": "CoffeeMakerControlPanel(2)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 1
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) enters state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "SaneUser(3) was created by TestWithMultipleUsers(1).",
+      "id": "SaneUser(3)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "SaneUser(3)": 1
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) was created by TestWithMultipleUsers(1).",
+      "id": "CoffeeMakerControlPanel(4)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 1
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(3) enters state \u0027Init\u0027.",
+      "id": "SaneUser(3)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "SaneUser(3)": 2
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027SaneUser(3)\u0027 in state \u0027Init\u0027 sent event \u0027CoffeeMachineUser with payload (SaneUser(3))\u0027 to \u0027CoffeeMakerControlPanel(2)\u0027.",
+      "event": "CoffeeMachineUser",
+      "state": "Init",
+      "payload": "SaneUser(3)",
+      "sender": "SaneUser(3)",
+      "target": "CoffeeMakerControlPanel(2)",
+      "isTargetHalted": false,
+      "clock": {
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "GotoState",
+    "details": {
+      "log": "SaneUser(3) is transitioning from state \u0027Init\u0027 to state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(3)",
+      "startState": "Init",
+      "endState": "LetsMakeCoffee",
+      "payload": "null",
+      "clock": {
+        "SaneUser(3)": 4
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(3) exits state \u0027Init\u0027.",
+      "id": "SaneUser(3)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": false,
+      "clock": {
+        "SaneUser(3)": 5
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(3) enters state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(3)",
+      "state": "LetsMakeCoffee",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "SaneUser(3)": 6
+      }
+    }
+  },
+  {
+    "type": "WaitMultipleEvents",
+    "details": {
+      "log": "SaneUser(3) is waiting to dequeue an event of type \u0027CoffeeMakerReady\u0027, \u0027CoffeeMakerError\u0027 or \u0027PHalt\u0027 in state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(3)",
+      "payload": "null",
+      "eventTypes": [
+        "CoffeeMakerReady",
+        "CoffeeMakerError",
+        "PHalt"
+      ],
+      "clock": {
+        "SaneUser(3)": 7
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) enters state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "EspressoCoffeeMaker(5) was created by CoffeeMakerControlPanel(4).",
+      "id": "EspressoCoffeeMaker(5)",
+      "creatorName": "CoffeeMakerControlPanel(4)",
+      "creatorType": "CoffeeMakerControlPanel",
+      "payload": "null",
+      "clock": {
+        "EspressoCoffeeMaker(5)": 1
+      }
+    }
+  },
+  {
+    "type": "WaitMultipleEvents",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) is waiting to dequeue an event of type \u0027CoffeeMachineUser\u0027 or \u0027PHalt\u0027 in state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "payload": "null",
+      "eventTypes": [
+        "CoffeeMachineUser",
+        "PHalt"
+      ],
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "EspressoCoffeeMaker(5) enters state \u0027WaitForRequests\u0027.",
+      "id": "EspressoCoffeeMaker(5)",
+      "state": "WaitForRequests",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "EspressoCoffeeMaker(5)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "CrazyUser(6) was created by TestWithMultipleUsers(1).",
+      "id": "CrazyUser(6)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "CrazyUser(6)": 1
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "CoffeeMakerControlPanel(7) was created by TestWithMultipleUsers(1).",
+      "id": "CoffeeMakerControlPanel(7)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(7)": 1
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CrazyUser(6) enters state \u0027StartPressingButtons\u0027.",
+      "id": "CrazyUser(6)",
+      "state": "StartPressingButtons",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CrazyUser(6)": 2
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027CrazyUser(6)\u0027 in state \u0027StartPressingButtons\u0027 sent event \u0027CoffeeMachineUser with payload (CrazyUser(6))\u0027 to \u0027CoffeeMakerControlPanel(4)\u0027.",
+      "event": "CoffeeMachineUser",
+      "state": "StartPressingButtons",
+      "payload": "CrazyUser(6)",
+      "sender": "CrazyUser(6)",
+      "target": "CoffeeMakerControlPanel(4)",
+      "isTargetHalted": false,
+      "clock": {
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "ReceiveEvent",
+    "details": {
+      "log": "\u0027CoffeeMakerControlPanel(4)\u0027 dequeued event \u0027CoffeeMachineUser with payload (CrazyUser(6))\u0027 and unblocked in state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "event": "CoffeeMachineUser",
+      "state": "Init",
+      "payload": "CrazyUser(6)",
+      "wasBlocked": true,
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 4,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "SaneUser(8) was created by TestWithMultipleUsers(1).",
+      "id": "SaneUser(8)",
+      "creatorName": "TestWithMultipleUsers(1)",
+      "creatorType": "TestWithMultipleUsers",
+      "payload": "null",
+      "clock": {
+        "SaneUser(8)": 1
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(8) enters state \u0027Init\u0027.",
+      "id": "SaneUser(8)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "SaneUser(8)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "EspressoCoffeeMaker(9) was created by CoffeeMakerControlPanel(2).",
+      "id": "EspressoCoffeeMaker(9)",
+      "creatorName": "CoffeeMakerControlPanel(2)",
+      "creatorType": "CoffeeMakerControlPanel",
+      "payload": "null",
+      "clock": {
+        "EspressoCoffeeMaker(9)": 1
+      }
+    }
+  },
+  {
+    "type": "ReceiveEvent",
+    "details": {
+      "log": "\u0027CoffeeMakerControlPanel(2)\u0027 dequeued event \u0027CoffeeMachineUser with payload (SaneUser(3))\u0027 in state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "event": "CoffeeMachineUser",
+      "state": "Init",
+      "payload": "SaneUser(3)",
+      "wasBlocked": false,
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 3,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "EspressoCoffeeMaker(9) enters state \u0027WaitForRequests\u0027.",
+      "id": "EspressoCoffeeMaker(9)",
+      "state": "WaitForRequests",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "EspressoCoffeeMaker(9)": 2
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(7) enters state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(7)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CoffeeMakerControlPanel(7)": 2
+      }
+    }
+  },
+  {
+    "type": "CreateStateMachine",
+    "details": {
+      "log": "EspressoCoffeeMaker(10) was created by CoffeeMakerControlPanel(7).",
+      "id": "EspressoCoffeeMaker(10)",
+      "creatorName": "CoffeeMakerControlPanel(7)",
+      "creatorType": "CoffeeMakerControlPanel",
+      "payload": "null",
+      "clock": {
+        "EspressoCoffeeMaker(10)": 1
+      }
+    }
+  },
+  {
+    "type": "WaitMultipleEvents",
+    "details": {
+      "log": "CoffeeMakerControlPanel(7) is waiting to dequeue an event of type \u0027CoffeeMachineUser\u0027 or \u0027PHalt\u0027 in state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(7)",
+      "payload": "null",
+      "eventTypes": [
+        "CoffeeMachineUser",
+        "PHalt"
+      ],
+      "clock": {
+        "CoffeeMakerControlPanel(7)": 3
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027SaneUser(8)\u0027 in state \u0027Init\u0027 sent event \u0027CoffeeMachineUser with payload (SaneUser(8))\u0027 to \u0027CoffeeMakerControlPanel(7)\u0027.",
+      "event": "CoffeeMachineUser",
+      "state": "Init",
+      "payload": "SaneUser(8)",
+      "sender": "SaneUser(8)",
+      "target": "CoffeeMakerControlPanel(7)",
+      "isTargetHalted": false,
+      "clock": {
+        "SaneUser(8)": 3
+      }
+    }
+  },
+  {
+    "type": "ReceiveEvent",
+    "details": {
+      "log": "\u0027CoffeeMakerControlPanel(7)\u0027 dequeued event \u0027CoffeeMachineUser with payload (SaneUser(8))\u0027 and unblocked in state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(7)",
+      "event": "CoffeeMachineUser",
+      "state": "Init",
+      "payload": "SaneUser(8)",
+      "wasBlocked": true,
+      "clock": {
+        "CoffeeMakerControlPanel(7)": 4,
+        "SaneUser(8)": 3
+      }
+    }
+  },
+  {
+    "type": "GotoState",
+    "details": {
+      "log": "SaneUser(8) is transitioning from state \u0027Init\u0027 to state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(8)",
+      "startState": "Init",
+      "endState": "LetsMakeCoffee",
+      "payload": "null",
+      "clock": {
+        "SaneUser(8)": 4
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(8) exits state \u0027Init\u0027.",
+      "id": "SaneUser(8)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": false,
+      "clock": {
+        "SaneUser(8)": 5
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "SaneUser(8) enters state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(8)",
+      "state": "LetsMakeCoffee",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "SaneUser(8)": 6
+      }
+    }
+  },
+  {
+    "type": "WaitMultipleEvents",
+    "details": {
+      "log": "SaneUser(8) is waiting to dequeue an event of type \u0027CoffeeMakerReady\u0027, \u0027CoffeeMakerError\u0027 or \u0027PHalt\u0027 in state \u0027LetsMakeCoffee\u0027.",
+      "id": "SaneUser(8)",
+      "payload": "null",
+      "eventTypes": [
+        "CoffeeMakerReady",
+        "CoffeeMakerError",
+        "PHalt"
+      ],
+      "clock": {
+        "SaneUser(8)": 7
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027CrazyUser(6)\u0027 in state \u0027StartPressingButtons\u0027 sent event \u0027EspressoButtonPressed\u0027 to \u0027CoffeeMakerControlPanel(4)\u0027.",
+      "event": "EspressoButtonPressed",
+      "state": "StartPressingButtons",
+      "payload": "null",
+      "sender": "CrazyUser(6)",
+      "target": "CoffeeMakerControlPanel(4)",
+      "isTargetHalted": false,
+      "clock": {
+        "CrazyUser(6)": 4
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "EspressoCoffeeMaker(10) enters state \u0027WaitForRequests\u0027.",
+      "id": "EspressoCoffeeMaker(10)",
+      "state": "WaitForRequests",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "EspressoCoffeeMaker(10)": 2
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027CrazyUser(6)\u0027 in state \u0027StartPressingButtons\u0027 sent event \u0027ResetCoffeeMaker\u0027 to \u0027CoffeeMakerControlPanel(4)\u0027.",
+      "event": "ResetCoffeeMaker",
+      "state": "StartPressingButtons",
+      "payload": "null",
+      "sender": "CrazyUser(6)",
+      "target": "CoffeeMakerControlPanel(4)",
+      "isTargetHalted": false,
+      "clock": {
+        "CrazyUser(6)": 5
+      }
+    }
+  },
+  {
+    "type": "GotoState",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) is transitioning from state \u0027Init\u0027 to state \u0027WarmUpCoffeeMaker\u0027.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "startState": "Init",
+      "endState": "WarmUpCoffeeMaker",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 4,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) exits state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": false,
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 5,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) enters state \u0027WarmUpCoffeeMaker\u0027.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "state": "WarmUpCoffeeMaker",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 6,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "Announce",
+    "details": {
+      "log": "CoffeeMakerControlPanel(2) announced event InWarmUpState.",
+      "id": "CoffeeMakerControlPanel(2)",
+      "event": "InWarmUpState",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "MonitorProcessEvent",
+    "details": {
+      "log": "EspressoMachineModesOfOperation is processing event \u0027InWarmUpState\u0027 in state \u0027StartUp\u0027.",
+      "event": "InWarmUpState",
+      "state": "StartUp",
+      "payload": "null",
+      "sender": "CoffeeMakerControlPanel(2)",
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 3,
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "MonitorStateTransition",
+    "details": {
+      "log": "EspressoMachineModesOfOperation exits state \u0027StartUp\u0027.",
+      "state": "StartUp",
+      "payload": "null",
+      "isEntry": false,
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 4,
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "MonitorStateTransition",
+    "details": {
+      "log": "EspressoMachineModesOfOperation enters state \u0027WarmUp\u0027.",
+      "state": "WarmUp",
+      "payload": "null",
+      "isEntry": true,
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 5,
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3
+      }
+    }
+  },
+  {
+    "type": "SendEvent",
+    "details": {
+      "log": "\u0027CrazyUser(6)\u0027 in state \u0027StartPressingButtons\u0027 sent event \u0027EspressoButtonPressed\u0027 to \u0027CoffeeMakerControlPanel(4)\u0027.",
+      "event": "EspressoButtonPressed",
+      "state": "StartPressingButtons",
+      "payload": "null",
+      "sender": "CrazyUser(6)",
+      "target": "CoffeeMakerControlPanel(4)",
+      "isTargetHalted": false,
+      "clock": {
+        "CrazyUser(6)": 6
+      }
+    }
+  },
+  {
+    "type": "GotoState",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) is transitioning from state \u0027Init\u0027 to state \u0027WarmUpCoffeeMaker\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "startState": "Init",
+      "endState": "WarmUpCoffeeMaker",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 5,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) exits state \u0027Init\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "state": "Init",
+      "payload": "null",
+      "isEntry": false,
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 6,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "StateTransition",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) enters state \u0027WarmUpCoffeeMaker\u0027.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "state": "WarmUpCoffeeMaker",
+      "payload": "null",
+      "isEntry": true,
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 7,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "Announce",
+    "details": {
+      "log": "CoffeeMakerControlPanel(4) announced event InWarmUpState.",
+      "id": "CoffeeMakerControlPanel(4)",
+      "event": "InWarmUpState",
+      "payload": "null",
+      "clock": {
+        "CoffeeMakerControlPanel(4)": 8,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "MonitorProcessEvent",
+    "details": {
+      "log": "EspressoMachineModesOfOperation is processing event \u0027InWarmUpState\u0027 in state \u0027WarmUp\u0027.",
+      "event": "InWarmUpState",
+      "state": "WarmUp",
+      "payload": "null",
+      "sender": "CoffeeMakerControlPanel(4)",
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 6,
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3,
+        "CoffeeMakerControlPanel(4)": 8,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "MonitorStateTransition",
+    "details": {
+      "log": "EspressoMachineModesOfOperation exits state \u0027WarmUp\u0027.",
+      "state": "WarmUp",
+      "payload": "null",
+      "isEntry": false,
+      "monitor": "EspressoMachineModesOfOperation",
+      "clock": {
+        "EspressoMachineModesOfOperation": 7,
+        "CoffeeMakerControlPanel(2)": 7,
+        "SaneUser(3)": 3,
+        "CoffeeMakerControlPanel(4)": 8,
+        "CrazyUser(6)": 3
+      }
+    }
+  },
+  {
+    "type": "AssertionFailure",
+    "details": {
+      "log": "PImplementation.EspressoMachineModesOfOperation received event \u0027PImplementation.InWarmUpState\u0027 that cannot be handled.",
+      "error": "PImplementation.EspressoMachineModesOfOperation received event \u0027PImplementation.InWarmUpState\u0027 that cannot be handled.",
+      "payload": "null"
+    }
+  },
+  {
+    "type": "StrategyDescription",
+    "details": {
+      "log": "Found bug using \u0027auto\u0027 strategy.",
+      "payload": "null",
+      "strategy": "auto",
+      "strategyDescription": "auto"
+    }
+  }
+]

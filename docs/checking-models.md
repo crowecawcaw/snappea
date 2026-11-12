@@ -380,6 +380,14 @@ schedules the test cases explored, not every schedule: add a scenario that reach
 such a state, and the mutant runs. On Raft, about one surviving mutant in ten never
 changes a value.
 
+A mutant whose change only writes a variable no check depends on (the
+[`unchecked-state`](linting.md#unchecked-state-and-events) analysis: no assertion,
+condition, spec or sent event reads it, directly or through other variables) is not
+run either: no test case can notice it. The console says `(only writes 'log', which no
+check depends on: see the unchecked-state lint)` and JSON names the variable as
+`unchecked_variable`. Only changes inside a plain assignment, append or map write whose
+values involve no call, `new`, choice or operation that can fail are skipped.
+
 A mutant that keeps the model from finishing is stopped early. Before the mutants run,
 each test case runs 100 schedules of the unchanged model. When at most 40% of those
 reach the step bound and a mutant's do far more often, the mutant stops and counts as
@@ -418,7 +426,7 @@ schedules than the budget are marked `(only 60 schedules)` in the console and ha
 when a test case fails: fix the bug first. Undetected mutants do not change the exit
 status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
-`search_complete`, `changes_a_value` and, for a coarse mutant, the undetected mutants inside it
+`search_complete`, `changes_a_value`, `unchecked_variable` and, for a coarse mutant, the undetected mutants inside it
 (`undetected_inside`); `undetected_inside_undetected` counts those.
 
 ### Suppressing a mutant
@@ -482,6 +490,20 @@ found a cycle or hit the step bound, the driver may repeat without limit: no cou
 orders are listed then, and `driver.repeats` is true. Driver limits are not listed for a
 test case that failed, and never change the exit status. `--no-driver-facts` turns them
 off.
+
+A passing test case whose search explored every schedule, and whose schedules reach
+few states beyond one run (at most 3 distinct states per step of the longest
+schedule), gets a note:
+
+```
+ok    tcServe (all 5 schedules, 0.00s)
+      note: every schedule reaches nearly the same states, so this test checks little more than one run would
+      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice
+```
+
+The model has nearly one behavior under this test, so the search has little to find:
+one client sending one request is a unit test, not a concurrency check. JSON has
+`little_to_explore: true` on the test case. The note never changes the exit status.
 
 For installation and a first model, see the [command line guide](https://snappea.dev/docs/cli.html).
 For checking application events and logs, see [snappea observe](observe.md).

@@ -756,6 +756,10 @@ pub struct CaseOutcome {
     pub plateaued: bool,
     /// For an exhaustive search: whether every alternative was explored.
     pub exhaustive_finished: Option<bool>,
+    /// For an exhaustive search: the distinct states it reached (summed over workers, so
+    /// at least the true count) and its deepest schedule's choices. A search that reaches
+    /// few more states than its depth explores little more than one run.
+    pub exhaustive_states: Option<(usize, usize)>,
     /// Seconds the test case took.
     pub elapsed: f64,
     /// The `.schedule` file written for the bug (as `cfg.output_directory` names it).
@@ -931,6 +935,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         timed_out: res.cancelled && !plateaued,
         plateaued: res.cancelled && plateaued,
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
+        exhaustive_states: res.exhaustive.as_ref().map(|x| (x.distinct_states, x.max_depth)),
         elapsed: process_elapsed,
         schedule_file,
         code_coverage,

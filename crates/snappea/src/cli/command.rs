@@ -758,11 +758,17 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     }
     with_output(host, &a, "lint", |host| {
         if a.has("list-rules") {
-            let rules: Vec<_> = snappea_lint::Registry::builtins()
+            let builtins = snappea_lint::Registry::builtins();
+            let all: Vec<(&str, &str)> = builtins
                 .rules()
-                .map(|r| {
-                    host.out_line(&format!("{}  {}", r.id(), r.description()));
-                    json!({"id": r.id(), "description": r.description()})
+                .map(|r| (r.id(), r.description()))
+                .chain(snappea_lint::PROGRAM_RULES.iter().copied())
+                .collect();
+            let rules: Vec<_> = all
+                .iter()
+                .map(|(id, description)| {
+                    host.out_line(&format!("{}  {}", id, description));
+                    json!({"id": id, "description": description})
                 })
                 .collect();
             return Ok((OK, json!({"rules": rules})));
@@ -772,7 +778,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         let Buffered { out, .. } = quiet;
         match loaded {
             Ok(loaded) => {
-                if crate::driver::lint::run(host, &loaded.sources)? != 0 {
+                if crate::driver::lint::run(host, &loaded.sources, &loaded.analysis.program)? != 0 {
                     return Err(Exit(ERROR));
                 }
                 host.out_line("Lint passed.");
@@ -1031,7 +1037,7 @@ fn run_check(
     check::resolve_sources(&mut con, &mut cfg)?;
     let loaded = check::load(&mut con, &cfg)?;
     let gates = cfg.gates;
-    let lint_findings = crate::driver::lint::gate(con.inner, &loaded.sources, gates.lint)?;
+    let lint_findings = crate::driver::lint::gate(con.inner, &loaded.sources, &loaded.analysis.program, gates.lint)?;
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
     let selected = select_tests(&names, patterns).map_err(|m| {
         error(con.inner, &m);
@@ -1428,6 +1434,19 @@ fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome) -> Vec<Strin
     out
 }
 
+/// How many distinct states per choice of its deepest schedule a passing test case's
+/// complete search can reach and still be reported as having little to explore.
+const LITTLE_TO_EXPLORE: usize = 3;
+
+/// Whether a passing test case explored every schedule and they reached few more states
+/// than one run does ([`LITTLE_TO_EXPLORE`] per step): the model has nearly one behavior
+/// under the test, so the test checks little concurrency. A note, not a failure.
+fn little_to_explore(case: &check::CaseOutcome) -> bool {
+    case.bugs == 0
+        && case.exhaustive_finished == Some(true)
+        && case.exhaustive_states.is_some_and(|(states, depth)| states <= LITTLE_TO_EXPLORE * depth.max(1))
+}
+
 /// One test case's result as JSON.
 fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     let mut v = json!({
@@ -1441,6 +1460,9 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     });
     if let Some(finished) = case.exhaustive_finished {
         v["search_complete"] = json!(finished);
+    }
+    if little_to_explore(case) {
+        v["little_to_explore"] = json!(true);
     }
     if case.bugs > 0 {
         v["bug"] = json!({
@@ -1476,6 +1498,14 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
     let time = duration(case.elapsed);
     if case.bugs == 0 {
         host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));
+        if little_to_explore(case) {
+            host.out_line(
+                "      note: every schedule reaches nearly the same states, so this test checks little more than one run would",
+            );
+            host.out_line(
+                "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
+            );
+        }
         return;
     }
     host.write(Stream::Out, "FAIL", Some(Color::Red));

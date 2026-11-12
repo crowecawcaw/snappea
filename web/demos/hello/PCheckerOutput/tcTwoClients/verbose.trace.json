@@ -1,0 +1,632 @@
+[
+  [
+    {
+      "type": "CreateStateMachine",
+      "details": {
+        "log": "Main(1) was created by task \u00271\u0027.",
+        "id": "Main(1)",
+        "clock": {
+          "Main(1)": 1
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Main(1) enters state \u0027Init\u0027.",
+        "id": "Main(1)",
+        "state": "Init",
+        "isEntry": true,
+        "clock": {
+          "Main(1)": 2
+        }
+      }
+    },
+    {
+      "type": "CreateStateMachine",
+      "details": {
+        "log": "Counter(2) was created by Main(1).",
+        "id": "Counter(2)",
+        "creatorName": "Main(1)",
+        "creatorType": "Main",
+        "clock": {
+          "Counter(2)": 1
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Counter(2) enters state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "state": "Serving",
+        "isEntry": true,
+        "clock": {
+          "Counter(2)": 2
+        }
+      }
+    },
+    {
+      "type": "CreateStateMachine",
+      "details": {
+        "log": "Client(3) was created by Main(1).",
+        "id": "Client(3)",
+        "creatorName": "Main(1)",
+        "creatorType": "Main",
+        "clock": {
+          "Client(3)": 1
+        }
+      }
+    },
+    {
+      "type": "CreateStateMachine",
+      "details": {
+        "log": "Client(4) was created by Main(1).",
+        "id": "Client(4)",
+        "creatorName": "Main(1)",
+        "creatorType": "Main",
+        "clock": {
+          "Client(4)": 1
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(3) enters state \u0027Reading\u0027.",
+        "id": "Client(3)",
+        "state": "Reading",
+        "isEntry": true,
+        "clock": {
+          "Client(3)": 2
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(3)\u0027 in state \u0027Reading\u0027 sent event \u0027ReadValue with payload (Client(3))\u0027 to \u0027Counter(2)\u0027.",
+        "event": "ReadValue",
+        "state": "Reading",
+        "payload": "Client(3)",
+        "sender": "Client(3)",
+        "target": "Counter(2)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(4) enters state \u0027Reading\u0027.",
+        "id": "Client(4)",
+        "state": "Reading",
+        "isEntry": true,
+        "clock": {
+          "Client(4)": 2
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 dequeued event \u0027ReadValue with payload (Client(3))\u0027 in state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "event": "ReadValue",
+        "state": "Serving",
+        "payload": "Client(3)",
+        "clock": {
+          "Counter(2)": 3,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(4)\u0027 in state \u0027Reading\u0027 sent event \u0027ReadValue with payload (Client(4))\u0027 to \u0027Counter(2)\u0027.",
+        "event": "ReadValue",
+        "state": "Reading",
+        "payload": "Client(4)",
+        "sender": "Client(4)",
+        "target": "Counter(2)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(4)": 3
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 in state \u0027Serving\u0027 sent event \u0027ValueRead with payload (0)\u0027 to \u0027Client(3)\u0027.",
+        "event": "ValueRead",
+        "state": "Serving",
+        "payload": 0,
+        "sender": "Counter(2)",
+        "target": "Client(3)",
+        "isTargetHalted": false,
+        "clock": {
+          "Counter(2)": 4,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 dequeued event \u0027ReadValue with payload (Client(4))\u0027 in state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "event": "ReadValue",
+        "state": "Serving",
+        "payload": "Client(4)",
+        "clock": {
+          "Counter(2)": 5,
+          "Client(3)": 3,
+          "Client(4)": 3
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 in state \u0027Serving\u0027 sent event \u0027ValueRead with payload (0)\u0027 to \u0027Client(4)\u0027.",
+        "event": "ValueRead",
+        "state": "Serving",
+        "payload": 0,
+        "sender": "Counter(2)",
+        "target": "Client(4)",
+        "isTargetHalted": false,
+        "clock": {
+          "Counter(2)": 6,
+          "Client(3)": 3,
+          "Client(4)": 3
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Client(3)\u0027 dequeued event \u0027ValueRead with payload (0)\u0027 in state \u0027Reading\u0027.",
+        "id": "Client(3)",
+        "event": "ValueRead",
+        "state": "Reading",
+        "payload": 0,
+        "clock": {
+          "Client(3)": 4,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "GotoState",
+      "details": {
+        "log": "Client(3) is transitioning from state \u0027Reading\u0027 to state \u0027Writing\u0027.",
+        "id": "Client(3)",
+        "startState": "Reading",
+        "endState": "Writing",
+        "clock": {
+          "Client(3)": 5,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(3) exits state \u0027Reading\u0027.",
+        "id": "Client(3)",
+        "state": "Reading",
+        "isEntry": false,
+        "clock": {
+          "Client(3)": 6,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(3) enters state \u0027Writing\u0027.",
+        "id": "Client(3)",
+        "state": "Writing",
+        "isEntry": true,
+        "clock": {
+          "Client(3)": 7,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(3)\u0027 in state \u0027Writing\u0027 sent event \u0027WriteValue with payload (1)\u0027 to \u0027Counter(2)\u0027.",
+        "event": "WriteValue",
+        "state": "Writing",
+        "payload": 1,
+        "sender": "Client(3)",
+        "target": "Counter(2)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(3)": 8,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(3)\u0027 in state \u0027Writing\u0027 sent event \u0027ClientFinished\u0027 to \u0027Main(1)\u0027.",
+        "event": "ClientFinished",
+        "state": "Writing",
+        "sender": "Client(3)",
+        "target": "Main(1)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(3)": 9,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "GotoState",
+      "details": {
+        "log": "Client(3) is transitioning from state \u0027Writing\u0027 to state \u0027Finished\u0027.",
+        "id": "Client(3)",
+        "startState": "Writing",
+        "endState": "Finished",
+        "clock": {
+          "Client(3)": 10,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(3) exits state \u0027Writing\u0027.",
+        "id": "Client(3)",
+        "state": "Writing",
+        "isEntry": false,
+        "clock": {
+          "Client(3)": 11,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(3) enters state \u0027Finished\u0027.",
+        "id": "Client(3)",
+        "state": "Finished",
+        "isEntry": true,
+        "clock": {
+          "Client(3)": 12,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Main(1)\u0027 dequeued event \u0027ClientFinished\u0027 in state \u0027Init\u0027.",
+        "id": "Main(1)",
+        "event": "ClientFinished",
+        "state": "Init",
+        "clock": {
+          "Main(1)": 3,
+          "Client(3)": 9,
+          "Counter(2)": 4
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 dequeued event \u0027WriteValue with payload (1)\u0027 in state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "event": "WriteValue",
+        "state": "Serving",
+        "payload": 1,
+        "clock": {
+          "Counter(2)": 7,
+          "Client(3)": 8,
+          "Client(4)": 3
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Client(4)\u0027 dequeued event \u0027ValueRead with payload (0)\u0027 in state \u0027Reading\u0027.",
+        "id": "Client(4)",
+        "event": "ValueRead",
+        "state": "Reading",
+        "payload": 0,
+        "clock": {
+          "Client(4)": 4,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "GotoState",
+      "details": {
+        "log": "Client(4) is transitioning from state \u0027Reading\u0027 to state \u0027Writing\u0027.",
+        "id": "Client(4)",
+        "startState": "Reading",
+        "endState": "Writing",
+        "clock": {
+          "Client(4)": 5,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(4) exits state \u0027Reading\u0027.",
+        "id": "Client(4)",
+        "state": "Reading",
+        "isEntry": false,
+        "clock": {
+          "Client(4)": 6,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(4) enters state \u0027Writing\u0027.",
+        "id": "Client(4)",
+        "state": "Writing",
+        "isEntry": true,
+        "clock": {
+          "Client(4)": 7,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(4)\u0027 in state \u0027Writing\u0027 sent event \u0027WriteValue with payload (1)\u0027 to \u0027Counter(2)\u0027.",
+        "event": "WriteValue",
+        "state": "Writing",
+        "payload": 1,
+        "sender": "Client(4)",
+        "target": "Counter(2)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(4)": 8,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 dequeued event \u0027WriteValue with payload (1)\u0027 in state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "event": "WriteValue",
+        "state": "Serving",
+        "payload": 1,
+        "clock": {
+          "Counter(2)": 8,
+          "Client(3)": 8,
+          "Client(4)": 8
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Client(4)\u0027 in state \u0027Writing\u0027 sent event \u0027ClientFinished\u0027 to \u0027Main(1)\u0027.",
+        "event": "ClientFinished",
+        "state": "Writing",
+        "sender": "Client(4)",
+        "target": "Main(1)",
+        "isTargetHalted": false,
+        "clock": {
+          "Client(4)": 9,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "GotoState",
+      "details": {
+        "log": "Client(4) is transitioning from state \u0027Writing\u0027 to state \u0027Finished\u0027.",
+        "id": "Client(4)",
+        "startState": "Writing",
+        "endState": "Finished",
+        "clock": {
+          "Client(4)": 10,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(4) exits state \u0027Writing\u0027.",
+        "id": "Client(4)",
+        "state": "Writing",
+        "isEntry": false,
+        "clock": {
+          "Client(4)": 11,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Client(4) enters state \u0027Finished\u0027.",
+        "id": "Client(4)",
+        "state": "Finished",
+        "isEntry": true,
+        "clock": {
+          "Client(4)": 12,
+          "Counter(2)": 6,
+          "Client(3)": 3
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Main(1)\u0027 dequeued event \u0027ClientFinished\u0027 in state \u0027Init\u0027.",
+        "id": "Main(1)",
+        "event": "ClientFinished",
+        "state": "Init",
+        "clock": {
+          "Main(1)": 4,
+          "Client(3)": 9,
+          "Counter(2)": 6,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Main(1)\u0027 in state \u0027Init\u0027 sent event \u0027ReadFinalValue with payload (Main(1))\u0027 to \u0027Counter(2)\u0027.",
+        "event": "ReadFinalValue",
+        "state": "Init",
+        "payload": "Main(1)",
+        "sender": "Main(1)",
+        "target": "Counter(2)",
+        "isTargetHalted": false,
+        "clock": {
+          "Main(1)": 5,
+          "Client(3)": 9,
+          "Counter(2)": 6,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "GotoState",
+      "details": {
+        "log": "Main(1) is transitioning from state \u0027Init\u0027 to state \u0027Verify\u0027.",
+        "id": "Main(1)",
+        "startState": "Init",
+        "endState": "Verify",
+        "clock": {
+          "Main(1)": 6,
+          "Client(3)": 9,
+          "Counter(2)": 6,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Main(1) exits state \u0027Init\u0027.",
+        "id": "Main(1)",
+        "state": "Init",
+        "isEntry": false,
+        "clock": {
+          "Main(1)": 7,
+          "Client(3)": 9,
+          "Counter(2)": 6,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "StateTransition",
+      "details": {
+        "log": "Main(1) enters state \u0027Verify\u0027.",
+        "id": "Main(1)",
+        "state": "Verify",
+        "isEntry": true,
+        "clock": {
+          "Main(1)": 8,
+          "Client(3)": 9,
+          "Counter(2)": 6,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 dequeued event \u0027ReadFinalValue with payload (Main(1))\u0027 in state \u0027Serving\u0027.",
+        "id": "Counter(2)",
+        "event": "ReadFinalValue",
+        "state": "Serving",
+        "payload": "Main(1)",
+        "clock": {
+          "Counter(2)": 9,
+          "Client(3)": 9,
+          "Client(4)": 9,
+          "Main(1)": 5
+        }
+      }
+    },
+    {
+      "type": "SendEvent",
+      "details": {
+        "log": "\u0027Counter(2)\u0027 in state \u0027Serving\u0027 sent event \u0027ValueRead with payload (1)\u0027 to \u0027Main(1)\u0027.",
+        "event": "ValueRead",
+        "state": "Serving",
+        "payload": 1,
+        "sender": "Counter(2)",
+        "target": "Main(1)",
+        "isTargetHalted": false,
+        "clock": {
+          "Counter(2)": 10,
+          "Client(3)": 9,
+          "Client(4)": 9,
+          "Main(1)": 5
+        }
+      }
+    },
+    {
+      "type": "DequeueEvent",
+      "details": {
+        "log": "\u0027Main(1)\u0027 dequeued event \u0027ValueRead with payload (1)\u0027 in state \u0027Verify\u0027.",
+        "id": "Main(1)",
+        "event": "ValueRead",
+        "state": "Verify",
+        "payload": 1,
+        "clock": {
+          "Main(1)": 9,
+          "Client(3)": 9,
+          "Counter(2)": 10,
+          "Client(4)": 9
+        }
+      }
+    },
+    {
+      "type": "AssertionFailure",
+      "details": {
+        "log": "Assertion Failed: LostUpdate.p:84:7 expected 2 increments, counter is 1",
+        "error": "Assertion Failed: LostUpdate.p:84:7 expected 2 increments, counter is 1"
+      }
+    },
+    {
+      "type": "StrategyDescription",
+      "details": {
+        "log": "Found bug using \u0027auto\u0027 strategy.",
+        "strategy": "auto",
+        "strategyDescription": "auto"
+      }
+    }
+  ]
+]
