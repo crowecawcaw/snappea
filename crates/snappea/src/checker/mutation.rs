@@ -6,7 +6,9 @@
 //! monitor or a test case's main machine, which are the tests themselves):
 //!
 //! - removes a statement with an effect: an assignment, collection update, `send`,
-//!   `raise`, `announce`, `goto`, `new` or function call;
+//!   `raise`, `announce`, `goto`, `new` or function call, or a whole `if`, `while` or
+//!   `foreach`;
+//! - empties a function or handler body (keeping its top-level `return`s);
 //! - forces the condition of an `if` to `true` or to `false`;
 //! - swaps an operator: `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-` (numbers),
 //!   `&&` and `||`;
@@ -16,6 +18,11 @@
 //! Conditions on a nondeterministic choice (`$`, `$$`, `choose`) are not forced, swapped
 //! or negated: that only changes which choices take which branch, and the checker
 //! explores every choice anyway.
+//!
+//! Removing a whole `if`, `while` or `foreach`, or emptying a body, is a *coarse* mutant:
+//! the other mutants in it (see [`parents`]) change part of what it removes. When no test
+//! case detects the coarse mutant, nothing checks any of that code, so the mutants in it
+//! need not run one by one.
 //!
 //! Mutants are found by walking function bodies in a fixed order; [`apply`] walks the
 //! same way to find the place again, so a [`Mutant`] needs no pointer into the IR.
@@ -43,6 +50,8 @@ pub enum Change {
     DropNot,
     /// A boolean literal is negated.
     FlipBool,
+    /// Every top-level statement of the body but `return` is removed.
+    EmptyBody,
 }
 
 impl Change {
@@ -56,6 +65,7 @@ impl Change {
             Change::Operator(_) => "swap-operator",
             Change::DropNot => "remove-not",
             Change::FlipBool => "flip-boolean",
+            Change::EmptyBody => "empty-body",
         }
     }
 }
@@ -79,6 +89,36 @@ pub struct Mutant {
     pub context: String,
     /// The change, e.g. ``removed `send client, eResp;` ``.
     pub description: String,
+    /// It removes a whole `if`, `while`, `foreach` or body (see [`parents`]).
+    pub coarse: bool,
+}
+
+/// For each of `mutants`, the smallest coarse mutant ([`Mutant::coarse`]) in the same
+/// function that contains its change, if any. When no test case detects that one, nothing
+/// checks the code it removes, this mutant's change included.
+pub fn parents(mutants: &[Mutant]) -> Vec<Option<usize>> {
+    let contains = |outer: &Mutant, inner: &Mutant| {
+        outer.fun == inner.fun
+            && outer.span.file == inner.span.file
+            && outer.span.start <= inner.span.start
+            && inner.span.end <= outer.span.end
+    };
+    let len = |m: &Mutant| m.span.end - m.span.start;
+    mutants
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            mutants
+                .iter()
+                .enumerate()
+                .filter(|(j, c)| {
+                    // a coarse mutant's parent is strictly larger, so there are no cycles
+                    *j != i && c.coarse && contains(c, m) && (!m.coarse || len(c) > len(m))
+                })
+                .min_by_key(|(j, c)| (len(c), *j))
+                .map(|(j, _)| j)
+        })
+        .collect()
 }
 
 /// The functions a mutant may change: those of the machines the test cases check (not
@@ -142,6 +182,25 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
         let Some(body) = f.body.clone().filter(|_| funs.get(i).copied().unwrap_or(false)) else { continue };
         let mut body = body;
         let context = fun_context(prog, fun);
+        // emptying a body of one statement is the same as removing it
+        let effects = body.stmts.iter().filter(|s| !matches!(s.kind, StmtKind::Return(_) | StmtKind::Nop)).count();
+        if effects >= 2 && !f.span.is_dummy() {
+            if let Some(&probe) = probe_of.get(&(ProbeKind::Entry, fun, f.span)) {
+                let loc = sm.location(f.span);
+                out.push(Mutant {
+                    fun,
+                    site: u32::MAX,
+                    change: Change::EmptyBody,
+                    probe,
+                    span: f.span,
+                    file: loc.file.unwrap_or_default(),
+                    line: loc.line.max(0) as u32,
+                    context: context.clone(),
+                    description: format!("removed the whole body ({} statements)", effects),
+                    coarse: true,
+                });
+            }
+        }
         let mut site = 0u32;
         walk(prog, &mut body, &mut |stmt, target| {
             let this = site;
@@ -152,6 +211,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 _ => (ProbeKind::Stmt, stmt),
             };
             let Some(&probe) = probe_of.get(&(kind, fun, span)) else { return };
+            let coarse = matches!(&target, Target::Stmt(s, Change::Remove) if compound(s));
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
                 return;
@@ -167,6 +227,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 line: loc.line.max(0) as u32,
                 context: context.clone(),
                 description,
+                coarse,
             });
         });
     }
@@ -177,6 +238,15 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
 pub fn apply(prog: &Program, m: &Mutant) -> Program {
     let mut out = prog.clone();
     let mut body = out.funs[m.fun.idx()].body.take().expect("a mutant changes a function with a body");
+    if m.change == Change::EmptyBody {
+        for s in &mut body.stmts {
+            if !matches!(s.kind, StmtKind::Return(_)) {
+                s.kind = StmtKind::Nop;
+            }
+        }
+        out.funs[m.fun.idx()].body = Some(body);
+        return out;
+    }
     let mut site = 0u32;
     walk(prog, &mut body, &mut |_, target| {
         if site == m.site {
@@ -245,7 +315,7 @@ fn walk_stmt(prog: &Program, s: &mut Stmt, visit: &mut dyn FnMut(Span, Target<'_
             | StmtKind::Goto { .. }
             | StmtKind::FunCall { .. }
             | StmtKind::Ctor { .. }
-    );
+    ) || compound(s);
     if removable {
         visit(span, Target::Stmt(s, Change::Remove));
     }
@@ -294,6 +364,11 @@ fn walk_stmt(prog: &Program, s: &mut Stmt, visit: &mut dyn FnMut(Span, Target<'_
         // receive cases are functions of their own
         StmtKind::Receive { .. } | StmtKind::Break | StmtKind::Continue | StmtKind::Nop => {}
     }
+}
+
+/// Whether removing `s` removes other statements: an `if`, `while` or `foreach`.
+fn compound(s: &Stmt) -> bool {
+    matches!(s.kind, StmtKind::If { .. } | StmtKind::While { .. } | StmtKind::Foreach { .. })
 }
 
 /// The operator a mutant puts in place of `op` in `e`, if any.
@@ -428,6 +503,9 @@ fn code(sm: &SourceMap, span: Span) -> String {
 /// The change of `target`, where in the source it is, and how it reads.
 fn describe(sm: &SourceMap, target: &Target<'_>) -> (Change, Span, String) {
     match target {
+        Target::Stmt(s, c @ Change::Remove) if compound(s) => {
+            (*c, s.span, format!("removed the whole `{}`", snippet(sm, s.span)))
+        }
         Target::Stmt(s, c @ Change::Remove) => (*c, s.span, format!("removed `{}`", snippet(sm, s.span))),
         Target::Stmt(s, c @ Change::Force(v)) => {
             let StmtKind::If { cond, .. } = &s.kind else { unreachable!() };
@@ -507,6 +585,8 @@ mod tests {
         assert_eq!(
             described,
             [
+                (6, "empty-body", "removed the whole body (2 statements)"),
+                (7, "remove-statement", "removed the whole `if (n < 3 && !(n == 0)) { total = total + n; }`"),
                 (7, "condition-true", "`n < 3 && !(n == 0)` replaced by `true`"),
                 (7, "condition-false", "`n < 3 && !(n == 0)` replaced by `false`"),
                 (7, "swap-operator", "`n < 3 && !(n == 0)` → `n < 3 || !(n == 0)`"),
@@ -519,6 +599,13 @@ mod tests {
             ]
         );
         assert!(ms.iter().all(|m| m.context == "Server.S, on eReq"));
+        // the body contains every other mutant; the `if` everything on line 7
+        let parents = parents(&ms);
+        assert_eq!(parents[0], None);
+        assert!(parents[1..]
+            .iter()
+            .zip(&ms[1..])
+            .all(|(p, m)| *p == Some(if m.line == 7 && !m.coarse { 1 } else { 0 })));
     }
 
     #[test]
@@ -532,7 +619,13 @@ mod tests {
         let names: Vec<_> = mutants(&prog, &funs, &probes).iter().map(|m| m.description.clone()).collect();
         assert_eq!(
             names,
-            ["removed `total = total + n;`", "`total + n` → `total - n`", "removed `announce eSeen, total;`"]
+            [
+                "removed the whole body (2 statements)",
+                "removed the whole `if ($ && choose(3) == 0) { total = total + n; }`",
+                "removed `total = total + n;`",
+                "`total + n` → `total - n`",
+                "removed `announce eSeen, total;`"
+            ]
         );
     }
 
@@ -545,6 +638,7 @@ mod tests {
             Change::Operator(BinOp::Lt),
             Change::DropNot,
             Change::FlipBool,
+            Change::EmptyBody,
         ]
         .map(Change::name);
         assert_eq!(names.as_slice(), snappea_lint::MUTATIONS);

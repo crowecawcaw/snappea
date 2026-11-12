@@ -77,15 +77,17 @@ warnings. Silence an intended finding in the source with a
 fails for one run.
 
 Examples:
-  snappea check                       # all test cases, 10s each
+  snappea check                       # all test cases, sharing 10s
   snappea check 'tcRetry*' --timeout 1m   # more search time on a few
   snappea check --no-mutation         # faster iteration while editing
   snappea check --warn lint           # look for bugs before addressing lint findings
   snappea check --deny mutation       # CI: also fail on undetected mutants
 
 Exploration:
-      --timeout <DURATION>  Time limit per test case (default: 10s; accepts 90s, 5m, 1h).
-                            Raise it before trusting a pass on a large model.
+      --timeout <DURATION>  Time limit per test case (accepts 90s, 5m, 1h). Without it,
+                            the test cases share 10s, and each stops early once its
+                            coverage stops growing. Set it before trusting a pass
+                            on a large model.
   -j, --workers <N>         Worker limit (default: one per CPU core). Lower it on
                             shared machines.
       --seed <N>            Seed for reproducible choices. Not needed to reproduce
@@ -183,7 +185,8 @@ Example:
 Options:
       --mutation-timeout <DURATION>
                             Time limit for mutation testing (default: 5m)
-      --timeout <DURATION>  Time limit per test case for the first run (default: 10s)
+      --timeout <DURATION>  Time limit per test case for the first run (default: the
+                            test cases share 10s)
   -j, --workers <N>         Worker limit (default: one per CPU core)
       --seed <N>            Seed for reproducible choices
       --latency <FILE>[:<PROFILE>], --timed
@@ -898,6 +901,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     if let Some(t) = a.get("timeout") {
         cfg.timeout =
             Some(parse_duration(t).ok_or_else(|| format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t))?);
+        cfg.suite_budget = None;
     }
     cfg.workers = match uint(a, "workers")? {
         Some(0) => return Err("'--workers' needs at least 1 worker".into()),
@@ -988,6 +992,11 @@ fn step_args(cfg: &CheckConfig) -> Vec<String> {
     out
 }
 
+/// Seconds the test cases of a `snappea check` share without `--timeout`.
+const SUITE_BUDGET: f64 = 10.0;
+/// Least time a test case gets from the shared budget.
+const MIN_SHARE: f64 = 0.25;
+
 /// A [`CheckConfig`] for snappea: its output folder layout, and `<IncludeProject>` paths
 /// resolved against the including project file.
 fn snappea_config() -> CheckConfig {
@@ -998,6 +1007,7 @@ fn snappea_config() -> CheckConfig {
         strategy: StrategyKind::Auto,
         iterations: 0,
         timeout: Some(10),
+        suite_budget: Some(SUITE_BUDGET),
         ..CheckConfig::default()
     };
     cfg.input.includes = Includes::FromProject;
@@ -1042,8 +1052,14 @@ fn run_check(
     let mut incomplete = 0;
     let all_tests = prog.test_cases();
     let mut passed = Vec::new();
+    let check_start = con.inner.now();
     for (i, name) in selected.into_iter().enumerate() {
         cfg.test_case_name = name;
+        // the shared budget left, split between the test cases left
+        cfg.time_share = cfg.suite_budget.map(|b| {
+            let left = b - (con.inner.now() - check_start);
+            (left / (n - i) as f64).max(MIN_SHARE)
+        });
         cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
         check::set_output_directory(&mut con, &mut cfg)?;
         let case = check::testing_process(&mut con, &loaded, &cfg)?;
@@ -1159,12 +1175,21 @@ fn run_check(
             let sources = loaded.sources.source_map();
             let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
             let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
-            let report =
-                crate::driver::mutation::run(&mut con, prog, &cfg, &passed, &suppressed, &drivers, f64::from(limit));
+            let report = crate::driver::mutation::run(
+                &mut con,
+                prog,
+                &cfg,
+                &passed,
+                &suppressed,
+                &drivers,
+                f64::from(limit),
+                only,
+            );
             for l in report.lines(SHOWN_UNCOVERED) {
                 con.inner.out_line(&l);
             }
-            undetected = report.undetected().len();
+            // those inside an undetected coarse mutant too
+            undetected = report.undetected().len() + report.subsumed();
             report.to_json()
         }
     };
@@ -1412,6 +1437,7 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
         "workers": case.workers,
         "seconds": round_ms(case.elapsed),
         "time_limit_reached": case.timed_out,
+        "coverage_stopped_growing": case.plateaued,
     });
     if let Some(finished) = case.exhaustive_finished {
         v["search_complete"] = json!(finished);
@@ -1436,7 +1462,17 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
         None => format!("{} schedule{}", s, plural(s)),
     };
     let workers = if case.workers > 1 { format!(", {} workers", case.workers) } else { String::new() };
-    let limit = format!("{}{}", workers, if case.timed_out { ", time limit reached" } else { "" });
+    let limit = format!(
+        "{}{}",
+        workers,
+        if case.timed_out {
+            ", time limit reached"
+        } else if case.plateaued {
+            ", stopped: coverage stopped growing"
+        } else {
+            ""
+        }
+    );
     let time = duration(case.elapsed);
     if case.bugs == 0 {
         host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));

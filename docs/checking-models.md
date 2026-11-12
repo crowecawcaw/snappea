@@ -12,7 +12,7 @@ Run `snappea` in a folder with a `.pproj` file:
 
 ```sh
 snappea tests                                   # list the test cases
-snappea check                                   # check every test, up to 10 seconds each
+snappea check                                   # check every test, 10 seconds in all
 snappea check tcMyTest                          # one test case
 snappea check 'tcMy*' --timeout 5m               # matching tests, up to 5 minutes each
 snappea check model.p tcMyTest                  # explicit sources
@@ -102,9 +102,16 @@ with foreign functions, unless their implementation declares itself searchable
 monitors also continue through fair feedback: closing a repeated state is not a
 liveness proof. Stalling changes strategy; it never certifies a model as safe.
 
-The default is a fixed **10-second limit per test**, with no automatic extensions.
-`--timeout` overrides it. A timeout
-means the search is incomplete, even if it found no bugs. A missing required coverage
+By default the selected test cases **share 10 seconds**: each gets the time left divided
+by the test cases left. A test case stops early, marked `stopped: coverage stopped
+growing` (`coverage_stopped_growing` in JSON), once no schedule in the second half of
+its schedules reached new coverage, after at least 200 schedules and a quarter of its
+share; the time it leaves goes to the test cases after it. This keeps a check of a large
+model fast enough to run after every change, but explores less: the Raft tutorial's
+known bug is found in about 6 of 10 such runs, and every time with `--timeout 10s`.
+`--timeout` gives each test case its own fixed limit instead, with no early stop; set
+it before trusting a pass on a large model. A timeout or early stop means the search is
+incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
 coverage was not reached within the run budget. Exit status is 0 when no bug or
 required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
@@ -318,7 +325,8 @@ A mutant changes one place in the code of the machines under test:
 
 | Mutation | Example |
 | --- | --- |
-| `remove-statement` | removes an assignment, collection update, `send`, `raise`, `announce`, `goto`, `new` or function call |
+| `remove-statement` | removes an assignment, collection update, `send`, `raise`, `announce`, `goto`, `new` or function call, or a whole `if`, `while` or `foreach` |
+| `empty-body` | removes every statement of a function or handler body but its `return`s |
 | `condition-true`, `condition-false` | replaces an `if` condition by `true` or `false` |
 | `swap-operator` | `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-`, `&&` and `\|\|` |
 | `remove-not` | `!e` becomes `e` |
@@ -331,13 +339,27 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
-Each mutant runs only the test cases that ran the changed code, in turns of 100
-schedules. First every mutant gets one turn on each of its test cases. Then the
-undetected ones get more turns, round robin over their test cases, up to a budget
-learned from the first turns: 3 times the schedules that 95% of the detected mutants
-needed, at most 1000 (and 1000 when fewer than 20 were detected). Most mutants a test
-case detects, it detects within a few schedules, so the budget is usually a few hundred
-schedules, often no more than the first turns already gave, and the run ends sooner; JSON gives it as `schedules_per_mutant`. The
+Each mutant runs only the test cases that ran the changed code, in turns. First every
+mutant gets a turn of 10 schedules on each of its test cases: most mutants a test case
+detects at all, it detects within a few schedules, so short first turns find the test
+case that detects them sooner. Then the undetected ones get more turns, round robin over
+their test cases, each three times longer than the last on that test case (at most
+100 schedules), up to a budget learned from the first turns: 3 times the schedules that
+95% of the detected mutants needed, at least 100 and at most 1000 (1000 when fewer than
+20 were detected). JSON gives it as `schedules_per_mutant`. `snappea check mutation`
+then keeps giving undetected mutants turns, up to 1000 schedules each, until its time
+limit: a deeper search for a CI gate, where `snappea check` stops at the budget.
+
+Removing a whole `if`, `while`, `foreach` or body is a *coarse* mutant: the other
+mutants inside it change part of what it removes. A mutant inside one gets its first
+turns with the others, but the rest of its budget only after every mutant outside an
+undetected coarse mutant had its own. When no test case detects the coarse mutant, no
+test case notices that code removed at all, which is the gap to close first, so the
+undetected mutants inside it are listed with it: the console shows
+`removed the whole body (3 statements) (and 2 more undetected inside it)`, and JSON
+lists them under the coarse mutant's `undetected_inside`. Given the time, every mutant
+gets its full budget; when the time limit stops the run, what it cut first is the
+confirmation of mutants inside a gap already found. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
 because no test case reached the failing schedule within its schedules;
 `search_complete: true` in JSON means every one of its test cases explored all of its
@@ -359,7 +381,13 @@ bound anyway, such as a server that never stops, has none. Those 100 schedules a
 each test case's step bound for its mutants: 10 times the longest of them that ended,
 with the liveness threshold scaled to match, when the unchanged model still passes with
 them. A mutant that loops then stops at that
-bound in milliseconds instead of running to the full bound.
+bound in milliseconds instead of running to the full bound. The same 100 schedules
+bound what a mutant's schedule may do in other ways, each at 10 times the most the
+unchanged model did: the work of one step (a `while` whose counter no longer moves),
+the machines created (a loop of `new` that never ends) and the events queued for one
+machine (a loop of `send` that never ends). A mutant past one of them fails, so a test
+case detects it, in milliseconds rather than the seconds or minutes each of its
+schedules would take as the machines or events pile up.
 
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
 the test cases, then the mutants, and reports neither coverage nor scenarios. It has a
@@ -370,13 +398,14 @@ case named `lint` or `mutation` is selected with a glob (`snappea check 'mutatio
 In `snappea check`, mutation testing stops at its time limit, 30 seconds by default
 (`--mutation-timeout 2m` changes it, `--no-mutation` skips it). Because the schedules
 go round robin, a run the time limit stops has given every mutant about the same share:
-on a large model, each may get only its first turn. Undetected mutants with fewer
-schedules than the budget are marked `(only 100 schedules)` in the console and have a smaller
+on a large model, each may get only its first turns. Undetected mutants with fewer
+schedules than the budget are marked `(only 60 schedules)` in the console and have a smaller
 `schedules` in JSON; raise the limit for a stronger result. Mutation testing is skipped
 when a test case fails: fix the bug first. Undetected mutants do not change the exit
 status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
-its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules` and
-`search_complete`.
+its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
+`search_complete` and, for a coarse mutant, the undetected mutants inside it
+(`undetected_inside`); `undetected_inside_undetected` counts those.
 
 ### Suppressing a mutant
 

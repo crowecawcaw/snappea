@@ -2,8 +2,15 @@ use crate::{visit, Context, Finding, Rule};
 use snappea_syntax::{ast::*, lexer, FileId, Span};
 
 /// Mutation kinds a `mutation:<kind>` suppression may name (see `snappea check`).
-pub const MUTATIONS: &[&str] =
-    &["remove-statement", "condition-true", "condition-false", "swap-operator", "remove-not", "flip-boolean"];
+pub const MUTATIONS: &[&str] = &[
+    "remove-statement",
+    "condition-true",
+    "condition-false",
+    "swap-operator",
+    "remove-not",
+    "flip-boolean",
+    "empty-body",
+];
 
 /// Whether `id` names mutation testing: `mutation`, or `mutation:<kind>`.
 fn is_mutation(id: &str) -> bool {

@@ -266,6 +266,13 @@ pub struct Config {
     /// without reaching a scheduling point; 0 = unbounded. Upstream has no such bound and
     /// simply hangs on e.g. an endless raise/goto cycle.
     pub max_work_per_step: u64,
+    /// Most machines a schedule may create; 0 = unbounded. Mutation testing sets it from
+    /// the unchanged model, so a change that creates machines without end fails quickly
+    /// rather than slowing every step down as they pile up.
+    pub max_machines: usize,
+    /// Most events queued for one machine at once; 0 = unbounded. Set like
+    /// [`Config::max_machines`], for a change that sends without end.
+    pub max_inbox: usize,
     /// Strategy description recorded in the JSON trace (overrides the running strategy's,
     /// used when a buggy schedule is replayed to produce its JSON trace).
     pub strategy_description: Option<String>,
@@ -290,6 +297,8 @@ impl Default for Config {
             fail_on_max_steps: false,
             strategy: StrategyKind::Random,
             max_work_per_step: DEFAULT_MAX_WORK_PER_STEP,
+            max_machines: 0,
+            max_inbox: 0,
             strategy_description: None,
             logging: true,
             assembly_name: "PImplementation".into(),
@@ -431,6 +440,10 @@ pub struct Runtime<'p> {
     scheduled_steps: usize,
     /// Work done since the last scheduling point (see [`Config::max_work_per_step`]).
     pub(crate) step_work: u64,
+    /// Most work an earlier step of this schedule did.
+    pub(crate) peak_step_work: u64,
+    /// Most events queued for one machine at once in this schedule.
+    pub(crate) peak_inbox: usize,
     /// Next cancellation checkpoint; preserved across bytecode frames.
     pub(crate) next_cancel_work: u64,
     /// The JSON trace, when enabled.
@@ -539,6 +552,8 @@ impl<'p> Runtime<'p> {
             pruned: false,
             scheduled_steps: 0,
             step_work: 0,
+            peak_step_work: 0,
+            peak_inbox: 0,
             next_cancel_work: 4096,
             json: json_trace.then(JsonLog::new),
             xml: xml_trace.map(crate::checker::xmllog::XmlLog::new),
@@ -908,6 +923,22 @@ impl<'p> Runtime<'p> {
         self.op_mut(cur).kind = kind;
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
+        let limit = self.config.max_machines;
+        if limit > 0 && self.machines.len() > limit {
+            let msg = format!(
+                "The schedule created more than {} machines, far more than the model creates without the change (possible endless creation).",
+                limit
+            );
+            return Err(self.report_bug(msg));
+        }
+        let limit = self.config.max_inbox;
+        if limit > 0 && self.peak_inbox > limit {
+            let msg = format!(
+                "The schedule queued more than {} events for one machine, far more than the model does without the change (possible endless sending).",
+                limit
+            );
+            return Err(self.report_bug(msg));
+        }
         // reuse one buffer for the whole schedule: this runs at every step
         let mut infos = std::mem::take(&mut self.op_infos);
         infos.clear();
@@ -937,6 +968,7 @@ impl<'p> Runtime<'p> {
         let current = self.current;
         match self.strategy.next_operation(current, infos) {
             Some(next) => {
+                self.peak_step_work = self.peak_step_work.max(self.step_work);
                 self.step_work = 0;
                 self.next_cancel_work = 4096;
                 self.scheduled_steps = self.strategy.scheduled_steps();
@@ -1309,6 +1341,7 @@ impl<'p> Runtime<'p> {
                 // the receiver picks among its queued events when it resumes
                 self.machines[t].inbox.waiting = None;
                 self.machines[t].inbox.queue.push_back(e);
+                self.peak_inbox = self.peak_inbox.max(self.machines[t].inbox.queue.len());
                 let id = self.machines[t].id;
                 self.op_mut(id).status = OpStatus::Enabled;
                 return EnqueueStatus::HandlerRunning;
@@ -1355,6 +1388,7 @@ impl<'p> Runtime<'p> {
             self.xlog("EnqueueEvent", &[("id", &id), ("event", &ev)], None);
         }
         self.machines[t].inbox.queue.push_back(e);
+        self.peak_inbox = self.peak_inbox.max(self.machines[t].inbox.queue.len());
         if !self.machines[t].inbox.handler_running {
             if self.try_dequeue(t, true).is_none() {
                 return EnqueueStatus::NextEventUnavailable;
