@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Check every sample project under examples/samples.
 
-What it does: for each `.pproj`, runs the passing test cases with
-`snappea check --deny mutation` (lint, coverage and every mutant must pass), then
+What it does: for each `.pproj`, runs the passing test cases with `snappea check`
+(lint and coverage must pass) and `snappea check mutation` (every mutant detected or
+suppressed), then
 runs each test case marked as an expected bug and requires it to fail with the
 named assertion message.
 
@@ -83,36 +84,44 @@ def check_project(snappea: str, project: Path, timeout: str, mutation_timeout: s
     extra = ["-j", workers] if workers else []
 
     if good:
-        cmd = [snappea, "--json", "check", project.name, *good, "--deny", "mutation",
-               "--timeout", timeout, "--mutation-timeout", mutation_timeout,
-               "-o", "PCheckerOutput/samples", *extra]
-        code, data = run(cmd, cwd)
-        summary = data.get("summary", {})
-        if code != 0:
-            detail = summary.get("message") or data.get("raw", "")[:2000]
-            undetected = [
-                f"{m.get('file')}:{m.get('line')} {m.get('change')}"
-                for m in (data.get("mutation") or {}).get("undetected", [])
-            ]
-            uncovered = [
-                f"{u.get('file')}:{u.get('line')} {u.get('what')}"
-                for u in summary.get("uncovered", [])
-            ]
-            failed = [
-                f"{t['name']}: {t.get('bug', {}).get('report')}"
-                for t in data.get("test_cases", []) if t.get("result") == "bug"
-            ]
-            problems.append(
-                f"{rel}: passing tests exit {code} ({summary.get('status')}): {detail}"
-                + "".join(f"\n    bug {x}" for x in failed)
-                + "".join(f"\n    uncovered {x}" for x in uncovered)
-                + "".join(f"\n    mutant {x}" for x in undetected)
-            )
-        else:
-            incomplete = [t["name"] for t in data.get("test_cases", [])
-                          if not t.get("search_complete")]
-            if incomplete:
-                print(f"note  {rel}: search incomplete within {timeout} for {', '.join(incomplete)}")
+        # Lint and coverage, then mutation testing with `check mutation`, which keeps
+        # giving undetected mutants schedules until its time limit. (`check` stops at a
+        # budget learned from the first mutants and can miss a mutant only one small
+        # test case detects.)
+        base = [snappea, "--json", "check", project.name, *good, "--no-mutation",
+                "--timeout", timeout, "-o", "PCheckerOutput/samples", *extra]
+        mut = [snappea, "--json", "check", "mutation", project.name, *good,
+               "--mutation-timeout", mutation_timeout, "-o", "PCheckerOutput/samples", *extra]
+        for cmd in (base, mut):
+            code, data = run(cmd, cwd)
+            summary = data.get("summary", {})
+            if code != 0:
+                detail = summary.get("message") or data.get("raw", "")[:2000]
+                undetected = [
+                    f"{m.get('file')}:{m.get('line')} {m.get('change')}"
+                    for m in (data.get("mutation") or {}).get("undetected", [])
+                ]
+                uncovered = [
+                    f"{u.get('file')}:{u.get('line')} {u.get('what')}"
+                    for u in summary.get("uncovered", [])
+                ]
+                failed = [
+                    f"{t['name']}: {t.get('bug', {}).get('report')}"
+                    for t in data.get("test_cases", []) if t.get("result") == "bug"
+                ]
+                problems.append(
+                    f"{rel}: passing tests exit {code} ({summary.get('status')}): {detail}"
+                    + "".join(f"\n    bug {x}" for x in failed)
+                    + "".join(f"\n    uncovered {x}" for x in uncovered)
+                    + "".join(f"\n    mutant {x}" for x in undetected)
+                )
+                break
+            if cmd is base:
+                incomplete = [t["name"] for t in data.get("test_cases", [])
+                              if not t.get("search_complete")]
+                if incomplete:
+                    print(f"note  {rel}: search incomplete within {timeout} for "
+                          f"{', '.join(incomplete)}")
 
     for name, message in bugs.items():
         cmd = [snappea, "--json", "check", project.name, name, "--no-mutation",
@@ -146,6 +155,16 @@ def main() -> int:
         print("no .pproj found", file=sys.stderr)
         return 2
     failures = 0
+    # A sample folder without exactly one project would be skipped silently.
+    for group in ("use-cases", "concepts", "flawed"):
+        for d in sorted((HERE / group).glob("*/")):
+            selected = any(d == r or r in d.parents or d in r.parents for r in roots)
+            if not selected:
+                continue
+            found = [p for p in d.glob("*.pproj")]
+            if len(found) != 1:
+                failures += 1
+                print(f"FAIL  {d.relative_to(HERE)}: expected one .pproj, found {len(found)}")
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {pool.submit(check_project, args.snappea, p, args.timeout,
                                args.mutation_timeout, args.workers): p for p in projects}

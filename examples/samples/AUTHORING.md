@@ -37,9 +37,9 @@ python3 examples/samples/check_samples.py <group>/<name> --workers 2
 
 The script requires, for each project:
 
-- every test case **not** marked as an expected bug passes
-  `snappea check <tests> --deny mutation`: no lint finding, every statement, handler
-  and `if` outcome covered, and every mutant detected or suppressed with a reason;
+- every test case **not** marked as an expected bug passes `snappea check <tests>`
+  (no lint finding; every statement, handler and `if` outcome covered) and
+  `snappea check mutation <tests>` (every mutant detected or suppressed with a reason);
 - every test case marked `// expect-bug: <text>` (on the line directly before its
   `test` declaration) fails, and its bug report contains `<text>`. Use a distinctive
   assertion message, so the test fails for the intended reason, not any reason.
@@ -72,6 +72,9 @@ generated test may be sampled. Keep each test case under a few seconds.
   `tcBug*` test marked `// expect-bug:`.
 - **Suppressions carry reasons** and are rare. An undetected mutant is usually a
   missing assertion or scenario; suppress only equivalent mutants.
+- **New lints** (`unchecked-state`, `unchecked-event`, `no-progress-spec`) flag fields
+  and events no check depends on, and tests that wait for replies with no hot spec.
+  Fix them by checking the value or adding a progress spec, not by suppressing.
 - **Scenario monitors** must `ignore` every observed event a state does not handle;
   an unhandled event in any monitor is a runtime error.
 
