@@ -13,6 +13,7 @@ spec OneValueTaught observes Learn {
       decided = -1;
     }
 
+    // snappea-lint: allow unused-payload-field -- agreement is about the value, whatever ballot chose it
     on Learn do (payload: (ballot: Ballot, value: Value)) {
       assert(payload.value != -1);
       if (decided != -1) {

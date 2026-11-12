@@ -19,10 +19,6 @@ event RaftPutResponse: RaftPutResponseData;
 event RaftGetResponse: RaftGetResponseData;
 // event RaftGetError: RaftGetErrorData;
 
-event PutRequest: (client: Client, transactionId: TransactionId, key: KeyT, value: ValueT);
-event GetRequest: (client: Client, transactionId: TransactionId, key: KeyT);
-event PutResponse: (client: Client, transactionId: TransactionId, key: KeyT, value: ValueT);
-event GetResponse: (client: Client, transactionId: TransactionId, success: bool, key: KeyT, value: ValueT);
 
 // Server initialization message
 event ServerInit: (myId: ServerId, cluster: set[Server], viewServer: View);
@@ -68,7 +64,6 @@ fun IsFailure(s: bool): bool {
 
 // A node in the Raft cluster
 machine Server {
-  var serverId: ServerId;
   // the application state
   var kvStore: KVStore;
   // the leader of the cluster
@@ -95,7 +90,6 @@ machine Server {
   var commitIndex: int;
   var lastApplied: int;
 
-  var role: string;
   var logNotifyTimestamp: int;
 
   // var heartbeatTimer: Timer;
@@ -112,7 +106,6 @@ machine Server {
 
     on ServerInit do (setup: (myId: ServerId, cluster: set[Server], viewServer: View)) {
       kvStore = newStore();
-      serverId = setup.myId;
       assert this in setup.cluster, "Server should be in the cluster";
       clusterSize = sizeof(setup.cluster);
       peers = setup.cluster;
@@ -134,7 +127,6 @@ machine Server {
       commitIndex = -1;
       lastApplied = -1;
       leader = default(Server);
-      role = "Uninitialized";
       goto Follower;
     }
 
@@ -143,7 +135,6 @@ machine Server {
 
   state Follower {
     entry {
-      role = "F";
       // reset the leader upon being a follower
       leader = default(Server);
       printLog("Become follower");
@@ -205,7 +196,6 @@ machine Server {
     entry {
       var peer: Server;
       var lastTerm: int;
-      role = "C";
       printLog("Become candidate");
       send viewServer, ViewChangedCandidate, this;
       currentTerm = currentTerm + 1;
@@ -310,7 +300,6 @@ machine Server {
 
   state Leader {
     entry {
-      role = "L";
       send viewServer, ViewChangedLeader, this;
       leader = this;
       // instantiate the nextIndex and matchIndex
@@ -418,10 +407,8 @@ machine Server {
         return;
       }
 
-      announce GetRequest, (client=payload.client, transactionId=payload.transactionId, key=payload.key);
       executionResult = executeGet(kvStore, payload.key);
       send payload.client, RaftGetResponse, (sender=this, client=payload.client, success=executionResult.result.success, transactionId=payload.transactionId, value=executionResult.result.value);
-      announce GetResponse, (client=payload.client, transactionId=payload.transactionId, success=executionResult.result.success, key=payload.key, value=executionResult.result.value);
       if (!(payload.client in keys(clientGetRequestCache))) {
         clientGetRequestCache[payload.client] = default(map[int, RaftGetResponseData]);
       }
@@ -442,7 +429,6 @@ machine Server {
       newEntry = (term=currentTerm, key=payload.key, value=payload.value, client=payload.client, transactionId=payload.transactionId);
       if (!(newEntry in logs)) {
         logs += (sizeof(logs), newEntry);
-        announce PutRequest, (client=payload.client, transactionId=payload.transactionId, key=payload.key, value=payload.value);
       }
 
       printLog(format("Current leader logs={0}", logs));
@@ -759,7 +745,6 @@ machine Server {
       kvStore = executionResult.newState;
       printLog(format("leader committed and processed (by {0}), log: {1}", this, logs[lastApplied]));
       // execute the command and send the result back to the client
-      announce PutResponse, (client=logs[lastApplied].client, transactionId=logs[lastApplied].transactionId, key=logs[lastApplied].key, value=logs[lastApplied].value);
       send logs[lastApplied].client, RaftPutResponse, (sender=this, client=logs[lastApplied].client,
       transactionId=logs[lastApplied].transactionId, key=logs[lastApplied].key);
       // update the cache
@@ -788,7 +773,7 @@ machine Server {
 
   fun printLog(msg: string) {
     // return;
-    // print format("{0}[{1}@{2}]: {3}", role, this, currentTerm, msg);
+    // print format("{0}@{1}: {2}", this, currentTerm, msg);
   }
 
   fun executeCommands() {

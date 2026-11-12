@@ -44,7 +44,6 @@ machine View {
   var serverLogs: map[Server, seq[ServerLog]];
   // the last seen log of each node; prevent update the entry using older logs
   var lastSeenLogs: map[Server, int];
-  var candidateRoundMap: map[Server, int];
   // number of rounds of actions where the view service cannot detect any leader
   var noLeaderRounds: int;
 
@@ -63,7 +62,6 @@ machine View {
       requestVotePendingSet = default(set[Server]);
       serverLogs = default(map[Server, seq[ServerLog]]);
       lastSeenLogs = default(map[Server, int]);
-      candidateRoundMap = default(map[Server, int]);
       noLeaderRounds = 0;
 
       while (i < setup.numServers) {

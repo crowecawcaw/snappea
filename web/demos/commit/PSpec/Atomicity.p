@@ -20,6 +20,7 @@ spec AtomicityInvariant observes WriteTransResponse, PrepareResponse, Monitor_At
   }
 
   state WaitForEvents {
+    // snappea-lint: allow unused-payload-field -- counts responses per transaction; each participant responds once
     on PrepareResponse do (response: PrepareResponseData){
       var transactionId: int;
       transactionId = response.transactionId;

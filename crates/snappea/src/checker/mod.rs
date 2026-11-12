@@ -10,6 +10,7 @@
 
 mod auto;
 pub mod bytecode;
+pub mod checked;
 pub mod code_coverage;
 pub mod compile;
 pub mod coverage;

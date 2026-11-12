@@ -11,6 +11,7 @@ spec SafetyLogMatching observes NotifyLog {
       allLogs = default(map[Server, seq[ServerLog]]);
     }
 
+    // snappea-lint: allow unused-payload-field -- log matching compares logs whenever they are reported, in any order
     on NotifyLog do (payload: (timestamp: int, server: Server, log: seq[ServerLog])) {
       var i: int;
       var j: int;

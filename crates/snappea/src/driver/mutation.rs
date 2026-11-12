@@ -267,7 +267,9 @@ impl Report {
             let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
             for (i, (m, _, schedules, complete, unchanged)) in list {
                 // the time limit left it a lighter check
-                let short = if *unchanged {
+                let short = if let Some(v) = &m.unchecked {
+                    format!(" (only writes '{}', which no check depends on: see the unchecked-state lint)", v)
+                } else if *unchanged {
                     format!(" (never changes a value in the test cases: {})", m.unchanged)
                 } else if *schedules < self.budget && !complete {
                     format!(" (only {} schedules)", schedules)
@@ -329,7 +331,8 @@ impl Report {
                 "test_cases": tests,
                 "schedules": schedules,
                 "search_complete": complete,
-                "changes_a_value": !unchanged,
+                "changes_a_value": !unchanged || m.unchecked.is_some(),
+                "unchecked_variable": m.unchecked,
                 "undetected_inside": self.mutants.iter().zip(&self.verdicts)
                     .filter_map(|(m, v)| match v {
                         Verdict::Subsumed { by, schedules, search_complete, unchanged } if by == i => Some(json!({
@@ -338,7 +341,8 @@ impl Report {
                             "change": m.description,
                             "schedules": schedules,
                             "search_complete": search_complete,
-                            "changes_a_value": !unchanged,
+                            "changes_a_value": !unchanged || m.unchecked.is_some(),
+                            "unchecked_variable": m.unchecked,
                         })),
                         _ => None,
                     })

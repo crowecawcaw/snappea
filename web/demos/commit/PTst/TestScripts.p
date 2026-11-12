@@ -3,12 +3,14 @@
 // This test harness chooses the number of actors and starts the workload. The checker
 // varies their scheduling and model choices.
 
-// checks that all events are handled correctly and also the local assertions in the P machines.
+// checks the atomicity and progress specs, that all events are handled, and the local
+// assertions in the P machines.
 test tcSingleClientNoFailure [main = SingleClientNoFailure]:
-union TwoPhaseCommit, TwoPCClient, FailureInjector, {
+assert AtomicityInvariant, Progress in
+(union TwoPhaseCommit, TwoPCClient, FailureInjector, {
   SingleClientNoFailure
 }
-;
+);
 
 // asserts the liveness monitor along with the default properties
 test tcMultipleClientsNoFailure [main = MultipleClientsNoFailure]:

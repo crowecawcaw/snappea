@@ -88,4 +88,5 @@ machine Main {
 
 // The harness creates two clients, waits for completion, then checks the rule.
 // A design fix: send one Increment event and let Counter add 1 in its handler.
+// snappea-lint: allow no-progress-spec -- this demo is about a safety bug; the clients always finish
 test tcTwoClients [main=Main]: { Main, Counter, Client };

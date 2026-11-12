@@ -97,7 +97,7 @@ machine CrazyUser {
   // Currently, the choose operation does not support choose over enum value
   fun PickRandomOperationToPerform() : CoffeeMakerOperations {
     var op_i: int;
-    op_i =  choose(3);
+    op_i = choose(4);
     if(op_i == 0)
     return CM_PressEspressoButton;
     else if(op_i == 1)
@@ -123,7 +123,8 @@ machine SteamerTestUser {
 
   state TestSteamer {
     entry {
-      // Test steamer operations specifically
+      // Test steamer operations specifically, once the machine has warmed up
+      WaitForCoffeeMakerToBeReady();
       PerformOperationOnCoffeeMaker(coffeeMakerPanel, CM_PressSteamerButton);
 
       receive {
@@ -139,7 +140,8 @@ machine SteamerTestUser {
       }
     }
 
-    ignore EspressoCompleted;
+    // later replies arrive after the test is done with the machine
+    ignore EspressoCompleted, CoffeeMakerError, CoffeeMakerReady;
   }
 }
 
@@ -163,7 +165,7 @@ fun PerformOperationOnCoffeeMaker(coffeeMakerCP: CoffeeMakerControlPanel, CM_Ops
     send coffeeMakerCP, CloseGroundsDoor;
   }
 
-  else if(CM_Ops == CM_PressResetButton)
+  else // CM_PressResetButton
   {
     send coffeeMakerCP, ResetCoffeeMaker;
   }

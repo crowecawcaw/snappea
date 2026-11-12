@@ -5,7 +5,6 @@
 
 spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetResponse, RaftPutResponse, BecomeLeader {
   var localKVStore: KVStore;
-  var requestResultMap: map[Client, map[int, Result]];
   var getRequestMap: map[Client, map[TransactionId, KeyT]];
   var putRequestMap: map[Client, map[TransactionId, (key: KeyT, value: ValueT)]];
   var seenId: map[Client, set[int]];
@@ -16,7 +15,6 @@ spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetR
   start state Init {
     entry {
       localKVStore = newStore();
-      requestResultMap = default(map[Client, map[int, Result]]);
       getRequestMap = default(map[Client, map[TransactionId, KeyT]]);
       putRequestMap = default(map[Client, map[TransactionId, (key: KeyT, value: ValueT)]]);
       seenId = default(map[Client, set[int]]);
@@ -28,6 +26,7 @@ spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetR
   }
 
   state Listening {
+    // snappea-lint: allow unused-payload-field -- this rule follows the current leader; the log specs check its log
     on BecomeLeader do (payload: BecomeLeaderData) {
       if (payload.term > term) {
         currentLeader = payload.leader;
@@ -92,6 +91,8 @@ spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetR
       if (!(payload.client in keys(respondedId)) && currentLeader == payload.sender) {
         respondedId[payload.client] += (payload.transactionId);
         assert payload.client in keys(putRequestMap);
+        assert payload.key == putRequestMap[payload.client][payload.transactionId].key,
+        format("put response for key {0}, but the request wrote key {1}", payload.key, putRequestMap[payload.client][payload.transactionId].key);
         executionResult = executePut(localKVStore, putRequestMap[payload.client][payload.transactionId].key, putRequestMap[payload.client][payload.transactionId].value);
         localKVStore = executionResult.newState;
       }

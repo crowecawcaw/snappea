@@ -41,9 +41,8 @@ machine FailureInjector {
           nFailures = nFailures - 1;
         }
 
-        else {
-          send this, DelayNodeFailure;
-        }
+        // come back for the next failure, or to try this one again later
+        send this, DelayNodeFailure;
       }
     }
 

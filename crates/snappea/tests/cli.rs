@@ -1112,6 +1112,7 @@ fn lock_model(client: &str) -> String {
              entry {{ var server: machine; server = new LockServer(); new Client(server); new Client(server); }}\n\
            }}\n\
          }}\n\
+         // snappea-lint: allow no-progress-spec -- these tests are about the driver, not liveness\n\
          test tcTwoClients [main=TestDriver]: assert MutualExclusion in {{ TestDriver, Client, LockServer }};\n"
     )
 }
@@ -1159,7 +1160,7 @@ fn machines_under_ptst_are_drivers_and_are_not_mutated() {
     h.threads = Some(Threads { available: 4, run: run_threads });
     let model = lock_model("send server, eRelease, this;").replace("// snappea: driver\n", "");
     let split = model.find("machine Client").unwrap();
-    let test = model.find("test tcTwoClients").unwrap();
+    let test = model.find("// snappea-lint: allow no-progress-spec").unwrap();
     h.add_file("PSrc/Lock.p", &format!("{}{}", &model[..split], &model[test..]));
     h.add_file("PTst/Driver.p", &model[split..test]);
     assert_eq!(snappea(&mut h, &["check", "--json"]), 0, "{}", h.stderr);
@@ -1169,4 +1170,91 @@ fn machines_under_ptst_are_drivers_and_are_not_mutated() {
     let mutants = v["mutation"]["undetected"].as_array().unwrap();
     assert!(!mutants.is_empty());
     assert!(mutants.iter().all(|m| !m["file"].as_str().unwrap().contains("PTst")), "{}", h.stdout);
+}
+
+/// A server that keeps a log nothing reads, acks with an event nothing acts on, and a
+/// test with no hot spec: one finding of each rule on the checked program.
+const WEAK: &str = "event eReq: Client;\n\
+     event eResp: int;\n\
+     event eAck;\n\
+     event eServed: int;\n\
+     machine Server {\n\
+       var served: int;\n\
+       var log: seq[int];\n\
+       start state S {\n\
+         on eReq do (c: Client) {\n\
+           served = served + 1;\n\
+           log += (sizeof(log), served);\n\
+           announce eServed, served;\n\
+           send c, eResp, served;\n\
+           send c, eAck;\n\
+         }\n\
+       }\n\
+     }\n\
+     spec Counted observes eServed {\n\
+       var last: int;\n\
+       start state S { on eServed do (n: int) { assert n == last + 1, \"skipped\"; last = n; } }\n\
+     }\n\
+     // snappea: driver\n\
+     machine Client {\n\
+       start state S {\n\
+         entry (s: Server) { send s, eReq, this; }\n\
+         on eResp do (n: int) { assert n > 0, \"no count\"; }\n\
+         on eAck do { }\n\
+       }\n\
+     }\n\
+     // snappea: driver\n\
+     machine Driver {\n\
+       start state S { entry { var s: Server; s = new Server(); new Client(s); } }\n\
+     }\n\
+     test tcServe [main=Driver]: assert Counted in { Server, Client, Driver };\n";
+
+#[test]
+fn lint_reports_state_events_and_progress_no_check_depends_on() {
+    let mut h = host();
+    h.add_file("serve.p", WEAK);
+    assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 2);
+    for (rule, at, text) in [
+        ("unchecked-state", "serve.p:7:", "machine Server writes field 'log' 1 time, but no assertion"),
+        ("unchecked-event", "serve.p:14:", "machine Server sends 'eAck', but no spec observes it"),
+        ("no-progress-spec", "serve.p:34:", "test 'tcServe' waits for the model's responses"),
+    ] {
+        let found = h.stderr.find(&format!("error[{}]: {}", rule, text));
+        let found = found.unwrap_or_else(|| panic!("no {} finding:\n{}", rule, h.stderr));
+        assert!(h.stderr[found..].contains(at), "{} not at {}:\n{}", rule, at, h.stderr);
+    }
+    // the fields and events a check reads are not reported
+    assert!(!h.stderr.contains("'served'"), "{}", h.stderr);
+    assert!(!h.stderr.contains("'eResp'"), "{}", h.stderr);
+    assert!(h.stderr.contains("help: assert on the field in a spec"), "{}", h.stderr);
+
+    // suppressions name the rule; a field takes one too
+    let allowed = WEAK
+        .replace("var log", "// snappea-lint: allow unchecked-state -- kept for debugging\nvar log")
+        .replace("send c, eAck;", "// snappea-lint: allow unchecked-event -- acks are informational\nsend c, eAck;")
+        .replace("test tcServe", "// snappea-lint: allow no-progress-spec -- safety only\ntest tcServe");
+    h.add_file("serve.p", &allowed);
+    assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 0, "{}", h.stderr);
+}
+
+#[test]
+fn mutants_that_only_write_unchecked_state_are_not_run() {
+    let mut h = host();
+    h.add_file("serve.p", WEAK);
+    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    // reported inside the whole handler body's removal, which nothing detects either
+    let log = v["mutation"]["undetected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|u| u["undetected_inside"].as_array().unwrap())
+        .find(|u| u["line"] == 11)
+        .unwrap_or_else(|| panic!("{}", v["mutation"]));
+    assert_eq!(log["unchecked_variable"], "log");
+    assert_eq!(log["schedules"], 0);
+    // one client, one request: every schedule is the same run
+    assert_eq!(v["test_cases"][0]["little_to_explore"], true, "{}", v["test_cases"][0]);
+    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--format", "text"]);
+    assert!(h.stdout.contains("hint: give the model something to get wrong"), "{}", h.stdout);
 }

@@ -15,6 +15,36 @@ pub use rules::{
 };
 pub use suppression::MUTATIONS;
 
+/// Rules that need the type-checked program, which `snappea` runs on it (see
+/// `snappea::checker::checked`): their IDs and descriptions, so suppression comments and
+/// `--list-rules` know them.
+pub const PROGRAM_RULES: &[(&str, &str)] = &[
+    (
+        "unchecked-state",
+        "A model or spec field is written, but no assertion, condition, spec or sent event depends on it.",
+    ),
+    (
+        "unchecked-event",
+        "The model sends an event that no spec observes and whose handlers change nothing a check depends on.",
+    ),
+    (
+        "no-progress-spec",
+        "A test waits for the model's responses, but none of its specs has a hot state, so a model that stops passes.",
+    ),
+];
+
+/// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
+/// comment covers.
+pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding>) -> Result<(), ParseError> {
+    let allowed = suppression::program_suppressions(&Context::parse(sources)?);
+    findings.retain(|f| {
+        !allowed
+            .iter()
+            .any(|(s, id)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
+    });
+    Ok(())
+}
+
 /// An actionable diagnostic. Every unsuppressed finding fails CLI linting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
