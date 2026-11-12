@@ -1,0 +1,9 @@
+<!-- Offline note edits synced with a base version. See README.md. -->
+<Project>
+<ProjectName>OfflineSync</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

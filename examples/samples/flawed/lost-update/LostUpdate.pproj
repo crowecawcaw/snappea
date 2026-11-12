@@ -1,0 +1,9 @@
+<!-- A shared balance updated by read-modify-write. See README.md. -->
+<Project>
+<ProjectName>LostUpdate</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

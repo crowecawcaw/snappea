@@ -1,0 +1,9 @@
+<!-- The smallest useful P model: a client pings a counter. See README.md. -->
+<Project>
+<ProjectName>FirstModel</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

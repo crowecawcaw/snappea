@@ -1,0 +1,9 @@
+<!-- Look-aside cache with lease tokens, racing a reader's fill against a writer's delete. See README.md. -->
+<Project>
+<ProjectName>CacheInvalidation</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

@@ -1,0 +1,9 @@
+<!-- Hot states: every request is eventually answered. See README.md. -->
+<Project>
+<ProjectName>Liveness</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

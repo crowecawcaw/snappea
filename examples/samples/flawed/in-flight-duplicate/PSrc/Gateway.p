@@ -1,0 +1,21 @@
+// The payment gateway (the side effect). Every call charges the card; it does not
+// deduplicate, which is why the API in front of it must.
+
+event eCharge: (client: machine, key: int, amount: int);
+event eChargeResp: (charge: int);
+
+machine Gateway {
+  var nextCharge: int;
+  start state Serving {
+    on eCharge do (c: (client: machine, key: int, amount: int)) {
+      // snappea-lint: allow mutation:swap-operator -- charge ids are only compared for equality; counting down keeps them unique
+      nextCharge = nextCharge + 1;
+      announce eCharged, (key = c.key, amount = c.amount, charge = nextCharge);
+      send c.client, eChargeResp, (charge = nextCharge,);
+    }
+  }
+}
+
+// What every API worker returns to the client that sent the request.
+event eChargeResult: (req: int, charge: int);
+type tRequest = (req: int, key: int, amount: int);
