@@ -39,6 +39,10 @@ The workflow:
    `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` (static CRT), from the run's
    commit with the version applied, so `snappea --version` reports the release. Each is
    archived as `snappea-vX.Y.Z-<target>.tar.gz` (Windows: `.zip` with `snappea.exe`).
+   The three targets that run on their runner (x86_64 Linux, Apple silicon, Windows)
+   use profile-guided optimization, about 10-15% faster checking: an instrumented build
+   checks the tutorial models for about 30 seconds (`scripts/pgo.py`), and the release
+   build uses that profile. The two cross-built targets ship without it.
 4. **Commit and tag**: writes `SHA256SUMS` for those exact archives, then commits
    `Release Snap Pea vX.Y.Z` with every package at the version: `Cargo.toml` and the lock
    files, `java/pom.xml` (and `examples/java`), and Go's

@@ -4,7 +4,18 @@ use std::rc::Rc;
 
 use crate::sema::{BinOp, Expr, ExprKind, FunDecl, FunId, PType, Program, Stmt, StmtKind, UnOp, VarId, VarRole};
 
-use crate::checker::bytecode::{CodeBlock, Op, Operand, PathElem, Probe, ProbeKind, ReceiveCase, Root};
+use crate::checker::bytecode::{CodeBlock, Dest, Op, Operand, PathElem, Probe, ProbeKind, ReceiveCase, Root};
+
+/// The register an instruction that only loads a value names, if any: a local, a field,
+/// or (with `ints`) an `int` literal that fits an [`Operand::Int`].
+fn register(op: &Op, ints: bool) -> Option<Operand> {
+    match op {
+        Op::LoadLocal(s) => Some(Operand::Local(*s)),
+        Op::LoadField(s) => Some(Operand::Field(*s)),
+        Op::PushInt(k) if ints => i32::try_from(*k).ok().map(Operand::Int),
+        _ => None,
+    }
+}
 
 fn is_comparison(op: BinOp) -> bool {
     matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Eq | BinOp::Neq)
@@ -70,6 +81,7 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         if unread.iter().flatten().any(|u| *u) {
             funs = compile_all(&unread);
         }
+        skip_empty_calls(&mut funs);
     }
     let permissions = (0..prog.interfaces.len())
         .map(|i| Rc::from(prog.interface_receives(crate::sema::InterfaceId(i as u32))))
@@ -83,6 +95,21 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
     Code { funs, permissions, probes, action_names, field_defaults }
 }
 
+/// Rewrites calls of functions whose code is just `ReturnNull` to `CallEmpty`.
+fn skip_empty_calls(funs: &mut [Option<Rc<CodeBlock>>]) {
+    let empty: Vec<bool> =
+        funs.iter().map(|c| c.as_deref().is_some_and(|c| matches!(c.ops[..], [Op::ReturnNull]))).collect();
+    for code in funs.iter_mut().flatten() {
+        let code = Rc::get_mut(code).expect("code is not shared yet");
+        for op in &mut code.ops {
+            match *op {
+                Op::Call { fun, nargs } if empty[fun.idx()] => *op = Op::CallEmpty { nargs },
+                _ => {}
+            }
+        }
+    }
+}
+
 /// For each parameter of `code`, whether the function never reads it, and cannot expose
 /// it either. Locals are only ever observed by the state hash of a scheduling point
 /// (`statehash`), never by logs, traces or bug reports; a function that neither calls
@@ -92,6 +119,10 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
 /// slot counts as a read unless it only overwrites it. The match is exhaustive so that
 /// new instructions get classified.
 fn unread_params(code: &CodeBlock) -> Vec<bool> {
+    let local = |o: Operand| match o {
+        Operand::Local(s) => Some(s),
+        _ => None,
+    };
     let mut unread = vec![true; code.param_slots.len()];
     for op in &code.ops {
         // the local slots `op` reads, or `None` when it may leave the frame
@@ -99,6 +130,7 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             // calls, scheduling points, leaving the action, and choices (which consult the
             // strategy)
             Op::Call { .. }
+            | Op::CallEmpty { .. }
             | Op::Create { .. }
             | Op::Send { .. }
             | Op::Raise { .. }
@@ -110,13 +142,13 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::ChooseSeq
             | Op::ChooseSet
             | Op::ChooseMap => None,
+            Op::IntBin { lhs: a, rhs: b, .. }
+            | Op::IntCmpJumpIfFalse { lhs: a, rhs: b, .. }
+            | Op::MapGetOf { map: a, key: b, .. } => Some([local(*a), local(*b)]),
+            Op::Move { src: a, .. } | Op::SizeofOf(a) | Op::KeysSizeof(a) => Some([local(*a), None]),
+            Op::KeyAt { map, index } => Some([local(*map), Some(*index)]),
             Op::LoadLocal(s)
             | Op::LocalTupleGet { slot: s, .. }
-            | Op::LocalSizeof(s)
-            | Op::MapGetLocal { slot: s, .. }
-            | Op::KeyAtLocal(s)
-            | Op::IntBin { rhs: Operand::Local(s), .. }
-            | Op::IntCmpJumpIfFalse { rhs: Operand::Local(s), .. }
             | Op::Store { root: Root::Local(s), .. }
             | Op::Insert { root: Root::Local(s), .. }
             | Op::Add { root: Root::Local(s), .. }
@@ -126,9 +158,8 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             // only overwrite a local, or touch none
             Op::StoreLocal(_)
             | Op::StoreLocalConst { .. }
+            | Op::StoreLocalConsts(_)
             | Op::ForeachInit { .. }
-            | Op::IntBin { .. }
-            | Op::IntCmpJumpIfFalse { .. }
             | Op::Store { .. }
             | Op::Insert { .. }
             | Op::Add { .. }
@@ -169,7 +200,6 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::CoerceFloat
             | Op::CoerceInt
             | Op::CoerceInterface(_)
-            | Op::KeysSizeof
             | Op::KeysContains
             | Op::Return
             | Op::ReturnNull
@@ -295,44 +325,89 @@ impl<'a> Compiler<'a> {
     }
 
     /// Combines `op` with the instructions before it into one of the fused instructions
-    /// (see [`Op`]), popping those it absorbs.
-    fn fuse(&mut self, op: Op) -> Op {
+    /// (see [`Op`]), popping those it absorbs, for as long as one applies.
+    fn fuse(&mut self, mut op: Op) -> Op {
         if !self.fuse {
             return op;
         }
+        loop {
+            match self.fuse_once(op) {
+                Ok(fused) => op = fused,
+                Err(op) => return op,
+            }
+        }
+    }
+
+    /// One step of [`Self::fuse`]: the fused instruction, or `op` when none applies.
+    fn fuse_once(&mut self, op: Op) -> Result<Op, Op> {
         let fused = match (self.ops.as_slice(), &op) {
-            ([.., Op::Keys, Op::LoadLocal(slot)], Op::SeqGet) if self.can_fuse(2) => (2, Op::KeyAtLocal(*slot)),
+            ([.., Op::Keys, Op::LoadLocal(slot)], Op::SeqGet) if self.can_fuse(2) => {
+                (2, Op::KeyAt { map: Operand::Stack, index: *slot })
+            }
             ([.., Op::Default(value)], Op::StoreLocal(slot)) => {
                 (1, Op::StoreLocalConst { slot: *slot, value: value.clone() })
             }
+            ([.., Op::StoreLocalConst { slot: a, value: x }], Op::StoreLocalConst { slot: b, value: y }) => {
+                (1, Op::StoreLocalConsts(Rc::from([(*a, x.clone()), (*b, y.clone())])))
+            }
+            ([.., Op::StoreLocalConsts(run)], Op::StoreLocalConst { slot, value }) => {
+                let run: Vec<_> = run.iter().cloned().chain([(*slot, value.clone())]).collect();
+                (1, Op::StoreLocalConsts(Rc::from(run)))
+            }
             ([.., Op::LoadLocal(slot)], Op::TupleGet(index)) => (1, Op::LocalTupleGet { slot: *slot, index: *index }),
-            ([.., Op::LoadLocal(slot)], Op::Sizeof) => (1, Op::LocalSizeof(*slot)),
-            ([.., Op::LoadLocal(slot)], Op::MapGet { java_null }) => {
-                (1, Op::MapGetLocal { slot: *slot, java_null: *java_null })
+            ([.., prev], Op::Sizeof) if register(prev, false).is_some() => {
+                (1, Op::SizeofOf(register(prev, false).unwrap()))
             }
-            ([.., Op::Keys], Op::Sizeof) => (1, Op::KeysSizeof),
+            ([.., prev], Op::MapGet { java_null }) if register(prev, false).is_some() => {
+                (1, Op::MapGetOf { map: Operand::Stack, key: register(prev, false).unwrap(), java_null: *java_null })
+            }
+            ([.., prev], Op::MapGetOf { map: Operand::Stack, key, java_null })
+                if *key != Operand::Stack && register(prev, false).is_some() =>
+            {
+                (1, Op::MapGetOf { map: register(prev, false).unwrap(), key: *key, java_null: *java_null })
+            }
+            ([.., Op::Keys], Op::Sizeof) => (1, Op::KeysSizeof(Operand::Stack)),
+            ([.., prev], Op::KeysSizeof(Operand::Stack)) if register(prev, false).is_some() => {
+                (1, Op::KeysSizeof(register(prev, false).unwrap()))
+            }
+            ([.., prev], Op::KeyAt { map: Operand::Stack, index }) if register(prev, false).is_some() => {
+                (1, Op::KeyAt { map: register(prev, false).unwrap(), index: *index })
+            }
             ([.., Op::Keys], Op::Contains) => (1, Op::KeysContains),
-            ([.., Op::LoadLocal(slot)], Op::IntBin { op, rhs: Operand::Stack }) => {
-                (1, Op::IntBin { op: *op, rhs: Operand::Local(*slot) })
+            // the right operand, then the left one once the right one is not on the stack
+            ([.., prev], Op::IntBin { op, lhs: Operand::Stack, rhs: Operand::Stack, dst: Dest::Stack })
+                if register(prev, true).is_some() =>
+            {
+                let rhs = register(prev, true).unwrap();
+                (1, Op::IntBin { op: *op, lhs: Operand::Stack, rhs, dst: Dest::Stack })
             }
-            ([.., Op::PushInt(k)], Op::IntBin { op, rhs: Operand::Stack }) => {
-                (1, Op::IntBin { op: *op, rhs: Operand::Int(*k) })
+            ([.., prev], Op::IntBin { op, lhs: Operand::Stack, rhs, dst: Dest::Stack })
+                if *rhs != Operand::Stack && register(prev, true).is_some() =>
+            {
+                let lhs = register(prev, true).unwrap();
+                (1, Op::IntBin { op: *op, lhs, rhs: *rhs, dst: Dest::Stack })
             }
-            ([.., Op::IntBin { op, rhs }], Op::JumpIfFalse(target)) if is_comparison(*op) => {
-                (1, Op::IntCmpJumpIfFalse { op: *op, rhs: *rhs, target: *target })
+            ([.., Op::IntBin { op, lhs, rhs, dst: Dest::Stack }], Op::StoreLocal(slot)) => {
+                (1, Op::IntBin { op: *op, lhs: *lhs, rhs: *rhs, dst: Dest::Local(*slot) })
+            }
+            ([.., Op::IntBin { op, lhs, rhs, dst: Dest::Stack }], Op::JumpIfFalse(target)) if is_comparison(*op) => {
+                (1, Op::IntCmpJumpIfFalse { op: *op, lhs: *lhs, rhs: *rhs, target: *target })
+            }
+            ([.., prev], Op::StoreLocal(dst)) if register(prev, true).is_some() => {
+                (1, Op::Move { src: register(prev, true).unwrap(), dst: *dst })
             }
             ([.., Op::PushNull], Op::Return) => (1, Op::ReturnNull),
             ([.., Op::Format { base, nargs, types }], Op::Print) if format_cannot_fail(base, *nargs as usize) => {
                 (1, Op::PrintFormat { base: base.clone(), nargs: *nargs, types: types.clone() })
             }
-            _ => return op,
+            _ => return Err(op),
         };
         match fused {
             (n, fused) if self.can_fuse(n) => {
                 self.ops.truncate(self.ops.len() - n);
-                fused
+                Ok(fused)
             }
-            _ => op,
+            _ => Err(op),
         }
     }
 
@@ -867,7 +942,12 @@ impl<'a> Compiler<'a> {
                     self.expr(lhs);
                     self.expr(rhs);
                     if self.fuse && self.is_int(lhs) && self.is_int(rhs) {
-                        self.emit(Op::IntBin { op: *other, rhs: Operand::Stack });
+                        self.emit(Op::IntBin {
+                            op: *other,
+                            lhs: Operand::Stack,
+                            rhs: Operand::Stack,
+                            dst: Dest::Stack,
+                        });
                     } else {
                         self.emit(Op::Bin(*other));
                     }

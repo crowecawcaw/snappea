@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::sema::{BinOp, EventId, PType, Program};
 
-use crate::checker::bytecode::{Op, Operand, PathElem, ReceiveCase, Root};
+use crate::checker::bytecode::{Dest, Op, Operand, PathElem, ReceiveCase, Root};
 use crate::checker::runtime::{
     ActiveIter, Actor, Event, Exception, Exec, ExecOutcome, MachineStatus, OpStatus, Pending, Runtime, SchedKind, Stop,
     Transition,
@@ -358,13 +358,16 @@ fn int_bin(op: BinOp, a: Value, b: Value, java: bool) -> Result<Value, Exception
     bin(op, a, b, java)
 }
 
-/// The right operand of an `Op::IntBin`, taking it off the stack if it is there.
+/// The value of operand `o` without copying it: `owned` holds it when it was on the stack.
+/// `locals` are the frame's slots.
 #[inline(always)]
-fn operand(stack: &mut Vec<Value>, base: usize, rhs: Operand) -> Value {
-    match rhs {
-        Operand::Stack => pop(stack),
-        Operand::Local(slot) => stack[base + slot as usize].clone(),
-        Operand::Int(k) => Value::Int(k),
+fn in_place<'a>(o: Operand, owned: &'a Option<Value>, locals: &'a [Value], fields: &'a [Value]) -> &'a Value {
+    match o {
+        Operand::Stack => owned.as_ref().expect("operand popped"),
+        Operand::Local(slot) => &locals[slot as usize],
+        Operand::Field(slot) => &fields[slot as usize],
+        // only arithmetic and comparisons take literals
+        Operand::Int(_) => unreachable!("an int literal as a collection operand"),
     }
 }
 
@@ -593,6 +596,24 @@ impl<'p> Runtime<'p> {
         }
     }
 
+    fn fields(&self, actor: Actor) -> &[Value] {
+        match actor {
+            Actor::Machine(m) => &self.machines[m].fields,
+            Actor::Monitor(mon) => &self.monitors[mon].fields,
+        }
+    }
+
+    /// The value of operand `o`, taking it off the stack if it is there.
+    #[inline(always)]
+    fn operand(&self, actor: Actor, stack: &mut Vec<Value>, base: usize, o: Operand) -> Value {
+        match o {
+            Operand::Stack => pop(stack),
+            Operand::Local(slot) => stack[base + slot as usize].clone(),
+            Operand::Field(slot) => self.fields(actor)[slot as usize].clone(),
+            Operand::Int(k) => Value::Int(k as i64),
+        }
+    }
+
     fn fields_mut(&mut self, actor: Actor) -> &mut Vec<Value> {
         match actor {
             Actor::Machine(m) => &mut self.machines[m].fields,
@@ -812,458 +833,456 @@ impl<'p> Runtime<'p> {
     /// Runs the innermost frame until it calls or returns, or until the action finishes,
     /// unwinds, fails or reaches a scheduling point. Every instruction is one unit of work.
     fn run_frame(&mut self, actor: Actor, exec: &mut Exec) -> Result<Flow, Fault> {
-        // `step_work` lives in a local while the frame runs, so that it can stay in a
-        // register; it is written back around every call that may log or run monitors.
-        let mut work = self.step_work;
-        let flow = self.run_ops(actor, exec, &mut work);
-        self.step_work = work;
+        // While the frame runs, `step_work` is kept as the units `left` before `stop_at`:
+        // the work bound or the next cancellation poll, whichever comes first. Each
+        // instruction then only decrements `left` and tests its sign, which keeps the
+        // threshold out of the loop's registers. `step_work` is `stop_at - left`, written
+        // back around every call that may log or run monitors.
+        let mut stop_at = self.work_threshold(self.next_cancel_work);
+        let mut left = stop_at as i64 - self.step_work as i64;
+        let flow = self.run_ops(actor, exec, &mut left, &mut stop_at);
+        self.step_work = (stop_at as i64 - left) as u64;
         flow
     }
 
+    /// The counter value at which an instruction must check the work bound or poll for
+    /// cancellation (see [`Runtime::run_frame`]).
+    fn work_threshold(&self, next_poll: u64) -> u64 {
+        let limit = self.config.max_work_per_step;
+        if limit > 0 {
+            next_poll.min(limit + 1)
+        } else {
+            next_poll
+        }
+    }
+
     #[inline(always)]
-    fn run_ops(&mut self, actor: Actor, exec: &mut Exec, work: &mut u64) -> Result<Flow, Fault> {
-        let Some(frame_idx) = exec.frames.len().checked_sub(1) else {
-            return Ok(Flow::Finished(Value::Null));
-        };
-        let frame = &exec.frames[frame_idx];
-        let code = frame.code.clone();
-        let fun = frame.fun;
-        let base = frame.base;
-        let mut pc = frame.pc;
+    fn run_ops(&mut self, actor: Actor, exec: &mut Exec, left: &mut i64, stop_at: &mut u64) -> Result<Flow, Fault> {
         let limit = self.config.max_work_per_step;
         let prog = self.prog;
         let java = self.java_semantics();
         let inspecting = self.config.inspection_trace && self.json_enabled();
+        // `step_work` while the frame runs, and setting it
+        macro_rules! work {
+            () => {
+                (*stop_at as i64 - *left) as u64
+            };
+        }
+        macro_rules! set_work {
+            ($w:expr) => {
+                *left = *stop_at as i64 - $w as i64
+            };
+        }
         // Counts `n` units of work. A fused instruction counts its first unit with the
         // loop and the others before the part they stand for. The bound is checked as if
         // the units were counted one at a time, so it is reported with the counter just
         // over it.
         macro_rules! check_bound {
             ($n:expr) => {
-                if limit > 0 && *work > limit {
-                    *work = (*work + 1 - $n).max(limit + 1);
-                    self.step_work = *work;
+                let work = work!();
+                if limit > 0 && work > limit {
+                    self.step_work = (work + 1 - $n).max(limit + 1);
                     let bug = self.work_bound_exceeded(actor);
-                    *work = self.step_work;
+                    set_work!(self.step_work);
                     return Err(bug);
                 }
             };
         }
-        // Each instruction compares the counter with one threshold: the work bound or the
-        // next cancellation poll, whichever comes first.
         let mut next_poll = self.next_cancel_work;
-        let threshold = |next_poll: u64| if limit > 0 { next_poll.min(limit + 1) } else { next_poll };
-        let mut stop_at = threshold(next_poll);
         macro_rules! charge {
             ($n:expr) => {
-                *work += $n;
-                if *work >= stop_at {
+                *left -= $n as i64;
+                if *left <= 0 {
                     check_bound!($n);
                 }
             };
         }
-        loop {
-            *work += 1;
-            if *work >= stop_at {
-                check_bound!(1);
-                if *work >= next_poll {
-                    self.check_cancelled()?;
-                    next_poll = work.saturating_add(4096);
-                    self.next_cancel_work = next_poll;
-                }
-                stop_at = threshold(next_poll);
+        // Calls and returns switch frames here, without leaving the loop.
+        'frames: loop {
+            let Some(frame_idx) = exec.frames.len().checked_sub(1) else {
+                return Ok(Flow::Finished(Value::Null));
+            };
+            let frame = &exec.frames[frame_idx];
+            let code = frame.code.clone();
+            // taken once per frame: the compiler cannot tell that calls leave it unchanged
+            let ops: &[Op] = &code.ops;
+            let fun = frame.fun;
+            let base = frame.base;
+            let mut pc = frame.pc;
+            // `StoreLocal(slot)` of `v`, after the rest of the instruction.
+            macro_rules! store_local {
+                ($slot:expr, $v:expr) => {{
+                    let slot: u32 = $slot;
+                    let v = $v;
+                    let at = base + slot as usize;
+                    let before = std::mem::replace(&mut exec.values[at], v);
+                    if inspecting {
+                        self.inspect_assignment(actor, exec, &code, pc, Root::Local(slot), before);
+                    }
+                }};
             }
-            // Inspection is only active in the logged replay, never during search.
-            let stack = &mut exec.values;
-            // every code block ends with a `Return`
-            let op = &code.ops[pc];
-            pc += 1;
-            match op {
-                Op::Probe(id) => {
-                    if self.config.inspection_trace && self.json_enabled() {
-                        let probe = self.code.probes[*id as usize];
-                        if probe.kind == crate::checker::bytecode::ProbeKind::Stmt {
-                            self.inspect_snapshot(actor, exec, probe.span, false, None, probe.fun);
-                        }
+            loop {
+                *left -= 1;
+                if *left <= 0 {
+                    check_bound!(1);
+                    let work = work!();
+                    if work >= next_poll {
+                        self.check_cancelled()?;
+                        next_poll = work.saturating_add(4096);
+                        self.next_cancel_work = next_poll;
                     }
-                    // probes count no work (see `Op::Probe`); any bound the charge above
-                    // crossed, the next instruction would cross too
-                    *work -= 1;
-                    if let Some(c) = self.coverage.as_mut() {
-                        c.probe_hit(*id);
-                    }
+                    *stop_at = self.work_threshold(next_poll);
+                    set_work!(work);
                 }
-                Op::ConditionProbe { yes, no } => {
-                    *work -= 1;
-                    if let Some(c) = self.coverage.as_mut() {
-                        c.probe_hit(if matches!(stack.last(), Some(Value::Bool(true))) { *yes } else { *no });
-                    }
-                }
-                Op::PushNull => stack.push(Value::Null),
-                Op::PushBool(b) => stack.push(Value::Bool(*b)),
-                Op::PushInt(i) => stack.push(Value::Int(*i)),
-                Op::PushFloat(f) if java => stack.push(Value::Float(*f as f32 as f64)),
-                Op::PushFloat(f) => stack.push(Value::Float(*f)),
-                Op::PushEvent(e) => stack.push(Value::Event(*e)),
-                Op::PushThis => {
-                    let v = match actor {
-                        Actor::Machine(m) => Value::Machine(self.machines[m].this.clone()),
-                        Actor::Monitor(_) => Value::Null,
-                    };
-                    stack.push(v);
-                }
-                Op::LoadLocal(s) => {
-                    let v = stack[base + *s as usize].clone();
-                    stack.push(v);
-                }
-                Op::StoreLocal(s) => {
-                    let v = pop(stack);
-                    let before = inspecting.then(|| stack[base + *s as usize].clone());
-                    stack[base + *s as usize] = v;
-                    if let Some(before) = before {
-                        self.inspect_assignment(actor, exec, &code, pc, Root::Local(*s), before);
-                    }
-                }
-                Op::StoreLocalConst { slot, value } => {
-                    charge!(1);
-                    let before = inspecting.then(|| stack[base + *slot as usize].clone());
-                    stack[base + *slot as usize] = value.clone();
-                    if let Some(before) = before {
-                        self.inspect_assignment(actor, exec, &code, pc, Root::Local(*slot), before);
-                    }
-                }
-                Op::StoreField(s) => {
-                    let v = pop(stack);
-                    let before = inspecting.then(|| self.fields_mut(actor)[*s as usize].clone());
-                    self.fields_mut(actor)[*s as usize] = v;
-                    if let Some(before) = before {
-                        self.inspect_assignment(actor, exec, &code, pc, Root::Field(*s), before);
-                    }
-                }
-                Op::LoadField(s) => {
-                    let v = self.fields_mut(actor)[*s as usize].clone();
-                    stack.push(v);
-                }
-                Op::LoadGlobal(s) => stack.push(self.globals[*s as usize].clone()),
-                Op::Pop => {
-                    pop(stack);
-                }
-                Op::Dup => {
-                    let v = stack.last().expect("operand stack underflow").clone();
-                    stack.push(v);
-                }
-                Op::MakeTuple(n) => {
-                    let vs = pop_n(stack, *n as usize);
-                    stack.push(Value::Tuple(Rc::new(vs)));
-                }
-                Op::MakeNamedTuple(names) => {
-                    let vs = pop_n(stack, names.len());
-                    stack.push(Value::NamedTuple(Rc::new(NamedTuple { names: names.clone(), values: vs })));
-                }
-                Op::TupleGet(i) => {
-                    let v = tuple_get(&pop(stack), *i, prog)?;
-                    stack.push(v);
-                }
-                Op::LocalTupleGet { slot, index } => {
-                    charge!(1);
-                    let v = tuple_get(&stack[base + *slot as usize], *index, prog)?;
-                    stack.push(v);
-                }
-                Op::SeqGet => {
-                    let idx = pop(stack);
-                    let v = seq_get(&pop(stack), &idx, prog)?;
-                    stack.push(v);
-                }
-                Op::SetGet => {
-                    let idx = pop(stack);
-                    let base = pop(stack);
-                    let v = match &base {
-                        Value::Set(s) => {
-                            let i = idx.as_int();
-                            if i < 0 {
-                                return Err(element_at_oor().into());
+                // Inspection is only active in the logged replay, never during search.
+                let stack = &mut exec.values;
+                // every code block ends with a `Return`
+                let op = &ops[pc];
+                pc += 1;
+                match op {
+                    Op::Probe(id) => {
+                        if self.config.inspection_trace && self.json_enabled() {
+                            let probe = self.code.probes[*id as usize];
+                            if probe.kind == crate::checker::bytecode::ProbeKind::Stmt {
+                                self.inspect_snapshot(actor, exec, probe.span, false, None, probe.fun);
                             }
-                            s.element_at(i as usize).cloned().ok_or_else(element_at_oor)?
                         }
-                        Value::Null => return Err(nre().into()),
-                        other => return Err(invalid_cast(other, "PChecker.Runtime.Values.PSet", prog).into()),
-                    };
-                    stack.push(v);
-                }
-                Op::MapGet { java_null } => {
-                    let key = pop(stack);
-                    let v = map_get(&pop(stack), &key, *java_null && java, prog)?;
-                    stack.push(v);
-                }
-                Op::MapGetLocal { slot, java_null } => {
-                    charge!(1);
-                    let m = pop(stack);
-                    let v = map_get(&m, &stack[base + *slot as usize], *java_null && java, prog)?;
-                    stack.push(v);
-                }
-                Op::Sizeof => {
-                    let v = size_of(&pop(stack))?;
-                    stack.push(v);
-                }
-                Op::LocalSizeof(slot) => {
-                    charge!(1);
-                    let v = size_of(&stack[base + *slot as usize])?;
-                    stack.push(v);
-                }
-                Op::KeysSizeof => {
-                    let m = pop(stack);
-                    let n = map_of(&m, prog)?.len();
-                    charge!(1);
-                    stack.push(Value::Int(n as i64));
-                }
-                Op::KeysContains => {
-                    let m = pop(stack);
-                    let m = map_of(&m, prog)?;
-                    charge!(1);
-                    let item = pop(stack);
-                    stack.push(Value::Bool(m.contains_key(&item)));
-                }
-                Op::KeyAtLocal(slot) => {
-                    let m = pop(stack);
-                    let m = map_of(&m, prog)?;
-                    charge!(2);
-                    let i = stack[base + *slot as usize].as_int();
-                    if i < 0 || i as usize >= m.len() {
-                        return Err(index_oor().into());
+                        // probes count no work (see `Op::Probe`); any bound the charge above
+                        // crossed, the next instruction would cross too
+                        *left += 1;
+                        if let Some(c) = self.coverage.as_mut() {
+                            c.probe_hit(*id);
+                        }
                     }
-                    let key = if java {
-                        crate::checker::javafmt::map_keys_in_java_order(m).swap_remove(i as usize)
-                    } else {
-                        m.key_at(i as usize).expect("index in range").clone()
-                    };
-                    stack.push(key);
-                }
-                Op::Contains => {
-                    let coll = pop(stack);
-                    let item = pop(stack);
-                    let b = match &coll {
-                        Value::Seq(s) => s.contains(&item),
-                        Value::Set(s) => s.contains(&item),
-                        Value::Map(m) => m.contains_key(&item),
-                        Value::Null => return Err(nre().into()),
-                        _ => false,
-                    };
-                    stack.push(Value::Bool(b));
-                }
-                Op::Default(v) => stack.push(v.clone()),
-                Op::Format { base, nargs, types } => {
-                    let at = stack.len() - *nargs as usize;
-                    let text = self.format(base, &stack[at..], types)?;
-                    stack.truncate(at);
-                    stack.push(Value::Str(Rc::from(text)));
-                }
-                Op::PrintFormat { base, nargs, types } => {
-                    let at = stack.len() - *nargs as usize;
-                    let text = match self.logging || self.json_enabled() || java {
-                        true => Some(self.format(base, &stack[at..], types)?),
-                        false => None,
-                    };
-                    stack.truncate(at);
-                    charge!(1);
-                    if !java {
-                        self.step_work = *work;
-                        self.print(text);
-                        *work = self.step_work;
+                    Op::ConditionProbe { yes, no } => {
+                        *left += 1;
+                        if let Some(c) = self.coverage.as_mut() {
+                            c.probe_hit(if matches!(stack.last(), Some(Value::Bool(true))) { *yes } else { *no });
+                        }
                     }
-                }
-                Op::UnreadFormat { base, nargs, types } => {
-                    let at = stack.len() - *nargs as usize;
-                    let v = match java {
-                        true => Value::Str(Rc::from(self.format(base, &stack[at..], types)?)),
-                        false => Value::Null,
-                    };
-                    stack.truncate(at);
-                    stack.push(v);
-                }
-                Op::Bin(op) => {
-                    let b = pop(stack);
-                    let a = pop(stack);
-                    let r = bin(*op, a, b, java)?;
-                    stack.push(r);
-                }
-                Op::IntBin { op, rhs } => {
-                    charge!(rhs.work());
-                    let b = operand(stack, base, *rhs);
-                    let a = pop(stack);
-                    let r = int_bin(*op, a, b, java)?;
-                    stack.push(r);
-                }
-                Op::IntCmpJumpIfFalse { op, rhs, target } => {
-                    charge!(rhs.work());
-                    let b = operand(stack, base, *rhs);
-                    let a = pop(stack);
-                    let r = int_bin(*op, a, b, java)?;
-                    charge!(1);
-                    if !r.as_bool() {
-                        pc = *target as usize;
+                    Op::PushNull => stack.push(Value::Null),
+                    Op::PushBool(b) => stack.push(Value::Bool(*b)),
+                    Op::PushInt(i) => stack.push(Value::Int(*i)),
+                    Op::PushFloat(f) if java => stack.push(Value::Float(*f as f32 as f64)),
+                    Op::PushFloat(f) => stack.push(Value::Float(*f)),
+                    Op::PushEvent(e) => stack.push(Value::Event(*e)),
+                    Op::PushThis => {
+                        let v = match actor {
+                            Actor::Machine(m) => Value::Machine(self.machines[m].this.clone()),
+                            Actor::Monitor(_) => Value::Null,
+                        };
+                        stack.push(v);
                     }
-                }
-                Op::Neg => {
-                    let v = match pop(stack) {
-                        Value::Int(i) => Value::Int(i.wrapping_neg()),
-                        Value::Float(f) => Value::Float(-f),
-                        Value::Null => return Err(nre().into()),
-                        other => other,
-                    };
-                    stack.push(v);
-                }
-                Op::Not => {
-                    let a = pop(stack);
-                    if a.is_null() {
-                        return Err(nre().into());
+                    Op::LoadLocal(s) => {
+                        let v = stack[base + *s as usize].clone();
+                        stack.push(v);
                     }
-                    stack.push(Value::Bool(!a.as_bool()));
-                }
-                Op::Jump(t) => pc = *t as usize,
-                Op::JumpIfFalse(t) => {
-                    if !pop(stack).as_bool() {
-                        pc = *t as usize;
+                    Op::StoreLocal(s) => {
+                        let v = pop(stack);
+                        store_local!(*s, v);
                     }
-                }
-                Op::JumpIfTrue(t) => {
-                    if pop(stack).as_bool() {
-                        pc = *t as usize;
-                    }
-                }
-                Op::JumpIfFalseElsePop(t) => {
-                    charge!(1);
-                    let outcome = stack.last().expect("operand stack underflow").as_bool();
-                    if let Some(c) = self.coverage.as_mut() {
-                        c.condition(fun.0, pc - 1, outcome);
-                    }
-                    self.strategy.observe_condition(fun.0, pc - 1, outcome);
-                    if !outcome {
-                        pc = *t as usize;
-                    } else {
+                    Op::StoreLocalConst { slot, value } => {
                         charge!(1);
+                        store_local!(*slot, value.clone());
+                    }
+                    Op::StoreLocalConsts(run) => {
+                        for (i, (slot, value)) in run.iter().enumerate() {
+                            charge!(if i == 0 { 1 } else { 2 });
+                            store_local!(*slot, value.clone());
+                        }
+                    }
+                    Op::Move { src, dst } => {
+                        let v = self.operand(actor, stack, base, *src);
+                        charge!(1);
+                        store_local!(*dst, v);
+                    }
+                    Op::StoreField(s) => {
+                        let v = pop(stack);
+                        let before = inspecting.then(|| self.fields_mut(actor)[*s as usize].clone());
+                        self.fields_mut(actor)[*s as usize] = v;
+                        if let Some(before) = before {
+                            self.inspect_assignment(actor, exec, &code, pc, Root::Field(*s), before);
+                        }
+                    }
+                    Op::LoadField(s) => {
+                        let v = self.fields_mut(actor)[*s as usize].clone();
+                        stack.push(v);
+                    }
+                    Op::LoadGlobal(s) => stack.push(self.globals[*s as usize].clone()),
+                    Op::Pop => {
                         pop(stack);
                     }
-                }
-                Op::JumpIfTrueElsePop(t) => {
-                    charge!(1);
-                    let outcome = stack.last().expect("operand stack underflow").as_bool();
-                    if let Some(c) = self.coverage.as_mut() {
-                        c.condition(fun.0, pc - 1, outcome);
+                    Op::Dup => {
+                        let v = stack.last().expect("operand stack underflow").clone();
+                        stack.push(v);
                     }
-                    self.strategy.observe_condition(fun.0, pc - 1, outcome);
-                    if outcome {
-                        pc = *t as usize;
-                    } else {
+                    Op::MakeTuple(n) => {
+                        let vs = pop_n(stack, *n as usize);
+                        stack.push(Value::Tuple(Rc::new(vs)));
+                    }
+                    Op::MakeNamedTuple(names) => {
+                        let vs = pop_n(stack, names.len());
+                        stack.push(Value::NamedTuple(Rc::new(NamedTuple { names: names.clone(), values: vs })));
+                    }
+                    Op::TupleGet(i) => {
+                        let v = tuple_get(&pop(stack), *i, prog)?;
+                        stack.push(v);
+                    }
+                    Op::LocalTupleGet { slot, index } => {
                         charge!(1);
-                        pop(stack);
+                        let v = tuple_get(&stack[base + *slot as usize], *index, prog)?;
+                        stack.push(v);
                     }
-                }
-                Op::Cast(ty) => check_cast(stack.last().expect("operand stack underflow"), ty, prog)?,
-                Op::CoerceFloat => {
-                    let v = match pop(stack) {
-                        Value::Int(i) => Value::Float(i as f64),
-                        Value::Null => return Err(nre().into()),
-                        other => other,
-                    };
-                    stack.push(v);
-                }
-                Op::CoerceInt => {
-                    let v = match pop(stack) {
-                        Value::Float(f) => Value::Int(f as i64),
-                        Value::Null => return Err(nre().into()),
-                        other => other,
-                    };
-                    stack.push(v);
-                }
-                Op::Call { fun, nargs } => {
-                    let nargs = *nargs as usize;
-                    if let Some(callee) = self.code.get(*fun) {
+                    Op::SeqGet => {
+                        let idx = pop(stack);
+                        let v = seq_get(&pop(stack), &idx, prog)?;
+                        stack.push(v);
+                    }
+                    Op::MapGet { java_null } => {
+                        let key = pop(stack);
+                        let v = map_get(&pop(stack), &key, *java_null && java, prog)?;
+                        stack.push(v);
+                    }
+                    Op::MapGetOf { map, key, java_null } => {
+                        charge!(map.work() + key.work());
+                        let k = (*key == Operand::Stack).then(|| pop(stack));
+                        let m = (*map == Operand::Stack).then(|| pop(stack));
+                        let (locals, fields) = (&stack[base..], self.fields(actor));
+                        let (m, k) = (in_place(*map, &m, locals, fields), in_place(*key, &k, locals, fields));
+                        let v = map_get(m, k, *java_null && java, prog)?;
+                        stack.push(v);
+                    }
+                    Op::Sizeof => {
+                        let v = size_of(&pop(stack))?;
+                        stack.push(v);
+                    }
+                    Op::SizeofOf(c) => {
+                        charge!(c.work());
+                        let owned = (*c == Operand::Stack).then(|| pop(stack));
+                        let v = size_of(in_place(*c, &owned, &stack[base..], self.fields(actor)))?;
+                        stack.push(v);
+                    }
+                    Op::KeysSizeof(m) => {
+                        charge!(m.work());
+                        let owned = (*m == Operand::Stack).then(|| pop(stack));
+                        let n = map_of(in_place(*m, &owned, &stack[base..], self.fields(actor)), prog)?.len();
+                        charge!(1);
+                        stack.push(Value::Int(n as i64));
+                    }
+                    Op::KeysContains => {
+                        let m = pop(stack);
+                        let m = map_of(&m, prog)?;
+                        charge!(1);
+                        let item = pop(stack);
+                        stack.push(Value::Bool(m.contains_key(&item)));
+                    }
+                    Op::KeyAt { map, index } => {
+                        charge!(map.work());
+                        let m = self.operand(actor, stack, base, *map);
+                        let m = map_of(&m, prog)?;
+                        charge!(2);
+                        let i = stack[base + *index as usize].as_int();
+                        if i < 0 || i as usize >= m.len() {
+                            return Err(index_oor().into());
+                        }
+                        let key = if java {
+                            crate::checker::javafmt::map_keys_in_java_order(m).swap_remove(i as usize)
+                        } else {
+                            m.key_at(i as usize).expect("index in range").clone()
+                        };
+                        stack.push(key);
+                    }
+                    Op::Contains => {
+                        let coll = pop(stack);
+                        let item = pop(stack);
+                        let b = match &coll {
+                            Value::Seq(s) => s.contains(&item),
+                            Value::Set(s) => s.contains(&item),
+                            Value::Map(m) => m.contains_key(&item),
+                            Value::Null => return Err(nre().into()),
+                            _ => false,
+                        };
+                        stack.push(Value::Bool(b));
+                    }
+                    Op::Default(v) => stack.push(v.clone()),
+                    Op::PrintFormat { base, nargs, types } => {
+                        let at = stack.len() - *nargs as usize;
+                        let text = match self.logging || self.json_enabled() || java {
+                            true => Some(self.format(base, &stack[at..], types)?),
+                            false => None,
+                        };
+                        stack.truncate(at);
+                        charge!(1);
+                        if !java {
+                            self.step_work = work!();
+                            self.print(text);
+                            set_work!(self.step_work);
+                        }
+                    }
+                    Op::Bin(op) => {
+                        let b = pop(stack);
+                        let a = pop(stack);
+                        let r = bin(*op, a, b, java)?;
+                        stack.push(r);
+                    }
+                    Op::IntBin { op, lhs, rhs, dst } => {
+                        charge!(lhs.work() + rhs.work());
+                        let b = self.operand(actor, stack, base, *rhs);
+                        let a = self.operand(actor, stack, base, *lhs);
+                        let r = int_bin(*op, a, b, java)?;
+                        match dst {
+                            Dest::Stack => stack.push(r),
+                            Dest::Local(slot) => {
+                                charge!(1);
+                                store_local!(*slot, r);
+                            }
+                        }
+                    }
+                    Op::IntCmpJumpIfFalse { op, lhs, rhs, target } => {
+                        charge!(lhs.work() + rhs.work());
+                        let b = self.operand(actor, stack, base, *rhs);
+                        let a = self.operand(actor, stack, base, *lhs);
+                        let r = int_bin(*op, a, b, java)?;
+                        charge!(1);
+                        if !r.as_bool() {
+                            pc = *target as usize;
+                        }
+                    }
+                    Op::Not => {
+                        let a = pop(stack);
+                        if a.is_null() {
+                            return Err(nre().into());
+                        }
+                        stack.push(Value::Bool(!a.as_bool()));
+                    }
+                    Op::Jump(t) => pc = *t as usize,
+                    Op::JumpIfFalse(t) => {
+                        if !pop(stack).as_bool() {
+                            pc = *t as usize;
+                        }
+                    }
+                    Op::JumpIfTrue(t) => {
+                        if pop(stack).as_bool() {
+                            pc = *t as usize;
+                        }
+                    }
+                    Op::JumpIfFalseElsePop(t) => {
+                        charge!(1);
+                        let outcome = stack.last().expect("operand stack underflow").as_bool();
+                        if let Some(c) = self.coverage.as_mut() {
+                            c.condition(fun.0, pc - 1, outcome);
+                        }
+                        self.strategy.observe_condition(fun.0, pc - 1, outcome);
+                        if !outcome {
+                            pc = *t as usize;
+                        } else {
+                            charge!(1);
+                            pop(stack);
+                        }
+                    }
+                    Op::JumpIfTrueElsePop(t) => {
+                        charge!(1);
+                        let outcome = stack.last().expect("operand stack underflow").as_bool();
+                        if let Some(c) = self.coverage.as_mut() {
+                            c.condition(fun.0, pc - 1, outcome);
+                        }
+                        self.strategy.observe_condition(fun.0, pc - 1, outcome);
+                        if outcome {
+                            pc = *t as usize;
+                        } else {
+                            charge!(1);
+                            pop(stack);
+                        }
+                    }
+                    Op::Call { fun, nargs } => {
+                        let nargs = *nargs as usize;
+                        if let Some(callee) = self.code.get(*fun) {
+                            exec.frames[frame_idx].pc = pc;
+                            exec.push_frame(callee.clone(), *fun, nargs);
+                            continue 'frames;
+                        }
+                        let at = stack.len() - nargs;
+                        self.step_work = work!();
+                        let v = self.call_foreign(actor, *fun, &stack[at..]);
+                        set_work!(self.step_work);
+                        let v = v?;
+                        stack.truncate(at);
+                        stack.push(v);
+                    }
+                    Op::Return => {
+                        let v = pop(stack);
+                        match return_value(exec, v) {
+                            Flow::Continue => continue 'frames,
+                            flow => return Ok(flow),
+                        }
+                    }
+                    Op::ReturnNull => {
+                        charge!(1);
+                        match return_value(exec, Value::Null) {
+                            Flow::Continue => continue 'frames,
+                            flow => return Ok(flow),
+                        }
+                    }
+                    Op::ForeachNext { iter_slot, item_slot, exit } => {
+                        let slot = base + *iter_slot as usize;
+                        let idx = stack[slot + 1].as_int();
+                        if idx < 0 {
+                            return Err(modified().into());
+                        }
+                        let item = match &stack[slot] {
+                            Value::Seq(s) => s.get(idx as usize).cloned(),
+                            Value::Set(s) => s.element_at(idx as usize).cloned(),
+                            _ => unreachable!("foreach over a sequence or set"),
+                        };
+                        match item {
+                            Some(v) => {
+                                stack[base + *item_slot as usize] = v;
+                                stack[slot + 1] = Value::Int(idx + 1);
+                            }
+                            None => {
+                                exec.iters.retain(|it| !(it.frame == frame_idx && it.slot == *iter_slot));
+                                pc = *exit as usize;
+                            }
+                        }
+                    }
+                    // Listed rather than `_`, so the dispatch needs no range check.
+                    Op::SetGet
+                    | Op::Keys
+                    | Op::Values
+                    | Op::Format { .. }
+                    | Op::Neg
+                    | Op::Cast { .. }
+                    | Op::CoerceFloat
+                    | Op::CoerceInt
+                    | Op::CoerceInterface { .. }
+                    | Op::ChooseBool
+                    | Op::ChooseInt
+                    | Op::ChooseSeq
+                    | Op::ChooseSet
+                    | Op::ChooseMap
+                    | Op::Store { .. }
+                    | Op::Insert { .. }
+                    | Op::Add { .. }
+                    | Op::Remove { .. }
+                    | Op::Assert
+                    | Op::Print
+                    | Op::Create { .. }
+                    | Op::Send { .. }
+                    | Op::Raise { .. }
+                    | Op::Announce { .. }
+                    | Op::Goto { .. }
+                    | Op::Receive { .. }
+                    | Op::ForeachInit { .. }
+                    | Op::CallEmpty { .. }
+                    | Op::UnreadFormat { .. } => {
                         exec.frames[frame_idx].pc = pc;
-                        exec.push_frame(callee.clone(), *fun, nargs);
-                        return Ok(Flow::Continue);
-                    }
-                    let at = stack.len() - nargs;
-                    self.step_work = *work;
-                    let v = self.call_foreign(actor, *fun, &stack[at..]);
-                    *work = self.step_work;
-                    let v = v?;
-                    stack.truncate(at);
-                    stack.push(v);
-                }
-                Op::Return => {
-                    let v = pop(stack);
-                    return Ok(return_value(exec, v));
-                }
-                Op::ReturnNull => {
-                    charge!(1);
-                    return Ok(return_value(exec, Value::Null));
-                }
-                Op::Store { root, path } => {
-                    let rhs = pop(stack);
-                    let keys = pop_n(stack, key_count(path));
-                    if path.len() == 1 {
-                        note_mutation(exec, frame_idx, *root);
-                    }
-                    let target: &mut Value = match *root {
-                        Root::Local(s) => &mut exec.values[base + s as usize],
-                        Root::Field(s) => &mut self.fields_mut(actor)[s as usize],
-                    };
-                    let before = inspecting.then(|| target.clone());
-                    match path.split_last() {
-                        None => *target = rhs,
-                        Some((last, init)) => {
-                            let nk = key_count(init);
-                            let base = navigate(target, init, &keys[..nk], prog)?;
-                            store_at(base, last, keys.get(nk), rhs, prog)?;
+                        self.step_work = work!();
+                        let flow = self.other_op(actor, exec, frame_idx, op);
+                        set_work!(self.step_work);
+                        match flow? {
+                            Flow::Continue => pc = exec.frames[frame_idx].pc,
+                            flow => return Ok(flow),
                         }
-                    }
-                    if let Some(before) = before {
-                        self.inspect_assignment(actor, exec, &code, pc, *root, before);
-                    }
-                }
-                Op::ForeachInit { iter_slot, root } => {
-                    let coll = pop(stack);
-                    if coll.is_null() {
-                        return Err(nre().into());
-                    }
-                    let slot = base + *iter_slot as usize;
-                    stack[slot] = coll;
-                    stack[slot + 1] = Value::Int(0);
-                    exec.iters.retain(|it| !(it.frame == frame_idx && it.slot == *iter_slot));
-                    if let Some(root) = root {
-                        exec.iters.push(ActiveIter { frame: frame_idx, slot: *iter_slot, root: *root });
-                    }
-                }
-                Op::ForeachNext { iter_slot, item_slot, exit } => {
-                    let slot = base + *iter_slot as usize;
-                    let idx = stack[slot + 1].as_int();
-                    if idx < 0 {
-                        return Err(modified().into());
-                    }
-                    let item = match &stack[slot] {
-                        Value::Seq(s) => s.get(idx as usize).cloned(),
-                        Value::Set(s) => s.element_at(idx as usize).cloned(),
-                        _ => unreachable!("foreach over a sequence or set"),
-                    };
-                    match item {
-                        Some(v) => {
-                            stack[base + *item_slot as usize] = v;
-                            stack[slot + 1] = Value::Int(idx + 1);
-                        }
-                        None => {
-                            exec.iters.retain(|it| !(it.frame == frame_idx && it.slot == *iter_slot));
-                            pc = *exit as usize;
-                        }
-                    }
-                }
-                _ => {
-                    exec.frames[frame_idx].pc = pc;
-                    self.step_work = *work;
-                    let flow = self.other_op(actor, exec, frame_idx, op);
-                    *work = self.step_work;
-                    match flow? {
-                        Flow::Continue => pc = exec.frames[frame_idx].pc,
-                        flow => return Ok(flow),
                     }
                 }
             }
@@ -1290,8 +1309,114 @@ impl<'p> Runtime<'p> {
         } else {
             None
         };
+        let inspecting = self.config.inspection_trace && self.json_enabled();
         let stack = &mut exec.values;
         match op {
+            Op::CallEmpty { nargs } => {
+                // the callee's `PushNull; Return`, counted as `charge!` would
+                self.step_work += 2;
+                let limit = self.config.max_work_per_step;
+                if limit > 0 && self.step_work > limit {
+                    self.step_work = (self.step_work - 1).max(limit + 1);
+                    return Err(self.work_bound_exceeded(actor));
+                }
+                stack.truncate(stack.len() - *nargs as usize);
+                stack.push(Value::Null);
+            }
+            Op::SetGet => {
+                let idx = pop(stack);
+                let base = pop(stack);
+                let v = match &base {
+                    Value::Set(s) => {
+                        let i = idx.as_int();
+                        if i < 0 {
+                            return Err(element_at_oor().into());
+                        }
+                        s.element_at(i as usize).cloned().ok_or_else(element_at_oor)?
+                    }
+                    Value::Null => return Err(nre().into()),
+                    other => return Err(invalid_cast(other, "PChecker.Runtime.Values.PSet", prog).into()),
+                };
+                stack.push(v);
+            }
+            Op::Format { base, nargs, types } => {
+                let at = stack.len() - *nargs as usize;
+                let text = self.format(base, &stack[at..], types)?;
+                stack.truncate(at);
+                stack.push(Value::Str(Rc::from(text)));
+            }
+            Op::UnreadFormat { base, nargs, types } => {
+                let at = stack.len() - *nargs as usize;
+                let v = match self.java_semantics() {
+                    true => Value::Str(Rc::from(self.format(base, &stack[at..], types)?)),
+                    false => Value::Null,
+                };
+                stack.truncate(at);
+                stack.push(v);
+            }
+            Op::Neg => {
+                let v = match pop(stack) {
+                    Value::Int(i) => Value::Int(i.wrapping_neg()),
+                    Value::Float(f) => Value::Float(-f),
+                    Value::Null => return Err(nre().into()),
+                    other => other,
+                };
+                stack.push(v);
+            }
+            Op::Cast(ty) => check_cast(stack.last().expect("operand stack underflow"), ty, prog)?,
+            Op::CoerceFloat => {
+                let v = match pop(stack) {
+                    Value::Int(i) => Value::Float(i as f64),
+                    Value::Null => return Err(nre().into()),
+                    other => other,
+                };
+                stack.push(v);
+            }
+            Op::CoerceInt => {
+                let v = match pop(stack) {
+                    Value::Float(f) => Value::Int(f as i64),
+                    Value::Null => return Err(nre().into()),
+                    other => other,
+                };
+                stack.push(v);
+            }
+            Op::Store { root, path } => {
+                let rhs = pop(stack);
+                let keys = pop_n(stack, key_count(path));
+                if path.len() == 1 {
+                    note_mutation(exec, frame_idx, *root);
+                }
+                let target: &mut Value = match *root {
+                    Root::Local(s) => &mut exec.values[base + s as usize],
+                    Root::Field(s) => &mut self.fields_mut(actor)[s as usize],
+                };
+                let before = inspecting.then(|| target.clone());
+                match path.split_last() {
+                    None => *target = rhs,
+                    Some((last, init)) => {
+                        let nk = key_count(init);
+                        let base = navigate(target, init, &keys[..nk], prog)?;
+                        store_at(base, last, keys.get(nk), rhs, prog)?;
+                    }
+                }
+                if let Some(before) = before {
+                    let (code, pc) = (exec.frames[frame_idx].code.clone(), exec.frames[frame_idx].pc);
+                    self.inspect_assignment(actor, exec, &code, pc, *root, before);
+                }
+            }
+            Op::ForeachInit { iter_slot, root } => {
+                let coll = pop(stack);
+                if coll.is_null() {
+                    return Err(nre().into());
+                }
+                let slot = base + *iter_slot as usize;
+                stack[slot] = coll;
+                stack[slot + 1] = Value::Int(0);
+                exec.iters.retain(|it| !(it.frame == frame_idx && it.slot == *iter_slot));
+                if let Some(root) = root {
+                    exec.iters.push(ActiveIter { frame: frame_idx, slot: *iter_slot, root: *root });
+                }
+            }
             Op::Keys => {
                 let m = pop(stack);
                 let m = map_of(&m, prog)?;
@@ -1986,13 +2111,18 @@ mod tests {
                     }
                     d = DIVISOR;
                     total = total / d;
+                    if (total < i) { if (sizeof(m) > 2) { j = total; } }
+                    j = i - total * 2 + 7;
+                    j = sizeof(keys(m)) + m[sizeof(s)];
                     print format(\"{0} {1}\", total, sizeof(keys(m)));
                     helper();
+                    nothing(i, total + 1);
                     log(format(\"{0} {1}\", m[k], total / d), i);
                     i = i + 1;
                   }
                 }
               }
+              fun nothing(a: int, b: int) { }
               fun helper() { var z: int; if (z >= 0) { z = 1; } }
               fun log(msg: string, n: int) { msg = \"\"; if (n > 1) { n = 1; } }
             }
@@ -2003,7 +2133,19 @@ mod tests {
             let a = analyze(&src);
             let (fused, plain) = (compile_program(&a.program), compile_program_plain(&a.program));
             assert_eq!(unread_formats(&fused), 1);
-            assert!(fused.funs.iter().flatten().flat_map(|c| &c.ops).any(|op| matches!(op, Op::PrintFormat { .. })));
+            let has = |f: fn(&Op) -> bool| fused.funs.iter().flatten().flat_map(|c| &c.ops).any(f);
+            assert!(has(|op| matches!(op, Op::PrintFormat { .. })));
+            // the register forms
+            assert!(has(|op| matches!(op, Op::IntBin { lhs: Operand::Field(_), rhs: Operand::Local(_), .. })));
+            assert!(has(|op| matches!(op, Op::IntBin { dst: Dest::Local(_), .. })));
+            assert!(has(|op| matches!(op, Op::IntCmpJumpIfFalse { lhs: Operand::Field(_), .. })));
+            assert!(has(|op| matches!(op, Op::MapGetOf { map: Operand::Field(_), key: Operand::Local(_), .. })));
+            assert!(has(|op| matches!(op, Op::KeysSizeof(Operand::Field(_)))));
+            assert!(has(|op| matches!(op, Op::SizeofOf(Operand::Field(_)))));
+            assert!(has(|op| matches!(op, Op::KeyAt { map: Operand::Field(_), .. })));
+            assert!(has(|op| matches!(op, Op::Move { src: Operand::Field(_), .. })));
+            assert!(has(|op| matches!(op, Op::StoreLocalConsts(_))));
+            assert!(has(|op| matches!(op, Op::CallEmpty { nargs: 2 })));
             for bound in 1..bounds {
                 assert_eq!(run(&a.program, &fused, bound), run(&a.program, &plain, bound), "{} {}", index, bound);
                 // without a log, `print format(...)` builds no string but counts the same work
@@ -2122,14 +2264,19 @@ mod tests {
     #[test]
     fn read_or_exposed_parameters_are_formatted() {
         let f = "format(\"k{0}\", 1)";
-        // read through a fused instruction (`m[s]` loads `s` in `MapGetLocal`)
+        // read through a fused instruction (`m[s]` loads `s` in `MapGetOf`)
         let fun = "fun get(t: map[string, int], s: string): int { return t[s]; }";
         let a = analyze(&format!(
             "machine Main {{ start state S {{ entry {{ }} }} {} }} test tc [main=Main]: {{ Main }};",
             fun
         ));
         let code = compile_program(&a.program);
-        assert!(code.funs.iter().flatten().flat_map(|c| &c.ops).any(|op| matches!(op, Op::MapGetLocal { .. })));
+        assert!(code
+            .funs
+            .iter()
+            .flatten()
+            .flat_map(|c| &c.ops)
+            .any(|op| matches!(op, Op::MapGetOf { key: Operand::Local(_), .. })));
         let (bug, _) = unread_format_case(&format!("m[\"k1\"] = 5; r = get(m, {}); assert r == 5;", f), fun, 0);
         assert_eq!(bug, None);
         // read by `print`, a `return`, a comparison, or a call

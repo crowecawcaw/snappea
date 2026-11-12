@@ -132,6 +132,20 @@ impl Hash for Value {
 
 /// A hash set that enumerates in the order .NET's `HashSet<T>` does: entries live in slots
 /// in insertion order, and removed slots are reused (most recently freed first).
+/// Sets and maps with at most this many slots (live or freed) look keys up by scanning the
+/// slots, which is faster than hashing for the small collections models use.
+const SCAN_SLOTS: usize = 8;
+
+/// `a == b`, with the common key types compared inline.
+#[inline(always)]
+fn key_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => x == y,
+        (Value::Machine(x), Value::Machine(y)) => x.id == y.id,
+        _ => a == b,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SlotSet {
     slots: Vec<Option<Value>>,
@@ -156,12 +170,15 @@ impl SlotSet {
     }
 
     pub fn contains(&self, v: &Value) -> bool {
+        if self.slots.len() <= SCAN_SLOTS {
+            return self.slots.iter().any(|s| s.as_ref().is_some_and(|x| key_eq(x, v)));
+        }
         self.index.contains_key(v)
     }
 
     /// Adds `v`; returns false if it was already present.
     pub fn insert(&mut self, v: Value) -> bool {
-        if self.index.contains_key(&v) {
+        if self.contains(&v) {
             return false;
         }
         let slot = match self.free.pop() {
@@ -266,24 +283,33 @@ impl SlotMap {
         self.index.is_empty()
     }
 
+    /// The slot holding key `k`.
+    #[inline]
+    fn find(&self, k: &Value) -> Option<usize> {
+        if self.slots.len() <= SCAN_SLOTS {
+            return self.slots.iter().position(|s| s.as_ref().is_some_and(|(key, _)| key_eq(key, k)));
+        }
+        self.index.get(k).copied()
+    }
+
     pub fn contains_key(&self, k: &Value) -> bool {
-        self.index.contains_key(k)
+        self.find(k).is_some()
     }
 
     pub fn get(&self, k: &Value) -> Option<&Value> {
-        self.index.get(k).and_then(|&s| self.slots[s].as_ref()).map(|(_, v)| v)
+        self.find(k).and_then(|s| self.slots[s].as_ref()).map(|(_, v)| v)
     }
 
     pub fn get_mut(&mut self, k: &Value) -> Option<&mut Value> {
-        match self.index.get(k) {
-            Some(&s) => self.slots[s].as_mut().map(|(_, v)| v),
+        match self.find(k) {
+            Some(s) => self.slots[s].as_mut().map(|(_, v)| v),
             None => None,
         }
     }
 
     /// `dict[k] = v`: overwrites in place or adds a new entry.
     pub fn set(&mut self, k: Value, v: Value) {
-        if let Some(&s) = self.index.get(&k) {
+        if let Some(s) = self.find(&k) {
             self.slots[s] = Some((k, v));
             return;
         }
@@ -292,7 +318,7 @@ impl SlotMap {
 
     /// `dict.Add(k, v)`: returns false (and does nothing) if the key exists.
     pub fn add(&mut self, k: Value, v: Value) -> bool {
-        if self.index.contains_key(&k) {
+        if self.contains_key(&k) {
             return false;
         }
         self.add_new(k, v);

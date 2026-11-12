@@ -155,33 +155,47 @@ pub enum Op {
         slot: u32,
         value: crate::checker::value::Value,
     },
+    /// A run of `StoreLocalConst`, as at the start of a function that declares locals.
+    StoreLocalConsts(Rc<[(u32, crate::checker::value::Value)]>),
+    /// `src; StoreLocal(dst)`.
+    Move {
+        src: Operand,
+        dst: u32,
+    },
     /// `LoadLocal(slot); TupleGet(index)`.
     LocalTupleGet {
         slot: u32,
         index: u32,
     },
-    /// `LoadLocal(slot); Sizeof`.
-    LocalSizeof(u32),
-    /// `LoadLocal(slot); MapGet { java_null }`: the map is on the stack, the key in `slot`.
-    MapGetLocal {
-        slot: u32,
+    /// `c; Sizeof`.
+    SizeofOf(Operand),
+    /// `map; key; MapGet { java_null }`.
+    MapGetOf {
+        map: Operand,
+        key: Operand,
         java_null: bool,
     },
-    /// `Keys; Sizeof`.
-    KeysSizeof,
+    /// `map; Keys; Sizeof`.
+    KeysSizeof(Operand),
     /// `Keys; Contains`.
     KeysContains,
-    /// `Keys; LoadLocal(slot); SeqGet`: `keys(map)[i]`.
-    KeyAtLocal(u32),
-    /// `Bin(op)` of two `int` operands, or `rhs; Bin(op)` when the right operand is a
-    /// local or a literal. Falls back to `Bin` for other values.
+    /// `map; Keys; LoadLocal(index); SeqGet`: `keys(map)[i]`.
+    KeyAt {
+        map: Operand,
+        index: u32,
+    },
+    /// `lhs; rhs; Bin(op)` of two `int` operands, then `StoreLocal` when `dst` is a local.
+    /// Falls back to `Bin` for other values.
     IntBin {
         op: BinOp,
+        lhs: Operand,
         rhs: Operand,
+        dst: Dest,
     },
-    /// `IntBin { op, rhs }; JumpIfFalse(target)` for a comparison `op`.
+    /// `IntBin { op, lhs, rhs, dst: Dest::Stack }; JumpIfFalse(target)` for a comparison `op`.
     IntCmpJumpIfFalse {
         op: BinOp,
+        lhs: Operand,
         rhs: Operand,
         target: u32,
     },
@@ -191,6 +205,12 @@ pub enum Op {
     JumpIfTrueElsePop(u32),
     /// `PushNull; Return`.
     ReturnNull,
+    /// `Call` of a function whose code is just `ReturnNull` (such as a logging helper
+    /// whose `print` is commented out): pops the arguments and pushes null without
+    /// entering a frame. Counts as `Call; PushNull; Return`.
+    CallEmpty {
+        nargs: u32,
+    },
     /// `Format; Print` (`print format(...)`), emitted only when `base` cannot fail to
     /// format with `nargs` arguments. Builds the string only when a log shows it (or, in
     /// Java semantics, where formatting can fail on the values).
@@ -221,15 +241,18 @@ pub enum Op {
     },
 }
 
-/// The right operand of an [`Op::IntBin`].
+/// Where an instruction reads an operand: the operand stack, or a register (a local or
+/// field slot, or a literal) that the instruction loads itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operand {
-    /// On the operand stack, above the left operand.
+    /// On the operand stack. Of two operands, the second is above the first.
     Stack,
     /// `LoadLocal(slot)`.
     Local(u32),
+    /// `LoadField(slot)`.
+    Field(u32),
     /// `PushInt(value)`.
-    Int(i64),
+    Int(i32),
 }
 
 impl Operand {
@@ -237,7 +260,26 @@ impl Operand {
     pub fn work(self) -> u64 {
         match self {
             Operand::Stack => 0,
-            Operand::Local(_) | Operand::Int(_) => 1,
+            Operand::Local(_) | Operand::Field(_) | Operand::Int(_) => 1,
+        }
+    }
+}
+
+/// Where an instruction puts its result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dest {
+    /// Pushed on the operand stack.
+    Stack,
+    /// `StoreLocal(slot)`.
+    Local(u32),
+}
+
+impl Dest {
+    /// The units of work of the instruction that stores the result.
+    pub fn work(self) -> u64 {
+        match self {
+            Dest::Stack => 0,
+            Dest::Local(_) => 1,
         }
     }
 }
