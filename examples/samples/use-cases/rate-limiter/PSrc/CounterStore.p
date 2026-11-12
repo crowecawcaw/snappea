@@ -25,12 +25,17 @@ machine CounterStore {
     }
     on eCas do (c: tCas) {
       if (c.expected != version) {
+        // Another gateway wrote since this one loaded. (A metric or log line in a real
+        // store client.) The LostCasThenReject scenario uses it to confirm the race
+        // was reached; no contract clause needs it.
+        // snappea-lint: allow mutation:remove-statement -- observability for the scenario only
+        announce eCasLost, c.req;
         send c.client, eCasResp, false;
         return;
       }
       window = c.window;
       count = c.count;
-      // snappea-lint: allow mutation -- any change of version works; the CAS needs only that it differs from every version handed out before
+      // snappea-lint: allow mutation:swap-operator -- `version - 1` is equivalent: the CAS needs only a version never handed out before
       version = version + 1;
       // Commit point of an admission: announce what the store now holds.
       announce eAdmitted, (req = c.req, window = window, count = count);

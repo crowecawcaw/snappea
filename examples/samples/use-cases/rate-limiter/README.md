@@ -53,16 +53,20 @@ CAS reloads and decides again, and may now reject.
 | `tcBugLoadThenStore` | `tcLastSlotRace` with `BlindGateway` and a GET/SET store | Negative control | fails: `window 0 admitted 3 requests, limit 2` |
 
 The `LostCasThenReject` scenario confirms the checks reach a CAS that lost and then
-rejected on reload.
+rejected the same request on reload. Contract events alone cannot show that (an
+admission followed by a rejection also happens without any race), so the store
+announces `eCasLost` on a failed CAS, and `WindowLimit` checks it only names a
+request still in flight.
 
 ## Run
 
 ```sh
-snappea check tcLastSlotRace tcRolloverRace tcAfterRollover
+snappea check tcLastSlotRace tcRolloverRace tcAfterRollover --timeout 30s
 snappea check tcBugLoadThenStore      # exits 1 with the over-admission above
 ```
 
-All three passing tests explore every schedule in about two seconds.
+With `--timeout`, all three passing tests explore every schedule in about two
+seconds. Without it, `tcRolloverRace` may stop early once coverage stops growing.
 
 ## Bounds and omissions
 
@@ -79,8 +83,8 @@ model it), and lost replies.
 
 ## Testing the implementation
 
-Emit `eAdmitted(req, window, count)` after each successful CAS, `eRejected(req,
-window)` where the gateway rejects, `eTicked` when the window changes and
+Emit `eAdmitted(req, window, count)` after each successful CAS, `eCasLost(req)`
+after each failed one, `eRejected(req, window)` where the gateway rejects, `eTicked` when the window changes and
 `eRequested`/`eAnswered` from the test client, then check them against
 `WindowLimit` and `RequestsAnswered`. To force the race, wrap the store client so two
 gateways both complete `load` before either calls `cas`; for the rollover race, make

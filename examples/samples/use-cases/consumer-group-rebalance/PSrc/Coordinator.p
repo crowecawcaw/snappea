@@ -3,17 +3,17 @@
 // the coordinator's state, as in Kafka where one broker owns the group.
 //
 // On every membership change (join, leave, session expiry) it starts a new
-// generation and sends every member its partitions. A commit is accepted only from
-// the consumer that owns the partition in the current generation: a consumer that
-// missed a rebalance (a zombie) is fenced.
+// generation and sends every member its partitions. A commit (or offset fetch) is
+// accepted only from the consumer that owns the partition in the current generation:
+// a consumer that missed a rebalance (a zombie) is fenced.
 
 event eJoin: (consumer: machine, id: int);
 event eLeave: (id: int);
 // From the session timer: this member stopped heartbeating, as far as we know.
 event eExpire: (id: int);
 event eAssignment: (gen: int, partitions: seq[int]);
-event eFetch: (consumer: machine, gen: int, partition: int);
-event eFetched: (gen: int, partition: int, offset: int);
+event eFetch: (consumer: machine, id: int, gen: int, partition: int);
+event eFetched: (gen: int, partition: int, ok: bool, offset: int);
 event eCommit: (consumer: machine, id: int, gen: int, partition: int, offset: int);
 event eCommitResp: (gen: int, partition: int, ok: bool);
 
@@ -41,11 +41,21 @@ machine Coordinator {
     }
     on eLeave do (l: (id: int)) { Remove(l.id); }
     on eExpire do (e: (id: int)) { Remove(e.id); }
-    on eFetch do (f: (consumer: machine, gen: int, partition: int)) {
-      send f.consumer, eFetched, (gen = f.gen, partition = f.partition, offset = Committed(f.partition));
+    // Fetching the committed offset is fenced like a commit, so a consumer that was
+    // expelled while it had nothing left to commit still finds out and rejoins.
+    on eFetch do (f: (consumer: machine, id: int, gen: int, partition: int)) {
+      if (Owns(f.id, f.gen, f.partition)) {
+        // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
+        announce eFetchServed, (partition = f.partition, gen = f.gen, member = f.id);
+        send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = true, offset = Committed(f.partition));
+        return;
+      }
+      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
+      announce eFetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
+      send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
     }
     on eCommit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
-      if (c.gen == gen && c.partition in owner && owner[c.partition] == c.id) {
+      if (Owns(c.id, c.gen, c.partition)) {
         committed[c.partition] = c.offset;
         announce eCommitted, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
         send c.consumer, eCommitResp, (gen = c.gen, partition = c.partition, ok = true);
@@ -57,13 +67,17 @@ machine Coordinator {
     }
   }
 
+  // `members` stays a registry of how to reach each id; `order` is the membership.
   fun Remove(id: int) {
     var i: int;
-    if (!(id in members)) { return; }
-    members -= (id);
-    while (order[i] != id) { i = i + 1; }
-    order -= (i);
-    Rebalance();
+    while (i < sizeof(order)) {
+      if (order[i] == id) {
+        order -= (i);
+        Rebalance();
+        return;
+      }
+      i = i + 1;
+    }
   }
 
   // Round-robin over members in join order.
@@ -90,6 +104,10 @@ machine Coordinator {
       if (owner[p] == id) { parts += (sizeof(parts), p); }
     }
     return parts;
+  }
+
+  fun Owns(id: int, g: int, p: int): bool {
+    return g == gen && p in owner && owner[p] == id;
   }
 
   fun Committed(p: int): int {

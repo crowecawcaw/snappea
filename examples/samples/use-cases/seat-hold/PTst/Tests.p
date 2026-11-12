@@ -16,7 +16,7 @@ fun StartCheckout(owner: machine, store: machine, payments: Payments, c: tChecko
   // ends with the outcome the store's decisions justify.
   announce eCheckoutStarted, c;
   new Customer((owner = owner, store = store, payments = payments, seat = c.seat,
-                hold = c.hold, abandons = c.abandons));
+                hold = c.hold, abandons = c.abandons, cancels = c.cancels));
 }
 
 // Two customers want the same seat. Every ordering of hold, payment, expiry and
@@ -26,8 +26,8 @@ machine TwoCustomersOneSeat {
   start state Init {
     entry {
       var checkouts: seq[tCheckout];
-      checkouts += (0, (hold = 1, seat = 7, abandons = false));
-      checkouts += (1, (hold = 2, seat = 7, abandons = false));
+      checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = false));
+      checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
       StartCustomers(this, new SeatStore(), checkouts);
     }
     ignore eCheckoutDone;
@@ -43,7 +43,7 @@ machine GeneratedCheckouts {
       var checkouts: seq[tCheckout];
       var i: int;
       while (i < 3) {
-        checkouts += (i, (hold = i + 1, seat = choose(2), abandons = $));
+        checkouts += (i, (hold = i + 1, seat = choose(2), abandons = $, cancels = false));
         i = i + 1;
       }
       StartCustomers(this, new SeatStore(), checkouts);
@@ -63,13 +63,29 @@ machine HoldAfterSale {
       store = new SeatStore();
       payments = new Payments();
       announce eCheckoutsPlanned, 2;
-      StartCheckout(this, store, payments, (hold = 1, seat = 7, abandons = false));
+      StartCheckout(this, store, payments, (hold = 1, seat = 7, abandons = false, cancels = false));
     }
     on eCheckoutDone goto Second;
   }
   state Second {
     entry {
-      StartCheckout(this, store, payments, (hold = 2, seat = 7, abandons = false));
+      StartCheckout(this, store, payments, (hold = 2, seat = 7, abandons = false, cancels = false));
+    }
+    ignore eCheckoutDone;
+  }
+}
+
+// Stale operations against a successor: customer 1 holds and cancels while customer 2
+// wants the same seat. Customer 1's expiry timer still fires, and its cancel can
+// arrive after the hold already expired; either can land while customer 2 holds the
+// seat. A store that frees by seat alone (not by hold id) takes customer 2's seat.
+machine CancelRacesRehold {
+  start state Init {
+    entry {
+      var checkouts: seq[tCheckout];
+      checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = true));
+      checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
+      StartCustomers(this, new SeatStore(), checkouts);
     }
     ignore eCheckoutDone;
   }
@@ -79,8 +95,8 @@ machine BuggyTwoCustomersOneSeat {
   start state Init {
     entry {
       var checkouts: seq[tCheckout];
-      checkouts += (0, (hold = 1, seat = 7, abandons = false));
-      checkouts += (1, (hold = 2, seat = 7, abandons = false));
+      checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = false));
+      checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
       StartCustomers(this, new UnfencedSeatStore(), checkouts);
     }
     ignore eCheckoutDone;
@@ -118,6 +134,10 @@ test tcTwoCustomersOneSeat [main=TwoCustomersOneSeat]:
 test tcGeneratedCheckouts [main=GeneratedCheckouts]:
   assert SeatsSoldOnce, ChargesResolved, CheckoutsEnd in
   { GeneratedCheckouts, SeatStore, ExpiryTimer, Payments, Customer };
+
+test tcCancelRacesRehold [main=CancelRacesRehold]:
+  assert SeatsSoldOnce, ChargesResolved, CheckoutsEnd in
+  { CancelRacesRehold, SeatStore, ExpiryTimer, Payments, Customer };
 
 test tcHoldAfterSale [main=HoldAfterSale]:
   assert SeatsSoldOnce, ChargesResolved, CheckoutsEnd in

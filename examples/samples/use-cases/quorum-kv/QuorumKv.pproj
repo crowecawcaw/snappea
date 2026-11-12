@@ -1,0 +1,9 @@
+<!-- Quorum-replicated register: N=3, W=2, R=2, versions from a read phase. See README.md. -->
+<Project>
+<ProjectName>QuorumKv</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

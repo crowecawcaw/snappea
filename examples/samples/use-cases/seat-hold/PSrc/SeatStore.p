@@ -6,6 +6,7 @@
 //   hold:    free -> held(hold)
 //   confirm: held(hold) -> sold(hold)
 //   expire:  held(hold) -> free
+//   release: held(hold) -> free (the customer clicked cancel)
 // Everything between them (the payment, the timer) can interleave.
 
 type tHoldReq = (client: Customer, seat: int, hold: int);
@@ -17,6 +18,8 @@ event eConfirmReq: tHoldRef;
 event eConfirmResp: (hold: int, ok: bool);
 // From the hold's expiry timer.
 event eExpire: (seat: int, hold: int);
+// The customer cancels its own hold.
+event eReleaseReq: (seat: int, hold: int);
 
 // The fixed design: confirm succeeds only while this hold still holds the seat.
 machine SeatStore {
@@ -48,11 +51,19 @@ machine SeatStore {
       }
     }
     on eExpire do (e: (seat: int, hold: int)) {
-      // A timer for a hold that was already confirmed (or a later hold) must not
-      // free the seat: compare the hold id, not just the seat.
+      // The timer of a hold that was cancelled fires late, possibly while a later
+      // hold has the seat: compare the hold id, not just the seat.
       if (e.seat in held && held[e.seat] == e.hold) {
         held -= (e.seat);
         announce eExpired, (seat = e.seat, hold = e.hold);
+      }
+    }
+    on eReleaseReq do (r: (seat: int, hold: int)) {
+      // A cancel that arrives after the hold expired, possibly while a later hold has
+      // the seat, must not free it either.
+      if (r.seat in held && held[r.seat] == r.hold) {
+        held -= (r.seat);
+        announce eHoldReleased, (seat = r.seat, hold = r.hold);
       }
     }
   }

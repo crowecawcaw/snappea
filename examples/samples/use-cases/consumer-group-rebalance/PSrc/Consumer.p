@@ -7,7 +7,7 @@
 // with an older generation are leftovers and are dropped. Within one generation the
 // consumer waits for each reply before its next request, so a reply with the current
 // generation is always for the current partition.
-// A rejected commit means the consumer was fenced: it rejoins the group.
+// A rejected commit or offset fetch means the consumer was fenced: it rejoins the group.
 
 // From the application (the test driver): shut down cleanly.
 event eShutdown;
@@ -44,23 +44,28 @@ machine Consumer {
       if (sizeof(todo) == 0) { goto Idle; }
       partition = todo[0];
       todo -= (0);
-      send coordinator, eFetch, (consumer = this, gen = gen, partition = partition);
+      send coordinator, eFetch, (consumer = this, id = id, gen = gen, partition = partition);
     }
     on eAssignment do (a: (gen: int, partitions: seq[int])) { Adopt(a); }
-    on eFetched do (r: (gen: int, partition: int, offset: int)) {
+    on eFetched do (r: (gen: int, partition: int, ok: bool, offset: int)) {
       if (r.gen != gen) { return; }
-      offset = r.offset;
-      Process();
+      if (!r.ok) {
+        Rejoin();
+      } else {
+        offset = r.offset;
+        Process();
+      }
     }
     on eCommitResp do (r: (gen: int, partition: int, ok: bool)) {
       if (r.gen != gen) { return; }
       if (!r.ok) {
-        // Fenced: this consumer missed a rebalance or was expelled.
-        send coordinator, eJoin, (consumer = this, id = id);
-        goto Idle;
+        Rejoin();
+      } else {
+        // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
+        announce eCommitAcked, (member = id, partition = partition, offset = offset + 1);
+        offset = offset + 1;
+        Process();
       }
-      offset = offset + 1;
-      Process();
     }
     on eShutdown goto Stopped with { Leave(); }
   }
@@ -83,6 +88,14 @@ machine Consumer {
     }
     announce eProcessed, (member = id, partition = partition, offset = offset);
     send coordinator, eCommit, (consumer = this, id = id, gen = gen, partition = partition, offset = offset + 1);
+  }
+
+  // Fenced: this consumer was expelled (a member that only missed a rebalance gets the
+  // new assignment first and drops the stale reply above).
+  fun Rejoin() {
+    send coordinator, eJoin, (consumer = this, id = id);
+    // snappea-lint: allow mutation:remove-statement -- equivalent: Working adopts the next assignment too, and no reply for the current generation is still on its way
+    goto Idle;
   }
 
   fun Leave() {

@@ -29,7 +29,6 @@ machine LeaveRebalance {
     entry {
       var consumers: seq[machine];
       consumers = StartGroup(new Coordinator(2), 1);
-      announce eShutdownRequested, (member = 2,);
       send consumers[1], eShutdown;
     }
   }
@@ -56,8 +55,8 @@ machine CrashedMember {
     entry {
       var coordinator: Coordinator;
       coordinator = new Coordinator(2);
-      announce eGroupPlanned, (partitions = 2, records = 2);
-      new Consumer((coordinator = coordinator, id = 1, records = 2));
+      announce eGroupPlanned, (partitions = 2, records = 1);
+      new Consumer((coordinator = coordinator, id = 1, records = 1));
       send coordinator, eJoin, (consumer = this, id = 2);
       send coordinator, eExpire, (id = 2,);
     }

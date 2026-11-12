@@ -5,6 +5,7 @@
 event eHeld: (seat: int, hold: int);
 event eHoldRejected: (seat: int, hold: int);
 event eExpired: (seat: int, hold: int);
+event eHoldReleased: (seat: int, hold: int);
 event eSold: (seat: int, hold: int);
 event eConfirmRejected: (seat: int, hold: int);
 event eCharged: (hold: int);
@@ -12,7 +13,7 @@ event eRefunded: (hold: int);
 
 // Safety: a seat is held by at most one hold at a time, is sold at most once, and only
 // to the hold that currently has it. A rejection must be justified by the seat's state.
-spec SeatsSoldOnce observes eHeld, eHoldRejected, eExpired, eSold, eConfirmRejected {
+spec SeatsSoldOnce observes eHeld, eHoldRejected, eExpired, eHoldReleased, eSold, eConfirmRejected {
   // seat -> hold that currently holds it (absent: free or sold)
   var heldBy: map[int, int];
   // seat -> hold it was sold to
@@ -34,6 +35,11 @@ spec SeatsSoldOnce observes eHeld, eHoldRejected, eExpired, eSold, eConfirmRejec
         format("hold {0} expired but did not hold seat {1}", p.hold, p.seat);
       heldBy -= (p.seat);
       expired += (p.hold);
+    }
+    on eHoldReleased do (p: (seat: int, hold: int)) {
+      assert p.seat in heldBy && heldBy[p.seat] == p.hold,
+        format("hold {0} released but did not hold seat {1}", p.hold, p.seat);
+      heldBy -= (p.seat);
     }
     on eSold do (p: (seat: int, hold: int)) {
       assert !(p.seat in soldTo), format("seat {0} sold twice", p.seat);
@@ -92,8 +98,10 @@ spec ChargesResolved observes eCharged, eSold, eRefunded {
 // justifies, and every hold is eventually sold or expired (no seat stays held forever,
 // even when its customer walks away). The driver announces eCheckoutStarted with what
 // the customer wants, so a customer that never acts, or asks for the wrong seat, fails.
-enum tOutcome { HoldRejected, Bought, LostHold, Abandoned }
-type tCheckout = (hold: int, seat: int, abandons: bool);
+enum tOutcome { HoldRejected, Bought, LostHold, Abandoned, Cancelled }
+// abandons: walks away after holding (only expiry frees the seat).
+// cancels: cancels the hold right after getting it.
+type tCheckout = (hold: int, seat: int, abandons: bool, cancels: bool);
 // The driver announces how many checkouts it will run before starting any, so a driver
 // stuck waiting for a checkout that never ends fails too.
 event eCheckoutsPlanned: int;
@@ -101,10 +109,12 @@ event eCheckoutStarted: tCheckout;
 event eCheckoutEnded: (hold: int, outcome: tOutcome);
 
 spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldRejected, eSold, eExpired,
-    eConfirmRejected, eCheckoutEnded {
+    eHoldReleased, eConfirmRejected, eCheckoutEnded {
   // hold -> what the customer asked for; removed when the checkout ends
   var started: map[int, tCheckout];
   var liveHolds: set[int];
+  // holds whose customer cancels them
+  var cancelling: set[int];
   // hold -> the outcome its customer must report
   var due: map[int, tOutcome];
   var unfinished: int;
@@ -116,6 +126,7 @@ spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldReje
     on eHoldRejected do { assert false, "rejection for a checkout that never started"; }
     on eSold do { assert false, "sale for a checkout that never started"; }
     on eExpired do { assert false, "expiry with no live hold"; }
+    on eHoldReleased do { assert false, "release with no live hold"; }
     on eConfirmRejected do { assert false, "confirmation for a checkout that never started"; }
     on eCheckoutEnded do { assert false, "checkout ended before it started"; }
   }
@@ -127,6 +138,7 @@ spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldReje
       Requested(p.seat, p.hold);
       liveHolds += (p.hold);
       if (started[p.hold].abandons) { due[p.hold] = Abandoned; }
+      if (started[p.hold].cancels) { due[p.hold] = Cancelled; }
     }
     on eHoldRejected do (p: (seat: int, hold: int)) {
       Requested(p.seat, p.hold);
@@ -143,9 +155,16 @@ spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldReje
       liveHolds -= (p.hold);
       Settle();
     }
+    on eHoldReleased do (p: (seat: int, hold: int)) {
+      assert p.hold in liveHolds, format("seat {0} released for hold {1}, which is not live", p.seat, p.hold);
+      assert p.hold in cancelling, format("hold {0} released, but its customer never cancelled", p.hold);
+      liveHolds -= (p.hold);
+      Settle();
+    }
     on eConfirmRejected do (p: (seat: int, hold: int)) {
       Requested(p.seat, p.hold);
-      assert !started[p.hold].abandons, format("abandoned checkout {0} tried to confirm", p.hold);
+      assert !started[p.hold].abandons && !started[p.hold].cancels,
+        format("abandoned or cancelled checkout {0} tried to confirm", p.hold);
       due[p.hold] = LostHold;
     }
     on eCheckoutEnded do (p: (hold: int, outcome: tOutcome)) {
@@ -167,7 +186,9 @@ spec CheckoutsEnd observes eCheckoutsPlanned, eCheckoutStarted, eHeld, eHoldReje
 
   fun Started(c: tCheckout) {
     assert !(c.hold in started) && !(c.hold in due), format("checkout {0} started twice", c.hold);
+    assert !(c.abandons && c.cancels), format("checkout {0} both abandons and cancels", c.hold);
     started[c.hold] = c;
+    if (c.cancels) { cancelling += (c.hold); }
   }
 
   fun Requested(seat: int, hold: int) {

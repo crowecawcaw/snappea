@@ -1,5 +1,6 @@
 // The checkout flow each customer runs: hold, pay, confirm, refund if confirmation is
-// refused. Some customers walk away after holding a seat. The payment service is a separate actor, so paying takes real time during
+// refused. Some customers walk away after holding a seat, silently (closed the tab)
+// or by cancelling the hold. The payment service is a separate actor, so paying takes real time during
 // which the hold can expire.
 
 event eCharge: (client: Customer, hold: int);
@@ -26,15 +27,17 @@ machine Customer {
   var seat: int;
   var hold: int;
   var abandons: bool;
+  var cancels: bool;
   var owner: machine;
 
   start state Holding {
-    entry (input: (owner: machine, store: machine, payments: Payments, seat: int, hold: int, abandons: bool)) {
+    entry (input: (owner: machine, store: machine, payments: Payments, seat: int, hold: int, abandons: bool, cancels: bool)) {
       store = input.store;
       payments = input.payments;
       seat = input.seat;
       hold = input.hold;
       abandons = input.abandons;
+      cancels = input.cancels;
       owner = input.owner;
       send store, eHoldReq, (client = this, seat = seat, hold = hold);
     }
@@ -42,6 +45,11 @@ machine Customer {
       if (r.ok && abandons) {
         // Closed the tab: only the expiry timer will free the seat.
         goto Done, Abandoned;
+      }
+      if (r.ok && cancels) {
+        // Clicked cancel: free the seat now rather than wait for expiry.
+        send store, eReleaseReq, (seat = seat, hold = hold);
+        goto Done, Cancelled;
       }
       if (r.ok) {
         send payments, eCharge, (client = this, hold = hold);

@@ -20,8 +20,8 @@ click sends the same key twice at once, possibly to two API servers.
   one charge. A declined payment stays declined on retry, even after the card has
   funds again.
 - Keys are independent: each key's answers come from its own charge.
-- Every attempt gets an answer, including one that arrives while another request is
-  still charging the same key.
+- Every attempt gets an answer for its own key, including one that arrives while
+  another request is still charging the same key.
 
 **Atomic primitives** (key table, e.g. a unique-key insert plus a conditional update):
 
@@ -57,11 +57,12 @@ The processor call is a separate request to an external service, between `claim`
 ## Run
 
 ```sh
-snappea check tcDoubleClick tcLostResponseRetry tcDeclinedStaysDeclined tcIndependentKeys
+snappea check tcDoubleClick tcLostResponseRetry tcDeclinedStaysDeclined tcIndependentKeys --timeout 30s
 snappea check tcBugCheckThenAct      # exits 1 with the double charge above
 ```
 
-Every passing test explores all schedules in a few seconds.
+With `--timeout`, every passing test explores all schedules in a few seconds.
+Without it, `tcIndependentKeys` may stop early once coverage stops growing.
 
 ## Bounds and omissions
 

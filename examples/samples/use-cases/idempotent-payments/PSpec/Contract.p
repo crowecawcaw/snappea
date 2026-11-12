@@ -44,11 +44,14 @@ spec ChargedOnce observes eAttempted, eProcessorCharged, eAnswered {
   }
 }
 
-// Progress: every attempt the driver plans gets an answer. Hot while any is
-// outstanding, so a request that waits forever on an in-progress key fails.
+// Progress: every attempt the driver plans gets an answer for its own key. Hot while
+// any is outstanding, so a request that waits forever on an in-progress key fails,
+// even if some other key got an extra answer.
 spec EveryAttemptAnswered observes eAttemptsPlanned, eAttempted, eAnswered {
-  var unanswered: int;
   var unsent: int;
+  // key -> attempts sent and not yet answered
+  var outstanding: map[int, int];
+  var unanswered: int;
 
   start state Idle {
     on eAttemptsPlanned do (n: int) {
@@ -63,14 +66,18 @@ spec EveryAttemptAnswered observes eAttemptsPlanned, eAttempted, eAnswered {
 
   hot state Waiting {
     on eAttemptsPlanned do { assert false, "attempts planned twice"; }
-    // snappea-lint: allow unused-payload-field -- ChargedOnce checks keys and amounts
+    // snappea-lint: allow unused-payload-field -- ChargedOnce checks amounts
     on eAttempted do (p: (key: int, amount: int)) {
       assert unsent > 0, "more attempts than planned";
       unsent = unsent - 1;
+      if (!(p.key in outstanding)) { outstanding[p.key] = 0; }
+      outstanding[p.key] = outstanding[p.key] + 1;
     }
     // snappea-lint: allow unused-payload-field -- ChargedOnce checks the results
     on eAnswered do (p: (key: int, result: tResult)) {
-      assert unanswered > unsent, "more answers than attempts sent";
+      assert p.key in outstanding && outstanding[p.key] > 0,
+        format("key {0} got more answers than attempts", p.key);
+      outstanding[p.key] = outstanding[p.key] - 1;
       unanswered = unanswered - 1;
       if (unanswered == 0) { goto Done; }
     }

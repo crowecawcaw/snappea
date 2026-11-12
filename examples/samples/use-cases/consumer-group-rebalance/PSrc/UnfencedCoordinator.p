@@ -1,5 +1,5 @@
 // A plausible broken coordinator, kept as a negative control: it accepts every commit,
-// whatever its generation. A consumer that was expelled keeps processing its old
+// whatever its generation (offset fetches are still fenced). A consumer that was expelled keeps processing its old
 // partition; its late commit is accepted after the new owner committed further, and
 // moves the offset back. tcBugNoGenerationCheck shows the contract catching it.
 machine UnfencedCoordinator {
@@ -21,10 +21,17 @@ machine UnfencedCoordinator {
     }
     on eLeave do (l: (id: int)) { Remove(l.id); }
     on eExpire do (e: (id: int)) { Remove(e.id); }
-    on eFetch do (f: (consumer: machine, gen: int, partition: int)) {
+    // Offset fetches are fenced as in Coordinator; only commits are not.
+    on eFetch do (f: (consumer: machine, id: int, gen: int, partition: int)) {
       var offset: int;
       if (f.partition in committed) { offset = committed[f.partition]; }
-      send f.consumer, eFetched, (gen = f.gen, partition = f.partition, offset = offset);
+      if (f.gen == gen && f.partition in owner && owner[f.partition] == f.id) {
+        announce eFetchServed, (partition = f.partition, gen = f.gen, member = f.id);
+        send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = true, offset = offset);
+        return;
+      }
+      announce eFetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
+      send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
     }
     on eCommit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
       // BUG: no generation or ownership check.
@@ -36,11 +43,14 @@ machine UnfencedCoordinator {
 
   fun Remove(id: int) {
     var i: int;
-    if (!(id in members)) { return; }
-    members -= (id);
-    while (order[i] != id) { i = i + 1; }
-    order -= (i);
-    Rebalance();
+    while (i < sizeof(order)) {
+      if (order[i] == id) {
+        order -= (i);
+        Rebalance();
+        return;
+      }
+      i = i + 1;
+    }
   }
 
   // Round-robin over members in join order.

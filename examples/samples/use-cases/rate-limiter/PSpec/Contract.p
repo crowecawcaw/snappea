@@ -13,6 +13,8 @@ event eRequestsPlanned: int;
 event eAdmitted: (req: int, window: int, count: int);
 // A gateway rejected `req` because it found `window` full.
 event eRejected: (req: int, window: int);
+// A gateway's CAS for `req` lost to another writer; it will reload and decide again.
+event eCasLost: int;
 // The driver received the gateway's answer.
 event eAnswered: (req: int, admitted: bool);
 
@@ -20,7 +22,7 @@ event eAnswered: (req: int, admitted: bool);
 // is counted in, or rejected for, a window that was current while it was in flight;
 // once a later window has admitted requests, no earlier window admits more; and a
 // rejection is justified only by a full window.
-spec WindowLimit observes eTicked, eRequested, eAdmitted, eRejected {
+spec WindowLimit observes eTicked, eRequested, eAdmitted, eRejected, eCasLost {
   var current: int;
   // req -> window current when the driver sent it
   var startedIn: map[int, int];
@@ -49,6 +51,10 @@ spec WindowLimit observes eTicked, eRequested, eAdmitted, eRejected {
         format("window {0} admitted {1} requests, limit {2}", p.window, admitted[p.window], Limit());
       assert p.count == admitted[p.window],
         format("store counts {0} in window {1}, but {2} requests were admitted", p.count, p.window, admitted[p.window]);
+    }
+    on eCasLost do (req: int) {
+      assert req in startedIn && !(req in decided),
+        format("request {0} lost a CAS, but it was not in flight", req);
     }
     on eRejected do (p: (req: int, window: int)) {
       Decided(p.req, p.window);

@@ -138,19 +138,22 @@ machine MainBugLoadThenStore {
   }
 }
 
-// Covered: a gateway lost its CAS, reloaded, and rejected the request it would have
-// admitted on its first load.
-scenario LostCasThenReject observes eAdmitted, eRejected {
-  start hot state WaitAdmit {
-    on eAdmitted goto WaitReject;
+// Covered: a gateway lost its CAS, reloaded, and rejected that same request (the
+// window filled between its load and its CAS).
+scenario LostCasThenReject observes eCasLost, eRejected {
+  var loser: int;
+  start hot state WaitLost {
+    on eCasLost do (req: int) { loser = req; goto WaitReject; }
     ignore eRejected;
   }
   hot state WaitReject {
-    on eRejected goto Covered;
-    ignore eAdmitted;
+    on eRejected do (p: (req: int, window: int)) {
+      if (p.req == loser) { goto Covered; }
+    }
+    ignore eCasLost;
   }
   cold state Covered {
-    ignore eAdmitted, eRejected;
+    ignore eCasLost, eRejected;
   }
 }
 

@@ -148,3 +148,23 @@ test tcMoreWorkersThanJobs [main=MoreWorkersThanJobs]:
 
 test tcGenerated [main=Generated]:
   assert ReceiptsFence, JobsComplete in { Generated, Timers, Queue, Sink, Worker };
+
+// The slow-worker race against the queue that acks by job id.
+machine BuggySlowWorker {
+  start state Init {
+    entry {
+      var timers: machine;
+      var queue: machine;
+      var s: tSetup;
+      s = (jobs = 1, workers = 2, slow = 1, duplicates = false, crash = false);
+      announce eWorkersPlanned, s.workers;
+      timers = new Timers((slow = s.slow, duplicates = s.duplicates));
+      queue = new AckByIdQueue((timers = timers, jobs = JobSet(s.jobs)));
+      StartWorkers(queue, timers, s);
+    }
+  }
+}
+
+// expect-bug: completed by an ack with stale receipt
+test tcBugAckByJobId [main=BuggySlowWorker]:
+  assert ReceiptsFence, JobsComplete in { BuggySlowWorker, Timers, AckByIdQueue, Sink, Worker };
