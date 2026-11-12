@@ -1,41 +1,36 @@
 // Drivers. Writers and readers run the client library, so they are design code.
 
-fun ThreeReplicas(): seq[machine] {
+// Three replicas; with `down`, the third never answers (crashed for good).
+fun ThreeReplicas(down: bool): seq[machine] {
   var rs: seq[machine];
-  while (sizeof(rs) < 3) { rs += (sizeof(rs), new Replica()); }
+  rs += (0, new Replica());
+  rs += (1, new Replica());
+  if (down) { rs += (2, new Unreachable()); } else { rs += (2, new Replica()); }
   return rs;
 }
 
-fun Values(a: int, b: int): seq[int] {
-  var s: seq[int];
-  s += (0, a);
-  if (b > 0) { s += (1, b); }
-  return s;
+machine Unreachable {
+  start state Down {
+    ignore eReplicaRead, eReplicaWrite;
+  }
 }
 
-// Concurrent clients: writers (each writing its values) and one reader doing `reads`
-// reads, all started at once.
-type tRun = (quorums: tQuorums, writers: seq[seq[int]], reads: int);
+// Concurrent clients: one writer per value in `writes`, and one reader, all started
+// at once.
+type tRun = (quorums: tQuorums, writes: seq[int]);
 
 machine Clients {
   start state Running {
     entry (run: tRun) {
       var replicas: seq[machine];
-      var ops: int;
       var i: int;
-      replicas = ThreeReplicas();
-      ops = run.reads;
-      while (i < sizeof(run.writers)) {
-        ops = ops + sizeof(run.writers[i]);
+      replicas = ThreeReplicas(false);
+      announce eOpsPlanned, sizeof(run.writes) + 1;
+      while (i < sizeof(run.writes)) {
+        new Writer((owner = this, replicas = replicas, quorums = run.quorums, id = i + 1, value = run.writes[i]));
         i = i + 1;
       }
-      announce eOpsPlanned, ops;
-      i = 0;
-      while (i < sizeof(run.writers)) {
-        new Writer((owner = this, replicas = replicas, quorums = run.quorums, id = i + 1, writes = run.writers[i]));
-        i = i + 1;
-      }
-      new Reader((owner = this, replicas = replicas, quorums = run.quorums, id = 1, reads = run.reads));
+      new Reader((owner = this, replicas = replicas, quorums = run.quorums, id = 1));
     }
     ignore eClientDone;
   }
@@ -48,9 +43,9 @@ machine Clients {
 machine WriteAndReads {
   start state Init {
     entry {
-      var w: seq[seq[int]];
-      w += (0, Values(1, 0));
-      new Clients((quorums = (r = 2, w = 2), writers = w, reads = 1));
+      var w: seq[int];
+      w += (0, 1);
+      new Clients((quorums = (r = 2, w = 2), writes = w));
     }
   }
 }
@@ -60,10 +55,10 @@ machine WriteAndReads {
 machine TwoWriters {
   start state Init {
     entry {
-      var w: seq[seq[int]];
-      w += (0, Values(1, 0));
-      w += (1, Values(2, 0));
-      new Clients((quorums = (r = 2, w = 2), writers = w, reads = 2));
+      var w: seq[int];
+      w += (0, 1);
+      w += (1, 2);
+      new Clients((quorums = (r = 2, w = 2), writes = w));
     }
   }
 }
@@ -81,10 +76,10 @@ machine Sequence {
   var steps: seq[tStep];
   var next: int;
   start state Init {
-    entry (input: (quorums: tQuorums, steps: seq[tStep])) {
+    entry (input: (quorums: tQuorums, steps: seq[tStep], down: bool)) {
       quorums = input.quorums;
       steps = input.steps;
-      replicas = ThreeReplicas();
+      replicas = ThreeReplicas(input.down);
       announce eOpsPlanned, sizeof(steps);
       goto Run;
     }
@@ -95,9 +90,9 @@ machine Sequence {
       st = steps[next];
       next = next + 1;
       if (st.value > 0) {
-        new Writer((owner = this, replicas = replicas, quorums = quorums, id = st.id, writes = Values(st.value, 0)));
+        new Writer((owner = this, replicas = replicas, quorums = quorums, id = st.id, value = st.value));
       } else {
-        new Reader((owner = this, replicas = replicas, quorums = quorums, id = st.id, reads = 1));
+        new Reader((owner = this, replicas = replicas, quorums = quorums, id = st.id));
       }
     }
     on eClientDone do {
@@ -114,12 +109,12 @@ fun Steps3(a: tStep, b: tStep, c: tStep): seq[tStep] {
   return s;
 }
 
-// Read after a completed write: the write reaches only W = 2 replicas, then the read
-// touches 2 replicas, which may overlap the write in exactly one. That replica must
-// decide the answer.
+// Write, then read: the write returns after W = 2 acks with its third message
+// possibly still in flight; the read uses the first 2 answers, which may overlap the
+// acked replicas in exactly one. That replica must decide the answer.
 machine WriteThenRead {
   start state Init {
-    entry { new Sequence((quorums = (r = 2, w = 2), steps = Steps3((id = 1, value = 1), (id = 1, value = 0), (id = 0, value = 0)))); }
+    entry { new Sequence((quorums = (r = 2, w = 2), steps = Steps3((id = 1, value = 1), (id = 1, value = 0), (id = 0, value = 0)), down = false)); }
   }
 }
 
@@ -128,30 +123,41 @@ machine WriteThenRead {
 // replicas holding both keep the first value and the read returns it.
 machine WriteWriteRead {
   start state Init {
-    entry { new Sequence((quorums = (r = 2, w = 2), steps = Steps3((id = 1, value = 1), (id = 2, value = 2), (id = 1, value = 0)))); }
+    entry { new Sequence((quorums = (r = 2, w = 2), steps = Steps3((id = 1, value = 1), (id = 2, value = 2), (id = 1, value = 0)), down = false)); }
   }
 }
 
-// Negative control: the same as WriteThenRead with R = 1, so R + W = N and a read
-// quorum can miss the write entirely.
+// One replica is down for good: read, write, read must all complete with the two that
+// answer; the first read sees the initial value and the last sees the write.
+machine OneReplicaDown {
+  start state Init {
+    entry { new Sequence((quorums = (r = 2, w = 2), steps = Steps3((id = 1, value = 0), (id = 1, value = 1), (id = 1, value = 0)), down = true)); }
+  }
+}
+
+// Negative control: write then read with R = 1, so R + W = N and the read can reach
+// only the replica the write has not reached yet.
 machine WriteThenReadR1 {
   start state Init {
-    entry { new Sequence((quorums = (r = 1, w = 2), steps = Steps3((id = 1, value = 1), (id = 1, value = 0), (id = 0, value = 0)))); }
+    entry { new Sequence((quorums = (r = 1, w = 2), steps = Steps3((id = 1, value = 1), (id = 1, value = 0), (id = 0, value = 0)), down = false)); }
   }
 }
 
 test tcWriteAndReads [main=WriteAndReads]:
-  assert ReadAfterWrite, OperationsReturn in { WriteAndReads, Clients, Replica, Writer, Reader };
+  assert ReadAfterWrite, OperationsReturn in { WriteAndReads, Clients, Replica, Unreachable, Writer, Reader, Courier };
 
 test tcTwoWriters [main=TwoWriters]:
-  assert ReadAfterWrite, OperationsReturn in { TwoWriters, Clients, Replica, Writer, Reader };
+  assert ReadAfterWrite, OperationsReturn in { TwoWriters, Clients, Replica, Unreachable, Writer, Reader, Courier };
 
 test tcWriteThenRead [main=WriteThenRead]:
-  assert ReadAfterWrite, OperationsReturn in { WriteThenRead, Sequence, Replica, Writer, Reader };
+  assert ReadAfterWrite, OperationsReturn in { WriteThenRead, Sequence, Replica, Unreachable, Writer, Reader, Courier };
+
+test tcOneReplicaDown [main=OneReplicaDown]:
+  assert ReadAfterWrite, OperationsReturn in { OneReplicaDown, Sequence, Replica, Unreachable, Writer, Reader, Courier };
 
 test tcWriteWriteRead [main=WriteWriteRead]:
-  assert ReadAfterWrite, OperationsReturn in { WriteWriteRead, Sequence, Replica, Writer, Reader };
+  assert ReadAfterWrite, OperationsReturn in { WriteWriteRead, Sequence, Replica, Unreachable, Writer, Reader, Courier };
 
 // expect-bug: returned the initial value after write
 test tcBugReadOne [main=WriteThenReadR1]:
-  assert ReadAfterWrite, OperationsReturn in { WriteThenReadR1, Sequence, Replica, Writer, Reader };
+  assert ReadAfterWrite, OperationsReturn in { WriteThenReadR1, Sequence, Replica, Unreachable, Writer, Reader, Courier };

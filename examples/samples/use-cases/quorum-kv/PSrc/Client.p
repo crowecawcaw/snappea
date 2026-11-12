@@ -1,83 +1,78 @@
-// The client library: quorum reads and versioned quorum writes. A client contacts a
-// quorum of the replicas, chosen by the network (whichever replicas answer first), so
-// the replicas it reaches differ from call to call.
+// The client library: quorum reads and versioned quorum writes. Both contact all
+// N replicas and use the first `r` (read) or `w` (write) answers; the others are still
+// in flight and land whenever the network delivers them (Deliver, in PTst/Network.p,
+// can hold a write back past later messages).
 
-// Tells the driver that a client has finished all its operations.
+// Tells the driver that a client has finished its operation. Each Writer and Reader
+// machine performs one operation.
 event eClientDone;
 
 // Quorum sizes, from configuration: N = 3 replicas, `r` replicas per read, `w` per write.
 type tQuorums = (r: int, w: int);
 
-// The `size` replicas that answer this call: consecutive from a starting point the
-// network picks, so every quorum of that size is possible.
-fun PickQuorum(replicas: seq[machine], size: int): seq[machine] {
-  var q: seq[machine];
-  var first: int;
-  first = choose(sizeof(replicas));
-  while (sizeof(q) < size) {
-    q += (sizeof(q), replicas[(first + sizeof(q)) % sizeof(replicas)]);
-  }
-  return q;
-}
-
-// Reads a quorum; returns the (version, value) with the highest version among them.
+// Reads every replica and uses the first `r` answers; returns the (version, value)
+// with the highest version among them. Later answers are ignored.
 fun QuorumRead(caller: machine, replicas: seq[machine], r: int): (version: int, value: int) {
-  var q: seq[machine];
   var rep: machine;
   var best: (version: int, value: int);
-  q = PickQuorum(replicas, r);
-  foreach (rep in q) {
+  var answers: int;
+  foreach (rep in replicas) {
     send rep, eReplicaRead, (client = caller,);
   }
-  foreach (rep in q) {
+  while (answers < r) {
     receive {
       case eReplicaReadResp: (resp: (version: int, value: int)) {
+        // snappea-lint: allow mutation:swap-operator -- equal versions name the same write, so they carry the same value
         if (resp.version > best.version) { best = resp; }
+        answers = answers + 1;
       }
     }
   }
   return best;
 }
 
+// Sends the write to every replica and returns after `w` acks.
+fun QuorumWrite(caller: machine, replicas: seq[machine], w: int, version: int, value: int) {
+  var rep: machine;
+  var acks: int;
+  foreach (rep in replicas) {
+    Deliver(rep, (client = caller, version = version, value = value));
+  }
+  while (acks < w) {
+    // A writer machine performs one write, so every ack is for this write. A client
+    // that writes again must tag acks (and read answers) with an operation id.
+    receive { case eReplicaWriteResp: { acks = acks + 1; } }
+  }
+}
+
 machine Writer {
   start state Writing {
-    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int, writes: seq[int])) {
-      var v: int;
+    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int, value: int)) {
       var seen: (version: int, value: int);
       var version: int;
-      var q: seq[machine];
-      var rep: machine;
-      foreach (v in input.writes) {
-        announce eWriteStarted, (value = v,);
-        // Read phase: the next counter is above every version in the read quorum.
-        seen = QuorumRead(this, input.replicas, input.quorums.r);
-        version = (seen.version / 10 + 1) * 10 + input.id;
-        q = PickQuorum(input.replicas, input.quorums.w);
-        foreach (rep in q) {
-          send rep, eReplicaWrite, (client = this, version = version, value = v);
-        }
-        foreach (rep in q) {
-          receive { case eReplicaWriteResp: { } }
-        }
-        announce eWriteDone, (value = v,);
-      }
+      announce eWriteStarted, (value = input.value,);
+      // Read phase: the next counter is above every version in the read quorum.
+      seen = QuorumRead(this, input.replicas, input.quorums.r);
+      version = (seen.version / 10 + 1) * 10 + input.id;
+      QuorumWrite(this, input.replicas, input.quorums.w, version, input.value);
+      announce eWriteDone, (value = input.value,);
       send input.owner, eClientDone;
     }
+    // Answers from the replicas that answered after the quorum.
+    ignore eReplicaReadResp, eReplicaWriteResp;
   }
 }
 
 machine Reader {
   start state Reading {
-    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int, reads: int)) {
-      var i: int;
+    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int)) {
       var got: (version: int, value: int);
-      while (i < input.reads) {
-        announce eReadStarted, (reader = input.id,);
-        got = QuorumRead(this, input.replicas, input.quorums.r);
-        announce eReadDone, (reader = input.id, value = got.value);
-        i = i + 1;
-      }
+      announce eReadStarted, (reader = input.id,);
+      got = QuorumRead(this, input.replicas, input.quorums.r);
+      announce eReadDone, (reader = input.id, value = got.value);
       send input.owner, eClientDone;
     }
+    // Answers from the replicas that answered after the quorum.
+    ignore eReplicaReadResp;
   }
 }

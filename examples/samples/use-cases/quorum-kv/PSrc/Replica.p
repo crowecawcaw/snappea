@@ -11,6 +11,8 @@
 // Real atomic primitives, one handler each on a replica:
 //   read:  return the stored (version, value)
 //   write: store (version, value) if version is higher than the stored one; ack
+// A write's message to the replica outside its quorum can arrive after the write
+// returned, and even after a newer write: the version check keeps the newer value.
 // Everything a client does between them can interleave with other clients.
 
 event eReplicaRead: (client: machine);
@@ -28,6 +30,7 @@ machine Replica {
     }
     on eReplicaWrite do (w: (client: machine, version: int, value: int)) {
       // Last writer wins by version; an older version arriving late is ignored.
+      // snappea-lint: allow mutation:swap-operator -- a version names one write, so an equal version carries the value already stored
       if (w.version > version) {
         version = w.version;
         value = w.value;
