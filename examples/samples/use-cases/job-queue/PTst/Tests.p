@@ -27,6 +27,9 @@ machine Timers {
       } else if (slow > 0 && $) {
         slow = slow - 1;
         send t.queue, eVisibilityTimeout, (job = t.job, receipt = t.receipt);
+        // Timer callbacks are at-least-once: a duplicate can arrive after the job was
+        // redelivered under a new receipt.
+        if ($) { send t.queue, eVisibilityTimeout, (job = t.job, receipt = t.receipt); }
       }
     }
   }

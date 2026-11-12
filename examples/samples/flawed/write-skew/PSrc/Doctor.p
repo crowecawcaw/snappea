@@ -20,22 +20,24 @@ machine Doctor {
       var d: int;
       var count: int;
       var writes: map[int, int];
-      var committed: bool;
-      while (!committed) {
+      var decided: bool;
+      var granted: bool;
+      while (!decided) {
         send p.store, eSnapshotRead, this;
         receive { case eSnapshot: (s: tSnapshot) { snap = s; } }
         count = 0;
         foreach (d in p.doctors) { count = count + snap.rows[d]; }
         if (count < 2) {
-          announce eOffCallAnswered, (doctor = p.doctor, granted = false);
-          send p.owner, eDoctorDone;
-          return;
+          // The last one on call: refuse.
+          decided = true;
+        } else {
+          writes[p.doctor] = 0;
+          send p.store, eCommit, (client = this, ts = snap.ts, writes = writes);
+          // On a conflict, start over with a fresh snapshot.
+          receive { case eCommitResult: (ok: bool) { decided = ok; granted = ok; } }
         }
-        writes[p.doctor] = 0;
-        send p.store, eCommit, (client = this, ts = snap.ts, writes = writes);
-        receive { case eCommitResult: (ok: bool) { committed = ok; } }
       }
-      announce eOffCallAnswered, (doctor = p.doctor, granted = true);
+      announce eOffCallAnswered, (doctor = p.doctor, granted = granted);
       send p.owner, eDoctorDone;
     }
   }
