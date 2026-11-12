@@ -1,0 +1,9 @@
+<!-- Seat holds that expire while the customer pays. See README.md. -->
+<Project>
+<ProjectName>SeatHold</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

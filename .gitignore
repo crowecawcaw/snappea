@@ -40,3 +40,4 @@ crates/snappea/src/cli/guide/examples/**/PCheckerOutput/
 # Local checker benchmark measurements and journals
 benchmarks/checker/results/
 benchmark-results/
+examples/samples/**/PCheckerOutput/
