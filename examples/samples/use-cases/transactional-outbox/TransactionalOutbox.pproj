@@ -1,0 +1,9 @@
+<!-- Transactional outbox: relay crashes, two relays, deduplicating consumer. See README.md. -->
+<Project>
+<ProjectName>TransactionalOutbox</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
