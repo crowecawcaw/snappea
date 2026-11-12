@@ -366,6 +366,20 @@ because no test case reached the failing schedule within its schedules;
 schedules, so no test case can detect it as written. Some mutants cannot be detected by
 any test: `x < n` and `x <= n` behave the same if `x` never equals `n`.
 
+Some changes do nothing in most states, so a mutant runs only the test cases where it
+would change a value. While the test cases check the unchanged model, they record, for
+each such mutant, whether its change would have changed a value: for `<`, `<=`, `>` and
+`>=`, whether the operands were ever equal; for `+` and `-`, whether the right operand
+was ever nonzero; for a removed assignment, whether it ever stored a value other than
+the one already there; for a removed `+=` or `-=` on a set or map, whether the element
+was ever missing or present. A mutant whose change never would is not run: it is
+undetected, with 0 schedules, and the console says why, for example
+`` `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never
+equal) ``. In JSON it has `changes_a_value: false`. Like coverage, this covers the
+schedules the test cases explored, not every schedule: add a scenario that reaches
+such a state, and the mutant runs. On Raft, about one surviving mutant in ten never
+changes a value.
+
 A mutant that keeps the model from finishing is stopped early. Before the mutants run,
 each test case runs 100 schedules of the unchanged model. When at most 40% of those
 reach the step bound and a mutant's do far more often, the mutant stops and counts as
@@ -404,7 +418,7 @@ schedules than the budget are marked `(only 60 schedules)` in the console and ha
 when a test case fails: fix the bug first. Undetected mutants do not change the exit
 status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
-`search_complete` and, for a coarse mutant, the undetected mutants inside it
+`search_complete`, `changes_a_value` and, for a coarse mutant, the undetected mutants inside it
 (`undetected_inside`); `undetected_inside_undetected` counts those.
 
 ### Suppressing a mutant

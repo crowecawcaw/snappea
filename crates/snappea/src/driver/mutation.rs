@@ -136,6 +136,10 @@ pub enum Verdict {
         schedules: usize,
         /// Every test case explored all of its schedules.
         search_complete: bool,
+        /// The change would never have changed a value in the test cases' runs of the
+        /// unchanged model (see [`Mutant::changes`]), so it was not run: no test case
+        /// reaches a state where it matters.
+        unchanged: bool,
     },
     /// The time limit came before its first turn.
     NotTested,
@@ -144,7 +148,7 @@ pub enum Verdict {
     /// No test case detected it, nor the coarse mutant `by` around it (an index into
     /// [`Report::mutants`]), which is reported in its place: until a test case notices
     /// that code removed, the coarse mutant is the gap to close first.
-    Subsumed { by: usize, schedules: usize, search_complete: bool },
+    Subsumed { by: usize, schedules: usize, search_complete: bool, unchanged: bool },
 }
 
 /// The mutants of a suite and their verdicts.
@@ -158,9 +162,9 @@ pub struct Report {
     pub budget: usize,
 }
 
-/// An undetected mutant: the test cases it ran, its schedules, and whether their
-/// searches were complete.
-pub type Undetected<'a> = (&'a Mutant, &'a [String], usize, bool);
+/// An undetected mutant: the test cases it ran, its schedules, whether their searches
+/// were complete, and whether it never changed a value (see [`Verdict::Undetected`]).
+pub type Undetected<'a> = (&'a Mutant, &'a [String], usize, bool, bool);
 
 impl Report {
     fn count(&self, f: impl Fn(&Verdict) -> bool) -> usize {
@@ -203,6 +207,7 @@ impl Report {
     /// incomplete search.
     pub fn short(&self) -> usize {
         self.count(|v| match v {
+            Verdict::Undetected { unchanged: true, .. } | Verdict::Subsumed { unchanged: true, .. } => false,
             Verdict::Undetected { schedules, search_complete, .. }
             | Verdict::Subsumed { schedules, search_complete, .. } => *schedules < self.budget && !search_complete,
             _ => false,
@@ -222,8 +227,8 @@ impl Report {
             .zip(&self.verdicts)
             .enumerate()
             .filter_map(|(i, (m, v))| match v {
-                Verdict::Undetected { tests, schedules, search_complete } => {
-                    Some((i, (m, tests.as_slice(), *schedules, *search_complete)))
+                Verdict::Undetected { tests, schedules, search_complete, unchanged } => {
+                    Some((i, (m, tests.as_slice(), *schedules, *search_complete, *unchanged)))
                 }
                 _ => None,
             })
@@ -260,9 +265,11 @@ impl Report {
             let location = |m: &Mutant| format!("{}:{}", m.file, m.line);
             let list = &undetected[..undetected.len().min(shown)];
             let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
-            for (i, (m, _, schedules, complete)) in list {
+            for (i, (m, _, schedules, complete, unchanged)) in list {
                 // the time limit left it a lighter check
-                let short = if *schedules < self.budget && !complete {
+                let short = if *unchanged {
+                    format!(" (never changes a value in the test cases: {})", m.unchanged)
+                } else if *schedules < self.budget && !complete {
                     format!(" (only {} schedules)", schedules)
                 } else {
                     String::new()
@@ -313,7 +320,7 @@ impl Report {
         json!({
             "mutants": self.tested(),
             "detected": self.detected(),
-            "undetected": self.undetected_indexed().iter().map(|(i, (m, tests, schedules, complete))| json!({
+            "undetected": self.undetected_indexed().iter().map(|(i, (m, tests, schedules, complete, unchanged))| json!({
                 "file": m.file,
                 "line": m.line,
                 "context": m.context,
@@ -322,14 +329,16 @@ impl Report {
                 "test_cases": tests,
                 "schedules": schedules,
                 "search_complete": complete,
+                "changes_a_value": !unchanged,
                 "undetected_inside": self.mutants.iter().zip(&self.verdicts)
                     .filter_map(|(m, v)| match v {
-                        Verdict::Subsumed { by, schedules, search_complete } if by == i => Some(json!({
+                        Verdict::Subsumed { by, schedules, search_complete, unchanged } if by == i => Some(json!({
                             "line": m.line,
                             "mutation": m.change.name(),
                             "change": m.description,
                             "schedules": schedules,
                             "search_complete": search_complete,
+                            "changes_a_value": !unchanged,
                         })),
                         _ => None,
                     })
@@ -378,8 +387,14 @@ pub fn run(
         .map(|m| {
             let allowed = |id: &str| id == "mutation" || id.strip_prefix("mutation:") == Some(m.change.name());
             let inside = |s: &Span| s.file == m.span.file && s.start <= m.span.start && m.span.end <= s.end;
-            let covering: Vec<usize> = (0..passed.len()).filter(|t| passed[*t].1.ran(m.probe)).collect();
+            // only the test cases where the change would change a value can notice it
+            let covering: Vec<usize> = (0..passed.len()).filter(|t| m.changed(&passed[*t].1)).collect();
+            let reached = match covering.is_empty() {
+                true => (0..passed.len()).filter(|t| passed[*t].1.ran(m.probe)).collect(),
+                false => Vec::new(),
+            };
             State {
+                reached,
                 suppressed: suppressed.iter().any(|(s, id)| inside(s) && allowed(id)),
                 complete: vec![false; covering.len()],
                 covering,
@@ -527,7 +542,7 @@ fn verdicts(states: &[State], parent: &[Option<usize>], passed: &[(TestCase, Hit
     let own: Vec<Verdict> = states.iter().map(|s| s.verdict(passed)).collect();
     let mut out = own.clone();
     for (i, v) in own.iter().enumerate() {
-        let Verdict::Undetected { schedules, search_complete, .. } = v else { continue };
+        let Verdict::Undetected { schedules, search_complete, unchanged, .. } = v else { continue };
         let mut by = None;
         let mut a = parent[i];
         while let Some(p) = a.filter(|p| matches!(own[*p], Verdict::Undetected { .. })) {
@@ -535,7 +550,12 @@ fn verdicts(states: &[State], parent: &[Option<usize>], passed: &[(TestCase, Hit
             a = parent[p];
         }
         if let Some(by) = by {
-            out[i] = Verdict::Subsumed { by, schedules: *schedules, search_complete: *search_complete };
+            out[i] = Verdict::Subsumed {
+                by,
+                schedules: *schedules,
+                search_complete: *search_complete,
+                unchanged: *unchanged,
+            };
         }
     }
     out
@@ -576,6 +596,9 @@ struct State {
     needed: Option<usize>,
     /// Test cases that ran it.
     ran: Vec<usize>,
+    /// When the change would change no value in any test case (so it does not run), the
+    /// test cases that ran the code.
+    reached: Vec<usize>,
 }
 
 /// One turn: which of the covering test cases (an index into [`State::covering`]), how
@@ -647,15 +670,27 @@ impl State {
         if let Some(t) = self.detected {
             return Verdict::Detected { test: passed[t].0.name.clone(), step_bound: self.step_bound };
         }
+        let names = |tests: &[usize]| {
+            let mut tests = tests.to_vec();
+            tests.sort();
+            tests.iter().map(|t| passed[*t].0.name.clone()).collect()
+        };
+        if !self.reached.is_empty() {
+            return Verdict::Undetected {
+                tests: names(&self.reached),
+                schedules: 0,
+                search_complete: false,
+                unchanged: true,
+            };
+        }
         if self.turns == 0 {
             return Verdict::NotTested;
         }
-        let mut ran = self.ran.clone();
-        ran.sort();
         Verdict::Undetected {
-            tests: ran.iter().map(|t| passed[*t].0.name.clone()).collect(),
+            tests: names(&self.ran),
             schedules: self.schedules,
             search_complete: self.complete.iter().all(|c| *c),
+            unchanged: false,
         }
     }
 }

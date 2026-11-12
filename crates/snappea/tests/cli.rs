@@ -886,6 +886,57 @@ const COUNTER: &str = "event eAdd: int;\n\
      }\n\
      test tcCount [main=Driver]: assert NonNegative in { Counter, Driver };\n";
 
+/// A mutant whose change would never change a value in the test cases' runs is not run:
+/// `c > 5` and `c >= 5` differ only when `c` is 5, and the counter only reaches 3.
+#[test]
+fn check_reports_mutants_that_never_change_a_value() {
+    let mut h = host();
+    h.add_file(
+        "tick.p",
+        "event eTick;\n\
+         event eCount: int;\n\
+         machine Ticker {\n\
+           var count: int;\n\
+           start state S {\n\
+             on eTick do {\n\
+               count = count + 1;\n\
+               announce eCount, count;\n\
+               if (Big(count)) { count = 0; }\n\
+             }\n\
+           }\n\
+           fun Big(c: int): bool { return c > 5; }\n\
+         }\n\
+         spec Up observes eCount {\n\
+           var last: int;\n\
+           start state S { on eCount do (c: int) { assert c == last + 1, \"skipped\"; last = c; } }\n\
+         }\n\
+         machine Driver {\n\
+           start state S { entry { var t: Ticker; t = new Ticker(); send t, eTick; send t, eTick; send t, eTick; } }\n\
+         }\n\
+         test tcTick [main=Driver]: assert Up in { Ticker, Driver };\n",
+    );
+    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let swap = v["mutation"]["undetected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["mutation"] == "swap-operator")
+        .unwrap_or_else(|| panic!("{}", v["mutation"]));
+    assert_eq!(swap["line"], 12);
+    assert_eq!(swap["changes_a_value"], false);
+    assert_eq!(swap["schedules"], 0);
+    assert_eq!(swap["test_cases"], serde_json::json!(["tcTick"]));
+    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text"]);
+    assert!(
+        h.stdout.contains(
+            "tick.p:12  Ticker.Big: `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never equal)\n"
+        ),
+        "{}",
+        h.stdout
+    );
+}
+
 #[test]
 fn check_reports_mutants_no_test_case_detects() {
     let mut h = host();

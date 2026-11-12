@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::sema::{BinOp, Expr, ExprKind, FunDecl, FunId, PType, Program, Stmt, StmtKind, UnOp, VarId, VarRole};
 
-use crate::checker::bytecode::{CodeBlock, Dest, Op, Operand, PathElem, Probe, ProbeKind, ReceiveCase, Root};
+use crate::checker::bytecode::{CodeBlock, Dest, Op, Operand, PathElem, Probe, ProbeKind, ReceiveCase, Root, Watch};
 
 /// The register an instruction that only loads a value names, if any: a local, a field,
 /// or (with `ints`) an `int` literal that fits an [`Operand::Int`].
@@ -153,7 +153,11 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::Insert { root: Root::Local(s), .. }
             | Op::Add { root: Root::Local(s), .. }
             | Op::Remove { root: Root::Local(s), .. }
-            | Op::ForeachInit { root: Some(Root::Local(s)), .. } => Some([Some(*s), None]),
+            | Op::ForeachInit { root: Some(Root::Local(s)), .. }
+            | Op::Watch {
+                watch: Watch::Store { root: Root::Local(s), .. } | Watch::Collection { root: Root::Local(s), .. },
+                ..
+            } => Some([Some(*s), None]),
             Op::ForeachNext { iter_slot, item_slot, .. } => Some([Some(*iter_slot), Some(*item_slot)]),
             // only overwrite a local, or touch none
             Op::StoreLocal(_)
@@ -207,7 +211,8 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::Print
             | Op::PrintFormat { .. }
             | Op::Probe(_)
-            | Op::ConditionProbe { .. } => Some([None, None]),
+            | Op::ConditionProbe { .. }
+            | Op::Watch { .. } => Some([None, None]),
         };
         let Some(reads) = reads else { return vec![false; unread.len()] };
         for slot in reads.into_iter().flatten() {
@@ -300,6 +305,24 @@ impl<'a> Compiler<'a> {
         probes.push(Probe { kind, fun: self.fun, span, parent: self.parent_probe, asserts_false: false });
         self.emit(Op::Probe(id));
         Some(id)
+    }
+
+    /// Emits a [`ProbeKind::Changes`] probe for `span` with an [`Op::Watch`] that records
+    /// it, when compiling with probes.
+    fn watch(&mut self, span: crate::syntax::Span, watch: Watch) {
+        if self.unreachable > 0 {
+            return;
+        }
+        let Some(probes) = self.probes.as_mut() else { return };
+        let probe = probes.len() as u32;
+        probes.push(Probe {
+            kind: ProbeKind::Changes,
+            fun: self.fun,
+            span,
+            parent: self.parent_probe,
+            asserts_false: false,
+        });
+        self.emit(Op::Watch { probe, watch });
     }
 
     /// Compiles `s` with `parent` as the enclosing probe.
@@ -537,6 +560,7 @@ impl<'a> Compiler<'a> {
             StmtKind::Assign { lhs, rhs } => {
                 let (root, path) = self.lvalue(lhs);
                 self.expr(rhs);
+                self.watch(s.span, Watch::Store { root, path: path.clone() });
                 match (root, path.is_empty() && self.fuse) {
                     (Root::Local(slot), true) => self.emit(Op::StoreLocal(slot)),
                     (Root::Field(slot), true) => self.emit(Op::StoreField(slot)),
@@ -552,11 +576,13 @@ impl<'a> Compiler<'a> {
             StmtKind::Add { lhs, value } => {
                 let (root, path) = self.lvalue(lhs);
                 self.expr(value);
+                self.watch(s.span, Watch::Collection { root, path: path.clone(), add: true });
                 self.emit(Op::Add { root, path });
             }
             StmtKind::Remove { lhs, value } => {
                 let (root, path) = self.lvalue(lhs);
                 self.expr(value);
+                self.watch(s.span, Watch::Collection { root, path: path.clone(), add: false });
                 self.emit(Op::Remove { root, path });
             }
             StmtKind::While { cond, body } => {
@@ -941,6 +967,12 @@ impl<'a> Compiler<'a> {
                 other => {
                     self.expr(lhs);
                     self.expr(rhs);
+                    // `==` and `!=` swapped always differ
+                    if let Some(alt) = crate::checker::mutation::swapped(self.prog, *other, e)
+                        .filter(|_| !matches!(other, BinOp::Eq | BinOp::Neq))
+                    {
+                        self.watch(e.span, Watch::Bin { op: *other, alt });
+                    }
                     if self.fuse && self.is_int(lhs) && self.is_int(rhs) {
                         self.emit(Op::IntBin {
                             op: *other,

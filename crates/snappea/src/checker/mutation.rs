@@ -91,6 +91,21 @@ pub struct Mutant {
     pub description: String,
     /// It removes a whole `if`, `while`, `foreach` or body (see [`parents`]).
     pub coarse: bool,
+    /// For a change that does nothing in some states (swapping `<` for `<=` when the
+    /// operands are equal, removing an assignment of the value already there), the
+    /// [`ProbeKind::Changes`] probes that run when it would change a value: only a test
+    /// case that ran one can notice the change. Empty for other changes.
+    pub changes: Vec<u32>,
+    /// Why the change would not change a value when no test case ran a `changes` probe,
+    /// e.g. `the operands are never equal`.
+    pub unchanged: &'static str,
+}
+
+impl Mutant {
+    /// Whether the change would have changed a value in a run with code coverage `hits`.
+    pub fn changed(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
+        hits.ran(self.probe) && (self.changes.is_empty() || self.changes.iter().any(|p| hits.ran(*p)))
+    }
 }
 
 /// For each of `mutants`, the smallest coarse mutant ([`Mutant::coarse`]) in the same
@@ -175,6 +190,10 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec
 pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
     let probe_of: FxHashMap<(ProbeKind, FunId, Span), u32> =
         probes.iter().enumerate().rev().map(|(id, p)| ((p.kind, p.fun, p.span), id as u32)).collect();
+    let mut changes_at: FxHashMap<(FunId, Span), Vec<u32>> = FxHashMap::default();
+    for (id, p) in probes.iter().enumerate().filter(|(_, p)| p.kind == ProbeKind::Changes) {
+        changes_at.entry((p.fun, p.span)).or_default().push(id as u32);
+    }
     let sm: &SourceMap = &prog.sources;
     let mut out = Vec::new();
     for (i, f) in prog.funs.iter().enumerate() {
@@ -198,6 +217,8 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                     context: context.clone(),
                     description: format!("removed the whole body ({} statements)", effects),
                     coarse: true,
+                    changes: Vec::new(),
+                    unchanged: "",
                 });
             }
         }
@@ -212,6 +233,23 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             };
             let Some(&probe) = probe_of.get(&(kind, fun, span)) else { return };
             let coarse = matches!(&target, Target::Stmt(s, Change::Remove) if compound(s));
+            let watched = match &target {
+                Target::Stmt(s, Change::Remove) => match s.kind {
+                    StmtKind::Assign { .. } => Some((stmt, "it only assigns the value already there")),
+                    StmtKind::Add { .. } => Some((stmt, "the value is always there already")),
+                    StmtKind::Remove { .. } => Some((stmt, "the value is never there")),
+                    _ => None,
+                },
+                Target::Expr(e, Change::Operator(BinOp::Add | BinOp::Sub)) => {
+                    Some((e.span, "the right operand is always 0"))
+                }
+                Target::Expr(e, Change::Operator(BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge)) => {
+                    Some((e.span, "the operands are never equal"))
+                }
+                _ => None,
+            };
+            let (watched, unchanged) = watched.map_or((None, ""), |(at, why)| (Some(at), why));
+            let changes = watched.and_then(|at| changes_at.get(&(fun, at))).cloned().unwrap_or_default();
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
                 return;
@@ -228,6 +266,8 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 context: context.clone(),
                 description,
                 coarse,
+                changes,
+                unchanged,
             });
         });
     }
@@ -372,7 +412,7 @@ fn compound(s: &Stmt) -> bool {
 }
 
 /// The operator a mutant puts in place of `op` in `e`, if any.
-fn swapped(prog: &Program, op: BinOp, e: &Expr) -> Option<BinOp> {
+pub(crate) fn swapped(prog: &Program, op: BinOp, e: &Expr) -> Option<BinOp> {
     let numeric = || matches!(e.ty.canonicalize(prog), PType::Int | PType::Float);
     Some(match op {
         BinOp::Lt => BinOp::Le,

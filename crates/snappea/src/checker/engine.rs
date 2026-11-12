@@ -861,16 +861,23 @@ impl<'p> Checker<'p> {
         } else {
             &self.code
         };
-        let guidance_probes = guided.then(|| {
+        // what counts as new coverage: not whether a mutant's change would change a value,
+        // and, guided, not conditions (`with_condition_guidance` counts their edges)
+        let guidance_probes = {
             use crate::checker::bytecode::ProbeKind;
-            let mut mask = crate::checker::coverage::ProbeSet::default();
-            for (id, probe) in code.probes.iter().enumerate() {
-                if !matches!(probe.kind, ProbeKind::ConditionTrue | ProbeKind::ConditionFalse) {
-                    mask.insert(id as u32);
+            let skip = |k: ProbeKind| {
+                k == ProbeKind::Changes || (guided && matches!(k, ProbeKind::ConditionTrue | ProbeKind::ConditionFalse))
+            };
+            (guided || code.probes.iter().any(|p| skip(p.kind))).then(|| {
+                let mut mask = crate::checker::coverage::ProbeSet::default();
+                for (id, probe) in code.probes.iter().enumerate() {
+                    if !skip(probe.kind) {
+                        mask.insert(id as u32);
+                    }
                 }
-            }
-            Rc::new(mask)
-        });
+                Rc::new(mask)
+            })
+        };
         let coverage_tables = (opts.activity_coverage || guided).then(|| self.coverage_tables());
         let mut verbose_json = (opts.verbose && opts.json_trace && !is_replay).then(Vec::new);
         let mut depth_bound_hits = 0usize;
