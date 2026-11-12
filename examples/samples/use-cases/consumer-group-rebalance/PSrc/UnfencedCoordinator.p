@@ -43,25 +43,29 @@ machine UnfencedCoordinator {
     Rebalance();
   }
 
+  // Round-robin over members in join order.
   fun Rebalance() {
+    var next: map[int, int];
     var p: int;
     var id: int;
-    var parts: seq[int];
     gen = gen + 1;
-    owner = default(map[int, int]);
     while (p < partitions && sizeof(order) > 0) {
-      owner[p] = order[p % sizeof(order)];
+      next[p] = order[p % sizeof(order)];
       p = p + 1;
     }
-    announce eGeneration, (gen = gen, owner = owner);
+    owner = next;
+    announce eGeneration, (gen = gen, members = order, owner = owner);
     foreach (id in order) {
-      parts = default(seq[int]);
-      p = 0;
-      while (p < partitions) {
-        if (p in owner && owner[p] == id) { parts += (sizeof(parts), p); }
-        p = p + 1;
-      }
-      send members[id], eAssignment, (gen = gen, partitions = parts);
+      send members[id], eAssignment, (gen = gen, partitions = Owned(id));
     }
+  }
+
+  fun Owned(id: int): seq[int] {
+    var parts: seq[int];
+    var p: int;
+    foreach (p in keys(owner)) {
+      if (owner[p] == id) { parts += (sizeof(parts), p); }
+    }
+    return parts;
   }
 }

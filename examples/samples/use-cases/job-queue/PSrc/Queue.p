@@ -86,9 +86,10 @@ machine Queue {
     send worker, eJob, (job = job, receipt = lastReceipt);
   }
 
+  // Every job is complete, which is final: no job will be delivered again, so the
+  // released workers can stay in `waiting`.
   fun ReleaseWaiting() {
     var w: machine;
     foreach (w in waiting) { send w, eNoMoreJobs; }
-    waiting = default(seq[machine]);
   }
 }

@@ -51,6 +51,7 @@ machine Coordinator {
         send c.consumer, eCommitResp, (gen = c.gen, partition = c.partition, ok = true);
         return;
       }
+      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
       announce eCommitRejected, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
       send c.consumer, eCommitResp, (gen = c.gen, partition = c.partition, ok = false);
     }
@@ -67,15 +68,16 @@ machine Coordinator {
 
   // Round-robin over members in join order.
   fun Rebalance() {
+    var next: map[int, int];
     var p: int;
     var id: int;
     gen = gen + 1;
-    owner = default(map[int, int]);
     while (p < partitions && sizeof(order) > 0) {
-      owner[p] = order[p % sizeof(order)];
+      next[p] = order[p % sizeof(order)];
       p = p + 1;
     }
-    announce eGeneration, (gen = gen, owner = owner);
+    owner = next;
+    announce eGeneration, (gen = gen, members = order, owner = owner);
     foreach (id in order) {
       send members[id], eAssignment, (gen = gen, partitions = Owned(id));
     }
@@ -84,9 +86,8 @@ machine Coordinator {
   fun Owned(id: int): seq[int] {
     var parts: seq[int];
     var p: int;
-    while (p < partitions) {
-      if (p in owner && owner[p] == id) { parts += (sizeof(parts), p); }
-      p = p + 1;
+    foreach (p in keys(owner)) {
+      if (owner[p] == id) { parts += (sizeof(parts), p); }
     }
     return parts;
   }

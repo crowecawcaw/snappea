@@ -68,8 +68,10 @@ machine Worker {
     ignore eCrash;
   }
 
-  // Crashed for good: replies to the dead process are dropped.
+  // Crashed for good: replies to the dead process are dropped. The announcement
+  // marks the moment of the crash for the specs (a supervisor would see it).
   state Crashed {
+    entry { announce eWorkerCrashed, (worker = this,); }
     ignore eJob, eNoMoreJobs, eApplied, eAckResp, eCrash;
   }
 }

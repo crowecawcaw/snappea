@@ -29,6 +29,7 @@ machine LeaveRebalance {
     entry {
       var consumers: seq[machine];
       consumers = StartGroup(new Coordinator(2), 1);
+      announce eShutdownRequested, (member = 2,);
       send consumers[1], eShutdown;
     }
   }
@@ -44,6 +45,23 @@ machine ZombieExpired {
       StartGroup(coordinator, 1);
       send coordinator, eExpire, (id = 2,);
     }
+  }
+}
+
+// Member 2 joined and crashed: it never fetches or commits. The driver stands in for it
+// (its join and then its session expiry, in that order). Consumer 1 must take over its
+// partition once the session expires.
+machine CrashedMember {
+  start state Run {
+    entry {
+      var coordinator: Coordinator;
+      coordinator = new Coordinator(2);
+      announce eGroupPlanned, (partitions = 2, records = 2);
+      new Consumer((coordinator = coordinator, id = 1, records = 2));
+      send coordinator, eJoin, (consumer = this, id = 2);
+      send coordinator, eExpire, (id = 2,);
+    }
+    ignore eAssignment;
   }
 }
 
@@ -74,14 +92,17 @@ scenario ZombieFenced observes eCommitRejected, eGeneration {
 }
 
 test tcJoinRebalance [main=JoinRebalance]:
-  assert GroupSafety, AllCommitted in { JoinRebalance, Coordinator, Consumer };
+  assert GroupSafety, GroupProgress in { JoinRebalance, Coordinator, Consumer };
 
 test tcLeaveRebalance [main=LeaveRebalance]:
-  assert GroupSafety, AllCommitted in { LeaveRebalance, Coordinator, Consumer };
+  assert GroupSafety, GroupProgress in { LeaveRebalance, Coordinator, Consumer };
+
+test tcCrashedMember [main=CrashedMember]:
+  assert GroupSafety, GroupProgress in { CrashedMember, Coordinator, Consumer };
 
 test tcZombieExpired [main=ZombieExpired]:
-  assert GroupSafety, AllCommitted in { ZombieExpired, Coordinator, Consumer };
+  assert GroupSafety, GroupProgress in { ZombieExpired, Coordinator, Consumer };
 
 // expect-bug: commit from generation
 test tcBugNoGenerationCheck [main=BugNoGenerationCheck]:
-  assert GroupSafety, AllCommitted in { BugNoGenerationCheck, UnfencedCoordinator, Consumer };
+  assert GroupSafety, GroupProgress in { BugNoGenerationCheck, UnfencedCoordinator, Consumer };

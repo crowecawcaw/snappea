@@ -82,7 +82,7 @@ spec ReceiptsFence observes eEnqueued, eDelivered, eVisibilityExpired, eAcked, e
 event eAckSent: (job: int, receipt: int);
 // Driver: how many workers it will start, announced before anything else.
 event eWorkersPlanned: int;
-// Driver: a worker started; the failure injector crashed one.
+// Driver: a worker started. Worker: it crashed (it stops at that point).
 event eWorkerStarted: (worker: machine);
 event eWorkerCrashed: (worker: machine);
 // A worker saw that every job is completed and stopped polling.
