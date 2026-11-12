@@ -1,0 +1,9 @@
+<!-- Several clients contend for a shared server; the spec tracks each client. See README.md. -->
+<Project>
+<ProjectName>MultipleClients</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

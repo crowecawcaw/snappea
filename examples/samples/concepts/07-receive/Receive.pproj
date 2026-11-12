@@ -1,0 +1,9 @@
+<!-- Blocking receive versus state handlers for RPC-style clients. See README.md. -->
+<Project>
+<ProjectName>Receive</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

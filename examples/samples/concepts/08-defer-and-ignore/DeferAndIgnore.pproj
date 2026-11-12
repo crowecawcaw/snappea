@@ -1,0 +1,9 @@
+<!-- Event queues: defer, ignore and unhandled events. See README.md. -->
+<Project>
+<ProjectName>DeferAndIgnore</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
