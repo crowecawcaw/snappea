@@ -31,6 +31,7 @@ machine OrderStore {
         send r.client, eTransitionResp, (order = r.order, next = r.next, ok = true, prior = prior);
         return;
       }
+      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
       announce eTransitionRefused, (order = r.order, next = r.next, prior = prior);
       send r.client, eTransitionResp, (order = r.order, next = r.next, ok = false, prior = prior);
     }

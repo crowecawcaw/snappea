@@ -7,11 +7,14 @@ event eStatusChanged: (order: int, from: tStatus, next: tStatus);
 event eAuthorized: (order: int);
 event eCaptured: (order: int);
 event eVoided: (order: int);
+event eTransitionRefused: (order: int, next: tStatus, prior: tStatus);
 
 // Safety: orders follow the lifecycle Placed -> Authorized -> Picked -> Shipped, and
 // can be cancelled only before shipping. Money moves only to match: capture only a
-// shipped order, void only a cancelled one, each at most once, never both.
-spec OrderSafety observes eOrderCreated, eStatusChanged, eAuthorized, eCaptured, eVoided {
+// shipped order, void only a cancelled one, each at most once, never both. A status
+// change is refused only when the order is already over (shipped or cancelled): a
+// cancel refused while the parcel is still on the shelf breaks the promise.
+spec OrderSafety observes eOrderCreated, eStatusChanged, eTransitionRefused, eAuthorized, eCaptured, eVoided {
   var status: map[int, tStatus];
   var authorized: set[int];
   var settled: set[int];
@@ -29,6 +32,12 @@ spec OrderSafety observes eOrderCreated, eStatusChanged, eAuthorized, eCaptured,
       assert !(p.from == Shipped), format("order {0} changed to {1} after it shipped", p.order, p.next);
       assert Allowed(p.from, p.next), format("order {0} moved from {1} to {2}", p.order, p.from, p.next);
       status[p.order] = p.next;
+    }
+    on eTransitionRefused do (p: (order: int, next: tStatus, prior: tStatus)) {
+      assert p.prior == status[p.order],
+        format("order {0} refused from {1}, but it was {2}", p.order, p.prior, status[p.order]);
+      assert p.prior == Shipped || p.prior == Cancelled,
+        format("order {0} refused {1} while it was {2}", p.order, p.next, p.prior);
     }
     on eAuthorized do (p: (order: int)) {
       assert p.order in status, format("payment for order {0} authorized before the order existed", p.order);
@@ -64,6 +73,7 @@ spec OrderSafety observes eOrderCreated, eStatusChanged, eAuthorized, eCaptured,
 // cancels it will send for each, before it starts; the spec stays hot until every
 // order is shipped or cancelled, every card hold is captured or voided (no dangling
 // holds), and every cancel is answered with what actually happened to the order.
+// A shipped order is finished once its customer got the shipping notice.
 // Every order gets a card hold, even one cancelled before checkout authorized it, so
 // an order is finished only once its hold is settled.
 enum tCancelOutcome { CancelAccepted, CancelTooLate }
@@ -71,9 +81,11 @@ event eOrdersPlanned: int;
 event eOrderRequested: (order: int, cancels: int);
 event eCancelRequested: (req: int, order: int);
 event eCancelAnswered: (req: int, outcome: tCancelOutcome);
+// Announced by the customer when the shipping notice arrives.
+event eShipNoticed: (order: int);
 
 spec OrdersSettle observes eOrdersPlanned, eOrderRequested, eCancelRequested, eOrderCreated,
-    eStatusChanged, eCaptured, eVoided, eCancelAnswered {
+    eStatusChanged, eCaptured, eVoided, eCancelAnswered, eShipNoticed {
   var toRequest: int;
   var openCancels: int;
   // order -> cancels the driver still has to send
@@ -98,6 +110,7 @@ spec OrdersSettle observes eOrdersPlanned, eOrderRequested, eCancelRequested, eO
     on eCaptured do { assert false, "capture while no work is open"; }
     on eVoided do { assert false, "void while no work is open"; }
     on eCancelAnswered do { assert false, "cancel answered while no work is open"; }
+    on eShipNoticed do { assert false, "shipping notice while no work is open"; }
   }
 
   hot state Busy {
@@ -122,9 +135,16 @@ spec OrdersSettle observes eOrdersPlanned, eOrderRequested, eCancelRequested, eO
     // snappea-lint: allow unused-payload-field -- OrderSafety checks the transition; this spec needs the new status
     on eStatusChanged do (p: (order: int, from: tStatus, next: tStatus)) {
       status[p.order] = p.next;
-      if (p.next == Shipped || p.next == Cancelled) {
+      if (p.next == Cancelled) {
         finished += (p.order);
       }
+      Check(p.order);
+    }
+    on eShipNoticed do (p: (order: int)) {
+      assert status[p.order] == Shipped,
+        format("customer told order {0} shipped, but it is {1}", p.order, status[p.order]);
+      assert !(p.order in finished), format("customer told twice that order {0} shipped", p.order);
+      finished += (p.order);
       Check(p.order);
     }
     on eCaptured do (p: (order: int)) {

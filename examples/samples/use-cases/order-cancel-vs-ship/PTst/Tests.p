@@ -32,6 +32,7 @@ machine Shopper {
       }
     }
     on eCancelResp do (r: (req: int, outcome: tCancelOutcome)) { Answered(r); }
+    on eShippedNotice do (r: (order: int)) { announce eShipNoticed, r; }
   }
 }
 
@@ -45,13 +46,13 @@ fun Answered(r: (req: int, outcome: tCancelOutcome)) {
   announce eCancelAnswered, r;
 }
 
-fun Open(owner: machine, failures: int, orders: seq[tPlan]) {
+fun Open(failures: int, orders: seq[tPlan]) {
   var store: OrderStore;
   var payments: Payments;
   store = new OrderStore();
   payments = new Payments(failures);
   new Shopper((store = store, payments = payments,
-               warehouse = new Warehouse((owner = owner, store = store, payments = payments)),
+               warehouse = new Warehouse((store = store, payments = payments)),
                orders = orders));
 }
 
@@ -66,8 +67,7 @@ fun OneOrder(cancels: int): seq[tPlan] {
 // "shipped", and before checkout recorded the authorization.
 machine CancelRacesWarehouse {
   start state Run {
-    entry { Open(this, 0, OneOrder(1)); }
-    ignore eWarehouseDone;
+    entry { Open(0, OneOrder(1)); }
   }
 }
 
@@ -75,8 +75,7 @@ machine CancelRacesWarehouse {
 // that matches the order, and the hold is voided once.
 machine DuplicateCancel {
   start state Run {
-    entry { Open(this, 0, OneOrder(2)); }
-    ignore eWarehouseDone;
+    entry { Open(0, OneOrder(2)); }
   }
 }
 
@@ -84,8 +83,7 @@ machine DuplicateCancel {
 // warehouse retries with the same key; the money is taken exactly once.
 machine CaptureRetry {
   start state Run {
-    entry { Open(this, 1, OneOrder(0)); }
-    ignore eWarehouseDone;
+    entry { Open(1, OneOrder(0)); }
   }
 }
 
@@ -97,9 +95,8 @@ machine GeneratedOrders {
       var orders: seq[tPlan];
       orders += (0, (order = 1, cancels = choose(2)));
       orders += (1, (order = 2, cancels = choose(2)));
-      Open(this, 1, orders);
+      Open(1, orders);
     }
-    ignore eWarehouseDone;
   }
 }
 
@@ -116,10 +113,11 @@ machine CancelAfterShip {
       announce eOrdersPlanned, 1;
       announce eOrderRequested, (order = 1, cancels = 1);
       new Checkout((owner = this, store = store, payments = payments,
-                    warehouse = new Warehouse((owner = this, store = store, payments = payments)), order = 1));
+                    warehouse = new Warehouse((store = store, payments = payments)), order = 1));
     }
     ignore eOrderPlaced;
-    on eWarehouseDone do (p: (order: int)) {
+    on eShippedNotice do (p: (order: int)) {
+      announce eShipNoticed, p;
       RequestCancel(this, store, payments, p.order, 1);
     }
     on eCancelResp do (r: (req: int, outcome: tCancelOutcome)) { Answered(r); }
@@ -135,10 +133,9 @@ machine BugBlindShip {
       store = new OrderStore();
       payments = new Payments(0);
       new Shopper((store = store, payments = payments,
-                   warehouse = new BlindWarehouse((owner = this, store = store, payments = payments)),
+                   warehouse = new BlindWarehouse((store = store, payments = payments)),
                    orders = OneOrder(1)));
     }
-    ignore eWarehouseDone;
   }
 }
 

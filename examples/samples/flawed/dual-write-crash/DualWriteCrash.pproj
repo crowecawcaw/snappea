@@ -1,0 +1,9 @@
+<!-- A service that writes its database, then publishes an event, as two steps it can crash between. See README.md. -->
+<Project>
+<ProjectName>DualWriteCrash</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

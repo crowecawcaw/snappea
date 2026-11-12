@@ -1,0 +1,9 @@
+<!-- A blocking queue whose consumer checks for work, then registers to wait, as two steps. See README.md. -->
+<Project>
+<ProjectName>LostWakeup</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

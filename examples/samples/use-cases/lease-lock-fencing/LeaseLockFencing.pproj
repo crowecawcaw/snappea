@@ -1,0 +1,9 @@
+<!-- Lease lock with fencing tokens, and a client that pauses past its lease. See README.md. -->
+<Project>
+<ProjectName>LeaseLockFencing</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

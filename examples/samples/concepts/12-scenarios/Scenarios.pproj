@@ -1,0 +1,9 @@
+<!-- Scenario monitors that prove a test reaches a race. See README.md. -->
+<Project>
+<ProjectName>Scenarios</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

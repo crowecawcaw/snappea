@@ -1,0 +1,9 @@
+<!-- Transfers that lock two accounts in argument order. See README.md. -->
+<Project>
+<ProjectName>LockOrderDeadlock</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

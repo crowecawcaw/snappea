@@ -1,0 +1,9 @@
+<!-- Payment API with idempotency keys: lost responses, retries, double clicks. See README.md. -->
+<Project>
+<ProjectName>IdempotentPayments</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
