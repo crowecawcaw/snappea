@@ -1,8 +1,9 @@
 // FIXED: a transactional outbox. The service commits the change and an outbox row in the
 // same database transaction, then answers the client; it never talks to the broker. A
-// relay reads unpublished outbox rows, publishes each, and marks it published once the
-// broker accepted it. Every step the relay takes is driven by durable state, so a
-// restarted relay simply reads the outbox again.
+// relay reads the unpublished outbox rows whenever the database notifies it of a new
+// one (and on every start), publishes each, and marks it published once the broker
+// accepted it. Everything it acts on is durable, so a restarted relay simply reads the
+// outbox again and picks up whatever it had not marked.
 //
 // The relay can crash after the broker accepted a row and before marking it: the row is
 // published again after the restart. That is why the consumer skips changes it already
@@ -29,8 +30,8 @@ machine OutboxDb {
       outbox[r.change.id] = r.change.value;
       announce eCommitted, r.change;
       send r.from, eCommitResult, r.epoch;
-      // Like LISTEN/NOTIFY or a change feed: wakes the relay instead of polling. Before
-      // the relay subscribes there is no one to wake; its first read finds this row.
+      // Like LISTEN/NOTIFY: wakes the relay instead of it polling. Before the relay
+      // subscribes there is no one to wake; its first read finds this row.
       if (relay != null) { send relay, eOutboxChanged; }
     }
     on eReadOutbox do (r: (from: machine, epoch: int)) {
@@ -64,8 +65,9 @@ machine OutboxService {
       change = r.change;
       send db, eCommitWithOutbox, (from = this, epoch = epoch, change = change);
     }
-    on eCrash do { epoch = epoch + 1; }
-    ignore eCommitResult;
+    // A crash between requests loses nothing.
+    // A result addressed to the process before a crash.
+    ignore eCrash, eCommitResult;
   }
 
   state Committing {
@@ -77,8 +79,10 @@ machine OutboxService {
         goto Ready;
       }
     }
+    // snappea-lint: allow mutation:empty-body -- the fault model: without this body the crash simply did not happen, which is an allowed history
     on eCrash do {
       send client, eReset, change.id;
+      // snappea-lint: allow mutation:swap-operator -- counting down works as well: a restart only needs an epoch it never used before
       epoch = epoch + 1;
       goto Ready;
     }
@@ -101,7 +105,7 @@ machine OutboxRelay {
   }
 
   state Reading {
-    // A row committed while this read is in flight is handled by the next read.
+    // A row committed while this read is in flight is found by the next read.
     defer eOutboxChanged;
     on eOutboxRows do (r: (epoch: int, rows: seq[tChange])) {
       if (r.epoch == epoch) {
@@ -109,6 +113,7 @@ machine OutboxRelay {
         PublishNext();
       }
     }
+    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
     on eCrash do { Restart(); }
     // An acknowledgement addressed to the process before a crash.
     ignore ePublishAck;
@@ -117,6 +122,11 @@ machine OutboxRelay {
   state Publishing {
     defer eOutboxChanged;
     on ePublishAck do (a: (epoch: int, id: int)) {
+      // A stale acknowledgement is always for the oldest unmarked row, which is also the
+      // row a restarted relay publishes first (reads return rows in id order), so the
+      // check below never changes the outcome here; it guards against that ordering
+      // assumption breaking.
+      // snappea-lint: allow mutation:condition-true -- equivalent: see the comment above
       if (a.epoch == epoch) {
         // The process can die here: published, not yet marked.
         send db, eMarkPublished, a.id;
@@ -124,11 +134,13 @@ machine OutboxRelay {
         PublishNext();
       }
     }
+    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
     on eCrash do { Restart(); }
   }
 
   state Idle {
     on eOutboxChanged do { ReadOutbox(); }
+    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
     on eCrash do { Restart(); }
     ignore eOutboxRows, ePublishAck;
   }
@@ -148,7 +160,9 @@ machine OutboxRelay {
   }
 
   // A new process: nothing from memory survives; read the outbox again.
+  // snappea-lint: allow mutation:empty-body -- the fault model: an empty restart is the history where the relay did not crash
   fun Restart() {
+    // snappea-lint: allow mutation:swap-operator -- counting down works as well: a restart only needs an epoch it never used before
     epoch = epoch + 1;
     ReadOutbox();
   }

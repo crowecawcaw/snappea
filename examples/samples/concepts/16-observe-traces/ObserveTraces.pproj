@@ -1,0 +1,9 @@
+<!-- One spec checks both a model and application logs. See README.md. -->
+<Project>
+<ProjectName>ObserveTraces</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

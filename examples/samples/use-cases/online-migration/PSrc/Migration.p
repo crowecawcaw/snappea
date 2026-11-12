@@ -110,6 +110,8 @@ machine Writer {
                                  row = (value = op.value, deleted = op.deleted, lsn = w.lsn));
     }
     on eNewWritten goto Writing with {
+      // Both stores have it: the application call returns now.
+      announce eWriteAcked, (req = op.req,);
       send router, eEndWrite;
     }
   }
@@ -143,6 +145,7 @@ machine Reader {
   fun Next() {
     if (left > 0) {
       left = left - 1;
+      announce eReadStarted, (reader = id, key = key);
       send router, eRoute, (client = this, key = key);
     }
   }

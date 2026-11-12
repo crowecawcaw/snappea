@@ -32,5 +32,41 @@ scenario ConflictThenRetry observes eCasResp, eWritten {
   }
 }
 
+// Three clients increment the counter once each, concurrently: one of them can be
+// refused twice before it gets through.
+machine ThreeClients {
+  start state Init {
+    entry {
+      var store: Store;
+      store = new Store();
+      announce eIncrementsPlanned, 3;
+      new Client(store);
+      new Client(store);
+      new Client(store);
+    }
+  }
+}
+
+// Coverage: two refusals in one run. Two clients can never produce this (only one of
+// them can lose a round), so tcTwoClients alone reports it as a gap.
+scenario RefusedTwice observes eCasResp {
+  start hot state WaitFirst {
+    on eCasResp do (ok: bool) {
+      if (!ok) { goto WaitSecond; }
+    }
+  }
+  hot state WaitSecond {
+    on eCasResp do (ok: bool) {
+      if (!ok) { goto Seen; }
+    }
+  }
+  cold state Seen {
+    ignore eCasResp;
+  }
+}
+
 test tcTwoClients [main=TwoClients]:
   assert NoLostUpdate in { TwoClients, Store, Client };
+
+test tcThreeClients [main=ThreeClients]:
+  assert NoLostUpdate in { ThreeClients, Store, Client };

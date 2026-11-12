@@ -39,7 +39,7 @@ machine Breaker {
       dependency = input.dependency;
       timers = input.timers;
       threshold = input.threshold;
-      mode = Closed;
+      // mode starts Closed, the enum's first value.
     }
 
     on eCall do (c: (caller: machine, call: int)) {
@@ -61,6 +61,8 @@ machine Breaker {
       var caller: machine;
       announce eResultSeen, r;
       caller = callers[r.call];
+      // snappea-lint: allow mutation -- forgetting a finished call; call ids are never reused, so keeping it is unobservable
+      callers -= (r.call);
       if (sentIn[r.call] == period) {
         // Not late: this result belongs to the current period.
         if (mode == Closed) {
@@ -76,6 +78,8 @@ machine Breaker {
           if (r.ok) { Change(Closed); } else { Change(Open); }
         }
       }
+      // snappea-lint: allow mutation -- as above: frees memory only
+      sentIn -= (r.call);
       if (r.ok) {
         send caller, eCallResult, (call = r.call, outcome = Succeeded);
       } else {

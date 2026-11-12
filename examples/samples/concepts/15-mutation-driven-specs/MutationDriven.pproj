@@ -1,0 +1,10 @@
+<!-- A spec strengthened by mutation testing. See README.md. The weak spec in weak/ is
+     deliberately not part of the project. -->
+<Project>
+<ProjectName>MutationDriven</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

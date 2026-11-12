@@ -48,9 +48,9 @@ machine DualWriteService {
       change = r.change;
       send db, eCommit, (from = this, epoch = epoch, change = change);
     }
-    on eCrash do { epoch = epoch + 1; }
+    // A crash between requests loses nothing.
     // Replies addressed to the process before a crash.
-    ignore eCommitResult, ePublishAck;
+    ignore eCrash, eCommitResult, ePublishAck;
   }
 
   state Committing {

@@ -52,6 +52,8 @@ machine OldStore {
       send w.client, eOldWritten, (req = w.req, lsn = lsn);
     }
     on eReadRow do (r: (client: machine, key: int)) {
+      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
+      announce eOldRead;
       send r.client, eRow, (key = r.key, row = RowOf(rows, r.key));
     }
   }
@@ -77,6 +79,7 @@ machine NewStore {
   }
 
   fun PutIfNewer(key: int, row: tRow) {
+    // snappea-lint: allow mutation:swap-operator -- versions are unique per write, so an equal version is the same row
     if (row.lsn > RowOf(rows, key).lsn) {
       rows[key] = row;
       announce eNewApplied, (key = key, row = row);

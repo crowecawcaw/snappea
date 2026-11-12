@@ -6,22 +6,25 @@ type tChange = (id: int, value: int);
 
 // From the database, inside the transaction that commits a change.
 event eCommitted: tChange;
-// From the downstream consumer, when it applies a change for the first time, or skips
-// one it already applied.
+// From the broker when it accepts a published change, and from the downstream consumer
+// when it applies one. A change delivered again is not applied again.
+event eDelivered: tChange;
 event eApplied: tChange;
-event eDuplicateIgnored: int;
 
-// Every committed change reaches downstream: applied once, with the committed value,
-// and only if it committed. While a committed change has not been applied the spec is
+// Every committed change reaches downstream: delivered only if it committed, with the
+// committed value, and applied exactly once. While a committed change has not been applied the spec is
 // hot, so a run that ends with one missing fails.
-spec CommittedChangesPublished observes eCommitted, eApplied, eDuplicateIgnored {
+spec CommittedChangesPublished observes eCommitted, eDelivered, eApplied {
   var committed: map[int, int];
+  var delivered: set[int];
   var applied: set[int];
 
   start state CaughtUp {
     on eCommitted do (c: tChange) { Commit(c); goto CommittedNotPublished; }
-    on eApplied do (c: tChange) { Apply(c); }
-    on eDuplicateIgnored do (id: int) { Duplicate(id); }
+    on eApplied do (c: tChange) {
+      assert false, format("downstream applied change {0} = {1}, but every committed change was already applied", c.id, c.value);
+    }
+    on eDelivered do (c: tChange) { Deliver(c); }
   }
 
   hot state CommittedNotPublished {
@@ -30,7 +33,7 @@ spec CommittedChangesPublished observes eCommitted, eApplied, eDuplicateIgnored 
       Apply(c);
       if (sizeof(applied) == sizeof(committed)) { goto CaughtUp; }
     }
-    on eDuplicateIgnored do (id: int) { Duplicate(id); }
+    on eDelivered do (c: tChange) { Deliver(c); }
   }
 
   fun Commit(c: tChange) {
@@ -38,16 +41,19 @@ spec CommittedChangesPublished observes eCommitted, eApplied, eDuplicateIgnored 
     committed[c.id] = c.value;
   }
 
+  fun Deliver(c: tChange) {
+    assert c.id in committed, format("change {0} was published, but it never committed", c.id);
+    assert c.value == committed[c.id],
+      format("change {0} was published with value {1}, but {2} committed", c.id, c.value, committed[c.id]);
+    delivered += (c.id);
+  }
+
   fun Apply(c: tChange) {
-    assert c.id in committed, format("downstream applied change {0}, which never committed", c.id);
+    assert c.id in delivered, format("downstream applied change {0} before the broker delivered it", c.id);
     assert c.value == committed[c.id],
       format("downstream applied change {0} with value {1}, but {2} committed", c.id, c.value, committed[c.id]);
     assert !(c.id in applied), format("downstream applied change {0} twice", c.id);
     applied += (c.id);
-  }
-
-  fun Duplicate(id: int) {
-    assert id in applied, format("downstream skipped change {0} as a duplicate before applying it", id);
   }
 }
 
@@ -104,5 +110,18 @@ spec UpdatesAnswered observes eUpdatesPlanned, eUpdateRequested, eUpdateAnswered
     on eUpdateRequested do { assert false, "update requested beyond the plan"; }
     on eUpdateAnswered do { assert false, "update answered beyond the plan"; }
     ignore eCommitted;
+  }
+}
+
+// Without a relay crash, the outbox delivers each change once: the relay marks what the
+// broker accepted. Asserted only in tests where the relay cannot crash; at-least-once
+// delivery after a crash is expected and handled by the consumer.
+spec DeliveredOnceWithoutRelayCrash observes eDelivered {
+  var delivered: set[int];
+  start state Watching {
+    on eDelivered do (c: tChange) {
+      assert !(c.id in delivered), format("change {0} = {1} delivered twice although the relay never crashed", c.id, c.value);
+      delivered += (c.id);
+    }
   }
 }

@@ -120,12 +120,16 @@ spec BreakerContract observes eBreakerPlanned, eDispatched, eShortCircuited, eDe
   }
 
   fun ResultSeen(call: int, ok: bool) {
+    var late: bool;
     NoPendingChange();
     assert call in sentIn, format("result for call {0} that was never sent", call);
     assert call in answers && answers[call] == ok,
       format("breaker saw result {0} for call {1}, which the dependency did not give", ok, call);
-    if (sentIn[call] != period) {
-      // Late: sent before the last transition. It answers its caller and nothing else.
+    late = sentIn[call] != period;
+    sentIn -= (call);
+    answers -= (call);
+    if (late) {
+      // Sent before the last transition. It answers its caller and nothing else.
       return;
     }
     if (mode == Closed) {

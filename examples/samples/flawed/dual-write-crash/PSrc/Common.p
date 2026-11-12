@@ -22,10 +22,9 @@ machine EventStream {
 
   start state Accepting {
     on ePublish do (p: (from: machine, epoch: int, change: tChange)) {
+      announce eDelivered, p.change;
       send p.from, ePublishAck, (epoch = p.epoch, id = p.change.id);
-      if (p.change.id in seen) {
-        announce eDuplicateIgnored, p.change.id;
-      } else {
+      if (!(p.change.id in seen)) {
         seen += (p.change.id);
         announce eApplied, p.change;
       }

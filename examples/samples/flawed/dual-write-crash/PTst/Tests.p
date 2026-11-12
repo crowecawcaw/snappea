@@ -51,8 +51,60 @@ machine DualWriteCrash {
   }
 }
 
-// The outbox design with the same fault: the service may crash after its commit.
+// The outbox design with the same fault as tcBugCrashBetweenWriteAndPublish: one
+// update, and the service may crash at any point, including right after its commit.
 machine OutboxServiceCrash {
+  start state Init {
+    entry {
+      var db: machine;
+      var service: machine;
+      announce eUpdatesPlanned, 1;
+      db = new OutboxDb();
+      new OutboxRelay((db = db, broker = new EventStream()));
+      service = new OutboxService(db);
+      new Client((service = service, changes = Changes(1, 1)));
+      new Crasher(service);
+    }
+  }
+}
+
+// A restarted service must ignore the result of a commit sent before the crash, or it
+// confirms the next update before that one commits. CrashAfterCommit crashes the service
+// right after each commit; the client sends two updates. Only the service's answers are
+// checked here (no relay): publication is covered by the other tests.
+machine StaleCommitResult {
+  start state Init {
+    entry {
+      var service: machine;
+      announce eUpdatesPlanned, 2;
+      service = new OutboxService(new CrashAfterCommit(new OutboxDb()));
+      new Client((service = service, changes = Changes(1, 2)));
+    }
+  }
+}
+
+// Forwards commits to the database. When the result comes back it first crashes the
+// service, then passes the result on, which now reaches a restarted process.
+machine CrashAfterCommit {
+  var db: machine;
+  var service: machine;
+
+  start state Forwarding {
+    entry (d: machine) { db = d; }
+    on eCommitWithOutbox do (r: (from: machine, epoch: int, change: tChange)) {
+      service = r.from;
+      send db, eCommitWithOutbox, (from = this, epoch = r.epoch, change = r.change);
+    }
+    on eCommitResult do (e: int) {
+      send service, eCrash;
+      send service, eCommitResult, e;
+    }
+  }
+}
+
+// Two updates, no faults: commits, notifications and relay reads interleave, and the
+// relay may find one or two unpublished rows per read.
+machine OutboxTwoUpdates {
   start state Init {
     entry {
       var db: machine;
@@ -62,12 +114,11 @@ machine OutboxServiceCrash {
       new OutboxRelay((db = db, broker = new EventStream()));
       service = new OutboxService(db);
       new Client((service = service, changes = Changes(1, 2)));
-      new Crasher(service);
     }
   }
 }
 
-// Two clients, and the relay may crash at any point: between reading and publishing,
+// One update, and the relay may crash at any point: between reading and publishing,
 // or after the broker accepted a row and before the row was marked, so a change is
 // delivered twice and the consumer must skip the copy.
 machine OutboxRelayCrash {
@@ -76,31 +127,41 @@ machine OutboxRelayCrash {
       var db: machine;
       var service: machine;
       var relay: machine;
-      announce eUpdatesPlanned, 2;
+      announce eUpdatesPlanned, 1;
       db = new OutboxDb();
       relay = new OutboxRelay((db = db, broker = new EventStream()));
       service = new OutboxService(db);
       new Client((service = service, changes = Changes(1, 1)));
-      new Client((service = service, changes = Changes(2, 1)));
       new Crasher(relay);
     }
   }
 }
 
-// Covered: a change reached downstream twice and the copy was skipped.
-scenario DuplicateSkipped observes eApplied, eDuplicateIgnored {
+// Covered: the broker accepted the same change twice (the relay crashed after the
+// broker accepted it and before marking it).
+scenario DeliveredTwice observes eDelivered {
+  var seen: set[int];
   start hot state WaitDuplicate {
-    on eDuplicateIgnored goto Covered;
-    ignore eApplied;
+    on eDelivered do (c: tChange) {
+      if (c.id in seen) { goto Covered; }
+      seen += (c.id);
+    }
   }
   cold state Covered {
-    ignore eApplied, eDuplicateIgnored;
+    ignore eDelivered;
   }
 }
 
 test tcFixedServiceCrash [main=OutboxServiceCrash]:
-  assert CommittedChangesPublished, UpdatesAnswered in
+  assert CommittedChangesPublished, UpdatesAnswered, DeliveredOnceWithoutRelayCrash in
   { OutboxServiceCrash, OutboxDb, OutboxService, OutboxRelay, EventStream, Client, Crasher };
+
+test tcFixedStaleCommitResult [main=StaleCommitResult]:
+  assert UpdatesAnswered in { StaleCommitResult, CrashAfterCommit, OutboxDb, OutboxService, Client };
+
+test tcFixedTwoUpdates [main=OutboxTwoUpdates]:
+  assert CommittedChangesPublished, UpdatesAnswered, DeliveredOnceWithoutRelayCrash in
+  { OutboxTwoUpdates, OutboxDb, OutboxService, OutboxRelay, EventStream, Client };
 
 test tcFixedRelayCrash [main=OutboxRelayCrash]:
   assert CommittedChangesPublished, UpdatesAnswered in

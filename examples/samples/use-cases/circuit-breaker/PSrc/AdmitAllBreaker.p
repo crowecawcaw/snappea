@@ -36,6 +36,7 @@ machine AdmitAllBreaker {
       var caller: machine;
       announce eResultSeen, r;
       caller = callers[r.call];
+      callers -= (r.call);
       if (sentIn[r.call] == period) {
         if (mode == Closed) {
           if (r.ok) {
@@ -48,6 +49,7 @@ machine AdmitAllBreaker {
           if (r.ok) { Change(Closed); } else { Change(Open); }
         }
       }
+      sentIn -= (r.call);
       if (r.ok) {
         send caller, eCallResult, (call = r.call, outcome = Succeeded);
       } else {

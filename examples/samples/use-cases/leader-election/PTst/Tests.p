@@ -27,15 +27,21 @@ machine Election {
       waiting = sizeof(e.timeouts);
     }
     // A winner never reports, so this waits forever once someone has won.
-    on eRoundLost do {
+    on eRoundLost do (r: (id: int, term: int)) {
+      announce eLossReported, r;
       waiting = waiting - 1;
       if (waiting == 0) { goto Uncontested; }
     }
   }
 
+  // If the lone candidate still loses (it was behind on terms), it has now learned
+  // the highest term, and so has everyone else: fire one timer alone again.
   state Uncontested {
     entry { Timeout(this, nodes, choose(3)); }
-    ignore eRoundLost;
+    on eRoundLost do (r: (id: int, term: int)) {
+      announce eLossReported, r;
+      goto Uncontested;
+    }
   }
 }
 
@@ -50,9 +56,15 @@ fun Timeout(driver: machine, nodes: seq[machine], i: int) {
   send nodes[i], eTimeout, (peers = peers, driver = driver);
 }
 
+// Starts a node from durable state, telling the specs what that state is.
+fun NewNode(d: tDisk): machine {
+  announce eDisk, d;
+  return new Node(d);
+}
+
 fun ThreeNodes(): seq[machine] {
   var nodes: seq[machine];
-  while (sizeof(nodes) < 3) { nodes += (sizeof(nodes), new Node(sizeof(nodes) + 1)); }
+  while (sizeof(nodes) < 3) { nodes += (sizeof(nodes), NewNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0))); }
   return nodes;
 }
 
@@ -63,31 +75,79 @@ fun Indexes2(a: int, b: int): seq[int] {
   return s;
 }
 
-// The core race: nodes 1 and 2 stand at once and node 3, the deciding voter, crashes
-// and restarts at any point, including between granting one candidate and seeing the
-// other's request. Its persisted vote must keep it from granting twice.
-machine TwoCandidatesVoterCrash {
+// The core race: nodes 1 and 2 stand at once and node 3 decides. Either candidate
+// may see the other's request before its own timer fires and stand in a higher term,
+// so candidates receive higher terms, step down, and get replies from older terms.
+machine TwoCandidates {
   start state Init {
-    entry { new Election((nodes = ThreeNodes(), timeouts = Indexes2(0, 1), crash = 2)); }
+    entry { new Election((nodes = ThreeNodes(), timeouts = Indexes2(0, 1), crash = -1)); }
   }
 }
 
-// Split vote: all three stand in the same round, each votes for itself, nobody wins;
-// the uncontested round must still elect a leader. Requests also cross terms here,
-// so candidates see higher terms and step down.
+// Split vote: node 3 already voted for itself in term 1 (its requests were lost) and
+// nodes 1 and 2 stand in term 1 together. Every term-1 request is refused, nobody wins
+// term 1, both candidates report the loss, and the uncontested round must still elect
+// a leader. Requests also cross terms here, so candidates see higher terms and step down.
 machine SplitVote {
   start state Init {
     entry {
-      var t: seq[int];
-      t = Indexes2(0, 1);
-      t += (2, 2);
-      new Election((nodes = ThreeNodes(), timeouts = t, crash = -1));
+      var nodes: seq[machine];
+      nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
+      nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
+      nodes += (2, NewNode((id = 3, term = 1, votedTerm = 1)));
+      new Election((nodes = nodes, timeouts = Indexes2(0, 1), crash = -1));
     }
   }
 }
 
-// Generated: one or two candidates, chosen from the three, and maybe a crash of a
-// node that is not standing. Sampled.
+// Candidate receives a higher term in a reply: node 3 (and in some runs node 2)
+// restarts from disk at term 5, so its answer to node 1's term-1 request carries
+// term 5. Node 1 must step down, or, if node 2's grant came first, it already leads
+// term 1. When both answers carry term 5 node 1 loses, and its next candidacy must
+// be above term 5.
+machine HigherTermReply {
+  start state Init {
+    entry {
+      var nodes: seq[machine];
+      var t: seq[int];
+      var term2: int;
+      if ($) { term2 = 5; }
+      nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
+      nodes += (1, NewNode((id = 2, term = term2, votedTerm = 0)));
+      nodes += (2, NewNode((id = 3, term = 5, votedTerm = 0)));
+      t += (0, 0);
+      new Election((nodes = nodes, timeouts = t, crash = -1));
+    }
+  }
+}
+
+// A peer that is down for good: requests to it are never answered.
+machine Unreachable {
+  start state Down {
+    ignore eVoteReq;
+  }
+}
+
+// Majority with one node down: node 1 stands with node 2 up and node 3 unreachable.
+// Its own vote plus node 2's is a majority, so it must win without node 3.
+machine OneNodeDown {
+  start state Init {
+    entry {
+      var nodes: seq[machine];
+      nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
+      nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
+      nodes += (2, new Unreachable());
+      announce eElectionsStarted;
+      Timeout(this, nodes, 0);
+    }
+    ignore eRoundLost;
+  }
+}
+
+// Generated: one or two candidates, chosen from the three, and maybe a crash and
+// restart of a node that is not standing, at any moment: between granting one
+// candidate and seeing the other's request, its persisted vote must keep it from
+// granting twice. Sampled.
 machine GeneratedElection {
   start state Init {
     entry {
@@ -126,33 +186,47 @@ machine StaleVoteReply {
   }
 }
 
+// The negative control's race: node 3 crashes and restarts at a moment the scheduler
+// picks while nodes 1 and 2 stand.
 machine BuggyTwoCandidatesVoterCrash {
   start state Init {
     entry {
       var nodes: seq[machine];
-      while (sizeof(nodes) < 3) { nodes += (sizeof(nodes), new ForgetfulNode(sizeof(nodes) + 1)); }
+      while (sizeof(nodes) < 3) {
+        announce eDisk, (id = sizeof(nodes) + 1, term = 0, votedTerm = 0);
+        nodes += (sizeof(nodes), new ForgetfulNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0)));
+      }
       new Election((nodes = nodes, timeouts = Indexes2(0, 1), crash = 2));
     }
   }
 }
 
-test tcTwoCandidatesVoterCrash [main=TwoCandidatesVoterCrash]:
-  assert OneLeaderPerTerm, SomeLeaderElected in
-  { TwoCandidatesVoterCrash, Election, Node };
+test tcTwoCandidates [main=TwoCandidates]:
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
+  { TwoCandidates, Election, Node };
 
 test tcSplitVote [main=SplitVote]:
-  assert OneLeaderPerTerm, SomeLeaderElected in
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { SplitVote, Election, Node };
 
+test tcHigherTermReply [main=HigherTermReply]:
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
+  { HigherTermReply, Election, Node };
+
+// Node 3 never answers, so CandidaciesConclude does not apply.
+test tcOneNodeDown [main=OneNodeDown]:
+  assert ElectionSafety, SomeLeaderElected in
+  { OneNodeDown, Unreachable, Node };
+
 test tcGeneratedElection [main=GeneratedElection]:
-  assert OneLeaderPerTerm, SomeLeaderElected in
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { GeneratedElection, Election, Node };
 
 test tcStaleVoteReply [main=StaleVoteReply]:
-  assert OneLeaderPerTerm, SomeLeaderElected in
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { StaleVoteReply, Node };
 
 // expect-bug: voted twice in term
 test tcBugVoteNotPersisted [main=BuggyTwoCandidatesVoterCrash]:
-  assert OneLeaderPerTerm, SomeLeaderElected in
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { BuggyTwoCandidatesVoterCrash, Election, ForgetfulNode };

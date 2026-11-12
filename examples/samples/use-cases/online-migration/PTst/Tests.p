@@ -26,14 +26,16 @@ fun MigrateVia(owner: machine, oldStore: OldStore, router: machine, newStore: ma
 fun Plan(plan: tPlan) {
   var ops: seq[tOp];
   var op: tOp;
-  var r: tReads;
   var writes: int;
-  var reads: int;
+  var i: int;
   foreach (ops in plan.writers) { writes = writes + sizeof(ops); }
-  foreach (r in plan.readers) { reads = reads + r.reads; }
-  announce eMigrationPlanned, (writes = writes, reads = reads);
+  announce eMigrationPlanned, (writes = writes, seed = plan.seed);
   foreach (ops in plan.writers) {
     foreach (op in ops) { announce eWriteRequested, op; }
+  }
+  while (i < sizeof(plan.readers)) {
+    announce eReadsPlanned, (reader = i + 1, key = plan.readers[i].key, reads = plan.readers[i].reads);
+    i = i + 1;
   }
 }
 
@@ -162,7 +164,8 @@ machine GeneratedMigration {
         }
         i = i + 1;
       }
-      plan.readers += (0, (key = 1, reads = 2));
+      // Key 3 was never written: reading it must find nothing, before and after cutover.
+      plan.readers += (0, (key = choose(3) + 1, reads = 2));
       Migrate(this, new NewStore(), plan);
     }
     ignore eMigrationDone;
@@ -226,17 +229,17 @@ test tcGeneratedMigration [main=GeneratedMigration]:
   assert MigrationSafety, MigrationCompletes in
   { GeneratedMigration, OldStore, NewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: at cutover key 1 reads 10 from new but 20 from old
+// expect-bug: new store lost
 test tcBugBlindBackfill [main=BugBlindBackfill]:
   assert MigrationSafety, MigrationCompletes in
   { BugBlindBackfill, OldStore, BlindCopyNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: at cutover key 1 reads 10 from new but -1 from old
+// expect-bug: new store lost
 test tcBugResurrectedDelete [main=BugResurrectedDelete]:
   assert MigrationSafety, MigrationCompletes in
   { BugResurrectedDelete, OldStore, InsertIfAbsentNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: at cutover key 1 reads 10 from new but 20 from old
+// expect-bug: old store served a read after cutover
 test tcBugCutoverWithoutDrain [main=BugCutoverWithoutDrain]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverWithoutDrain, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
