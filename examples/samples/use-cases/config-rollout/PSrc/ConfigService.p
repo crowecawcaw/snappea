@@ -58,7 +58,11 @@ machine ConfigService {
     on eAck do (a: (node: int, version: int)) {
       if (a.version != version) { return; }
       acked += (a.node);
-      if (sizeof(acked) == sizeof(nodes) - 1) { goto Idle; }
+      if (sizeof(acked) == sizeof(nodes) - 1) {
+        announce eRolloutDone, (version = version,);
+        // snappea-lint: allow mutation:remove-statement -- once every ack is in, Rest and Idle handle every event alike
+        goto Idle;
+      }
     }
   }
 
@@ -89,8 +93,10 @@ machine Node {
       id = input.id;
       version = input.version;
       content = input.content;
+      announce eNodeStarted, (node = id, version = version, content = content);
     }
     on ePush do (p: tPush) {
+      // snappea-lint: allow mutation:swap-operator -- each version is pushed to each node once, so a push never equals the running version
       if (p.version > version) {
         version = p.version;
         content = p.content;

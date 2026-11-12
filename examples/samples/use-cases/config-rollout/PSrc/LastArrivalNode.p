@@ -11,6 +11,7 @@ machine LastArrivalNode {
       id = input.id;
       version = input.version;
       content = input.content;
+      announce eNodeStarted, (node = id, version = version, content = content);
     }
     on ePush do (p: tPush) {
       // BUG: no comparison with the version already running.

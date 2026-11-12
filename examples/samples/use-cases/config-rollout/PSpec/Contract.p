@@ -15,13 +15,22 @@ event eIssued: (version: int, content: int);
 event ePushSent: (node: int, version: int);
 // Node: applied `version` with `content`.
 event eApplied: (node: int, version: int, content: int);
+// Node: started, running `version` with `content`.
+event eNodeStarted: (node: int, version: int, content: int);
+// Service: every node acknowledged `version`; the rollout is complete.
+event eRolloutDone: (version: int);
 
 // Safety: a node applies only versions newer than what it runs, with the content that
 // version was issued with; the service pushes only the latest issued version (after a
 // rollback nothing pushes the bad version again), and pushes a version beyond the
-// canary only after the canary applied it.
-spec RolloutSafety observes eRolloutPlanned, eIssued, ePushSent, eApplied {
+// canary only after the canary applied it. A node applies only what was pushed to it,
+// and the service declares a rollout done only when every node runs that version.
+spec RolloutSafety observes eRolloutPlanned, eNodeStarted, eIssued, ePushSent, eApplied, eRolloutDone {
   var running: map[int, int];
+  var initial: (version: int, content: int);
+  // (node, version) pairs pushed
+  var pushed: set[(node: int, version: int)];
+  var started: set[int];
   // version -> content it was issued with
   var issued: map[int, int];
   var latest: int;
@@ -36,15 +45,33 @@ spec RolloutSafety observes eRolloutPlanned, eIssued, ePushSent, eApplied {
       }
       issued[p.version] = p.content;
       latest = p.version;
+      initial = (version = p.version, content = p.content);
       goto Watching;
     }
+    on eNodeStarted do { assert false, "node started before the rollout was planned"; }
     on eIssued do { assert false, "version issued before the rollout was planned"; }
     on ePushSent do { assert false, "push before the rollout was planned"; }
     on eApplied do { assert false, "apply before the rollout was planned"; }
+    on eRolloutDone do { assert false, "rollout done before it was planned"; }
   }
 
   state Watching {
     on eRolloutPlanned do { assert false, "rollout planned twice"; }
+    on eNodeStarted do (n: (node: int, version: int, content: int)) {
+      assert n.node in running, format("unknown node {0} started", n.node);
+      assert n.version == initial.version && n.content == initial.content,
+        format("node {0} started with version {1} content {2}, the plan says version {3} content {4}",
+               n.node, n.version, n.content, initial.version, initial.content);
+      started += (n.node);
+    }
+    on eRolloutDone do (d: (version: int)) {
+      var n: int;
+      assert d.version == latest, format("rollout of version {0} declared done, but {1} superseded it", d.version, latest);
+      foreach (n in keys(running)) {
+        assert running[n] >= d.version,
+          format("rollout of version {0} declared done while node {1} runs version {2}", d.version, n, running[n]);
+      }
+    }
     on eIssued do (i: (version: int, content: int)) {
       assert i.version > latest, format("version {0} issued after version {1}", i.version, latest);
       issued[i.version] = i.content;
@@ -56,9 +83,13 @@ spec RolloutSafety observes eRolloutPlanned, eIssued, ePushSent, eApplied {
         format("pushed version {0} to node {1}, but version {2} superseded it", p.version, p.node, latest);
       assert p.node == 0 || running[0] >= p.version,
         format("pushed version {0} to node {1} before the canary applied it", p.version, p.node);
+      pushed += ((node = p.node, version = p.version));
     }
     on eApplied do (a: (node: int, version: int, content: int)) {
       assert a.node in running, format("unknown node {0} applied a version", a.node);
+      assert a.node in started, format("node {0} applied a version before it reported starting", a.node);
+      assert (node = a.node, version = a.version) in pushed,
+        format("node {0} applied version {1}, which was never pushed to it", a.node, a.version);
       assert a.version > running[a.node],
         format("node {0} applied version {1} after version {2}", a.node, a.version, running[a.node]);
       assert a.version in issued && issued[a.version] == a.content,
@@ -69,13 +100,14 @@ spec RolloutSafety observes eRolloutPlanned, eIssued, ePushSent, eApplied {
 }
 
 // Progress: once the operator has issued every planned version, every node
-// eventually runs the latest one.
-spec RolloutCompletes observes eRolloutPlanned, eIssued, eApplied {
+// eventually runs the latest one, and the service declares that rollout done.
+spec RolloutCompletes observes eRolloutPlanned, eIssued, eApplied, eRolloutDone {
   var nodes: int;
   var issuesLeft: int;
   var latest: int;
   // nodes running `latest`
   var current: set[int];
+  var done: bool;
 
   start state Init {
     // snappea-lint: allow unused-payload-field -- RolloutSafety checks contents
@@ -88,6 +120,7 @@ spec RolloutCompletes observes eRolloutPlanned, eIssued, eApplied {
     }
     on eIssued do { assert false, "version issued before the rollout was planned"; }
     on eApplied do { assert false, "apply before the rollout was planned"; }
+    on eRolloutDone do { assert false, "rollout done before it was planned"; }
   }
 
   hot state Rolling {
@@ -98,11 +131,17 @@ spec RolloutCompletes observes eRolloutPlanned, eIssued, eApplied {
       issuesLeft = issuesLeft - 1;
       latest = i.version;
       current = default(set[int]);
+      done = false;
+    }
+    on eRolloutDone do (d: (version: int)) {
+      assert d.version == latest, format("rollout of superseded version {0} declared done", d.version);
+      done = true;
+      Check();
     }
     // snappea-lint: allow unused-payload-field -- RolloutSafety checks contents
     on eApplied do (a: (node: int, version: int, content: int)) {
       if (a.version == latest) { current += (a.node); }
-      if (issuesLeft == 0 && sizeof(current) == nodes) { goto Converged; }
+      Check();
     }
   }
 
@@ -110,5 +149,14 @@ spec RolloutCompletes observes eRolloutPlanned, eIssued, eApplied {
     on eRolloutPlanned do { assert false, "rollout planned twice"; }
     on eIssued do { assert false, "version issued after the rollout converged"; }
     on eApplied do { assert false, "a node applied a version after every node ran the latest"; }
+    on eRolloutDone do { assert false, "rollout declared done twice"; }
+  }
+
+  fun Check() {
+    if (issuesLeft == 0 && done) {
+      assert sizeof(current) == nodes,
+        format("rollout declared done with {0} of {1} nodes on version {2}", sizeof(current), nodes, latest);
+      goto Converged;
+    }
   }
 }

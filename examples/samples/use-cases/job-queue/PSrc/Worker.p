@@ -54,13 +54,17 @@ machine Worker {
   }
 
   state Acking {
-    entry { send queue, eAck, (worker = this, job = job, receipt = receipt); }
+    entry {
+      announce eAckSent, (job = job, receipt = receipt);
+      send queue, eAck, (worker = this, job = job, receipt = receipt);
+    }
     // A rejected ack means the job was redelivered: whoever holds it now will ack it.
     on eAckResp goto Receiving;
     on eCrash goto Crashed;
   }
 
   state Stopped {
+    entry { announce eWorkerStopped, (worker = this,); }
     ignore eCrash;
   }
 

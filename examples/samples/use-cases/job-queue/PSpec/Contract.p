@@ -78,29 +78,80 @@ spec ReceiptsFence observes eEnqueued, eDelivered, eVisibilityExpired, eAcked, e
   }
 }
 
+// A worker sent an ack for this delivery.
+event eAckSent: (job: int, receipt: int);
+// Driver: how many workers it will start, announced before anything else.
+event eWorkersPlanned: int;
+// Driver: a worker started; the failure injector crashed one.
+event eWorkerStarted: (worker: machine);
+event eWorkerCrashed: (worker: machine);
+// A worker saw that every job is completed and stopped polling.
+event eWorkerStopped: (worker: machine);
+
 // Progress: every enqueued job is eventually completed (acked), given at most one
 // worker crash and a bounded number of early visibility timeouts (the driver's
-// budget), with at least one worker that keeps running.
-spec JobsComplete observes eEnqueued, eAcked {
+// budget), with at least one worker that keeps running. Also:
+// Every ack a worker sends is answered: accepted or rejected. Every started worker
+// that does not crash stops once all jobs are complete.
+spec JobsComplete observes eWorkersPlanned, eEnqueued, eAcked, eAckSent, eAckRejected, eWorkerStarted,
+    eWorkerCrashed, eWorkerStopped {
   var pending: set[int];
+  // receipts of acks sent and not yet answered
+  var acks: set[int];
+  // workers still expected to stop
+  var running: set[machine];
+  // workers planned but not started yet
+  var toStart: int;
 
   start state Idle {
-    on eEnqueued do (e: (job: int)) { Enqueue(e.job); }
-    on eAcked do { assert false, "job acked with nothing enqueued"; }
+    on eWorkersPlanned do (n: int) {
+      assert n > 0, "planned no workers";
+      toStart = n;
+      goto Busy;
+    }
+    on eEnqueued do { assert false, "job enqueued before the run was planned"; }
+    on eAcked do { assert false, "job acked outside a run"; }
+    on eAckSent do { assert false, "ack sent outside a run"; }
+    on eAckRejected do { assert false, "ack rejected outside a run"; }
+    on eWorkerStarted do { assert false, "worker started outside a run"; }
+    // The injector may crash a worker after it already stopped; nothing is owed.
+    ignore eWorkerCrashed;
+    on eWorkerStopped do { assert false, "worker stopped outside a run"; }
   }
 
   hot state Busy {
-    on eEnqueued do (e: (job: int)) { Enqueue(e.job); }
-    // snappea-lint: allow unused-payload-field -- this spec only tracks jobs; ReceiptsFence checks receipts
+    on eWorkersPlanned do { assert false, "run planned twice"; }
+    on eEnqueued do (e: (job: int)) { pending += (e.job); }
+    on eAckSent do (a: (job: int, receipt: int)) {
+      assert !(a.receipt in acks), format("receipt {0} of job {1} acked twice", a.receipt, a.job);
+      acks += (a.receipt);
+    }
     on eAcked do (a: (job: int, receipt: int)) {
       assert a.job in pending, format("job {0} completed twice or never enqueued", a.job);
       pending -= (a.job);
-      if (sizeof(pending) == 0) { goto Idle; }
+      Answered(a.receipt);
+    }
+    // snappea-lint: allow unused-payload-field -- ReceiptsFence checks that the rejection names the right job
+    on eAckRejected do (a: (job: int, receipt: int)) { Answered(a.receipt); }
+    on eWorkerStarted do (w: (worker: machine)) {
+      running += (w.worker);
+      toStart = toStart - 1;
+    }
+    on eWorkerCrashed do (w: (worker: machine)) { running -= (w.worker); Settle(); }
+    on eWorkerStopped do (w: (worker: machine)) {
+      assert sizeof(pending) == 0, format("a worker stopped while {0} jobs were not completed", sizeof(pending));
+      running -= (w.worker);
+      Settle();
     }
   }
 
-  fun Enqueue(job: int) {
-    pending += (job);
-    goto Busy;
+  fun Answered(receipt: int) {
+    assert receipt in acks, format("ack with receipt {0} answered but never sent", receipt);
+    acks -= (receipt);
+    Settle();
+  }
+
+  fun Settle() {
+    if (toStart == 0 && sizeof(pending) == 0 && sizeof(acks) == 0 && sizeof(running) == 0) { goto Idle; }
   }
 }

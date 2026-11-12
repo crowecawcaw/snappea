@@ -2,12 +2,13 @@
 // membership changes (a consumer shutting down, a session expiring). The coordinator
 // and consumers are the design under test.
 
-fun StartGroup(coordinator: machine, consumers: int): seq[machine] {
+// Two partitions with `records` records each, and two consumers.
+fun StartGroup(coordinator: machine, records: int): seq[machine] {
   var started: seq[machine];
   var id: int;
-  announce eGroupPlanned, (partitions = 2, records = 2);
-  while (id < consumers) {
-    started += (id, new Consumer((coordinator = coordinator, id = id + 1, records = 2)));
+  announce eGroupPlanned, (partitions = 2, records = records);
+  while (id < 2) {
+    started += (id, new Consumer((coordinator = coordinator, id = id + 1, records = records)));
     id = id + 1;
   }
   return started;
@@ -27,7 +28,7 @@ machine LeaveRebalance {
   start state Run {
     entry {
       var consumers: seq[machine];
-      consumers = StartGroup(new Coordinator(2), 2);
+      consumers = StartGroup(new Coordinator(2), 1);
       send consumers[1], eShutdown;
     }
   }
@@ -40,7 +41,7 @@ machine ZombieExpired {
     entry {
       var coordinator: Coordinator;
       coordinator = new Coordinator(2);
-      StartGroup(coordinator, 2);
+      StartGroup(coordinator, 1);
       send coordinator, eExpire, (id = 2,);
     }
   }

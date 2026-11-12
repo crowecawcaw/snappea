@@ -59,18 +59,27 @@ spec TokenSafety observes eLoggedIn, eTokenStolen, eRotated, eFamilyRevoked, eTo
 
 // Progress: every tab that needs a fresh access token eventually gets one. The only
 // excuses are a lost response (see README.md) and a revoked family: then the tab
-// gives the session up, and the user logs in again. The driver announces each tab and how many times its
+// gives the session up, and the user logs in again.
+// Single flight: a token is refreshed only if a tab still waiting holds it as its
+// expired token. A tab that refreshes although another tab already stored a newer
+// token wastes a rotation (and, with a slower lock, races into reuse detection). The driver announces each tab and how many times its
 // token will expire.
 event eTabPlanned: (tab: int, rounds: int);
 
-spec TabsServed observes eTabPlanned, eTokenObtained, eSessionLost, eResponseLost, eFamilyRevoked {
+spec TabsServed observes eLoggedIn, eTabPlanned, eTokenObtained, eSessionLost, eResponseLost, eFamilyRevoked,
+    eRotated {
   // tab -> rounds still waiting for a token
   var waiting: map[int, int];
+  // tab -> the token it holds (expired while it is waiting)
+  var held: map[int, int];
+  var login: int;
   // a response was lost, or the family revoked
   var excuse: bool;
 
   start state Idle {
+    on eLoggedIn do (t: int) { login = t; }
     on eTabPlanned do (p: (tab: int, rounds: int)) { Plan(p.tab, p.rounds); }
+    on eRotated do { assert false, "refresh while no tab needs a token"; }
     on eTokenObtained do { assert false, "token obtained by a tab that needs none"; }
     on eSessionLost do { assert false, "session given up by a tab that needs no token"; }
     on eResponseLost do { assert false, "refresh while no tab needs a token"; }
@@ -80,11 +89,12 @@ spec TabsServed observes eTabPlanned, eTokenObtained, eSessionLost, eResponseLos
   }
 
   hot state Busy {
+    on eLoggedIn do { assert false, "logged in twice"; }
     on eTabPlanned do (p: (tab: int, rounds: int)) { Plan(p.tab, p.rounds); }
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks the token; this spec counts rounds
     on eTokenObtained do (p: (tab: int, token: int)) {
       assert p.tab in waiting && waiting[p.tab] > 0, format("tab {0} got a token it did not need", p.tab);
       waiting[p.tab] = waiting[p.tab] - 1;
+      held[p.tab] = p.token;
       Check();
     }
     on eSessionLost do (p: (tab: int)) {
@@ -94,6 +104,15 @@ spec TabsServed observes eTabPlanned, eTokenObtained, eSessionLost, eResponseLos
       Check();
     }
     on eResponseLost do { excuse = true; }
+    // snappea-lint: allow unused-payload-field -- TokenSafety checks the new token
+    on eRotated do (p: (from: int, next: int)) {
+      var tab: int;
+      var justified: bool;
+      foreach (tab in keys(waiting)) {
+        if (waiting[tab] > 0 && held[tab] == p.from) { justified = true; }
+      }
+      assert justified, format("token {0} was refreshed, but no waiting tab held it: a tab ignored the newer stored token", p.from);
+    }
     // snappea-lint: allow unused-payload-field -- TokenSafety checks which token caused it
     on eFamilyRevoked do (p: (refresh: int)) { excuse = true; }
   }
@@ -101,6 +120,7 @@ spec TabsServed observes eTabPlanned, eTokenObtained, eSessionLost, eResponseLos
   fun Plan(tab: int, rounds: int) {
     assert !(tab in waiting) && rounds > 0, format("tab {0} planned twice or with no work", tab);
     waiting[tab] = rounds;
+    held[tab] = login;
     goto Busy;
   }
 

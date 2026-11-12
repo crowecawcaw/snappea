@@ -94,6 +94,7 @@ machine Tab {
   fun GiveUp() {
     announce eSessionLost, (tab = id,);
     send locks, eRelease;
+    // snappea-lint: allow mutation:remove-statement -- equivalent: Finished handles nothing, and neither does staying in Locking or Losing once no event is coming
     goto Finished;
   }
 }

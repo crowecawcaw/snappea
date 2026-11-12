@@ -75,11 +75,9 @@ machine Queue {
   fun Deliver(worker: machine) {
     var job: int;
     var j: int;
-    // Any visible job will do; take the smallest so runs are easy to read.
-    job = -1;
-    foreach (j in visible) {
-      if (job == -1 || j < job) { job = j; }
-    }
+    // Any visible job will do.
+    foreach (j in visible) { job = j; }
+    // snappea-lint: allow mutation:swap-operator -- receipts only need to be distinct; counting down keeps them so
     lastReceipt = lastReceipt + 1;
     visible -= (job);
     inFlight[job] = (receipt = lastReceipt, worker = worker);

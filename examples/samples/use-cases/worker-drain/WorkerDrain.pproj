@@ -1,0 +1,9 @@
+<!-- Autoscaler scale-in behind a load balancer: deregister, drain, terminate. See README.md. -->
+<Project>
+<ProjectName>WorkerDrain</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
