@@ -219,7 +219,7 @@ sibling declarations or statements. Multiple rule IDs are comma-separated:
 The same comment excludes code from `snappea check`'s mutation testing:
 `allow mutation` for every mutant of the following code, or `allow mutation:<kind>`
 (`remove-statement`, `condition-true`, `condition-false`, `swap-operator`, `remove-not`,
-`flip-boolean`) for one kind. See
+`flip-boolean`, `empty-body`) for one kind. See
 [mutation testing](checking-models.md#suppressing-a-mutant).
 
 `allow coverage` accepts deliberate missing statement, handler, or branch coverage in

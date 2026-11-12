@@ -51,6 +51,10 @@ pub struct CheckerOptions {
     pub replay_bound_at_end: bool,
     /// See [`Config::max_work_per_step`](crate::checker::runtime::Config::max_work_per_step).
     pub max_work_per_step: u64,
+    /// See [`Config::max_machines`](crate::checker::runtime::Config::max_machines).
+    pub max_machines: usize,
+    /// See [`Config::max_inbox`](crate::checker::runtime::Config::max_inbox).
+    pub max_inbox: usize,
     /// Write `--test-method:<name>` into the reproducible trace (upstream does so only when
     /// a test case was named with `--testcase`).
     pub record_test_name: bool,
@@ -104,6 +108,8 @@ impl Default for CheckerOptions {
             replay: None,
             replay_bound_at_end: false,
             max_work_per_step: crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP,
+            max_machines: 0,
+            max_inbox: 0,
             record_test_name: true,
             verbose: false,
             log_every_schedule: false,
@@ -145,6 +151,12 @@ pub struct TestReport {
     pub timelines: BTreeSet<u128>,
     /// Scenario coverage, per scenario (in attachment order).
     pub scenarios: Vec<ScenarioCoverage>,
+    /// Most work (see [`CheckerOptions::max_work_per_step`]) one step of any schedule did.
+    pub max_step_work: u64,
+    /// Most machines one schedule created.
+    pub max_machines: usize,
+    /// Most events queued for one machine at once.
+    pub max_inbox: usize,
 }
 
 /// Coverage of one scenario monitor across a run (`TestReport.Scenario*`).
@@ -190,6 +202,9 @@ impl TestReport {
         self.max_fair_steps_hit_in_fair += other.max_fair_steps_hit_in_fair;
         self.max_unfair_steps_hit_in_fair += other.max_unfair_steps_hit_in_fair;
         self.max_unfair_steps_hit_in_unfair += other.max_unfair_steps_hit_in_unfair;
+        self.max_step_work = self.max_step_work.max(other.max_step_work);
+        self.max_machines = self.max_machines.max(other.max_machines);
+        self.max_inbox = self.max_inbox.max(other.max_inbox);
         self.timelines.extend(other.timelines);
         for s in other.scenarios {
             let cov = self.scenario(&s.name);
@@ -347,6 +362,10 @@ pub trait Output {
     /// and its steps. Mutation testing uses it to spot a change that keeps every schedule
     /// running.
     fn schedule_bounded(&mut self, _hit: bool, _steps: usize) {}
+    /// Schedule `schedule` (numbered as for [`Output::schedule_finished`]) reached
+    /// coverage no earlier schedule of its worker did. `snappea check` uses it to stop a
+    /// test case whose coverage stopped growing.
+    fn schedule_novel(&mut self, _schedule: usize) {}
     /// Polled before every schedule; returning true stops exploration (timeouts).
     fn cancelled(&mut self) -> bool {
         false
@@ -842,16 +861,23 @@ impl<'p> Checker<'p> {
         } else {
             &self.code
         };
-        let guidance_probes = guided.then(|| {
+        // what counts as new coverage: not whether a mutant's change would change a value,
+        // and, guided, not conditions (`with_condition_guidance` counts their edges)
+        let guidance_probes = {
             use crate::checker::bytecode::ProbeKind;
-            let mut mask = crate::checker::coverage::ProbeSet::default();
-            for (id, probe) in code.probes.iter().enumerate() {
-                if !matches!(probe.kind, ProbeKind::ConditionTrue | ProbeKind::ConditionFalse) {
-                    mask.insert(id as u32);
+            let skip = |k: ProbeKind| {
+                k == ProbeKind::Changes || (guided && matches!(k, ProbeKind::ConditionTrue | ProbeKind::ConditionFalse))
+            };
+            (guided || code.probes.iter().any(|p| skip(p.kind))).then(|| {
+                let mut mask = crate::checker::coverage::ProbeSet::default();
+                for (id, probe) in code.probes.iter().enumerate() {
+                    if !skip(probe.kind) {
+                        mask.insert(id as u32);
+                    }
                 }
-            }
-            Rc::new(mask)
-        });
+                Rc::new(mask)
+            })
+        };
         let coverage_tables = (opts.activity_coverage || guided).then(|| self.coverage_tables());
         let mut verbose_json = (opts.verbose && opts.json_trace && !is_replay).then(Vec::new);
         let mut depth_bound_hits = 0usize;
@@ -914,6 +940,9 @@ impl<'p> Checker<'p> {
                 let new_coverage =
                     rt.coverage.as_ref().map_or(0, |c| c.feature_count()).saturating_sub(previous_coverage);
                 rt.strategy.observe_progress(new_coverage, rt.bug.as_deref());
+                if new_coverage > 0 && !is_replay {
+                    out.borrow_mut().schedule_novel(schedule);
+                }
                 if rt.strategy.wants_feedback() {
                     let tokens = rt.timeline.tokens();
                     let timeline = tokens.join(";");
@@ -987,6 +1016,9 @@ impl<'p> Checker<'p> {
                     ));
                 }
                 let r = &mut result.report;
+                r.max_step_work = r.max_step_work.max(rt.peak_step_work.max(rt.step_work));
+                r.max_machines = r.max_machines.max(rt.machines.len());
+                r.max_inbox = r.max_inbox.max(rt.peak_inbox);
                 if let Some(b) = &rt.bug {
                     r.num_bugs += 1;
                     r.bug_reports.push(b.clone());
@@ -1196,6 +1228,8 @@ fn run_config(opts: &CheckerOptions) -> Config {
         fail_on_max_steps: opts.fail_on_max_steps,
         strategy: opts.strategy,
         max_work_per_step: opts.max_work_per_step,
+        max_machines: opts.max_machines,
+        max_inbox: opts.max_inbox,
         strategy_description: None,
         // buggy schedules are replayed with logging on afterwards
         logging: opts.strategy == StrategyKind::Replay || opts.verbose || opts.log_every_schedule,

@@ -251,6 +251,12 @@ impl Coverage {
         self.info
     }
 
+    /// Whether code coverage probe `id` ran in this schedule.
+    #[inline]
+    pub(crate) fn probe_ran(&self, id: u32) -> bool {
+        self.info.probes.contains(id)
+    }
+
     /// Records that code coverage probe `id` ran.
     #[inline]
     pub(crate) fn probe_hit(&mut self, id: u32) {

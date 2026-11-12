@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::sema::{BinOp, EventId, PType, Program};
 
-use crate::checker::bytecode::{Dest, Op, Operand, PathElem, ReceiveCase, Root};
+use crate::checker::bytecode::{Dest, Op, Operand, PathElem, ReceiveCase, Root, Watch};
 use crate::checker::runtime::{
     ActiveIter, Actor, Event, Exception, Exec, ExecOutcome, MachineStatus, OpStatus, Pending, Runtime, SchedKind, Stop,
     Transition,
@@ -603,6 +603,52 @@ impl<'p> Runtime<'p> {
         }
     }
 
+    /// Whether the change a mutant makes where `watch` is would change a value, given the
+    /// operands on top of `stack` (see [`Op::Watch`]). A failure counts as a change.
+    #[inline(never)]
+    fn would_change(&self, actor: Actor, stack: &[Value], base: usize, watch: &Watch, java: bool) -> bool {
+        let n = stack.len();
+        let target = |root: Root, path: &[PathElem], keys: &[Value]| -> Option<Value> {
+            let mut cur = match root {
+                Root::Local(s) => stack.get(base + s as usize)?,
+                Root::Field(s) => self.fields(actor).get(s as usize)?,
+            };
+            let mut keys = keys.iter();
+            for p in path {
+                cur = match (p, cur) {
+                    (PathElem::TupleField(i), Value::Tuple(t)) => t.get(*i as usize)?,
+                    (PathElem::TupleField(i), Value::NamedTuple(t)) => t.values.get(*i as usize)?,
+                    (PathElem::SeqIndex, Value::Seq(s)) => s.get(usize::try_from(keys.next()?.as_int()).ok()?)?,
+                    (PathElem::MapKey, Value::Map(m)) => m.get(keys.next()?)?,
+                    _ => return None,
+                };
+            }
+            Some(cur.clone())
+        };
+        match watch {
+            Watch::Bin { op, alt } => {
+                let (a, b) = (&stack[n - 2], &stack[n - 1]);
+                match (bin(*op, a.clone(), b.clone(), java), bin(*alt, a.clone(), b.clone(), java)) {
+                    (Ok(x), Ok(y)) => x != y,
+                    _ => true,
+                }
+            }
+            Watch::Store { root, path } => {
+                let keys = &stack[n - 1 - key_count(path)..n - 1];
+                target(*root, path, keys).is_none_or(|old| old != stack[n - 1])
+            }
+            Watch::Collection { root, path, add } => {
+                let keys = &stack[n - 1 - key_count(path)..n - 1];
+                let item = &stack[n - 1];
+                match target(*root, path, keys) {
+                    Some(Value::Set(s)) => s.contains(item) != *add,
+                    Some(Value::Map(m)) if !*add => m.contains_key(item),
+                    _ => true,
+                }
+            }
+        }
+    }
+
     /// The value of operand `o`, taking it off the stack if it is there.
     #[inline(always)]
     fn operand(&self, actor: Actor, stack: &mut Vec<Value>, base: usize, o: Operand) -> Value {
@@ -958,6 +1004,16 @@ impl<'p> Runtime<'p> {
                         *left += 1;
                         if let Some(c) = self.coverage.as_mut() {
                             c.probe_hit(if matches!(stack.last(), Some(Value::Bool(true))) { *yes } else { *no });
+                        }
+                    }
+                    Op::Watch { probe, watch } => {
+                        *left += 1;
+                        if self.coverage.as_ref().is_some_and(|c| !c.probe_ran(*probe))
+                            && self.would_change(actor, stack, base, watch, java)
+                        {
+                            if let Some(c) = self.coverage.as_mut() {
+                                c.probe_hit(*probe);
+                            }
                         }
                     }
                     Op::PushNull => stack.push(Value::Null),
@@ -2082,8 +2138,10 @@ mod tests {
             .map(|i| format!("{:?}", probed.probes[i as usize].kind))
             .collect();
         // The second `if` is never true: its condition outcome, branch and print
-        // never run. All work bounds above still behave exactly as without probes.
-        assert_eq!(missed, ["ConditionTrue", "Then", "Stmt"]);
+        // never run. `i > 100` and `total < 0` never compare equal values, so `>=` and
+        // `<=` in their place would change nothing. All work bounds above still behave
+        // exactly as without probes.
+        assert_eq!(missed, ["Changes", "ConditionTrue", "Then", "Stmt", "Changes"]);
     }
 
     /// The specialized and fused instructions behave like the plain ones, and count the

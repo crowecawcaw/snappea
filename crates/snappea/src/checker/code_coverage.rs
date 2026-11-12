@@ -371,7 +371,7 @@ impl CodeMap {
         let mut excluded = vec![false; probes.len()];
         for (id, p) in probes.iter().enumerate() {
             excluded[id] = must_not_run(probes, id) || p.parent.is_some_and(|q| excluded[q as usize]);
-            if excluded[id] || !included(p.fun) {
+            if excluded[id] || !included(p.fun) || p.kind == ProbeKind::Changes {
                 continue;
             }
             let parent = match p.parent {
@@ -393,6 +393,7 @@ impl CodeMap {
                 ProbeKind::ConditionFalse => {
                     (PointKind::ConditionFalse, format!("condition {} never false", snippet(sm, p.span)))
                 }
+                ProbeKind::Changes => unreachable!("skipped above"),
             };
             map.probe_point[id] = map.push(sm, kind, p.span, fun_context(prog, p.fun), missed, parent);
         }

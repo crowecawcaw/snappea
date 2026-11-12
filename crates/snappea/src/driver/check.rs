@@ -103,6 +103,13 @@ pub struct CheckConfig {
     pub liveness_threshold: usize,
     /// Timeout in seconds; `None` disables it.
     pub timeout: Option<u32>,
+    /// This test case's share of a time budget for all of them, in seconds. Replaces
+    /// `timeout`, and the check stops sooner once coverage stops growing (see
+    /// [`Plateau`]), leaving the rest of the budget to the test cases after it.
+    pub time_share: Option<f64>,
+    /// Seconds all the selected test cases share (`snappea check` without `--timeout`):
+    /// each gets the rest divided by the test cases left, as [`CheckConfig::time_share`].
+    pub suite_budget: Option<f64>,
     pub verbose: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
@@ -206,6 +213,8 @@ impl Default for CheckConfig {
             fail_on_max_steps: false,
             liveness_threshold: 0,
             timeout: None,
+            time_share: None,
+            suite_budget: None,
             verbose: false,
             xml_trace: false,
             inspection_trace: false,
@@ -433,7 +442,7 @@ pub fn replay(
     opts.replay = Some(trace);
     opts.replay_bound_at_end = cfg.style == Style::Snappea && cfg.fail_on_max_steps;
     let start = host.now();
-    let (res, _) = run_engine(host, loaded, tc, &opts, None, Some(1), false, None)?;
+    let (res, ..) = run_engine(host, loaded, tc, &opts, None, Some(1), false, None, None)?;
     // `ReplayStrategy` reports a schedule it cannot follow with `Error.ReportAndExit`
     if let Some(e) = &res.replay_error {
         return Err(report_and_exit_hint(
@@ -517,11 +526,43 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
     }
 }
 
+/// When a test case's coverage stopped growing, so its share of a time budget is better
+/// spent on the test cases after it: no schedule reached new coverage in the second half
+/// of the schedules so far, at least [`Plateau::MIN_SCHEDULES`] of them, after at least a
+/// quarter of its time. The rest of the time would mostly repeat what the search found.
+#[derive(Debug, Clone, Copy)]
+pub struct Plateau {
+    /// When the test case may stop, at the earliest.
+    pub not_before: f64,
+    /// The last schedule that reached new coverage.
+    pub last_novel: usize,
+}
+
+impl Plateau {
+    /// Fewest schedules before a test case can stop.
+    pub const MIN_SCHEDULES: usize = 200;
+
+    /// A plateau check for a test case that started at `start`, with `share` seconds.
+    pub fn new(start: f64, share: f64) -> Plateau {
+        Plateau { not_before: start + share / 4.0, last_novel: 0 }
+    }
+
+    /// Whether the test case can stop at `now`, after `schedules` schedules.
+    pub fn reached(&self, now: f64, schedules: usize) -> bool {
+        now >= self.not_before && schedules >= Self::MIN_SCHEDULES && schedules >= 2 * self.last_novel
+    }
+}
+
 /// Engine output on the console, with an optional deadline (`--timeout`) and progress.
 struct ConsoleOut<'h> {
     host: &'h mut dyn Host,
     deadline: Option<f64>,
     progress: Option<Tracker>,
+    /// Stop once coverage stops growing.
+    plateau: Option<Plateau>,
+    /// Schedules finished, and whether the plateau stopped the search.
+    schedules: usize,
+    plateaued: bool,
 }
 
 impl ConsoleOut<'_> {
@@ -549,8 +590,14 @@ impl Output for ConsoleOut<'_> {
         self.host.write(Stream::Out, s, Some(Color::Yellow));
         self.host.write(Stream::Out, "\n", None);
     }
+    fn schedule_novel(&mut self, schedule: usize) {
+        if let Some(p) = self.plateau.as_mut() {
+            p.last_novel = p.last_novel.max(schedule);
+        }
+    }
     fn schedule_finished(&mut self, schedule: usize, bug: Option<&str>) {
         // one worker: its schedules are numbered in order
+        self.schedules = self.schedules.max(schedule);
         let bugs = match self.progress.as_ref().map(|t| &t.progress().phase) {
             Some(Phase::Check { bugs, .. }) => bugs + usize::from(bug.is_some()),
             _ => return,
@@ -558,7 +605,11 @@ impl Output for ConsoleOut<'_> {
         self.tick(schedule, bugs);
     }
     fn cancelled(&mut self) -> bool {
-        self.deadline.map(|d| self.host.now() >= d).unwrap_or(false)
+        let now = self.host.now();
+        if self.plateau.is_some_and(|p| p.reached(now, self.schedules)) {
+            self.plateaued = true;
+        }
+        self.plateaued || self.deadline.map(|d| now >= d).unwrap_or(false)
     }
 }
 
@@ -574,7 +625,8 @@ fn run_engine(
     code_coverage: bool,
     // where the test case sits in the run, and when its check started
     progress: Option<(Position, f64)>,
-) -> Result<(CheckResult, usize), Exit> {
+    plateau: Option<Plateau>,
+) -> Result<(CheckResult, usize, bool), Exit> {
     let prog = &loaded.analysis.program;
     let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
     let opts = &CheckerOptions { assembly_name: loaded.sources.project_name.clone(), ..opts.clone() };
@@ -594,7 +646,7 @@ fn run_engine(
         };
         Tracker::new(phase, start, deadline.map(|d| d - start))
     });
-    let mut out = ConsoleOut { host, deadline, progress };
+    let mut out = ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false };
     out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
@@ -604,7 +656,8 @@ fn run_engine(
         let schedules = r.report.explored_fair_schedules + r.report.explored_unfair_schedules;
         t.finish(out.host, |phase| set_counts(phase, schedules, r.report.num_bugs));
     }
-    result.map(|r| (r, workers)).map_err(|e| report_and_exit(host, &e))
+    let plateaued = out.plateaued;
+    result.map(|r| (r, workers, plateaued)).map_err(|e| report_and_exit(host, &e))
 }
 
 /// A worker's output, sent to the thread that writes the console.
@@ -617,6 +670,8 @@ enum Message {
 struct WorkerOut<'a> {
     tx: mpsc::Sender<Message>,
     timed_out: &'a AtomicBool,
+    /// The last schedule of any worker that reached new coverage.
+    novel: &'a std::sync::atomic::AtomicUsize,
 }
 
 impl Output for WorkerOut<'_> {
@@ -625,6 +680,9 @@ impl Output for WorkerOut<'_> {
     }
     fn error(&mut self, s: &str) {
         let _ = self.tx.send(Message::Error(s.to_string()));
+    }
+    fn schedule_novel(&mut self, schedule: usize) {
+        self.novel.fetch_max(schedule, Ordering::Relaxed);
     }
     fn cancelled(&mut self) -> bool {
         self.timed_out.load(Ordering::Relaxed)
@@ -645,14 +703,15 @@ fn run_workers(
     out.line(&format!("... Checker is using {} workers.", pool.count()));
     let (prog, code_coverage) = (checker.prog, !checker.code.probes.is_empty());
     let timed_out = AtomicBool::new(false);
+    let novel = std::sync::atomic::AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel();
     let jobs: Vec<Job<'_>> = (0..pool.count())
         .map(|index| {
             let tx = tx.clone();
-            let timed_out = &timed_out;
+            let (timed_out, novel) = (&timed_out, &novel);
             Box::new(move || {
                 let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
-                let mut out = WorkerOut { tx, timed_out };
+                let mut out = WorkerOut { tx, timed_out, novel };
                 let part = checker.explore(tc, opts, pool, index, &mut out);
                 let _ = out.tx.send(Message::Done(index, Box::new(part)));
             }) as Job<'_>
@@ -669,6 +728,8 @@ fn run_workers(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
         out.tick(pool.started(), pool.bugs());
+        out.schedules = pool.started();
+        out.schedule_novel(novel.load(Ordering::Relaxed));
         if !timed_out.load(Ordering::Relaxed) && out.cancelled() {
             timed_out.store(true, Ordering::Relaxed);
         }
@@ -691,6 +752,8 @@ pub struct CaseOutcome {
     pub workers: usize,
     /// The time limit stopped the exploration.
     pub timed_out: bool,
+    /// It stopped before its time limit because coverage stopped growing (see [`Plateau`]).
+    pub plateaued: bool,
     /// For an exhaustive search: whether every alternative was explored.
     pub exhaustive_finished: Option<bool>,
     /// Seconds the test case took.
@@ -740,8 +803,12 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
             Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources, &marked));
     }
     let engine_start = host.now();
-    let deadline = cfg.timeout.map(|t| engine_start + f64::from(t));
-    let (res, workers) = run_engine(
+    let deadline = match cfg.time_share {
+        Some(share) => Some(engine_start + share),
+        None => cfg.timeout.map(|t| engine_start + f64::from(t)),
+    };
+    let plateau = cfg.time_share.map(|share| Plateau::new(engine_start, share));
+    let (res, workers, plateaued) = run_engine(
         host,
         loaded,
         &tc,
@@ -750,6 +817,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         cfg.workers,
         cfg.code_coverage,
         cfg.progress.map(|p| (p, engine_start)),
+        plateau,
     )?;
     let engine_elapsed = host.now() - engine_start;
     if res.cancelled {
@@ -860,7 +928,8 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         bug_report: res.report.bug_reports.first().cloned(),
         schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
         workers,
-        timed_out: res.cancelled,
+        timed_out: res.cancelled && !plateaued,
+        plateaued: res.cancelled && plateaued,
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
         elapsed: process_elapsed,
         schedule_file,

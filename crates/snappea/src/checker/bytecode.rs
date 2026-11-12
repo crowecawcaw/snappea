@@ -239,6 +239,26 @@ pub enum Op {
         yes: u32,
         no: u32,
     },
+    /// Records probe `probe` (of kind [`ProbeKind::Changes`]) when the change a mutant
+    /// would make here would change a value (see [`Watch`]). Reads the stack without
+    /// consuming it; like `Probe`, it counts no work and is emitted only for coverage.
+    Watch {
+        probe: u32,
+        watch: Watch,
+    },
+}
+
+/// What [`Op::Watch`] checks, given the operands on top of the stack.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Watch {
+    /// Before `Bin` with operands `a`, `b`: whether `a alt b` differs from `a op b`.
+    Bin { op: BinOp, alt: BinOp },
+    /// Before a store of the value on top to `root`/`path` (with the path's keys below):
+    /// whether the value differs from the one stored there.
+    Store { root: Root, path: Rc<[PathElem]> },
+    /// Before `Add` (`add`) or `Remove` of the value on top: whether the collection at
+    /// `root`/`path` changes.
+    Collection { root: Root, path: Rc<[PathElem]>, add: bool },
 }
 
 /// Where an instruction reads an operand: the operand stack, or a register (a local or
@@ -311,6 +331,10 @@ pub enum ProbeKind {
     /// An atomic condition in an `if` or `while` evaluated to true / false.
     ConditionTrue,
     ConditionFalse,
+    /// A mutant's change at `span` would change a value (see [`Op::Watch`]): an
+    /// expression whose operator a mutant swaps, or a statement it removes. Not a
+    /// coverage point: it tells mutation testing which test cases can notice the change.
+    Changes,
 }
 
 /// A code coverage probe: a point in the source whose execution is recorded.

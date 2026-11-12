@@ -262,7 +262,7 @@ fn native_scheduling_controls_are_removed_and_compat_keeps_them() {
     }
     assert_eq!(compat(&mut h, &["check", "-tc", "tcFine", "--mode", "pex"]), 0, "{}{}", h.stdout, h.stderr);
     assert_eq!(snappea(&mut h, &["check", "--help"]), 0);
-    assert!(h.stdout.contains("default: 10s"));
+    assert!(h.stdout.contains("the test cases share 10s"));
     assert!(!h.stdout.contains("--strategy"));
 }
 
@@ -886,24 +886,78 @@ const COUNTER: &str = "event eAdd: int;\n\
      }\n\
      test tcCount [main=Driver]: assert NonNegative in { Counter, Driver };\n";
 
+/// A mutant whose change would never change a value in the test cases' runs is not run:
+/// `c > 5` and `c >= 5` differ only when `c` is 5, and the counter only reaches 3.
+#[test]
+fn check_reports_mutants_that_never_change_a_value() {
+    let mut h = host();
+    h.add_file(
+        "tick.p",
+        "event eTick;\n\
+         event eCount: int;\n\
+         machine Ticker {\n\
+           var count: int;\n\
+           start state S {\n\
+             on eTick do {\n\
+               count = count + 1;\n\
+               announce eCount, count;\n\
+               if (Big(count)) { count = 0; }\n\
+             }\n\
+           }\n\
+           fun Big(c: int): bool { return c > 5; }\n\
+         }\n\
+         spec Up observes eCount {\n\
+           var last: int;\n\
+           start state S { on eCount do (c: int) { assert c == last + 1, \"skipped\"; last = c; } }\n\
+         }\n\
+         machine Driver {\n\
+           start state S { entry { var t: Ticker; t = new Ticker(); send t, eTick; send t, eTick; send t, eTick; } }\n\
+         }\n\
+         test tcTick [main=Driver]: assert Up in { Ticker, Driver };\n",
+    );
+    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let swap = v["mutation"]["undetected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["mutation"] == "swap-operator")
+        .unwrap_or_else(|| panic!("{}", v["mutation"]));
+    assert_eq!(swap["line"], 12);
+    assert_eq!(swap["changes_a_value"], false);
+    assert_eq!(swap["schedules"], 0);
+    assert_eq!(swap["test_cases"], serde_json::json!(["tcTick"]));
+    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text"]);
+    assert!(
+        h.stdout.contains(
+            "tick.p:12  Ticker.Big: `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never equal)\n"
+        ),
+        "{}",
+        h.stdout
+    );
+}
+
 #[test]
 fn check_reports_mutants_no_test_case_detects() {
     let mut h = host();
     h.add_file("counter.p", COUNTER);
     // `-` makes the total negative, which the spec detects; removing either statement of
-    // the handler leaves the spec nothing to fail on. The spec and driver are not mutated.
+    // the handler, or the whole body, leaves the spec nothing to fail on. The body is
+    // listed, with the undetected mutants inside it. The spec and driver are not mutated.
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let m = &v["mutation"];
-    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(3), Some(1)), "{}", m);
-    let undetected: Vec<_> = m["undetected"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|u| (u["line"].as_u64().unwrap(), u["change"].as_str().unwrap().to_string()))
-        .collect();
+    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(4), Some(1)), "{}", m);
+    let lines = |list: &serde_json::Value| -> Vec<(u64, String)> {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .map(|u| (u["line"].as_u64().unwrap(), u["change"].as_str().unwrap().to_string()))
+            .collect()
+    };
+    assert_eq!(lines(&m["undetected"]), [(6, "removed the whole body (2 statements)".to_string())]);
     assert_eq!(
-        undetected,
+        lines(&m["undetected"][0]["undetected_inside"]),
         [(7, "removed `total = total + n;`".to_string()), (8, "removed `announce eTotal, total;`".to_string())]
     );
     assert_eq!(m["undetected"][0]["test_cases"], serde_json::json!(["tcCount"]));
@@ -917,15 +971,21 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(again["mutation"]["undetected"], m["undetected"]);
     // the console lists them after the coverage
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 0);
-    assert!(h.stdout.contains("Mutation testing: 1 of 3 mutants detected"), "{}", h.stdout);
-    assert!(h.stdout.contains("  counter.p:7  Counter.S, on eAdd: removed `total = total + n;`\n"), "{}", h.stdout);
-    assert!(h.stdout.contains(", with warnings: 2 undetected mutants. Output: "), "{}", h.stdout);
+    assert!(h.stdout.contains("Mutation testing: 1 of 4 mutants detected"), "{}", h.stdout);
+    assert!(
+        h.stdout.contains(
+            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it)\n"
+        ),
+        "{}",
+        h.stdout
+    );
+    assert!(h.stdout.contains(", with warnings: 3 undetected mutants. Output: "), "{}", h.stdout);
     // `--deny mutation` makes them fail `check`, and `--warn mutation` lets `check mutation` pass
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--deny", "mutation", "--format", "text"]), 1);
-    assert!(h.stdout.contains("\n2 mutants not detected in "), "{}", h.stdout);
+    assert!(h.stdout.contains("\n3 mutants not detected in "), "{}", h.stdout);
     assert_eq!(snappea(&mut h, &["check", "mutation", "counter.p", "--warn", "mutation", "--json"]), 0);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(v["warnings"]["mutation"], 2);
+    assert_eq!(v["warnings"]["mutation"], 3);
     // a suppression comment excludes the mutants of the next statement, of one kind or all
     let suppressed = COUNTER.replace(
         "announce eTotal",
@@ -934,7 +994,7 @@ fn check_reports_mutants_no_test_case_detects() {
     h.add_file("counter.p", &suppressed);
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!((v["mutation"]["mutants"].as_u64(), v["mutation"]["suppressed"].as_u64()), (Some(2), Some(1)));
+    assert_eq!((v["mutation"]["mutants"].as_u64(), v["mutation"]["suppressed"].as_u64()), (Some(3), Some(1)));
     assert_eq!(v["mutation"]["undetected"].as_array().unwrap().len(), 1);
     h.add_file("counter.p", &suppressed.replace("mutation:remove-statement", "mutation"));
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
@@ -952,7 +1012,7 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(only.get("coverage").is_none(), "{}", only);
     assert_eq!(snappea(&mut h, &["--format", "text", "check", "mutation", "counter.p"]), 1);
     assert!(!h.stdout.contains("Coverage"), "{}", h.stdout);
-    assert!(h.stdout.contains("\n2 mutants not detected in "), "{}", h.stdout);
+    assert!(h.stdout.contains("\n3 mutants not detected in "), "{}", h.stdout);
     h.add_file("counter.p", &suppressed.replace("mutation:remove-statement", "mutation"));
     assert_eq!(snappea(&mut h, &["check", "mutation", "counter.p", "--json"]), 1);
     h.add_file("counter.p", COUNTER);
@@ -998,7 +1058,7 @@ fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bou
     assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--json"]), 0, "{}", h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let m = &v["mutation"];
-    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(8), Some(4)), "{}", m);
+    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(10), Some(4)), "{}", m);
     assert_eq!(m["detected_by_step_bound"], 2, "{}", m);
     let listed: Vec<_> = m["undetected"].as_array().unwrap().iter().map(|u| u["mutation"].clone()).collect();
     assert!(!listed.contains(&serde_json::json!("condition-true")), "{}", m);
