@@ -102,7 +102,8 @@ Time (for models with timeouts or latency budgets):
       --timed               Time-aware scheduling: never run a step that is certainly
                             later than another. Use when untimed checking reports
                             orders real timing rules out, e.g. a timeout handled
-                            before a reply that arrives earlier.
+                            before a reply that arrives earlier. Keep the untimed
+                            run too: it covers latencies outside the profile.
 
 What fails the check:
       --warn <CHECK>        Report CHECK's findings as warnings and keep going: lint,

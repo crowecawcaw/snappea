@@ -95,9 +95,12 @@ sampled. Up to 256 checkpoints retain at most 262,144 random choices. This is
 enabled for native random feedback, including automatic search after its
 exhaustive phase. Compatibility mode retains its original behavior.
 
-A completed exhaustive search ends the run early. Timed models start directly
-with feedback because exhaustive time tracking is not supported, and so do models
-with foreign functions, unless their implementation declares itself searchable
+A completed exhaustive search ends the run early. Timed models are searched the same
+way: the state cache compares clocks too, so a timed model that ends can finish its
+search. One that loops never returns to an explored state, since clocks only grow; it
+is sampled, and its test line says `timed model: sampled`
+(`"incomplete_reason": "timed_model_sampled"` in JSON). Models with foreign functions
+start directly with feedback, unless their implementation declares itself searchable
 (`ForeignFunctions::searchable` in the [Rust library](library.md)). Cyclic hot
 monitors also continue through fair feedback: closing a repeated state is not a
 liveness proof. Stalling changes strategy; it never certifies a model as safe.
@@ -110,7 +113,26 @@ share; the time it leaves goes to the test cases after it. This keeps a check of
 model fast enough to run after every change, but explores less: the Raft tutorial's
 known bug is found in about 6 of 10 such runs, and every time with `--timeout 10s`.
 `--timeout` gives each test case its own fixed limit instead, with no early stop; set
-it before trusting a pass on a large model. A timeout or early stop means the search is
+it before trusting a pass on a large model. A test case whose exhaustive search is
+still running never stops early for coverage: finishing the search proves more than
+sampling finds.
+
+A passing test case that did not cover every schedule says why, with
+`incomplete_reason` in JSON:
+
+- `exhaustive_search_unfinished`: the exhaustive search was still running when time
+  ran out (`untried_alternatives` counts those left on its current path). The hint
+  suggests a longer `--timeout`. How much longer cannot be projected reliably: the
+  state cache makes later branches much cheaper than earlier ones.
+- `sampled`: too many schedules, so the search sampled them.
+- `timed_model_sampled`: as above, for a timed model.
+
+For these, the output shows where schedules branch, averaged per schedule: the
+scheduling points with a choice, the machines ready to run at them, and the
+`$`/`choose` choices each machine made (`branching` in JSON; `-v` prints it for every
+test case). It also notes when most schedules reach the same few states
+(`distinct_states` in JSON). Reduce the top machines first; see `snappea guide
+modeling`. A timeout or early stop means the search is
 incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
 coverage was not reached within the run budget. Exit status is 0 when no bug or
@@ -150,7 +172,17 @@ schedules, and share the states already explored. The first bug, or every worker
 completing its part, stops the run. `--seed` sets their starting seeds, but worker
 timing can change which bug wins and how many schedules run. Bug schedules record the
 choices and replay exactly, whatever the worker count.
-`-v` shows progress and statistics and uses one worker.
+
+Schedule counts depend on the order the search tries alternatives, which the seed
+sets. Without `--seed` each run picks a new seed, so `all N schedules` differs between
+runs of the same model; the number of distinct states it reached (`distinct_states` in
+JSON) does not, for a given worker count. With `--seed` and `-j 1`, a search that ends
+before its time limit repeats its counts exactly. A time limit, the shared budget and
+several workers make counts depend on timing; under the shared budget, which test
+cases run together also changes each one's share. Paste `distinct_states`, or pass
+`--seed` and `-j 1`, when a document needs a count readers can reproduce.
+`-v` shows progress and statistics and uses one worker; its
+`verbose.trace.json` keeps the first 500 schedules.
 
 While a check runs, `snappea check` shows how far it has got on stderr. On a terminal
 that is a status line, redrawn in place and cleared when each test case ends:
