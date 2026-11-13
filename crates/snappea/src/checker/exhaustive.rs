@@ -61,6 +61,11 @@ pub struct SearchStats {
     pub max_depth: usize,
     /// Every alternative was explored.
     pub finished: bool,
+    /// The search was still exploring when it was stopped (by a time limit, say) rather
+    /// than handed off to sampling: more time could have finished it.
+    pub running: bool,
+    /// Untried alternatives along the path the search was exploring when it stopped.
+    pub frontier: usize,
     /// The test has hot monitor states (see [`SearchStats::liveness_unverified`]).
     pub hot_monitors: bool,
     /// Why finishing proves nothing about the test, if it does not: the program did not
@@ -524,6 +529,8 @@ impl SearchStats {
         self.depth_bound_hits += other.depth_bound_hits;
         self.max_depth = self.max_depth.max(other.max_depth);
         self.finished &= other.finished;
+        self.running |= other.running;
+        self.frontier += other.frontier;
         self.hot_monitors |= other.hot_monitors;
         if self.unverifiable.is_none() {
             self.unverifiable.clone_from(&other.unverifiable);

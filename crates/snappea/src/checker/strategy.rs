@@ -221,6 +221,11 @@ pub trait Strategy {
     fn search_complete(&self) -> bool {
         false
     }
+    /// An exhaustive search is under way and has not given up: stopping now leaves a
+    /// search that might have finished.
+    fn exhausting(&self) -> bool {
+        false
+    }
     /// Statistics of an exhaustive search.
     fn exhaustive_stats(&self) -> Option<crate::checker::exhaustive::SearchStats> {
         None
