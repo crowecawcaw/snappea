@@ -468,6 +468,10 @@ A mutant changes one place in the code of the machines under test:
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
 
+Global functions declared under `PTst/` are test scaffolding and are not mutated,
+even when design code calls them. Production helpers they call outside `PTst/`
+remain eligible for mutation. Directory matching is case-insensitive.
+
 Spec monitors and the [drivers](#driver-limits) are the tests, so they are not mutated,
 and neither are assertions, `print` or format strings. Conditions on a choice (`$`,
 `$$`, `choose`) are not forced, swapped or negated: the checker already explores every
