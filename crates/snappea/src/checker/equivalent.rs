@@ -334,9 +334,7 @@ impl Carriers {
             let Some(&p) = params.get(i) else { return false };
             if self.carries(prog, a) {
                 self.changed |= self.vars.insert(p);
-            } else if self.vars.contains(&p) && !Self::zero(a) {
-                return false;
-            } else if !self.expr(prog, a) {
+            } else if (self.vars.contains(&p) && !Self::zero(a)) || !self.expr(prog, a) {
                 return false;
             }
         }
@@ -365,9 +363,7 @@ impl Carriers {
                 for ((name, _), x) in fields.iter().zip(es) {
                     if self.carries(prog, x) {
                         self.changed |= self.names.insert(name.clone());
-                    } else if self.names.contains(name) && !Self::zero(x) {
-                        return false;
-                    } else if !self.expr(prog, x) {
+                    } else if (self.names.contains(name) && !Self::zero(x)) || !self.expr(prog, x) {
                         return false;
                     }
                 }
