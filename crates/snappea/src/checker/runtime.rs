@@ -391,6 +391,8 @@ pub struct Setup<'p> {
     pub coverage: Option<Coverage>,
     /// Record what the test's driver does (see [`crate::checker::driver_facts`]).
     pub driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
+    /// Count where schedules branch (see [`crate::checker::branching`]).
+    pub branching: Option<crate::checker::branching::Branching>,
     /// Run spec monitors with the semantics of upstream's Java backend, which PObserve uses:
     /// `MessageFormat` formatting and Java `toString()` (by this formatter), 32-bit floats,
     /// `with` functions before exit actions, and unhandled events reported as exceptions.
@@ -467,8 +469,10 @@ pub struct Runtime<'p> {
     pub(crate) coverage: Option<Coverage>,
     /// What the test's driver does, when recorded.
     pub(crate) driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
+    /// Where schedules branch, when counted.
+    pub(crate) branching: Option<crate::checker::branching::Branching>,
     /// Time tracking (see `design/time/PROPOSAL.md`); `None` when the test does not use it.
-    time: Option<Box<crate::checker::time::TimeState>>,
+    pub(crate) time: Option<Box<crate::checker::time::TimeState>>,
     /// Machine event handlers started (each runs on a fresh .NET task upstream).
     pub(crate) handler_starts: u64,
     /// The first failure of this execution (see [`Failure`]).
@@ -507,6 +511,7 @@ impl<'p> Runtime<'p> {
             xml_trace,
             coverage,
             driver_facts,
+            branching,
             java_semantics,
             buffers,
         } = setup;
@@ -565,6 +570,7 @@ impl<'p> Runtime<'p> {
             bound_hit_at: None,
             coverage,
             driver_facts,
+            branching,
             time: time.map(|o| Box::new(crate::checker::time::TimeState::new(o))),
             handler_starts: 0,
             failure: None,
@@ -965,6 +971,13 @@ impl<'p> Runtime<'p> {
                 return Err(Stop);
             }
         }
+        if let Some(b) = self.branching.as_mut() {
+            if infos.iter().filter(|o| o.enabled).nth(1).is_some() {
+                let machines = &self.machines;
+                let ready = self.ops.iter().zip(infos.iter()).filter(|(_, i)| i.enabled);
+                b.point(ready.filter_map(|(o, _)| o.machine).map(|m| machines[m].decl.idx()));
+            }
+        }
         let current = self.current;
         match self.strategy.next_operation(current, infos) {
             Some(next) => {
@@ -1012,10 +1025,23 @@ impl<'p> Runtime<'p> {
         Err(self.report_bug(msg))
     }
 
+    /// Counts a choice among `outcomes` by the current machine (see [`Setup::branching`]).
+    fn count_choice(&mut self, outcomes: i32) {
+        if self.branching.is_none() || outcomes < 2 {
+            return;
+        }
+        let current = self.current;
+        let machine = self.ops.iter().find(|o| o.id == current).and_then(|o| o.machine);
+        if let (Some(b), Some(m)) = (self.branching.as_mut(), machine) {
+            b.choice(self.machines[m].decl.idx());
+        }
+    }
+
     /// `GetNondeterministicBooleanChoice`.
     pub fn choose_bool(&mut self, max: i32, caller: &str) -> Result<bool, Stop> {
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
+        self.count_choice(2);
         let b = self.strategy.next_bool(max);
         if self.strategy.diverged() {
             self.stopped = true;
@@ -1034,6 +1060,7 @@ impl<'p> Runtime<'p> {
     pub fn choose_int(&mut self, max: i32, caller: &str) -> Result<i32, Stop> {
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
+        self.count_choice(max);
         let i = self.strategy.next_int(max);
         if self.strategy.diverged() {
             self.stopped = true;

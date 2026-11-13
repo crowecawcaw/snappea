@@ -1447,6 +1447,51 @@ fn little_to_explore(case: &check::CaseOutcome) -> bool {
         && case.exhaustive_states.is_some_and(|(states, depth)| states <= LITTLE_TO_EXPLORE * depth.max(1))
 }
 
+/// Why a passing test case's search did not cover every schedule, for the JSON report:
+/// `exhaustive_search_unfinished` (more time may finish it), `timed_model_sampled` (time
+/// tracking keeps clocks growing, so a model that loops cannot be exhausted) or `sampled`
+/// (too many schedules: the search sampled them).
+fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
+    if case.bugs > 0 || case.exhaustive_finished == Some(true) {
+        None
+    } else if case.exhaustive_unfinished.is_some() {
+        Some("exhaustive_search_unfinished")
+    } else if case.time_tracked {
+        Some("timed_model_sampled")
+    } else {
+        Some("sampled")
+    }
+}
+
+/// A `--timeout` worth trying for a search still running after `elapsed` seconds.
+fn longer_timeout(elapsed: f64) -> &'static str {
+    const STEPS: [(f64, &str); 5] = [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m"), (600.0, "10m")];
+    STEPS.iter().find(|(secs, _)| *secs >= 5.0 * elapsed).map_or("30m", |(_, s)| s)
+}
+
+/// Where an average schedule branches: `31 scheduling points with a choice; Network
+/// could go next at 25 and made 3 choices, Sender at 20`.
+fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBranching]) -> String {
+    let n = |x: f64| if x >= 10.0 { format!("{:.0}", x) } else { format!("{:.1}", x) };
+    let mut out = format!("{} scheduling points with a choice", n(points));
+    for (i, m) in machines.iter().take(3).enumerate() {
+        out.push_str(if i == 0 { "; " } else { ", " });
+        out.push_str(&m.machine);
+        if m.ready > 0.0 {
+            out.push_str(&format!("{} at {}", if i == 0 { " could go next" } else { "" }, n(m.ready)));
+        }
+        if m.choices > 0.0 {
+            out.push_str(&format!(
+                "{} made {} choice{}",
+                if m.ready > 0.0 { " and" } else { "" },
+                n(m.choices),
+                if m.choices == 1.0 { "" } else { "s" }
+            ));
+        }
+    }
+    out
+}
+
 /// One test case's result as JSON.
 fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     let mut v = json!({
@@ -1460,6 +1505,26 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     });
     if let Some(finished) = case.exhaustive_finished {
         v["search_complete"] = json!(finished);
+    }
+    if let Some(reason) = incomplete_reason(case) {
+        v["incomplete_reason"] = json!(reason);
+    }
+    if let Some(frontier) = case.exhaustive_unfinished {
+        v["untried_alternatives"] = json!(frontier);
+    }
+    if let Some((states, _)) = case.exhaustive_states.filter(|_| case.bugs == 0) {
+        v["distinct_states"] = json!(states);
+    }
+    if let Some((points, machines)) = &case.branching {
+        let r = |x: f64| (x * 10.0).round() / 10.0;
+        v["branching"] = json!({
+            "scheduling_points_with_choice": r(*points),
+            "machines": machines.iter().map(|m| json!({
+                "machine": m.machine,
+                "ready_at_scheduling_points": r(m.ready),
+                "choices": r(m.choices),
+            })).collect::<Vec<_>>(),
+        });
     }
     if little_to_explore(case) {
         v["little_to_explore"] = json!(true);
@@ -1505,6 +1570,28 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
             host.out_line(
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
+        }
+        let branching = case.branching.as_ref().map(|(points, machines)| branching_text(*points, machines));
+        match incomplete_reason(case) {
+            Some("exhaustive_search_unfinished") => host.out_line(&format!(
+                "      hint: the exhaustive search was still running ({} alternatives left on its current path); give it more time, e.g. --timeout {}",
+                case.exhaustive_unfinished.unwrap_or(0),
+                longer_timeout(case.elapsed)
+            )),
+            Some(reason) => {
+                if reason == "timed_model_sampled" {
+                    host.out_line("      note: with time tracking, clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
+                }
+                if let Some(b) = &branching {
+                    host.out_line(&format!("      note: too many schedules to try them all. Per schedule: {}", b));
+                    host.out_line("      hint: merge machines whose hop adds no order the spec cares about, shrink fault budgets, or split fault classes into separate tests (see `snappea guide modeling`)");
+                }
+            }
+            None => {
+                if let Some(b) = branching.filter(|_| cfg.verbose) {
+                    host.out_line(&format!("      Branching per schedule: {}", b));
+                }
+            }
         }
         return;
     }

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 pub const MAX_TERMS: usize = 32;
 
 /// An affine form over noise symbols in `[0, 1]`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Time {
     c: i64,
     /// Sorted by symbol, no zero coefficients.
@@ -19,7 +19,7 @@ pub struct Time {
 }
 
 /// Source of fresh symbols (one per execution).
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Hash)]
 pub struct Symbols {
     next: u32,
 }
@@ -167,7 +167,7 @@ impl std::fmt::Display for Time {
 // ---- runtime state -----------------------------------------------------------------
 
 /// The stamp a sent event carries: when it is available to its receiver.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Stamp {
     pub at: Time,
     /// Operation id of the sending machine.

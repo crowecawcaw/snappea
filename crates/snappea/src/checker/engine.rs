@@ -88,6 +88,12 @@ pub struct CheckerOptions {
     pub latency_profile: Option<String>,
     /// `--timed`: time-aware scheduling.
     pub timed: bool,
+    /// Count where schedules branch (`CheckResult::branching`).
+    pub branching: bool,
+    /// With `verbose`: the most schedules `CheckResult::verbose_json_trace` keeps (0: all).
+    /// Each takes about 100 KB, so keeping every schedule of a long search runs out of
+    /// memory.
+    pub verbose_trace_schedules: usize,
 }
 
 impl Default for CheckerOptions {
@@ -123,6 +129,8 @@ impl Default for CheckerOptions {
             latency: None,
             latency_profile: None,
             timed: false,
+            branching: false,
+            verbose_trace_schedules: 0,
         }
     }
 }
@@ -370,6 +378,10 @@ pub trait Output {
     fn cancelled(&mut self) -> bool {
         false
     }
+    /// After every schedule: whether an exhaustive search is still under way (see
+    /// [`crate::checker::strategy::Strategy::exhausting`]). `snappea check` keeps such a search going when coverage
+    /// stops growing, since finishing it proves more than sampling would find.
+    fn exhausting(&mut self, _running: bool) {}
 }
 
 impl Output for Vec<String> {
@@ -433,6 +445,10 @@ pub struct CheckResult {
     pub driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
     /// Statistics of an exhaustive search (`dfs`, `random-dfs`).
     pub exhaustive: Option<crate::checker::exhaustive::SearchStats>,
+    /// The test tracked time (see `design/time/PROPOSAL.md`).
+    pub time_tracked: bool,
+    /// Where the schedules branched (see `branching`).
+    pub branching: Option<crate::checker::branching::Branching>,
 }
 
 fn build_strategy(
@@ -838,8 +854,9 @@ impl<'p> Checker<'p> {
         let searchable = self.foreign.as_ref().is_none_or(|f| f.searchable());
         let split = (pool.count > 1)
             .then(|| crate::checker::exhaustive::Split::new(pool.count, index, run_seed, pool.shared.clone()));
-        // auto mode skips exhaustive search when it could not prove anything
-        let mut strategy = build_strategy(opts, &rng, has_hot, time.is_none() && searchable, split)?;
+        // auto mode skips exhaustive search when it could not prove anything; with time
+        // tracking the state hash covers the clocks (see `statehash`)
+        let mut strategy = build_strategy(opts, &rng, has_hot, searchable, split)?;
         let is_replay = opts.strategy == StrategyKind::Replay;
 
         let mut result = CheckResult { strategy_description: strategy.description(), ..Default::default() };
@@ -889,6 +906,7 @@ impl<'p> Checker<'p> {
             .clone()
             .filter(|_| !is_replay)
             .map(|d| crate::checker::driver_facts::DriverFacts::new(d, main));
+        let mut branching = (opts.branching && !is_replay).then(crate::checker::branching::Branching::default);
         // memory each schedule leaves for the next (see `Buffers`)
         let mut buffers = crate::checker::runtime::Buffers::default();
         while !idle && (max_iterations == 0 || i < max_iterations) {
@@ -918,7 +936,9 @@ impl<'p> Checker<'p> {
                     assignment,
                     foreign: self.foreign.clone(),
                     time: time.clone(),
-                    json_trace: verbose_json.is_some(),
+                    json_trace: verbose_json.as_ref().is_some_and(|v| {
+                        opts.verbose_trace_schedules == 0 || v.len() < opts.verbose_trace_schedules
+                    }),
                     coverage: coverage_tables.as_ref().map(|t| {
                         let cov = Coverage::new(t.clone(), result.coverage.take().unwrap_or_default())
                             .with_condition_guidance(guided);
@@ -928,6 +948,7 @@ impl<'p> Checker<'p> {
                         }
                     }),
                     driver_facts: driver_facts.take(),
+                    branching: branching.take(),
                     buffers: std::mem::take(&mut buffers),
                     ..Setup::default()
                 };
@@ -966,6 +987,12 @@ impl<'p> Checker<'p> {
                 tasks_used += 1 + rt.handler_starts;
                 if let (Some(all), Some(j)) = (verbose_json.as_mut(), rt.json.take()) {
                     all.push(j.to_json(false));
+                    if all.len() == opts.verbose_trace_schedules {
+                        out.borrow_mut().line(&format!(
+                            "..... The verbose JSON trace keeps the first {} schedules only.",
+                            all.len()
+                        ));
+                    }
                 }
                 if opts.verbose {
                     for l in &rt.log {
@@ -1088,6 +1115,10 @@ impl<'p> Checker<'p> {
                 if let Some(c) = rt.coverage.take() {
                     result.coverage = Some(c.into_info());
                 }
+                if let Some(mut b) = rt.branching.take() {
+                    b.schedules += 1;
+                    branching = Some(b);
+                }
                 if let Some(mut d) = rt.driver_facts.take() {
                     let stopped = !rt.ran_to_end();
                     d.end_schedule(stopped, rt.bound_hit_at.is_some());
@@ -1107,6 +1138,7 @@ impl<'p> Checker<'p> {
                 }
             }
             let more = !is_replay && !ended_by_bug && strategy.prepare_next_iteration();
+            out.borrow_mut().exhausting(more && strategy.exhausting());
             if !reported_complete && strategy.search_complete() {
                 reported_complete = true;
                 pool.exhausted();
@@ -1137,6 +1169,8 @@ impl<'p> Checker<'p> {
             ..s
         });
         result.scheduler_stats = strategy.scheduler_stats();
+        result.time_tracked = time.is_some();
+        result.branching = branching;
         result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
         Ok(Exploration { result, first_bug, samples, won, time })
@@ -1274,6 +1308,13 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
             }
             (None, None) => {}
         }
+        result.branching = match (result.branching.take(), r.branching) {
+            (Some(mut a), Some(b)) => {
+                a.merge(&b);
+                Some(a)
+            }
+            (a, b) => a.or(b),
+        };
         result.driver_facts = match (result.driver_facts.take(), r.driver_facts) {
             (Some(mut a), Some(b)) => {
                 a.merge(&b);
