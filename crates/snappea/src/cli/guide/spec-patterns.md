@@ -24,6 +24,16 @@ what its specs actually require, within the modeled bounds.
 - Derive expected results independently. Sharing a design helper with the spec can
   change both sides of a comparison under mutation and hide a bug.
 
+## Reusable building blocks
+
+Import `BBRequestReplies` when the contract is one terminal reply per unique logical
+request ID. Export `snappea guide example building-blocks --out vendor`, include its
+`RequestReplies.pproj`, and select the spec in your test. The guide bundle's README
+explains the `BBPlan`, `BBRequested` and `BBReplied` adapter events and a runnable
+consumer. Use the block directly rather than copying another completion counter.
+It checks planned completion and IDs; keep independent specs for reply contents.
+Retries reuse a logical ID, and only actual terminal replies discharge obligations.
+
 ## Declare the work before starting it
 
 A spec that starts cold can pass when the driver never does any work. Start hot,

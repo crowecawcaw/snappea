@@ -194,7 +194,8 @@ fn push_unique(v: &mut Vec<PathBuf>, p: PathBuf) {
 }
 
 /// `GetAllProjectDependencies`: collects the input files of `doc` and the projects it
-/// includes; `deps` holds the directories of the projects already included.
+/// includes; native imports identify projects by file, while compatibility mode
+/// preserves upstream's directory-based deduplication.
 fn all_dependencies(
     host: &mut dyn Host,
     doc: &Doc,
@@ -223,11 +224,14 @@ fn all_dependencies(
             )));
         }
         host.out_line(&format!("==== Loading project file: {}", full.display()));
-        let dir = full.parent().map(Path::to_path_buf).unwrap_or_default();
-        if deps.contains(&dir) {
+        let key = match includes {
+            Includes::FromProject => full.clone(),
+            Includes::FromCurrentFolder => full.parent().map(Path::to_path_buf).unwrap_or_default(),
+        };
+        if deps.contains(&key) {
             continue;
         }
-        deps.push(dir);
+        deps.push(key);
         let dep_doc = Doc::load(host, &full).map_err(ParseErr)?;
         all_dependencies(host, &dep_doc, includes, inputs, deps)?;
     }
@@ -286,5 +290,27 @@ pub fn find_local_pproj(host: &mut dyn Host) -> Option<String> {
             host.out_line(&format!(".. Found P project file: {}", s));
             Some(s)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::MemHost;
+
+    #[test]
+    fn native_imports_distinguish_sibling_projects_and_stop_cycles() {
+        let mut host = MemHost::new("/w");
+        host.add_file("App.pproj", "<Project><ProjectName>App</ProjectName><InputFiles><PFile>Main.p</PFile></InputFiles><IncludeProject>lib/A.pproj</IncludeProject><IncludeProject>lib/../lib/B.pproj</IncludeProject></Project>");
+        host.add_file("lib/A.pproj", "<Project><ProjectName>A</ProjectName><InputFiles><PFile>A.p</PFile></InputFiles><IncludeProject>lib/B.pproj</IncludeProject></Project>");
+        host.add_file("lib/B.pproj", "<Project><ProjectName>B</ProjectName><InputFiles><PFile>B.p</PFile></InputFiles><IncludeProject>lib/A.pproj</IncludeProject></Project>");
+        for file in ["Main.p", "lib/A.p", "lib/B.p"] {
+            host.add_file(file, "");
+        }
+        let native = parse(&mut host, "App.pproj", Includes::FromProject).unwrap();
+        assert_eq!(native.input_files, ["/w/Main.p", "/w/lib/A.p", "/w/lib/B.p"].map(PathBuf::from));
+        // Upstream identifies included dependencies by directory; preserve that behavior.
+        let compat = parse(&mut host, "App.pproj", Includes::FromCurrentFolder).unwrap();
+        assert_eq!(compat.input_files, ["/w/Main.p", "/w/lib/A.p"].map(PathBuf::from));
     }
 }
