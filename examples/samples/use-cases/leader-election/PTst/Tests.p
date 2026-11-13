@@ -64,6 +64,7 @@ fun NewNode(d: tDisk): machine {
 
 fun ThreeNodes(): seq[machine] {
   var nodes: seq[machine];
+  announce eClusterSize, 3;
   while (sizeof(nodes) < 3) { nodes += (sizeof(nodes), NewNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0))); }
   return nodes;
 }
@@ -92,6 +93,7 @@ machine SplitVote {
   start state Init {
     entry {
       var nodes: seq[machine];
+      announce eClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 1, votedTerm = 1)));
@@ -112,6 +114,7 @@ machine HigherTermReply {
       var t: seq[int];
       var term2: int;
       if ($) { term2 = 5; }
+      announce eClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = term2, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 5, votedTerm = 0)));
@@ -134,9 +137,30 @@ machine OneNodeDown {
   start state Init {
     entry {
       var nodes: seq[machine];
+      announce eClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, new Unreachable());
+      announce eElectionsStarted;
+      Timeout(this, nodes, 0);
+    }
+    ignore eRoundLost;
+  }
+}
+
+// Exactly a majority of five: node 1 stands with nodes 2 and 3 up and nodes 4 and 5
+// unreachable. One grant (two votes) is not enough; the second grant (three of five)
+// must win.
+machine FiveNodesTwoDown {
+  start state Init {
+    entry {
+      var nodes: seq[machine];
+      announce eClusterSize, 5;
+      nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
+      nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
+      nodes += (2, NewNode((id = 3, term = 0, votedTerm = 0)));
+      nodes += (3, new Unreachable());
+      nodes += (4, new Unreachable());
       announce eElectionsStarted;
       Timeout(this, nodes, 0);
     }
@@ -186,12 +210,46 @@ machine StaleVoteReply {
   }
 }
 
+// A client that sends a node one request at a moment the scheduler picks.
+machine Prober {
+  start state Probing {
+    entry (node: machine) {
+      announce eProbeSent;
+      send node, eClientReq;
+    }
+  }
+}
+
+// Deposed leader: node 1 stands in term 1 while node 3, restarted at term 5, stands in
+// term 6, and a client sends node 1 a request at any moment. Node 1 can win
+// term 1 with node 2's vote and then see a higher term in node 3's request or in its
+// reply; from then on it must refuse client requests. A leader that missed the
+// step-down accepts them in a term it did not win. Node 3 always wins term 6.
+machine DeposedLeader {
+  start state Init {
+    entry {
+      var nodes: seq[machine];
+      announce eClusterSize, 3;
+      nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
+      nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
+      nodes += (2, NewNode((id = 3, term = 5, votedTerm = 0)));
+      announce eElectionsStarted;
+      Timeout(this, nodes, 0);
+      Timeout(this, nodes, 2);
+      new Prober(nodes[0]);
+    }
+    // Node 1 loses when node 3's term reaches it first; no further round is needed.
+    ignore eRoundLost;
+  }
+}
+
 // The negative control's race: node 3 crashes and restarts at a moment the scheduler
 // picks while nodes 1 and 2 stand.
 machine BuggyTwoCandidatesVoterCrash {
   start state Init {
     entry {
       var nodes: seq[machine];
+      announce eClusterSize, 3;
       while (sizeof(nodes) < 3) {
         announce eDisk, (id = sizeof(nodes) + 1, term = 0, votedTerm = 0);
         nodes += (sizeof(nodes), new ForgetfulNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0)));
@@ -205,6 +263,10 @@ test tcTwoCandidates [main=TwoCandidates]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { TwoCandidates, Election, Node };
 
+test tcDeposedLeader [main=DeposedLeader]:
+  assert ElectionSafety, SomeLeaderElected, CandidaciesConclude, ProbeAnswered in
+  { DeposedLeader, Prober, Node };
+
 test tcSplitVote [main=SplitVote]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { SplitVote, Election, Node };
@@ -217,6 +279,11 @@ test tcHigherTermReply [main=HigherTermReply]:
 test tcOneNodeDown [main=OneNodeDown]:
   assert ElectionSafety, SomeLeaderElected in
   { OneNodeDown, Unreachable, Node };
+
+// Nodes 4 and 5 never answer, so CandidaciesConclude does not apply.
+test tcFiveNodesTwoDown [main=FiveNodesTwoDown]:
+  assert ElectionSafety, SomeLeaderElected in
+  { FiveNodesTwoDown, Unreachable, Node };
 
 test tcGeneratedElection [main=GeneratedElection]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in

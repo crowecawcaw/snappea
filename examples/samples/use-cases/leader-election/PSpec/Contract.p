@@ -3,6 +3,8 @@
 // when a node becomes leader) and events the driver announces about what it set up
 // and what it was told.
 
+// Driver: how many nodes the cluster has (reachable or not), before any node starts.
+event eClusterSize: int;
 // Driver: a node starts from this durable state.
 event eDisk: (id: int, term: int, votedTerm: int);
 // A node stood for election in `term`, voting for itself.
@@ -14,17 +16,26 @@ event eBecameLeader: (id: int, term: int);
 event eHeardAll: (id: int, term: int);
 // Driver: a candidate reported that it lost its candidacy in `term`.
 event eLossReported: (id: int, term: int);
+// Driver: it sent a client request ...
+event eProbeSent;
+// ... and node `id` accepted or refused it, in `term`.
+event eClientAnswered: (id: int, term: int, accepted: bool);
 
 // Safety:
 //  - a node never votes twice in one term (its own candidacy counts as a vote);
 //  - a node's term never goes back, and it never grants a vote for an older term;
-//  - a node becomes leader only with votes from a majority (two of three) in its
+//  - a node becomes leader only with votes from a majority of the cluster in its
 //    term, counted from the answers, not from the candidate's own tally;
 //  - at most one leader per term;
 //  - a node does not report losing a term it won, or one where a majority voted for
 //    it and it saw no higher term;
-//  - after losing, a node stands next in a term above every term it was told of.
-spec ElectionSafety observes eDisk, eStood, eAnswered, eBecameLeader, eLossReported {
+//  - after losing, a node stands next in a term above every term it was told of;
+//  - a node accepts a client request only as leader of its current term (a deposed
+//    leader must stop), and refuses it otherwise.
+spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLeader, eLossReported,
+    eClientAnswered {
+  // Votes needed to win: more than half the cluster.
+  var majority: int;
   // term * 10 + voter -> candidate it voted for
   var voteOf: map[int, int];
   // term * 10 + candidate -> votes for it
@@ -43,6 +54,10 @@ spec ElectionSafety observes eDisk, eStood, eAnswered, eBecameLeader, eLossRepor
   var stoodTerm: map[int, int];
 
   start state Watching {
+    on eClusterSize do (n: int) {
+      assert majority == 0, "cluster size announced twice";
+      majority = n / 2 + 1;
+    }
     on eDisk do (d: (id: int, term: int, votedTerm: int)) {
       termOf[d.id] = d.term;
       if (d.votedTerm > 0) { Vote(d.id, d.votedTerm, d.id); }
@@ -78,7 +93,8 @@ spec ElectionSafety observes eDisk, eStood, eAnswered, eBecameLeader, eLossRepor
     on eBecameLeader do (l: (id: int, term: int)) {
       assert !(l.term in leaderOf),
         format("two leaders in term {0}: {1} and {2}", l.term, leaderOf[l.term], l.id);
-      assert (l.term * 10 + l.id) in tally && tally[l.term * 10 + l.id] >= 2,
+      assert majority > 0, "a leader was elected before the cluster size was announced";
+      assert (l.term * 10 + l.id) in tally && tally[l.term * 10 + l.id] >= majority,
         format("node {0} became leader of term {1} without a majority of votes", l.id, l.term);
       leaderOf[l.term] = l.id;
     }
@@ -87,10 +103,22 @@ spec ElectionSafety observes eDisk, eStood, eAnswered, eBecameLeader, eLossRepor
       key = r.term * 10 + r.id;
       assert !(r.term in leaderOf && leaderOf[r.term] == r.id),
         format("node {0} reported losing term {1}, which it won", r.id, r.term);
-      assert (key in disturbed) || !(key in tally) || tally[key] < 2,
+      assert (key in disturbed) || !(key in tally) || tally[key] < majority,
         format("node {0} reported losing term {1} although a majority voted for it and it saw no higher term", r.id, r.term);
       floor[r.id] = termOf[r.id];
       if (answeredTerm[key] > floor[r.id]) { floor[r.id] = answeredTerm[key]; }
+    }
+    on eClientAnswered do (a: (id: int, term: int, accepted: bool)) {
+      // A node that adopted a higher term and kept acting as leader would accept in a
+      // term it did not win.
+      if (a.accepted) {
+        assert a.term in leaderOf && leaderOf[a.term] == a.id,
+          format("node {0} accepted a client request as leader of term {1}, which it did not win", a.id, a.term);
+      } else {
+        assert !(a.term in leaderOf && leaderOf[a.term] == a.id),
+          format("node {0} refused a client request while leader of term {1}", a.id, a.term);
+      }
+      Advance(a.id, a.term);
     }
   }
 
@@ -135,7 +163,9 @@ spec SomeLeaderElected observes eElectionsStarted, eBecameLeader {
 // Progress: every candidacy hears back from both peers (each RequestVote is answered,
 // by followers, candidates and leaders alike), unless the same node has since started
 // a newer candidacy. Not selected where a peer is deliberately unreachable.
-spec CandidaciesConclude observes eStood, eAnswered, eHeardAll {
+spec CandidaciesConclude observes eClusterSize, eStood, eAnswered, eHeardAll {
+  // Replies a candidacy waits for: one per peer.
+  var peers: int;
   // candidate -> term of its latest candidacy still waiting for replies
   var open: map[int, int];
   // term * 10 + candidate -> voters that answered it
@@ -145,6 +175,7 @@ spec CandidaciesConclude observes eStood, eAnswered, eHeardAll {
   // every answer to a superseded candidacy comes before the answers that close the
   // newer one.
   start state Quiet {
+    on eClusterSize do (n: int) { peers = n - 1; }
     on eStood do (s: (id: int, term: int)) { Stood(s.id, s.term); }
     on eAnswered do { assert false, "a request was answered while no candidacy was open"; }
     on eHeardAll do { assert false, "a candidate heard all replies while no candidacy was open"; }
@@ -176,9 +207,27 @@ spec CandidaciesConclude observes eStood, eAnswered, eHeardAll {
   fun Heard(id: int, term: int) {
     assert id in open && open[id] == term,
       format("node {0} heard all replies for term {1}, which is not its open candidacy", id, term);
-    assert sizeof(answers[term * 10 + id]) == 2,
-      format("node {0} claims all replies for term {1}, but {2} of 2 were sent", id, term, sizeof(answers[term * 10 + id]));
+    assert sizeof(answers[term * 10 + id]) == peers,
+      format("node {0} claims all replies for term {1}, but {2} of {3} were sent", id, term, sizeof(answers[term * 10 + id]), peers);
     open -= (id);
     if (sizeof(open) == 0) { goto Quiet; }
+  }
+}
+
+// Progress: the client request is answered, accepted or refused.
+spec ProbeAnswered observes eProbeSent, eClientAnswered {
+  start state Idle {
+    on eProbeSent goto Waiting;
+    on eClientAnswered do { assert false, "a client request was answered before it was sent"; }
+  }
+
+  hot state Waiting {
+    on eProbeSent do { assert false, "more than one client request sent"; }
+    on eClientAnswered goto Answered;
+  }
+
+  state Answered {
+    on eProbeSent do { assert false, "more than one client request sent"; }
+    on eClientAnswered do { assert false, "more answers than client requests"; }
   }
 }

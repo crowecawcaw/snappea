@@ -9,10 +9,11 @@ questions:
 
 # Term-based leader election
 
-Three nodes elect a leader the way Raft does, without the log: a node whose election
-timer fires increments its term, votes for itself and asks the others for votes; a node
-grants at most one vote per term; a candidate with a majority (two of three) becomes
-leader. A higher term in any request or reply makes a node adopt it and step down.
+Three nodes (five in one test) elect a leader the way Raft does, without the log: a
+node whose election timer fires increments its term, votes for itself and asks the
+others for votes; a node grants at most one vote per term; a candidate with a majority
+of the cluster becomes leader. A higher term in any request or reply makes a node adopt
+it and step down. Only the leader accepts client requests.
 Nodes can crash and restart, and messages are delayed arbitrarily.
 
 **Contract**
@@ -22,27 +23,29 @@ Nodes can crash and restart, and messages are delayed arbitrarily.
   leader has a majority of votes in its term, counted from the answers; at most one
   leader per term; a node never reports losing a term it won, or one where a majority
   voted for it and it saw no higher term; after a loss it next stands above every term
-  it was told of.
+  it was told of; a node accepts a client request only as leader of its current term,
+  so a leader that saw a higher term has stepped down.
 - Progress (`SomeLeaderElected`, bounded): once elections start, some node becomes
   leader. Assumptions: at most one crash (of a node that is not standing), every
   request is eventually answered (RequestVote is retried), and if every candidate of a
   round loses, one node's timer eventually fires alone after the earlier messages were
   handled (what Raft's randomized timeouts provide).
-- Progress (`CandidaciesConclude`): every candidacy hears back from both peers.
+- Progress (`CandidaciesConclude`): every candidacy hears back from every peer.
+- Progress (`ProbeAnswered`): a client request is accepted or refused.
 
 **Atomic primitives** (one handler each): timeout (term + 1 and self-vote, persisted,
 then send requests); answer a RequestVote (adopt a higher term, grant if this node has
-not voted in that term, persist, reply); handle a reply. `term` and `votedTerm` are
+not voted in that term, persist, reply); handle a reply; answer a client request. `term` and `votedTerm` are
 durable; everything else is volatile.
 
 ## Files
 
 | File | What it holds |
 | --- | --- |
-| [`PSpec/Contract.p`](PSpec/Contract.p) | `ElectionSafety`, `SomeLeaderElected` and `CandidaciesConclude` (hot states) |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | `ElectionSafety`, `SomeLeaderElected`, `CandidaciesConclude` and `ProbeAnswered` (hot states) |
 | [`PSrc/Node.p`](PSrc/Node.p) | The node: follower, candidate, leader |
 | [`PSrc/ForgetfulNode.p`](PSrc/ForgetfulNode.p) | Negative control: the vote is lost in a crash |
-| [`PTst/Tests.p`](PTst/Tests.p) | The `Election` driver (timers, crash, uncontested round) and the test cases |
+| [`PTst/Tests.p`](PTst/Tests.p) | The `Election` driver (timers, crash, uncontested round), the `Prober` client and the test cases |
 
 ## Test cases
 
@@ -53,13 +56,16 @@ durable; everything else is volatile.
 | `tcHigherTermReply` | Node 3 (and sometimes node 2) restarts at term 5; node 1 stands in term 1 | A candidate or leader gets a reply with a higher term; a loser must next stand above it |
 | `tcStaleVoteReply` | Node 1's timer fires twice in a row | Replies to its term-1 requests arrive during its term-2 candidacy and must not count |
 | `tcOneNodeDown` | Node 3 never answers | A majority, not unanimity: one grant plus the self-vote must win |
+| `tcFiveNodesTwoDown` | Five nodes, two never answer; node 1 stands | Exactly at the boundary: two votes of five must not win, three must |
+| `tcDeposedLeader` | Node 1 stands in term 1, node 3 (restarted at term 5) in term 6; a client request to node 1 at any moment | A leader that sees a higher term in a request or a reply must stop accepting requests |
 | `tcGeneratedElection` | One or two candidates, maybe a crash and restart of a non-candidate | Crashes at any moment, including between granting one candidate and seeing the other |
 | `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | **Expected to fail**: `node 3 voted twice in term 1: for 2 and for 1` |
 
 ## Run
 
 ```sh
-snappea check tcTwoCandidates tcSplitVote tcHigherTermReply tcStaleVoteReply tcOneNodeDown tcGeneratedElection --deny mutation
+snappea check tcTwoCandidates tcSplitVote tcHigherTermReply tcStaleVoteReply tcOneNodeDown \
+  tcFiveNodesTwoDown tcDeposedLeader tcGeneratedElection --timeout 30s --deny mutation
 snappea check tcBugVoteNotPersisted      # exits 1 with the double vote above
 ```
 

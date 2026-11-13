@@ -1,4 +1,4 @@
-// Raft-style leader election (voting only, no log) among three nodes.
+// Raft-style leader election (voting only, no log).
 //
 // Real atomic primitives, one handler each:
 //   timeout:      term + 1 and a vote for itself (both persisted), then RequestVote
@@ -28,6 +28,10 @@ event eCrash;
 // did not win. When every candidate of a round has lost, the service lets one timer
 // fire alone.
 event eRoundLost: (id: int, term: int);
+
+// A client request, such as a write, that only the leader may accept. The node
+// announces its answer (eClientAnswered); the reply to the client is not modeled.
+event eClientReq;
 
 // Durable state a node starts from (all zero for a fresh node).
 type tDisk = (id: int, term: int, votedTerm: int);
@@ -60,6 +64,7 @@ machine Node {
     // A follower that adopts a higher term stays a follower.
     on eVoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
     on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
+    on eClientReq do { Answer(false); }
     // Crash and restart. A follower's volatile fields are unused until its next
     // candidacy resets them, and durable fields survive, so nothing changes.
     ignore eCrash;
@@ -84,7 +89,7 @@ machine Node {
     on eTimeout goto Candidate;
     on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
-        // snappea-lint: allow mutation:remove-statement -- voting-only model: keeping the candidate or leader role after seeing a higher term sends nothing different (no heartbeats or log)
+        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
         goto Follower;
       }
     }
@@ -94,17 +99,16 @@ machine Node {
       // older candidacy is stale.
       if (p.granted && p.reqTerm == term) {
         votes = votes + 1;
-        // Majority of three, counting the candidate's own vote. With three nodes one
-        // grant is always enough, so this is never false here.
-        // snappea-lint: allow coverage -- with three nodes the first grant always completes a majority; tcOneNodeDown shows it must
-        if (votes >= 2) { leaderTerm = term; }
+        // A majority of the cluster (the peers and this node), counting its own vote.
+        if (votes * 2 > sizeof(peers) + 1) { leaderTerm = term; }
       }
       if (HandleReply(p)) {
-        // snappea-lint: allow mutation:remove-statement -- voting-only model: keeping the candidate or leader role after seeing a higher term sends nothing different (no heartbeats or log)
+        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
         goto Follower;
       }
       if (leaderTerm == term) { goto Leader; }
     }
+    on eClientReq do { Answer(false); }
   }
 
   state Leader {
@@ -113,18 +117,25 @@ machine Node {
     }
     // A leader's heartbeats keep its own timer from firing.
     ignore eTimeout;
+    // Only the leader accepts client requests. A leader that missed a step-down would
+    // accept them in a term it did not win.
+    on eClientReq do { Answer(true); }
     on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
-        // snappea-lint: allow mutation:remove-statement -- voting-only model: keeping the candidate or leader role after seeing a higher term sends nothing different (no heartbeats or log)
         goto Follower;
       }
     }
     on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
       if (HandleReply(p)) {
-        // snappea-lint: allow mutation:remove-statement -- voting-only model: keeping the candidate or leader role after seeing a higher term sends nothing different (no heartbeats or log)
         goto Follower;
       }
     }
+  }
+
+  // Accept a client request as leader, or refuse it (a real node would redirect to
+  // the leader it knows). The answer is the commit point.
+  fun Answer(accepted: bool) {
+    announce eClientAnswered, (id = id, term = term, accepted = accepted);
   }
 
   // Returns true when a higher term means this node must step down to follower.
@@ -133,7 +144,6 @@ machine Node {
     var stepDown: bool;
     if (r.term > term) {
       term = r.term;
-      // snappea-lint: allow mutation -- only drives the step-down, which is not observable in a voting-only model (see the handlers)
       stepDown = true;
     }
     if (r.term == term && votedTerm != term) {
@@ -157,7 +167,6 @@ machine Node {
     }
     if (p.term > term) {
       term = p.term;
-      // snappea-lint: allow mutation:flip-boolean -- only drives the step-down, which a voting-only model cannot observe (see the handlers)
       return true;
     }
     return false;

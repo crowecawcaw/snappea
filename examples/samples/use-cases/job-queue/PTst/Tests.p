@@ -96,7 +96,7 @@ fun Run(s: tSetup) {
 // rejected, and the job must still be completed exactly once.
 machine SlowWorker {
   start state Init {
-    entry { Run((jobs = 1, workers = 2, slow = 1, duplicates = false, crash = false)); }
+    entry { Run((jobs = 1, workers = 2, slow = 1, duplicates = true, crash = false)); }
   }
 }
 
