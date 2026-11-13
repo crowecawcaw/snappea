@@ -50,11 +50,11 @@ overtake each other.
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion | pass, exhaustive |
-| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2 | pass, exhaustive when given ~15s (sampled under the 20s budget on a busy machine) |
+| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2 | pass, exhaustive when given ~90s (about 112,000 schedules); sampled under shorter budgets |
 | `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | **Expected to fail**: `node 0 applied version 2 after version 3` | fail |
 
-The `RollbackOvertookPush` scenario confirms a node received version 3 after version 2
-had been pushed to it.
+The `RollbackOvertookPush` scenario confirms a node applied version 3 while a push of
+version 2 to it was still in flight (the rollback overtook the bad version).
 
 ## What building it taught
 
@@ -74,7 +74,7 @@ had been pushed to it.
 ## Run
 
 ```sh
-snappea check tcStagedRollout tcRollbackDuringCanary --deny mutation
+snappea check tcStagedRollout tcRollbackDuringCanary --timeout 2m --deny mutation
 snappea check tcBugLastArrival      # exits 1: node 0 applied version 2 after version 3
 ```
 

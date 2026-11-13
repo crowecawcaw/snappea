@@ -47,8 +47,8 @@ drain command). Processing a request takes time (the instance's `eFinish` to its
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcScaleInUnderLoad` | Two clients, one request each, instance 0 removed | Requests in flight on the draining instance and on the other one | pass, sampled |
-| `tcLateRequestDuringDrain` | One request at any moment relative to removing instance 1 | Routed before deregistration, arriving while draining or after termination: refused and rerouted | pass, exhaustive when given ~5s (sampled under a busy 20s budget) |
-| `tcLastInstanceRefused` | Remove 0, then 1; a client sends two requests | The second scale-in is refused; requests still served | pass, exhaustive when given ~10s |
+| `tcLateRequestDuringDrain` | One request at any moment relative to removing instance 1 | Routed before deregistration, arriving while draining or after termination: refused and rerouted | pass, exhaustive (about 4,900 schedules, ~2s) |
+| `tcLastInstanceRefused` | Remove 0, then 1; a client sends two requests | The second scale-in is refused; requests still served | pass, exhaustive (about 17,500 schedules, ~8s) |
 | `tcBugTerminateEarly` | `HastyAutoscaler` | **Expected to fail**: `instance 0 terminated with request 1 in flight` | fail |
 | `tcBugDrainBeforeDeregistered` | `EarlyDrainAutoscaler` | **Expected to fail**: `instance 0 started draining while the load balancer still routes to it` | fail |
 
@@ -71,10 +71,13 @@ then served elsewhere.
 ## Run
 
 ```sh
-snappea check tcScaleInUnderLoad tcLateRequestDuringDrain tcLastInstanceRefused --deny mutation
+snappea check tcScaleInUnderLoad tcLateRequestDuringDrain tcLastInstanceRefused --timeout 30s --deny mutation
 snappea check tcBugTerminateEarly             # exits 1: ... terminated with request 1 in flight
 snappea check tcBugDrainBeforeDeregistered    # exits 1: ... started draining while the load balancer still routes to it
 ```
+
+Without `--timeout` the test cases share 10s, too little for `tcLastInstanceRefused`
+to cover every schedule. An exhaustive run reports `all N schedules`.
 
 ## Bounds and omissions
 

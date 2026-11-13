@@ -70,14 +70,16 @@ a restoring edit.
   fault can never fail a spec, so in the client it produced undetectable mutants; in a
   driver machine it is not mutated, and the client's timeout handler becomes checked.
 - The edit id is the idempotency key across every attempt. A fresh id per attempt was
-  unobservable to the contract, so the simpler design is the right one.
+  unobservable to this contract, but only because the model treats every timeout as a
+  lost reply (see bounds). With slow replies, the client needs to tell which attempt a
+  reply answers; the edit id alone cannot.
 - Only the lossy client talks through the link: each forwarding hop multiplies the
   schedules, and the two-client tests stay exhaustive this way.
 
 ## Run
 
 ```sh
-snappea check tcTwoEditorsSameBase tcLostReplyRetry tcEditVsDelete tcGeneratedSync --deny mutation
+snappea check tcTwoEditorsSameBase tcLostReplyRetry tcEditVsDelete tcGeneratedSync --timeout 30s --deny mutation
 snappea check tcBugLastWriterWins     # exits 1: ... overwrote version 2
 snappea check tcBugNoRequestIds       # exits 1: ... conflicted with itself
 ```
@@ -90,10 +92,23 @@ as a slower one); the final pull happens after every client stopped editing, whi
 how convergence is stated. Not modeled: several notes, field-level merge (content is a
 set, so merge is union), server crashes, clients going offline again mid-retry.
 
+**A timeout is modeled only as a lost reply, never as a slow one.** In a real client
+the timeout can fire while the reply is still on its way, so after the resend the
+client gets two replies. The modeled client would then fail: in `Idle` it does not
+handle a late `eUpdateOk`, and in `Pushing` a late conflict for an earlier attempt
+looks like a fresh one and makes it push again, possibly based on an older version. An implementation must
+drop replies that do not answer the attempt in flight: ignore any reply once the
+change is resolved, and ignore a conflict whose server version is not newer than the
+attempt's base (a fresh conflict always reports a newer version). To model it, let
+`LossyLink` deliver the reply after the timeout instead of dropping it, and relax
+`SyncCompletes` to accept any base a conflict reported to that client.
+
 ## Testing the implementation
 
 Emit `eAccepted` and `eConflicted` from the server inside the update transaction, and
 `eOpDone`/`eSynced` from the client. To force the races: hold client B's push until
 client A's update commits (conflict); drop the HTTP response of an accepted update and
 let the client's timeout resend it while another client writes (self-conflict); delete
-from one device while the other is offline with an edit.
+from one device while the other is offline with an edit. Also delay (not drop) a
+conflict response past the client's timeout, so the late reply arrives after the
+merged retry was sent: the client must ignore it (see bounds).

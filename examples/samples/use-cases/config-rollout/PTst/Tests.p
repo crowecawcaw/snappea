@@ -73,15 +73,19 @@ machine BuggyLastArrival {
   }
 }
 
-// Covered: a node received the rollback before the bad version's delayed push.
+// Covered: a node received the rollback before the bad version's delayed push. Version 2
+// was pushed to the node but not applied when version 3 was, so that push was still in
+// flight: the rollback overtook it.
 scenario RollbackOvertookPush observes ePushSent, eApplied {
-  var pushed2: set[int];
+  // nodes with a push of version 2 that has not arrived
+  var pending2: set[int];
   start hot state Watching {
     on ePushSent do (p: (node: int, version: int)) {
-      if (p.version == 2) { pushed2 += (p.node); }
+      if (p.version == 2) { pending2 += (p.node); }
     }
     on eApplied do (a: (node: int, version: int, content: int)) {
-      if (a.version == 3 && a.node in pushed2) { goto Covered; }
+      if (a.version == 2) { pending2 -= (a.node); }
+      if (a.version == 3 && a.node in pending2) { goto Covered; }
     }
   }
   cold state Covered {
