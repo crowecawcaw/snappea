@@ -38,7 +38,7 @@ use rustc_hash::FxHashMap;
 use crate::checker::strategy::{OpInfo, SharedRandom, Strategy};
 
 /// A permanent handoff from exhaustive search to sampling in auto mode.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutoHandoff {
     /// One-based worker number; counts below belong to this worker.
     pub worker: usize,

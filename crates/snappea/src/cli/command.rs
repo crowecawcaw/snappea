@@ -1633,7 +1633,16 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
         v["incomplete_reason"] = json!(reason);
     }
     if !case.auto_handoffs.is_empty() {
-        v["auto_handoffs"] = json!(case.auto_handoffs);
+        v["auto_handoffs"] = json!(case
+            .auto_handoffs
+            .iter()
+            .map(|h| json!({
+                "worker": h.worker,
+                "after_schedules": h.after_schedules,
+                "choices": h.choices,
+                "reason": h.reason,
+            }))
+            .collect::<Vec<_>>());
     }
     if let Some(frontier) = case.exhaustive_unfinished {
         v["untried_alternatives"] = json!(frontier);
