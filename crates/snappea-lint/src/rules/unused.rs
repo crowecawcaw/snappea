@@ -126,14 +126,25 @@ fn written_place(e: &Expr, writes: &mut HashSet<snappea_syntax::Span>) {
     }
 }
 
-/// Whether a body is only `assert false` (with an optional message), possibly in braces.
+/// Whether a handler rejects the event unconditionally, with optional diagnostics.
+/// Keep this narrow: a conditional rejection still needs to check accepted payloads.
 fn only_fails(stmts: &[Stmt]) -> bool {
-    match stmts {
-        [s] => match &s.kind {
-            StmtKind::Assert { cond, .. } => matches!(cond.kind, ExprKind::BoolLit(false)),
-            StmtKind::Compound(inner) => only_fails(inner),
-            _ => false,
-        },
-        _ => false,
+    for s in stmts {
+        match &s.kind {
+            StmtKind::Print(e) => {
+                // A helper can leave the handler with goto/raise; do not assume it
+                // returns to the rejection. Literal/format diagnostics are safe.
+                let mut calls = false;
+                visit::expr(e, &mut |e| calls |= matches!(e.kind, ExprKind::FunCall { .. } | ExprKind::Ctor { .. }));
+                if calls {
+                    return false;
+                }
+            }
+            StmtKind::NoStmt => {}
+            StmtKind::Assert { cond, .. } => return matches!(cond.kind, ExprKind::BoolLit(false)),
+            StmtKind::Compound(inner) if only_fails(inner) => return true,
+            _ => return false,
+        }
     }
+    false
 }

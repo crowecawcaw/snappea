@@ -688,13 +688,13 @@ fn check_reports_what_never_ran() {
         h.stdout
     );
     let expected = "Not covered by the test case:\n  \
-         ping.p:7      Server.Ready, on ePing: condition from == this never true\n  \
          ping.p:7      Server.Ready, on ePing: if (from == this) never true\n  \
          ping.p:10     Server.Ready, on eStop: goto Stopped never taken\n  \
          ping.p:13     Server.Stopped entry: never ran\n  \
-         ping.p:20     Client.Init entry: condition i > 0 never true\n  \
          ping.p:21-22  Client.Init entry: not reached: i = i - 1;\n";
     assert!(h.stdout.contains(expected), "{}", h.stdout);
+    assert!(h.stdout.contains("Informational condition coverage (does not fail the check):"), "{}", h.stdout);
+    assert!(h.stdout.contains("No schedule of the selected tests reaches these gaps"), "{}", h.stdout);
     // the JSON result has the same, and all of it
     let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
     assert_eq!(
@@ -1498,6 +1498,39 @@ fn a_passing_check_reports_where_schedules_branch() {
 }
 
 #[test]
+fn transition_pair_details_are_verbose_only() {
+    let model = r#"
+        machine Main {
+            var viaA: bool;
+            start state S { entry { if ($) { viaA = true; goto A; } else { goto B; } } }
+            state A { entry { goto B; } }
+            state B { entry { if (viaA) { goto D; } else { goto C; } } }
+            state C { }
+            state D { }
+        }
+        test tc [main=Main]: { Main };
+    "#;
+    for verbose in [false, true] {
+        let mut h = host();
+        h.add_file("pairs.p", model);
+        let mut args = vec!["check", "pairs.p", "--no-mutation", "--warn", "lint", "--json-report", "result.json"];
+        if verbose {
+            args.push("-v");
+        }
+        assert_eq!(snappea(&mut h, &args), 0, "{} {}", h.stdout, h.stderr);
+        assert!(h.stdout.contains("2 transition pairs not taken (informational"), "{}", h.stdout);
+        assert_eq!(h.stdout.contains("never taken consecutively"), verbose, "{}", h.stdout);
+        assert!(!h.stdout.contains("Not covered by the test case:"), "{}", h.stdout);
+        let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        assert!(result["coverage"]["uncovered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["what"].as_str().unwrap().contains("never taken consecutively")));
+    }
+}
+
+#[test]
 fn typos_in_commands_options_and_test_names_get_suggestions() {
     let mut h = host();
     assert_eq!(snappea(&mut h, &["--format", "text", "chek"]), 2);
@@ -1538,4 +1571,51 @@ fn auto_explains_per_worker_handoffs_in_text_and_json() {
         h.stdout
     );
     assert!(h.stdout.contains("retained alternative limit reached"), "{}", h.stdout);
+}
+
+#[test]
+fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
+    for nested in [false, true] {
+        let id = if nested { "mutation-nested" } else { "mutation" };
+        let source = COUNTER
+            .replace(
+                "total = total + n;",
+                &format!("// snappea-lint: allow {id} -- guard scope\nif (n > 0) {{ total = total + n; }}"),
+            )
+            .replace(
+                "announce eTotal, total;",
+                "// snappea-lint: allow mutation:remove-not -- stale example\nannounce eTotal, total;",
+            );
+        let mut h = host();
+        h.add_file("counter.p", &source);
+        assert_eq!(
+            snappea(
+                &mut h,
+                &[
+                    "check",
+                    "mutation",
+                    "counter.p",
+                    "--warn",
+                    "mutation",
+                    "--list-suppressions",
+                    "--json-report",
+                    "result.json"
+                ]
+            ),
+            0,
+            "{}{}",
+            h.stdout,
+            h.stderr
+        );
+        let report: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        let mutation = &report["mutation"];
+        let suppressed = mutation["suppressed_details"].as_array().unwrap();
+        assert_eq!(suppressed.len() as u64, mutation["suppressed"].as_u64().unwrap());
+        assert!(suppressed.iter().any(|m| m["change"].as_str().unwrap().contains("whole `if")), "{mutation}");
+        assert_eq!(suppressed.iter().any(|m| m["change"] == "removed `total = total + n;`"), nested, "{mutation}");
+        assert!(suppressed.iter().all(|m| m["reasons"] == serde_json::json!(["guard scope"])));
+        assert_eq!(mutation["stale_suppressions"].as_array().unwrap().len(), 1, "{mutation}");
+        assert!(h.stdout.contains("matches no mutant in the selected model"), "{}", h.stdout);
+        assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
+    }
 }

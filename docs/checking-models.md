@@ -359,7 +359,10 @@ The JSON result has the same text in each failed test case's `bug.report`.
 The [coverage guide](https://snappea.dev/docs/coverage.html) explains the types of
 coverage and how to use the gaps. In addition to statements, branches and handlers,
 checks measure atomic condition outcomes in `if`/`while` decisions and consecutive
-state-transition pairs on a single instance. Structural transition pairs may be
+state-transition pairs on a single implementation-machine instance (not spec monitors).
+Text output lists required gaps first, then informational condition gaps. Missing
+transition pairs are summarized in one line; use `-v` for details or `--json` for
+the complete list. These informational gaps do not fail the coverage gate. Structural transition pairs may be
 unreachable because of guards or data constraints. Loaded components outside the
 selected tests are listed separately, excluded from totals.
 
@@ -472,6 +475,8 @@ A mutant changes one place in the code of the machines under test:
 | `empty-body` | removes every statement of a function or handler body but its `return`s |
 | `condition-true`, `condition-false` | replaces an `if` condition by `true` or `false` |
 | `swap-operator` | `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-`, `&&` and `\|\|` |
+| `drop-conjunct` | `a && b` becomes `a` or `b`, in separate mutants |
+| `drop-disjunct` | `a \|\| b` becomes `a` or `b`, in separate mutants |
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
 
@@ -625,6 +630,13 @@ its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
 (`undetected_inside`); `undetected_inside_undetected` counts those.
 
 ### Suppressing a mutant
+
+A suppression applies only to mutations directly on the following statement or
+declaration. Mutations in nested statements remain active. Opt into a nested scope
+with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a reason.
+Use `--list-suppressions` to inspect every suppressed mutant and stale directive;
+JSON includes `suppressed_details` and `stale_suppressions` alongside the count.
+
 
 When a change cannot or need not be detected, say so with the
 [lint suppression comment](linting.md#suppress-intentional-findings), on its own line

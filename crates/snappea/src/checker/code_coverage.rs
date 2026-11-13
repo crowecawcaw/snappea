@@ -406,6 +406,9 @@ impl CodeMap {
         for (a, b) in &edges {
             for (_, c) in edges.range((*b, StateId(0))..=(*b, StateId(u32::MAX))) {
                 let st = prog.state(*b);
+                if prog.machine(st.machine).is_spec() {
+                    continue;
+                }
                 let context = prog.machine(st.machine).name.clone();
                 let missed = format!(
                     "{} -> {} -> {} never taken consecutively",
@@ -510,6 +513,30 @@ impl CodeMap {
             v.dedup();
         }
         (open, accepted)
+    }
+
+    /// Unsuppressed advisory gaps, grouped without classifying rendered messages.
+    pub fn advisory_uncovered(
+        &self,
+        coverage: &CodeCoverage,
+        suppressions: &[(Span, String)],
+    ) -> (Vec<Uncovered>, Vec<Uncovered>) {
+        let (mut conditions, mut pairs) = (Vec::new(), Vec::new());
+        for (i, gap) in coverage.uncovered_points() {
+            if self.suppression(i as usize, suppressions).is_some() {
+                continue;
+            }
+            match self.points[i as usize].kind {
+                PointKind::ConditionTrue | PointKind::ConditionFalse => conditions.push(gap),
+                PointKind::TransitionPair => pairs.push(gap),
+                _ => {}
+            }
+        }
+        for gaps in [&mut conditions, &mut pairs] {
+            gaps.sort();
+            gaps.dedup();
+        }
+        (conditions, pairs)
     }
 
     /// Required points not reached by any selected test and not covered by a scoped
