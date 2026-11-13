@@ -386,21 +386,21 @@ spec or assertion depends on:
 ```
 $ snappea check tcAtomicReserve
 ...
-Mutation testing: 13 of 34 mutants detected (0.1s)
+Mutation testing: 19 of 39 mutants detected (1.8s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Inventory.p:24  Inventory.Init entry: removed `stock = units;`
   PSrc/Inventory.p:32  Inventory.Serving, on eReserveReq: `req.units <= stock` → `req.units < stock`
-  PSrc/Inventory.p:35  Inventory.Serving, on eReserveReq: removed `send req.client, eReserveResp, (order = req.order, ok = f...`
-  PSrc/Inventory.p:48  Inventory.Serving, on eReleaseReq: `stock + units` → `stock - units`
+  PSrc/Inventory.p:35  Inventory.Serving, on eReserveReq: `false` → `true`
+  PSrc/Inventory.p:49  Inventory.Serving, on eReleaseReq: removed the whole `if (req.order in reservations)` (and 4 more undetected inside it)
   ...
 ```
 
-Here the spec catches overselling but nothing else: an inventory that starts with no
-stock, refuses an order that fits exactly, never answers a refused order, or loses stock
-on release passes every test case. Each line is a choice: add a spec or an assertion
-that the change would break (a liveness spec that every order gets an answer, an
-assertion that a refusal is justified), add a test case that drives the code into the
-situation, or decide the code does not matter.
+Here the specs catch overselling and an order that never gets an answer, but nothing
+else: an inventory that starts with no stock, refuses an order that fits exactly,
+reports a refusal as a success, or loses stock on release passes every test case. Each
+line is a choice: add a spec or an assertion that the change would break (an assertion
+that a refusal is justified, or that an order's answer matches the reservation), add a
+test case that drives the code into the situation, or decide the code does not matter.
 
 A mutant changes one place in the code of the machines under test:
 

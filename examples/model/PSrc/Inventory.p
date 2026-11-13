@@ -63,7 +63,7 @@ machine Inventory {
   }
 }
 
-// snappea-lint: allow no-progress-spec -- one order reserves its units, then may cancel; this example checks safety only
+// Orders that reserve stock, then may cancel.
 machine OrderClient {
   var inventory: Inventory;
   var order: string;

@@ -76,9 +76,10 @@ jobs:
           </li>
         </ul>
         <p>
-          This repository runs the same workflow on its <a href={`${REPO}/tree/main/examples/model`}>example model</a>:{" "}
-          <a href={`${BLOB}/.github/workflows/check-model.yml`}>check-model.yml</a>, linked from{" "}
-          <code>examples/model/github-workflow.yml</code>.
+          The <a href={`${REPO}/tree/main/examples/model`}>example model</a> has a copy of this workflow:{" "}
+          <a href={`${BLOB}/examples/model/github-workflow.yml`}>github-workflow.yml</a>. This repository runs the
+          same steps with its own build of snappea in{" "}
+          <a href={`${BLOB}/.github/workflows/check-model.yml`}>check-model.yml</a>.
         </p>
       </section>
 
