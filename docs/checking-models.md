@@ -408,6 +408,14 @@ scenario-monitors` shows how to write them.
 JSON includes the scenario artifacts under `scenarios`
 for the suite and for each test case with scenarios. The same artifacts are still
 written to `scenario_coverage.json` for merging across runs.
+Each covered scenario also includes `satisfyingExecution`: the shortest observed
+history through its first acceptance, with `observedEvents`, `events`,
+`acceptingState`, and `truncated`. Event lines identify the actor, payload, scenario
+state, and scenario handler/state location. This is the scenario's observed history,
+not a full replay or a globally shortest execution. At most 128 events and 1024
+characters per event are retained; truncation is explicit. `-v` prints the evidence
+with its test case. Older artifacts without evidence still load. See `snappea guide
+scenario-monitors` for checking that the history distinguishes the intended race.
 
 The default gate checks aggregate coverage across all selected test cases. It requires
 all executable statements (including ordinary assertions), event handlers, and both

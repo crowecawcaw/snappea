@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::checker::code_coverage::Uncovered;
 use crate::checker::engine::{culture_order, TestReport};
 use crate::checker::jsonlog::Json;
+use crate::checker::runtime::ScenarioWitness;
 
 use crate::host::{Host, HostExt, Stream};
 use crate::project::pproj::list_files;
@@ -19,6 +20,7 @@ pub const SCHEMA_VERSION: i64 = 1;
 /// One scenario's entry (`ScenarioCoverageEntry`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
+    pub witness: Option<ScenarioWitness>,
     pub name: String,
     pub satisfied: bool,
     pub satisfying_schedules: i64,
@@ -44,6 +46,7 @@ pub fn from_report(report: &TestReport, test_case: &str) -> Artifact {
             .sorted_scenarios()
             .into_iter()
             .map(|s| Entry {
+                witness: s.witness.clone(),
                 name: s.name.clone(),
                 satisfied: s.trigger_count > 0,
                 satisfying_schedules: s.trigger_count as i64,
@@ -67,14 +70,26 @@ impl Artifact {
                     self.scenarios
                         .iter()
                         .map(|e| {
-                            Json::Obj(vec![
+                            let mut fields = vec![
                                 ("name".into(), Json::str(e.name.clone())),
                                 ("satisfied".into(), Json::Bool(e.satisfied)),
                                 ("satisfyingSchedules".into(), Json::Int(e.satisfying_schedules)),
                                 ("distinctSatisfyingTimelines".into(), Json::Int(e.distinct_satisfying_timelines)),
                                 ("maxStatesVisited".into(), Json::Int(e.max_states_visited)),
                                 ("monitorStates".into(), Json::Int(e.monitor_states)),
-                            ])
+                            ];
+                            if let Some(w) = &e.witness {
+                                fields.push((
+                                    "satisfyingExecution".into(),
+                                    Json::Obj(vec![
+                                        ("observedEvents".into(), Json::Int(w.observed_events as i64)),
+                                        ("events".into(), Json::Arr(w.events.iter().map(Json::str).collect())),
+                                        ("acceptingState".into(), Json::str(&w.accepting_state)),
+                                        ("truncated".into(), Json::Bool(w.truncated)),
+                                    ]),
+                                ));
+                            }
+                            Json::Obj(fields)
                         })
                         .collect(),
                 ),
@@ -95,6 +110,20 @@ impl Artifact {
                 .map(|a| {
                     a.iter()
                         .map(|e| Entry {
+                            witness: e.get("satisfyingExecution").filter(|w| w.is_object()).map(|w| ScenarioWitness {
+                                observed_events: int(w, "observedEvents").max(0) as usize,
+                                events: w
+                                    .get("events")
+                                    .and_then(|v| v.as_array())
+                                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                                    .unwrap_or_default(),
+                                accepting_state: w
+                                    .get("acceptingState")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or_default()
+                                    .into(),
+                                truncated: w.get("truncated").and_then(|v| v.as_bool()).unwrap_or(false),
+                            }),
                             name: e.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                             satisfied: e.get("satisfied").and_then(|x| x.as_bool()).unwrap_or(false),
                             satisfying_schedules: int(e, "satisfyingSchedules"),
@@ -285,4 +314,35 @@ pub fn merge_dir(host: &mut dyn Host, dir: &Path, snappea_files: bool) -> Vec<se
     let arts: Vec<Artifact> = latest.into_iter().map(|(_, a, _)| a).collect();
     host.write(Stream::Out, &merge(&arts), None);
     arts.iter().filter_map(|a| serde_json::from_str(&a.to_json()).ok()).collect()
+}
+
+/// Evidence for each covered scenario, with the test case that produced it.
+pub fn evidence_lines(artifacts: &[Artifact]) -> Vec<String> {
+    let mut best: std::collections::BTreeMap<&str, (&str, ScenarioWitness)> = Default::default();
+    for a in artifacts {
+        for e in &a.scenarios {
+            if let Some(w) = e.witness.as_ref().filter(|_| e.satisfied) {
+                let slot = best.entry(&e.name).or_insert((&a.test_case, w.clone()));
+                let mut chosen = Some(slot.1.clone());
+                ScenarioWitness::retain_best(&mut chosen, w);
+                if chosen.as_ref() != Some(&slot.1) {
+                    *slot = (&a.test_case, chosen.unwrap());
+                }
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    for (name, (test, w)) in best {
+        lines.push(format!(
+            "  Evidence for {name} in {test}: shortest observed accepting history ({} events), accepted in {}",
+            w.observed_events, w.accepting_state
+        ));
+        for (i, event) in w.events.iter().enumerate() {
+            lines.push(format!("    {}. {}", i + 1, event));
+        }
+        if w.truncated {
+            lines.push("    [truncated: at most 128 events and 1024 characters per event retained]".into());
+        }
+    }
+    lines
 }
