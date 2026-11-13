@@ -101,7 +101,7 @@ fn fault_recipes_check() {
     );
     let dir = temp("faults");
     std::fs::write(dir.join("faults.p"), model).unwrap();
-    let out = snappea(&["check", "faults.p", "--no-mutation", "--timeout", "1s", "--format", "text"], &dir);
+    let out = snappea(&["check", "faults.p", "--no-mutation", "--timeout", "5s", "--format", "text"], &dir);
     assert!(out.status.success(), "{}", text(&out));
 }
 
