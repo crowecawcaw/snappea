@@ -157,6 +157,11 @@ resolves tuple type aliases, and reports unused fields separately. A direct writ
 to a field does not count as reading it. Passing or copying the whole payload is
 conservatively treated as using every field; this is not interprocedural dataflow
 analysis. Reading a field also does not prove it contributes to a useful property.
+An index on the left of an assignment is a read: `requested[r.id] = r.amount;` reads
+both fields. A handler whose body is only `assert false` (with or without a message)
+reports an event that must not happen, so it need not read every field. P has no
+partial or `_` binding for payloads; to track one field of an event another spec
+checks fully, suppress the finding with a reason.
 
 ### Unobserved handlers
 

@@ -173,6 +173,19 @@ fn tuple_assignments_do_not_make_payload_look_read_and_aliases_are_conservative(
 }
 
 #[test]
+fn map_index_on_assignment_left_is_a_read_and_fail_only_handlers_are_exempt() {
+    let model = |body| {
+        format!("event E: (a: int, b: int); spec S observes E {{ var m: map[int, int]; start state A {{ on E do (p: (a: int, b: int)) {{ {body} }} }} }}")
+    };
+    assert!(!has(&model("m[p.a] = p.b;"), "unused-payload-field"));
+    // The written place itself is still not a read.
+    assert!(findings(&[&model("p.b = 1; m[p.a] = 1;")]).iter().any(|f| f.message.contains("p.b")));
+    assert!(!has(&model("assert false;"), "unused-payload-field"));
+    assert!(!has(&model("assert false, format(\"unexpected {0}\", p.a);"), "unused-payload-field"));
+    assert!(has(&model("assert p.a > 0; assert false;"), "unused-payload-field"));
+}
+
+#[test]
 fn suppression_is_scoped_and_unknown_ids_fail() {
     let suppressed = format!("// snappea-lint: allow permissive-monitor, unselected-spec -- trace fixture\n{PASSIVE}");
     // The comment precedes event E, not the spec, so it must not silently work.
