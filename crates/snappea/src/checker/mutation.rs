@@ -102,6 +102,12 @@ pub struct Mutant {
     /// The variable the changed statement only writes, when no check depends on it (see
     /// [`crate::checker::checked`]): no test case can notice the change, so it is not run.
     pub unchecked: Option<String>,
+    /// Why no test case can detect the change, found from the code (see
+    /// [`crate::checker::equivalent`]): it is not run.
+    pub equivalent: Option<String>,
+    /// The change is in, or is, an `if` or `while` on a nondeterministic choice: often
+    /// fault injection in a machine that stands in for the environment.
+    pub under_choice: bool,
 }
 
 impl Mutant {
@@ -201,6 +207,8 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
     }
     let sm: &SourceMap = &prog.sources;
     let checked = crate::checker::checked::analyze(prog);
+    let mut effectful = Effects { prog, funs: FxHashMap::default() };
+    let mut freshness = crate::checker::equivalent::Freshness::new(prog);
     let mut out = Vec::new();
     for (i, f) in prog.funs.iter().enumerate() {
         let fun = FunId(i as u32);
@@ -235,9 +243,24 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                     changes: Vec::new(),
                     unchanged: "",
                     unchecked: None,
+                    equivalent: None,
+                    under_choice: false,
                 });
             }
         }
+        // changes that cannot be detected
+        let guards = crate::checker::equivalent::self_assigning_guards(&body);
+        let mut choices: Vec<Span> = Vec::new();
+        crate::checker::checked::visit_stmts(&body, &mut |s| match &s.kind {
+            StmtKind::If { cond, .. } | StmtKind::While { cond, .. } if has_choice(cond) => choices.push(s.span),
+            _ => {}
+        });
+        let mut counters: FxHashMap<Span, String> = FxHashMap::default();
+        crate::checker::checked::visit_stmts(&body, &mut |s| {
+            if let Some((at, why)) = freshness.counter(s) {
+                counters.insert(at, why);
+            }
+        });
         let mut site = 0u32;
         walk(prog, &mut body, &mut |stmt, target| {
             let this = site;
@@ -250,6 +273,9 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             let Some(&probe) = probe_of.get(&(kind, fun, span)) else { return };
             let coarse = matches!(&target, Target::Stmt(s, Change::Remove) if compound(s));
             let watched = match &target {
+                // removing what the statement computes besides the value (a call that
+                // sends, a `new`, a choice) changes more than the value
+                Target::Stmt(s, Change::Remove) if effectful.computes_with_effect(s) => None,
                 Target::Stmt(s, Change::Remove) => match s.kind {
                     StmtKind::Assign { .. } => Some((stmt, "it only assigns the value already there")),
                     StmtKind::Add { .. } => Some((stmt, "the value is always there already")),
@@ -265,6 +291,16 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 _ => None,
             };
             let (watched, unchanged) = watched.map_or((None, ""), |(at, why)| (Some(at), why));
+            let equivalent = match &target {
+                Target::Stmt(s, Change::Remove) => {
+                    crate::checker::equivalent::removed_choice_branch(s).map(str::to_string)
+                }
+                Target::Expr(e, Change::Operator(BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge)) => {
+                    guards.get(&e.span).map(|why| why.to_string())
+                }
+                Target::Expr(e, Change::Operator(BinOp::Add | BinOp::Sub)) => counters.get(&e.span).cloned(),
+                _ => None,
+            };
             let changes = watched.and_then(|at| changes_at.get(&(fun, at))).cloned().unwrap_or_default();
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
@@ -285,10 +321,109 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 changes,
                 unchanged,
                 unchecked: unchecked.get(&stmt).cloned(),
+                equivalent,
+                under_choice: choices.iter().any(|c| c.file == at.file && c.start <= at.start && at.end <= c.end),
             });
         });
     }
     out
+}
+
+/// Which code does more than compute values, for the mutants that change no value (see
+/// [`Mutant::changes`]): removing such code changes the program even when the value it
+/// assigns is already there.
+struct Effects<'p> {
+    prog: &'p Program,
+    /// Functions known to have an effect, or not.
+    funs: FxHashMap<FunId, bool>,
+}
+
+impl Effects<'_> {
+    /// Whether evaluating `e` creates a machine, makes a choice, or calls a function with
+    /// an effect.
+    fn expr(&mut self, e: &Expr) -> bool {
+        let mut calls = Vec::new();
+        let mut found = false;
+        visit_expr(e, &mut |e| match &e.kind {
+            ExprKind::Ctor { .. } | ExprKind::Nondet | ExprKind::FairNondet | ExprKind::Choose(_) => found = true,
+            ExprKind::FunCall { fun, .. } => calls.push(*fun),
+            _ => {}
+        });
+        found || calls.into_iter().any(|f| self.fun(f))
+    }
+
+    /// Whether computing what the assignment (or `+=`, `-=`) `s` writes, and where, has
+    /// an effect.
+    fn computes_with_effect(&mut self, s: &Stmt) -> bool {
+        match &s.kind {
+            StmtKind::Assign { lhs, rhs: value } | StmtKind::Add { lhs, value } | StmtKind::Remove { lhs, value } => {
+                self.expr(lhs) || self.expr(value)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether running `s` (its nested statements included) does more than write locals
+    /// and parameters: sends, raises, announces, moves to a state, receives, creates a
+    /// machine, writes a field or makes a choice, or calls a function that does.
+    fn stmt_has_effect(&mut self, s: &Stmt) -> bool {
+        self.own_effect(s)
+            || match &s.kind {
+                StmtKind::Block(b) => b.stmts.iter().any(|s| self.stmt_has_effect(s)),
+                StmtKind::While { body, .. } | StmtKind::Foreach { body, .. } => self.stmt_has_effect(body),
+                StmtKind::If { then_branch, else_branch, .. } => {
+                    self.stmt_has_effect(then_branch) || self.stmt_has_effect(else_branch)
+                }
+                _ => false,
+            }
+    }
+
+    fn own_effect(&mut self, s: &Stmt) -> bool {
+        let prog = self.prog;
+        let field = |lhs: &Expr| {
+            crate::checker::checked::root(lhs).is_none_or(|v| prog.var(v).role == crate::sema::VarRole::Field)
+        };
+        match &s.kind {
+            StmtKind::Send { .. }
+            | StmtKind::Raise { .. }
+            | StmtKind::Announce { .. }
+            | StmtKind::Goto { .. }
+            | StmtKind::Receive { .. }
+            | StmtKind::Ctor { .. } => true,
+            StmtKind::FunCall { fun, args } => self.fun(*fun) || args.iter().any(|a| self.expr(a)),
+            StmtKind::Assign { lhs, rhs } => field(lhs) || self.expr(lhs) || self.expr(rhs),
+            StmtKind::Insert { lhs, index, value } => {
+                field(lhs) || self.expr(lhs) || self.expr(index) || self.expr(value)
+            }
+            StmtKind::Add { lhs, value } | StmtKind::Remove { lhs, value } => {
+                field(lhs) || self.expr(lhs) || self.expr(value)
+            }
+            StmtKind::Return(Some(e)) | StmtKind::Print(e) => self.expr(e),
+            StmtKind::While { cond, .. } | StmtKind::If { cond, .. } => self.expr(cond),
+            StmtKind::Foreach { collection, .. } => self.expr(collection),
+            StmtKind::Assert { cond, .. } | StmtKind::Assume { cond, .. } => self.expr(cond),
+            _ => false,
+        }
+    }
+
+    /// Whether calling `f` has an effect (see [`Effects::stmt_has_effect`]): a foreign
+    /// function always may.
+    fn fun(&mut self, f: FunId) -> bool {
+        if let Some(&known) = self.funs.get(&f) {
+            return known;
+        }
+        let prog: &Program = self.prog;
+        let decl = prog.fun(f);
+        let Some(body) = decl.body.as_ref().filter(|_| !decl.is_foreign()) else {
+            self.funs.insert(f, true);
+            return true;
+        };
+        // a recursive call adds no effect of its own
+        self.funs.insert(f, false);
+        let effect = body.stmts.iter().any(|s| self.stmt_has_effect(s));
+        self.funs.insert(f, effect);
+        effect
+    }
 }
 
 /// `prog` with mutant `m` applied.
@@ -456,11 +591,14 @@ fn has_choice(e: &Expr) -> bool {
 /// Calls `f` with `e` and each expression in it.
 pub(crate) fn visit_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
     f(e);
+    visit_children(e, &mut |x| visit_expr(x, f));
+}
+
+/// Calls `f` with each expression directly in `e`.
+pub(crate) fn visit_children(e: &Expr, f: &mut dyn FnMut(&Expr)) {
     match &e.kind {
-        ExprKind::Tuple(es) | ExprKind::NamedTuple(es) | ExprKind::FunCall { args: es, .. } => {
-            es.iter().for_each(|e| visit_expr(e, f))
-        }
-        ExprKind::Str { args, .. } => args.iter().for_each(|e| visit_expr(e, f)),
+        ExprKind::Tuple(es) | ExprKind::NamedTuple(es) | ExprKind::FunCall { args: es, .. } => es.iter().for_each(f),
+        ExprKind::Str { args, .. } => args.iter().for_each(f),
         ExprKind::TupleAccess { base: x, .. }
         | ExprKind::NamedTupleAccess { base: x, .. }
         | ExprKind::Keys(x)
@@ -468,16 +606,16 @@ pub(crate) fn visit_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
         | ExprKind::Sizeof(x)
         | ExprKind::Cast(x)
         | ExprKind::Coerce(x)
-        | ExprKind::Unary { operand: x, .. } => visit_expr(x, f),
+        | ExprKind::Unary { operand: x, .. } => f(x),
         ExprKind::SeqAccess { base: a, index: b }
         | ExprKind::SetAccess { base: a, index: b }
         | ExprKind::MapAccess { base: a, key: b }
         | ExprKind::Binary { lhs: a, rhs: b, .. }
         | ExprKind::Contains { item: a, collection: b } => {
-            visit_expr(a, f);
-            visit_expr(b, f);
+            f(a);
+            f(b);
         }
-        ExprKind::Ctor { payload, .. } | ExprKind::Choose(payload) => payload.iter().for_each(|x| visit_expr(x, f)),
+        ExprKind::Ctor { payload, .. } | ExprKind::Choose(payload) => payload.iter().for_each(|x| f(x)),
         _ => {}
     }
 }
@@ -684,6 +822,44 @@ mod tests {
                 "removed `announce eSeen, total;`"
             ]
         );
+    }
+
+    #[test]
+    fn removing_an_assignment_with_an_effect_always_changes_something() {
+        let src = "event eTick: int;\n\
+            fun Stamp(): int;\n\
+            fun Twice(n: int): int { var m: int; m = n + n; return m; }\n\
+            machine Server {\n\
+              var handles: int;\n\
+              var a: int; var b: int; var c: int; var d: int;\n\
+              fun Mark(): int { handles = handles + 1; return 0; }\n\
+              start state S {\n\
+                on eTick do (n: int) {\n\
+                  a = Mark();\n\
+                  b = Stamp();\n\
+                  c = Twice(n);\n\
+                  d = n;\n\
+                }\n\
+              }\n\
+            }\n\
+            machine Main { start state S { entry { var s: Server; s = new Server(); send s, eTick, 0; } } }\n\
+            test tc [main=Main]: { Server, Main };\n";
+        let mut sm = crate::syntax::SourceMap::new();
+        sm.add("model.p", src.to_string());
+        let prog = crate::sema::compile(&sm, &crate::sema::Options::default()).unwrap_or_else(|_| panic!()).program;
+        let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
+        let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+        let ms = mutants(&prog, &funs, &probes);
+        let watched = |what: &str| {
+            let m = ms.iter().find(|m| m.description == format!("removed `{what}`")).unwrap();
+            !m.changes.is_empty()
+        };
+        // the call writes a field, or is foreign: removing it changes more than `a`, `b`
+        assert!(!watched("a = Mark();"));
+        assert!(!watched("b = Stamp();"));
+        // a function that only computes, and a plain value, change only the variable
+        assert!(watched("c = Twice(n);"));
+        assert!(watched("d = n;"));
     }
 
     #[test]

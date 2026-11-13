@@ -177,7 +177,8 @@ impl Strategy for AutoStrategy {
         let stats = dfs.exhaustive_stats().unwrap();
         // a program that does not repeat itself given the same choices cannot be exhausted
         let repeatable = dfs.replay_error().is_none();
-        if !more && stats.finished && self.dfs_bounds == 0 && (!self.has_hot || stats.cycle_prunes == 0) && repeatable {
+        let live = !SearchStats { hot_monitors: self.has_hot, ..stats.clone() }.liveness_unverified();
+        if !more && stats.finished && self.dfs_bounds == 0 && live && repeatable {
             self.complete = true;
             let Some(shared) = &self.split else {
                 return false;
@@ -314,6 +315,12 @@ impl Strategy for AutoStrategy {
             return false;
         }
         dfs.observe_state(hash)
+    }
+    fn closed_cycle(&mut self) -> Option<super::exhaustive::Cycle> {
+        if self.probing || self.interrupted {
+            return None;
+        }
+        self.dfs.as_mut().and_then(|dfs| dfs.closed_cycle())
     }
     fn exhaustive_stats(&self) -> Option<SearchStats> {
         self.dfs

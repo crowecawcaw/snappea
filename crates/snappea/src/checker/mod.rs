@@ -16,6 +16,7 @@ pub mod compile;
 pub mod coverage;
 pub mod driver_facts;
 pub mod engine;
+pub mod equivalent;
 pub mod exhaustive;
 pub mod feedback;
 pub mod flow_lints;
