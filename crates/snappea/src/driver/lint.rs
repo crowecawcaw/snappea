@@ -28,11 +28,19 @@ fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<F
 pub fn program_findings(sm: &SourceMap, prog: &Program) -> Vec<Finding> {
     let marked = snappea_lint::driver_machines(sm).unwrap_or_default();
     let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
-    let mut findings: Vec<Finding> = crate::checker::checked::lints(prog, &prog.test_cases(), &drivers)
-        .into_iter()
-        .filter(|f| !f.span.is_dummy())
-        .map(|f| Finding::new(f.rule, f.span, f.message))
+    let tests = prog.test_cases();
+    let intents = snappea_lint::test_intents(sm).unwrap_or_default();
+    let positive: Vec<_> = tests
+        .iter()
+        .filter(|tc| intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()))
+        .cloned()
         .collect();
+    let mut findings: Vec<Finding> =
+        crate::checker::checked::lints_with_progress_tests(prog, &tests, &positive, &drivers)
+            .into_iter()
+            .filter(|f| !f.span.is_dummy())
+            .map(|f| Finding::new(f.rule, f.span, f.message))
+            .collect();
     let _ = snappea_lint::suppress_program_findings(sm, &mut findings);
     findings
 }
@@ -41,31 +49,70 @@ pub fn program_findings(sm: &SourceMap, prog: &Program) -> Vec<Finding> {
 /// the check (exit status 2); with [`Gate::Warn`] they print as warnings and the check
 /// goes on. Returns how many findings there were.
 pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
-    if gate == Gate::Deny {
-        if run(host, sources, prog)? == 0 {
-            return Ok(0);
-        }
-        host.write(Stream::Err, &format!("{}\n", WARN_HINT), None);
-        return Err(Exit(2));
-    }
+    gate_selected(host, sources, prog, gate, &prog.test_cases(), &[])
+}
+
+/// Test-specific lints follow selection; expected failures do not need progress specs.
+pub fn gate_selected(
+    host: &mut dyn Host,
+    sources: &Sources,
+    prog: &Program,
+    gate: Gate,
+    tests: &[crate::sema::TestCase],
+    intents: &[snappea_lint::TestIntent],
+) -> Result<usize, Exit> {
     let sm = sources.source_map();
-    let findings = findings(host, &sm, prog)?;
-    for f in &findings {
-        let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)));
-        host.write(Stream::Err, &text, Some(Color::Yellow));
-        host.write(Stream::Err, "\n", None);
+    let mut findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
+    findings.retain(|f| {
+        !prog.tests.iter().enumerate().any(|(i, t)| {
+            t.span.file == f.span.file
+                && t.span.start <= f.span.start
+                && t.span.end >= f.span.end
+                && !tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i))
+        })
+    });
+    let marked = snappea_lint::driver_machines(&sm).unwrap_or_default();
+    let drivers = crate::checker::driver_facts::driver_machines(prog, &sm, &marked);
+    let positive: Vec<_> =
+        tests.iter().filter(|tc| intent(prog, tc, intents).is_none_or(|i| i.expected_bug.is_none())).cloned().collect();
+    let mut program: Vec<Finding> =
+        crate::checker::checked::lints_with_progress_tests(prog, tests, &positive, &drivers)
+            .into_iter()
+            .filter(|f| !f.span.is_dummy())
+            .map(|f| Finding::new(f.rule, f.span, f.message))
+            .collect();
+    let _ = snappea_lint::suppress_program_findings(&sm, &mut program);
+    findings.extend(program);
+    findings.sort_by(|a, b| (a.span.file, a.span.start, a.rule).cmp(&(b.span.file, b.span.start, b.rule)));
+    if gate == Gate::Deny {
+        let count = report(host, &sm, &findings);
+        if count > 0 {
+            host.write(Stream::Err, &format!("{}\n", WARN_HINT), None);
+            return Err(Exit(2));
+        }
+    } else {
+        for f in &findings {
+            let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)));
+            host.write(Stream::Err, &text, Some(Color::Yellow));
+            host.write(Stream::Err, "\n", None);
+        }
     }
-    if !findings.is_empty() {
-        host.write(
-            Stream::Err,
-            &format!(
-                "Lint: {} finding(s) reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n",
-                findings.len()
-            ),
-            None,
-        );
+    if gate == Gate::Warn && !findings.is_empty() {
+        host.write(Stream::Err, &format!("Lint: {} finding(s) reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n", findings.len()), None);
     }
     Ok(findings.len())
+}
+
+/// Intent is attached to a declaration, so parameterized expansions inherit it.
+pub fn intent<'a>(
+    prog: &Program,
+    test: &crate::sema::TestCase,
+    intents: &'a [snappea_lint::TestIntent],
+) -> Option<&'a snappea_lint::TestIntent> {
+    match test.kind {
+        crate::sema::TestCaseKind::Test(id, _) => intents.iter().find(|i| i.span == prog.tests[id.idx()].span),
+        _ => None,
+    }
 }
 
 /// How to check a model before its lint findings are addressed.

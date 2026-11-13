@@ -151,13 +151,20 @@ pub fn waiting_machines(
 
 /// See the module documentation.
 pub fn lints(prog: &Program, drivers: &[bool], out: &mut Vec<Finding>) {
-    unplanned_driver_stage(prog, drivers, out);
+    lints_for_tests(prog, &prog.test_cases(), drivers, out);
+}
+
+pub fn lints_for_tests(prog: &Program, tests: &[crate::sema::TestCase], drivers: &[bool], out: &mut Vec<Finding>) {
+    unplanned_driver_stage(prog, tests, drivers, out);
     unreachable_statements(prog, out);
 }
 
-fn unplanned_driver_stage(prog: &Program, drivers: &[bool], out: &mut Vec<Finding>) {
+fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drivers: &[bool], out: &mut Vec<Finding>) {
     let mut reported: FxHashSet<Span> = FxHashSet::default();
-    for t in &prog.tests {
+    for (i, t) in prog.tests.iter().enumerate() {
+        if !tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i)) {
+            continue;
+        }
         let machines = machines_of(prog, t);
         let is_driver = |m: MachineId| m == t.main || drivers.get(m.idx()).copied().unwrap_or(false);
         let model: Vec<MachineId> = machines.iter().copied().filter(|m| !is_driver(*m)).collect();

@@ -314,6 +314,55 @@ these options, before or after the command (for example, `snappea --json check`)
 Argument errors, including unknown options and missing values, also produce a JSON
 error result and write `--json-report` when requested. JSON keys retain insertion order.
 
+### Expected bugs and boundary tests
+
+Declare test intent on its own comment line directly before a `test` declaration:
+
+```p
+// snappea: expect-bug "stale version overwrote current value"
+test tcBroken [main=BrokenDriver]: assert VersionSafety in { BrokenDriver, Store };
+
+// snappea: boundary -- retry after the operation has already completed
+test tcRetryAfterDone [main=RetryDriver]: assert VersionSafety in { RetryDriver, Store };
+```
+
+`expect-bug` requires a nonempty JSON-quoted string. The test passes only when its
+first reported failure message contains that exact, case-sensitive substring.
+Source paths, excerpts, and suggested fixes are excluded from matching. A different
+failure, or no failure, fails the test. Parse/load errors remain errors. Parameterized
+expansions inherit the declaration's intent. Choose a distinctive failure message;
+a broad prefix can accept an unrelated defect. For liveness failures, name the hot
+state after the obligation (for example, `TransferPending`) so its report identifies
+what did not complete.
+
+The report distinguishes an exhaustive run with no bug (the expected flaw is
+unreachable in this model and its bounds) from an incomplete run that did not find
+it. JSON uses `result: expected_bug` or `expectation_failed`, with
+`expected_bug.outcome` equal to `matched`, `wrong_failure`, `unreachable`, or
+`not_found`. The actual bug report and replay remain available. A failure on the
+first schedule gets an advisory reminder to check whether the control exercises
+the intended flaw; it still passes when the message matches.
+
+A matching expected-bug run contributes driver coverage. Its design/spec coverage
+is reported separately in `expected_bug_design_coverage`; it cannot fill coverage
+gaps in passing positive tests. Shared helpers used by a positive design are also
+excluded from the negative driver's contribution. `expected_bug_driver_coverage`
+reports the contributing scope and whether it was included. The per-test `coverage`
+field remains the raw coverage of that execution. Negative controls cannot satisfy
+required scenario coverage for positive tests, and they never detect mutants:
+mutation testing uses passing positive tests only.
+
+`no-progress-spec` and `unplanned-driver-stage` apply to selected positive tests;
+expected failures may deliberately be safety-only. Other lint rules still apply.
+Selecting one test no longer runs these test-dependent rules for unselected tests;
+standalone `check lint` checks the whole project with its declared intents.
+
+`boundary -- reason` requires a nonempty reason and suppresses only the
+low-diversity note ("checks little more than one run"). It does not change search,
+coverage requirements, lint gates, mutation testing, or failures. Both directives
+can precede the same test. Ordinary comments such as `// expect-bug: ...` are not
+Snappea directives.
+
 ### Bug reports
 
 A bug's report says what failed. `snappea-compat` prints upstream's text instead.

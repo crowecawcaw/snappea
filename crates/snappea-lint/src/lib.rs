@@ -13,7 +13,12 @@ pub use rules::{
     EnumValueShadowsMachine, NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts,
     TautologicalAssert, UnobservedHandler, UnselectedSpec, UnusedPayloadField,
 };
-pub use suppression::{MutationSuppression, MUTATIONS};
+pub use suppression::{MutationSuppression, TestIntent, MUTATIONS};
+
+/// Intent declarations on test cases; malformed declarations are lint findings.
+pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> {
+    Ok(suppression::test_intents(&Context::parse(sources)?))
+}
 
 /// Rules that need the type-checked program, which `snappea` runs on it (see
 /// `snappea::checker::checked`): their IDs and descriptions, so suppression comments and

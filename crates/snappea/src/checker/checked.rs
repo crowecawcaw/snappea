@@ -568,6 +568,16 @@ pub(crate) fn visit_stmts(b: &Block, visit: &mut dyn FnMut(&Stmt)) {
 /// * `no-progress-spec`: a test case's driver waits on the model's events, but none of
 ///   its specs has a hot state, so a model that stops answering passes.
 pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
+    lints_with_progress_tests(prog, tests, tests, drivers)
+}
+
+/// Like `lints`, but progress obligations apply only to `progress_tests` (positive controls).
+pub fn lints_with_progress_tests(
+    prog: &Program,
+    tests: &[TestCase],
+    progress_tests: &[TestCase],
+    drivers: &[bool],
+) -> Vec<Finding> {
     let checked = analyze(prog);
     let roles = roles(prog, tests, drivers);
     let mut out = Vec::new();
@@ -726,7 +736,10 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
     }
     // no-progress-spec
     let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
-    for t in &prog.tests {
+    for (i, t) in prog.tests.iter().enumerate() {
+        if !progress_tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i)) {
+            continue;
+        }
         let module = &t.module;
         let hot = module.monitor_map.iter().any(|(m, _)| {
             prog.machine(*m).kind == MachineKind::Spec
@@ -807,7 +820,7 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
             });
         }
     }
-    crate::checker::flow_lints::lints(prog, drivers, &mut out);
+    crate::checker::flow_lints::lints_for_tests(prog, progress_tests, drivers, &mut out);
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
 }

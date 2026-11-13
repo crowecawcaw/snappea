@@ -1077,7 +1077,7 @@ fn run_check(
     check::resolve_sources(&mut con, &mut cfg)?;
     let loaded = check::load(&mut con, &cfg)?;
     let gates = cfg.gates;
-    let lint_findings = crate::driver::lint::gate(con.inner, &loaded.sources, &loaded.analysis.program, gates.lint)?;
+
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
     let selected = select_tests(&names, patterns).map_err(|m| {
         error(con.inner, &m);
@@ -1087,16 +1087,37 @@ fn run_check(
         error(con.inner, "the sources declare no test case; add one, e.g. `test tcMain [main=Main]: { Main };`");
         return Err(Exit(ERROR));
     }
+    let all_tests = loaded.analysis.program.test_cases();
+    let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
+    let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
+    let lint_findings = crate::driver::lint::gate_selected(
+        con.inner,
+        &loaded.sources,
+        &loaded.analysis.program,
+        gates.lint,
+        &selected_tests,
+        &intents,
+    )?;
     let n = selected.len();
     con.inner.out_line(&format!("Checking {}: {} test case{}", cfg.project_name, n, plural(n)));
     let mut failed = 0;
     let prog = &loaded.analysis.program;
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
     let (mut scope, mut hits) = (Scope::default(), Hits::default());
+    let mut selected_scope = Scope::default();
     let mut cases = Vec::new();
     let mut scenarios = Vec::new();
     let mut incomplete = 0;
-    let all_tests = prog.test_cases();
+    let sources = loaded.sources.source_map();
+    let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
+    let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
+    let (mut negative_driver_scope, mut negative_hits, mut positive_design) =
+        (Scope::default(), Hits::default(), Scope::default());
+    for tc in &selected_tests {
+        if crate::driver::lint::intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()) {
+            positive_design.add(&Scope::partition_drivers(prog, tc, &drivers).1);
+        }
+    }
     let mut passed = Vec::new();
     let check_start = con.inner.now();
     for (i, name) in selected.into_iter().enumerate() {
@@ -1109,14 +1130,66 @@ fn run_check(
         cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
         check::set_output_directory(&mut con, &mut cfg)?;
         let case = check::testing_process(&mut con, &loaded, &cfg)?;
-        if case.bugs > 0 {
+        let tc = all_tests.iter().find(|t| t.name == case.test_case).unwrap();
+        let intent = crate::driver::lint::intent(prog, tc, &intents);
+        let expected = intent.and_then(|i| i.expected_bug.as_deref());
+        let boundary = intent.is_some_and(|i| i.boundary.is_some());
+        let matched = expected.is_some_and(|text| {
+            case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, &sources).contains(text))
+        });
+        if expected.is_some() && !matched || expected.is_none() && case.bugs > 0 {
             failed += 1;
-        } else if case.exhaustive_finished != Some(true) {
+        } else if expected.is_none() && case.exhaustive_finished != Some(true) {
             incomplete += 1;
         }
-        print_case(con.inner, &case, &cfg);
-        let mut result = case_json(&case, &cfg);
+        if let Some(expected) = expected {
+            con.inner.out_line(&format!(
+                "{}  {} (expected bug: {:?})",
+                if matched { "ok  " } else { "FAIL" },
+                case.test_case,
+                expected
+            ));
+            if !matched {
+                let reason = if case.bugs > 0 {
+                    "the observed failure did not match"
+                } else if case.exhaustive_finished == Some(true) {
+                    "search complete, no bug: this test cannot reach the expected flaw"
+                } else {
+                    "search incomplete, no matching bug found within the run budget"
+                };
+                con.inner.out_line(&format!("      {reason}; check the test and expected failure text"));
+            }
+            if let Some(report) = &case.bug_report {
+                con.inner.out_line(&format!("      {report}"));
+            }
+            if let Some(schedule) = &case.schedule_file {
+                con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, &cfg)));
+            }
+            if matched && case.schedules == 1 {
+                con.inner.out_line("      note: the expected bug appeared in the first schedule; check that the control exercises the intended flaw");
+            }
+        } else {
+            print_case(con.inner, &case, &cfg, boundary);
+        }
+        let mut result = case_json(&case, &cfg, boundary);
+        if let Some(text) = expected {
+            result["result"] = json!(if matched { "expected_bug" } else { "expectation_failed" });
+            let outcome = if matched {
+                "matched"
+            } else if case.bugs > 0 {
+                "wrong_failure"
+            } else if case.exhaustive_finished == Some(true) {
+                "unreachable"
+            } else {
+                "not_found"
+            };
+            result["expected_bug"] = json!({"text": text, "matched": matched, "outcome": outcome});
+        }
+        if let Some(reason) = intent.and_then(|i| i.boundary.as_deref()) {
+            result["boundary"] = json!(reason);
+        }
         if let Some((s, h)) = &case.code_coverage {
+            selected_scope.add(s);
             let summary = CodeMap::new(prog, &probes, s).coverage(h).summary();
             if !only {
                 con.inner.out_line(&format!(
@@ -1127,9 +1200,32 @@ fn run_check(
             }
             result["coverage"] = summary.to_json();
             result["coverage"]["partial"] = json!(case.bugs > 0);
-            scope.add(s);
-            hits.add(h);
-            if case.bugs == 0 {
+            if expected.is_some() {
+                let (mut driver_scope, design_scope) = Scope::partition_drivers(prog, tc, &drivers);
+                driver_scope.exclude(&positive_design);
+                let driver_summary = CodeMap::new(prog, &probes, &driver_scope).coverage(h).summary();
+                result["expected_bug_driver_coverage"] = driver_summary.to_json();
+                result["expected_bug_driver_coverage"]["included"] = json!(matched);
+                let design_map = CodeMap::new(prog, &probes, &design_scope);
+                let design_coverage = design_map.coverage(h);
+                result["expected_bug_design_coverage"] = design_coverage.summary().to_json();
+                result["expected_bug_design_coverage"]["partial"] =
+                    json!(case.bugs > 0 || case.exhaustive_finished != Some(true));
+                if !only {
+                    con.inner.out_line(&format!(
+                        "      Expected-bug design coverage (separate): {}",
+                        design_coverage.summary()
+                    ));
+                }
+                if matched {
+                    negative_driver_scope.add(&driver_scope);
+                    negative_hits.add(h);
+                }
+            } else {
+                scope.add(s);
+                hits.add(h);
+            }
+            if expected.is_none() && case.bugs == 0 {
                 if let Some(tc) = all_tests.iter().find(|t| t.name == case.test_case) {
                     passed.push((tc.clone(), h.clone()));
                 }
@@ -1149,10 +1245,15 @@ fn run_check(
         }
         if !case.scenario_coverage.scenarios.is_empty() {
             result["scenarios"] = serde_json::from_str(&case.scenario_coverage.to_json()).unwrap();
-            scenarios.push(case.scenario_coverage.clone());
+            if expected.is_none() {
+                scenarios.push(case.scenario_coverage.clone());
+            }
         }
         cases.push(result);
     }
+    negative_driver_scope.exclude(&positive_design);
+    hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
+    scope.add(&negative_driver_scope);
     let map = CodeMap::new(prog, &probes, &scope);
     let suite = map.coverage(&hits);
     let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
@@ -1193,7 +1294,7 @@ fn run_check(
             " For a scenario never satisfied, add or extend a test case that drives the model through it."
         }
     );
-    let excluded = scope.excluded(prog);
+    let excluded = selected_scope.excluded(prog);
     if !only {
         if n > 1 {
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
@@ -1268,6 +1369,11 @@ fn run_check(
     }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
+        _ if passed.is_empty() && failed == 0 => {
+            skipped.push("mutation testing (no passing positive test case)");
+            con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
+            json!({"skipped": "no passing positive test case"})
+        }
         _ if failed > 0 => {
             con.inner.out_line("Mutation testing skipped: a test case failed.");
             json!({"skipped": "a test case failed"})
@@ -1355,7 +1461,20 @@ fn run_check(
             .collect();
         format!(", with warnings: {}", parts.join(", "))
     };
-    con.inner.out_line(&if only && failed == 0 {
+    let success = if selected_tests
+        .iter()
+        .any(|tc| crate::driver::lint::intent(prog, tc, &intents).is_some_and(|i| i.expected_bug.is_some()))
+    {
+        "Test expectations met"
+    } else {
+        "No bugs found"
+    };
+    con.inner.out_line(&if only && failed == 0 && passed.is_empty() {
+        format!(
+            "Test expectations met in {}{}; mutation testing skipped: no passing positive test case.",
+            elapsed, memory
+        )
+    } else if only && failed == 0 {
         match undetected {
             0 => format!("🫛 Every mutant was detected in {}{}{}.", elapsed, memory, with_warnings),
             n if mutation_failed => format!("{} mutant{} not detected in {}{}.", n, plural(n), elapsed, memory),
@@ -1372,7 +1491,7 @@ fn run_check(
         )
     } else if failed == 0 && incomplete > 0 {
         format!(
-            "🫛 No bugs found in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
+            "🫛 {success} in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
             elapsed,
             memory,
             with_warnings,
@@ -1615,8 +1734,39 @@ fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBra
     out
 }
 
+/// Match the diagnostic message, never source excerpts or suggested fixes. Native
+/// diagnostics place those after a location/help line; assertion and liveness reports
+/// without a rendered snippet retain their whole message, including newlines.
+fn failure_message(report: &str, sources: &crate::syntax::SourceMap) -> String {
+    if let Some(assertion) = report.strip_prefix("Assertion Failed: ") {
+        for source in sources.files() {
+            let prefix = format!("{}:", source.name.replace('\\', "\\\\"));
+            let Some(rest) = assertion.strip_prefix(&prefix) else { continue };
+            let Some((line, rest)) = rest.split_once(':') else { continue };
+            if line.parse::<u32>().is_err() {
+                continue;
+            }
+            let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            if end == 0 {
+                continue;
+            }
+            let message = rest[end..].strip_prefix(' ').unwrap_or(&rest[end..]);
+            return format!("Assertion Failed: {message}");
+        }
+        return report.to_string();
+    }
+    report
+        .lines()
+        .take_while(|line| {
+            let line = line.trim_start();
+            !line.starts_with("-->") && !line.starts_with("= help:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// One test case's result as JSON.
-fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
+fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Value {
     let mut v = json!({
         "name": case.test_case,
         "result": if case.bugs > 0 { "bug" } else { "ok" },
@@ -1662,7 +1812,7 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
             })).collect::<Vec<_>>(),
         });
     }
-    if little_to_explore(case) {
+    if !boundary && little_to_explore(case) {
         v["little_to_explore"] = json!(true);
     }
     if case.bugs > 0 {
@@ -1676,7 +1826,7 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
 }
 
 /// One test case's result line, and for a bug its report and how to replay it.
-fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig) {
+fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) {
     for handoff in &case.auto_handoffs {
         host.out_line(&format!(
             "      auto {}: worker {} switched from exhaustive search to sampling after {} schedules ({} exhaustive choices): {}",
@@ -1711,7 +1861,7 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
     let time = duration(case.elapsed);
     if case.bugs == 0 {
         host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));
-        if little_to_explore(case) {
+        if !boundary && little_to_explore(case) {
             host.out_line(
                 "      note: every schedule reaches nearly the same states, so this test checks little more than one run would",
             );
