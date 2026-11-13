@@ -300,8 +300,12 @@ impl<'a> Errors<'a> {
     }
 
     pub fn not_closed(&self, span: Span, msg: &str) -> Diagnostic {
-        Diagnostic::new(span, format!("module not closed: {}", msg))
-            .help("add machines to the module that implement every interface it creates")
+        Diagnostic::new(span, format!("module not closed: {}", msg)).help(
+            "add the machine that implements the interface to the module. If it is another design variant's \
+                 machine, do not add it: give each variant a thin driver that only does the `new`, and share the \
+                 rest through functions that take the created machine, e.g. `Run(new Server(..))`; every `new` in \
+                 a function the module calls counts (see `snappea guide scenarios`)",
+        )
     }
 
     pub fn no_main(&self, span: Span, msg: &str) -> Diagnostic {

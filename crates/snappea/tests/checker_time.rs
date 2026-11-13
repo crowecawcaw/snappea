@@ -368,3 +368,44 @@ fn timed_default_handler_races_only_overlapping_events() {
         );
     }
 }
+
+const TIMED_RACE: &str = "
+event eReq: int;
+machine Server {
+  var last: int;
+  start state S { on eReq do (n: int) { last = n; } }
+}
+machine Client {
+  start state S { entry (s: machine) { Elapse(1000, 5000); send s, eReq, 1; Elapse(1000, 2000); send s, eReq, 2; } }
+}
+machine Main {
+  start state S { entry { var s: machine; s = new Server(); new Client(s); new Client(s); } }
+}
+// clocks grow with every tick, so no state repeats
+machine Ticker {
+  start state S { entry { send this, eReq, 0; } on eReq do (n: int) { Elapse(1000, 1000); send this, eReq, n + 1; } }
+}
+test tcRace [main=Main]: { Main, Server, Client };
+test tcTicker [main=Ticker]: { Ticker };
+";
+
+#[test]
+fn timed_models_are_searched_exhaustively_when_they_end() {
+    let a = compile(&[("t.p".into(), format!("{}{}", TIME_DECLS, TIMED_RACE))]);
+    for timed in [false, true] {
+        let opts =
+            CheckerOptions { strategy: StrategyKind::Auto, iterations: 100_000, seed: 1, timed, ..Default::default() };
+        let r = check(&a, "tcRace", &opts).unwrap();
+        assert!(r.time_tracked);
+        let x = r.exhaustive.expect("an exhaustive search");
+        assert!(x.complete(), "timed={} {:?}", timed, x);
+        // the same choices with different clocks are different states
+        assert!(x.distinct_states > 10, "{:?}", x);
+
+        // a model that never ends cannot be exhausted: its clocks never repeat
+        let opts = CheckerOptions { iterations: 300, max_unfair_steps: 50, max_fair_steps: 50, ..opts };
+        let r = check(&a, "tcTicker", &opts).unwrap();
+        assert!(r.time_tracked);
+        assert!(r.exhaustive.as_ref().is_none_or(|x| !x.complete()), "{:?}", r.exhaustive);
+    }
+}

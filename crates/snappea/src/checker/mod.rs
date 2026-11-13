@@ -9,6 +9,7 @@
 //! [`observe_inputs::StdFiles`], so it compiles to `wasm32`.
 
 mod auto;
+pub mod branching;
 pub mod bytecode;
 pub mod checked;
 pub mod code_coverage;
@@ -16,6 +17,7 @@ pub mod compile;
 pub mod coverage;
 pub mod driver_facts;
 pub mod engine;
+pub mod equivalent;
 pub mod exhaustive;
 pub mod feedback;
 pub mod flow_lints;

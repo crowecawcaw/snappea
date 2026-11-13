@@ -102,7 +102,8 @@ Time (for models with timeouts or latency budgets):
       --timed               Time-aware scheduling: never run a step that is certainly
                             later than another. Use when untimed checking reports
                             orders real timing rules out, e.g. a timeout handled
-                            before a reply that arrives earlier.
+                            before a reply that arrives earlier. Keep the untimed
+                            run too: it covers latencies outside the profile.
 
 What fails the check:
       --warn <CHECK>        Report CHECK's findings as warnings and keep going: lint,
@@ -1218,7 +1219,7 @@ fn run_check(
                 f64::from(limit),
                 only,
             );
-            for l in report.lines(SHOWN_UNCOVERED) {
+            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
                 con.inner.out_line(&l);
             }
             // those inside an undetected coarse mutant too
@@ -1231,6 +1232,7 @@ fn run_check(
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
     let not_tested = mutation.get("not_tested").and_then(Value::as_u64).unwrap_or(0) as usize;
     let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
+    let deeper = mutation.get("deeper_search_may_detect").and_then(Value::as_bool).unwrap_or(false);
     let mut summary = check_summary(
         failed,
         n,
@@ -1239,7 +1241,7 @@ fn run_check(
         required_gap_count,
         &required_uncovered,
         mutation_time_limit_reached,
-        (undetected, mutation_failed),
+        (undetected, mutation_failed, deeper),
         not_tested,
         &skipped,
     );
@@ -1364,7 +1366,7 @@ fn check_summary(
     coverage_gaps: usize,
     uncovered: &[crate::checker::code_coverage::Uncovered],
     mutation_time_limit_reached: bool,
-    (mutants_undetected, mutation_failed): (usize, bool),
+    (mutants_undetected, mutation_failed, deeper): (usize, bool, bool),
     mutants_not_tested: usize,
     skipped: &[&str],
 ) -> Value {
@@ -1376,7 +1378,14 @@ fn check_summary(
             skipped.join(", ")
         ));
     }
-    if failed == 0 && mutants_undetected > 0 {
+    if failed == 0 && mutants_undetected > 0 && deeper {
+        notes.push(format!(
+            "{} mutant{} not detected, but no search for them was complete. Run `snappea check mutation`, \
+             which searches deeper, before adding assertions or suppressions.",
+            mutants_undetected,
+            plural(mutants_undetected)
+        ));
+    } else if failed == 0 && mutants_undetected > 0 {
         notes.push(format!(
             "{} mutant{} not detected: the model ran the changed code but no assertion failed. \
              Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
@@ -1477,6 +1486,57 @@ fn little_to_explore(case: &check::CaseOutcome) -> bool {
         && case.exhaustive_states.is_some_and(|(states, depth)| states <= LITTLE_TO_EXPLORE * depth.max(1))
 }
 
+/// Why a passing test case's search did not cover every schedule, for the JSON report:
+/// `exhaustive_search_unfinished` (more time may finish it), `timed_model_sampled` (time
+/// tracking keeps clocks growing, so a model that loops cannot be exhausted) or `sampled`
+/// (too many schedules: the search sampled them).
+fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
+    if case.bugs > 0 || case.exhaustive_finished == Some(true) {
+        None
+    } else if case.exhaustive_unfinished.is_some() {
+        Some("exhaustive_search_unfinished")
+    } else if case.time_tracked {
+        Some("timed_model_sampled")
+    } else {
+        Some("sampled")
+    }
+}
+
+/// A `--timeout` worth trying for a search still running after `elapsed` seconds.
+fn longer_timeout(elapsed: f64) -> &'static str {
+    const STEPS: [(f64, &str); 5] = [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m"), (600.0, "10m")];
+    STEPS.iter().find(|(secs, _)| *secs >= 5.0 * elapsed).map_or("30m", |(_, s)| s)
+}
+
+/// Whether a search's schedules mostly reach states it already explored: at least
+/// [`REVISITS`] schedules per distinct state. Independent steps run in many orders that
+/// end in the same states, which a forwarder or a needless concurrent machine multiplies.
+fn mostly_revisits(case: &check::CaseOutcome) -> Option<usize> {
+    const REVISITS: usize = 10;
+    case.exhaustive_states.map(|(states, _)| states).filter(|&states| states > 0 && case.schedules >= REVISITS * states)
+}
+
+/// Where an average schedule branches: `31 scheduling points with a choice; ready at
+/// them: Network 25, Sender 20; choices made: Network 3`.
+fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBranching]) -> String {
+    let n = |x: f64| if x >= 9.95 { format!("{:.0}", x) } else { format!("{:.1}", x) };
+    let list = |count: fn(&crate::checker::branching::MachineBranching) -> f64| {
+        let mut ms: Vec<_> = machines.iter().filter(|m| count(m) > 0.0).collect();
+        ms.sort_by(|a, b| count(b).total_cmp(&count(a)));
+        ms.iter().take(3).map(|m| format!("{} {}", m.machine, n(count(m)))).collect::<Vec<_>>().join(", ")
+    };
+    let mut out = format!("{} scheduling points with a choice", n(points));
+    let ready = list(|m| m.ready);
+    if !ready.is_empty() {
+        out.push_str(&format!("; ready at them: {}", ready));
+    }
+    let choices = list(|m| m.choices);
+    if !choices.is_empty() {
+        out.push_str(&format!("; `$`/`choose` choices: {}", choices));
+    }
+    out
+}
+
 /// One test case's result as JSON.
 fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     let mut v = json!({
@@ -1490,6 +1550,27 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     });
     if let Some(finished) = case.exhaustive_finished {
         v["search_complete"] = json!(finished);
+    }
+    if let Some(reason) = incomplete_reason(case) {
+        v["incomplete_reason"] = json!(reason);
+    }
+    if let Some(frontier) = case.exhaustive_unfinished {
+        v["untried_alternatives"] = json!(frontier);
+    }
+
+    if let Some((states, _)) = case.exhaustive_states.filter(|_| case.bugs == 0) {
+        v["distinct_states"] = json!(states);
+    }
+    if let Some((points, machines)) = &case.branching {
+        let r = |x: f64| (x * 10.0).round() / 10.0;
+        v["branching"] = json!({
+            "scheduling_points_with_choice": r(*points),
+            "machines": machines.iter().map(|m| json!({
+                "machine": m.machine,
+                "ready_at_scheduling_points": r(m.ready),
+                "choices": r(m.choices),
+            })).collect::<Vec<_>>(),
+        });
     }
     if little_to_explore(case) {
         v["little_to_explore"] = json!(true);
@@ -1517,7 +1598,13 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
     let limit = format!(
         "{}{}",
         workers,
-        if case.timed_out {
+        if incomplete_reason(case) == Some("timed_model_sampled") {
+            if case.timed_out {
+                ", timed model: sampled, time limit reached"
+            } else {
+                ", timed model: sampled"
+            }
+        } else if case.timed_out {
             ", time limit reached"
         } else if case.plateaued {
             ", stopped: coverage stopped growing"
@@ -1535,6 +1622,44 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
             host.out_line(
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
+        }
+        let branching = case
+            .branching
+            .as_ref()
+            .filter(|(points, _)| *points >= 1.0)
+            .map(|(points, machines)| branching_text(*points, machines));
+        match incomplete_reason(case) {
+            Some("exhaustive_search_unfinished") => {
+                host.out_line(&format!(
+                    "      hint: the exhaustive search was still running ({} alternatives left on its current path); more time may finish it, e.g. --timeout {}",
+                    case.exhaustive_unfinished.unwrap_or(0),
+                    longer_timeout(case.elapsed)
+                ));
+                if let Some(states) = mostly_revisits(case) {
+                    host.out_line(&format!(
+                        "      note: {} schedules reached only {} distinct states: most run independent steps in other orders to the same states",
+                        case.schedules, states
+                    ));
+                    if let Some(b) = &branching {
+                        host.out_line(&format!("      note: per schedule: {}", b));
+                    }
+                    host.out_line("      hint: merge machines whose hop adds no order the spec cares about, or start workers after their inputs are fixed (see `snappea guide modeling`)");
+                }
+            }
+            Some(reason) => {
+                if reason == "timed_model_sampled" {
+                    host.out_line("      note: timed model: clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
+                }
+                if let Some(b) = &branching {
+                    host.out_line(&format!("      note: too many schedules to try them all. Per schedule: {}", b));
+                    host.out_line("      hint: merge machines whose hop adds no order the spec cares about, shrink fault budgets, or split fault classes into separate tests (see `snappea guide modeling`)");
+                }
+            }
+            None => {
+                if let Some(b) = branching.filter(|_| cfg.verbose) {
+                    host.out_line(&format!("      Branching per schedule: {}", b));
+                }
+            }
         }
         return;
     }
@@ -1903,19 +2028,19 @@ mod tests {
             context: "Main.S, on ePing".into(),
             what: "if (x) never true".into(),
         };
-        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false), 0, &[]);
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false, false), 0, &[]);
         assert_eq!(coverage["status"], "coverage_failed");
         assert_eq!(coverage["message"], "Required coverage was not reached within the run budget (3 points)");
         assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
         assert_eq!(coverage["mutation_time_limit_reached"], true);
 
-        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(failed["status"], "tests_failed");
 
-        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false), 0, &[]);
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(incomplete["status"], "search_incomplete");
 
-        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(passed["status"], "passed");
         assert!(passed["note"].is_null());
     }
@@ -1923,19 +2048,21 @@ mod tests {
     #[test]
     fn check_summary_notes_skipped_checks_and_undetected_mutants() {
         let partial =
-            check_summary(0, 1, 0, false, 0, &[], false, (0, false), 0, &["mutation testing (--no-mutation)"]);
+            check_summary(0, 1, 0, false, 0, &[], false, (0, false, false), 0, &["mutation testing (--no-mutation)"]);
         assert_eq!(partial["status"], "passed");
         assert!(partial["note"].as_str().unwrap().starts_with("Not checked: mutation testing (--no-mutation)."));
 
-        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true), 0, &[]);
+        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true, false), 0, &[]);
         assert_eq!(denied["status"], "mutation_failed");
         assert_eq!(denied["message"], "2 mutants not detected (--deny mutation)");
 
-        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false), 0, &[]);
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false, false), 0, &[]);
         assert_eq!(weak["mutants_undetected"], 4);
         assert!(weak["note"].as_str().unwrap().starts_with("4 mutants not detected"));
+        let shallow = check_summary(0, 1, 0, false, 0, &[], false, (2, true, true), 0, &[]);
+        assert!(shallow["note"].as_str().unwrap().contains("Run `snappea check mutation`"), "{}", shallow["note"]);
 
-        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false), 17, &[]);
+        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false, false), 17, &[]);
         assert_eq!(unfinished["mutants_not_tested"], 17);
         assert!(unfinished["note"].as_str().unwrap().contains("17 mutants not tested"));
     }

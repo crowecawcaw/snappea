@@ -82,6 +82,8 @@ pub enum Op {
     CoerceInt,
     CoerceInterface(InterfaceId),
     ChooseBool,
+    /// `$$`: a fair boolean choice.
+    ChooseFairBool,
     ChooseInt,
     ChooseSeq,
     ChooseSet,

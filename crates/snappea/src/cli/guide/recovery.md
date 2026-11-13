@@ -4,8 +4,16 @@
 
 - Separate durable effects/outcome records from volatile worker memory, pending replies, and local flags.
 - Restart clears volatile state; retain committed durable state unless modeling storage loss explicitly.
+- Inject crashes, timeouts and message loss from driver machines; see `snappea guide faults` for recipes.
 - Preserve request identity across retries. Generating a new ID changes the idempotency contract.
 - Model effect + outcome memo atomically only if a real primitive co-commits them. Otherwise allow a crash between writes.
+
+## Model a crash
+
+- A crash is an event, such as `eCrash` from the driver. A machine handles events one at a time, so the crash lands between its handlers, never inside one. To allow a crash between two writes, put them in different handlers: send yourself a continue event after the first.
+- Keep durable state in a separate storage machine that survives the crash; the crashed machine drops its fields, or a fresh one replaces it and reloads from storage.
+- Give each incarnation an epoch. Requests and replies carry it; on restart, drop replies from an earlier epoch, since the new incarnation holds no state for the requests they answer.
+- Let the driver choose when to crash (`$` before each step, with a budget of one), and announce the crash so the spec knows which effects may be missing.
 
 ## Histories to challenge
 

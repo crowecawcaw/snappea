@@ -1332,6 +1332,7 @@ impl<'p> Runtime<'p> {
                     | Op::CoerceInt
                     | Op::CoerceInterface { .. }
                     | Op::ChooseBool
+                    | Op::ChooseFairBool
                     | Op::ChooseInt
                     | Op::ChooseSeq
                     | Op::ChooseSet
@@ -1537,6 +1538,13 @@ impl<'p> Runtime<'p> {
             Op::ChooseBool => {
                 let name = self.actor_name(actor);
                 let b = self.choose_bool(2, &name)?;
+                stack.push(Value::Bool(b));
+            }
+            Op::ChooseFairBool => {
+                let name = self.actor_name(actor);
+                let f = &exec.frames[frame_idx];
+                let site = (Rc::as_ptr(&f.code) as usize as u64).rotate_left(20) ^ f.pc as u64;
+                let b = self.choose_fair_bool(&name, site)?;
                 stack.push(Value::Bool(b));
             }
             Op::ChooseInt => {

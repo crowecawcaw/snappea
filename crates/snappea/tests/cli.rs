@@ -1055,12 +1055,22 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(h.stdout.contains("Mutation testing: 1 of 4 mutants detected"), "{}", h.stdout);
     assert!(
         h.stdout.contains(
-            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it)\n"
+            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it; -v lists them)\n"
         ),
         "{}",
         h.stdout
     );
     assert!(h.stdout.contains(", with warnings: 3 undetected mutants. Output: "), "{}", h.stdout);
+    // `-v` lists the ones inside it, and JSON names their file
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 0);
+    assert!(
+        h.stdout.contains(
+            "(and 2 more undetected inside it:)\n      counter.p:7  removed `total = total + n;`\n      counter.p:8  removed `announce eTotal, total;`\n"
+        ),
+        "{}",
+        h.stdout
+    );
+    assert_eq!(m["undetected"][0]["undetected_inside"][0]["file"], "counter.p");
     // `--deny mutation` makes them fail `check`, and `--warn mutation` lets `check mutation` pass
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--deny", "mutation", "--format", "text"]), 1);
     assert!(h.stdout.contains("\n3 mutants not detected in "), "{}", h.stdout);
@@ -1081,6 +1091,17 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["suppressed"], 1);
+    // one comment can name several kinds
+    h.add_file(
+        "counter.p",
+        &COUNTER.replace(
+            "total = total + n;",
+            "// snappea-lint: allow mutation:remove-statement,swap-operator -- both kinds\ntotal = total + n;",
+        ),
+    );
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["mutation"]["suppressed"], 2, "{}", v["mutation"]);
     // a misspelled kind fails linting rather than suppressing nothing
     h.add_file("counter.p", &suppressed.replace("remove-statement", "remove-statment"));
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 2);
@@ -1108,6 +1129,60 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--no-mutation", "--mutation-timeout", "5s"]), 2);
     assert_eq!(snappea(&mut h, &["check", "coins.p", "--seed", "2", "--format", "text"]), 1);
     assert!(h.stdout.contains("Mutation testing skipped: a test case failed."), "{}", h.stdout);
+}
+
+/// A server whose crash handler bumps an epoch; the driver may crash it once.
+const OPTIONAL_CRASH: &str = "event eCrash;\n\
+     event eReq: machine;\n\
+     event eResp: int;\n\
+     event eAsked;\n\
+     event eAnswered;\n\
+     machine Server {\n\
+       var epoch: int;\n\
+       start state S {\n\
+         on eReq do (c: machine) { send c, eResp, epoch; }\n\
+         on eCrash do { epoch = epoch + 1; }\n\
+       }\n\
+     }\n\
+     spec Answered observes eAsked, eAnswered {\n\
+       start cold state Idle { on eAsked goto Waiting; }\n\
+       hot state Waiting { on eAnswered goto Idle; }\n\
+     }\n\
+     machine Main {\n\
+       start state S {\n\
+         entry {\n\
+           var s: Server;\n\
+           s = new Server();\n\
+           if ($) { send s, eCrash; }\n\
+           announce eAsked;\n\
+           send s, eReq, this;\n\
+           receive { case eResp: (e: int) { if (e != 0) { print \"restarted\"; } announce eAnswered; } }\n\
+         }\n\
+       }\n\
+     }\n\
+     test tc [main=Main]: assert Answered in { Server, Main };\n";
+
+#[test]
+fn mutants_no_test_case_can_detect_are_skipped_or_reported_as_likely_equivalent() {
+    let mut h = host();
+    h.add_file("crash.p", OPTIONAL_CRASH);
+    // counting the epoch down is not run; emptying the handler of the optional crash
+    // runs, survives, and does not fail `--deny mutation`
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let m = &v["mutation"];
+    assert_eq!(m["undetected"], serde_json::json!([]), "{}", m);
+    assert_eq!(m["equivalent"][0]["change"], "`epoch + 1` → `epoch - 1`", "{}", m);
+    assert_eq!(m["likely_equivalent"][0]["change"], "removed `epoch = epoch + 1;`", "{}", m);
+    assert!(m["likely_equivalent"][0]["reason"].as_str().unwrap().starts_with("fault model: every send of 'eCrash'"));
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--format", "text"]), 0);
+    assert!(h.stdout.contains("1 equivalent (not run)"), "{}", h.stdout);
+    assert!(h.stdout.contains("Likely equivalent, not counted as undetected:\n  crash.p:10  "), "{}", h.stdout);
+    // a crash in every run is not optional: the empty handler is a gap
+    h.add_file("crash.p", &OPTIONAL_CRASH.replace("if ($) { send s, eCrash; }", "send s, eCrash;"));
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 1, "{}", h.stdout);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["mutation"]["undetected"][0]["change"], "removed `epoch = epoch + 1;`", "{}", v["mutation"]);
 }
 
 /// A worker that counts to 3 by sending itself a step; the spec checks the final count
@@ -1145,7 +1220,8 @@ fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bou
     assert!(!listed.contains(&serde_json::json!("condition-true")), "{}", m);
     assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--format", "text"]), 0);
     assert!(
-        h.stdout.contains("2 of them only by running every schedule to the step bound: no spec checks"),
+        h.stdout
+            .contains("2 of them because nearly every schedule ran to the step bound: the change made the model loop"),
         "{}",
         h.stdout
     );
@@ -1338,4 +1414,42 @@ fn mutants_that_only_write_unchecked_state_are_not_run() {
     assert_eq!(v["test_cases"][0]["little_to_explore"], true, "{}", v["test_cases"][0]);
     snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--format", "text"]);
     assert!(h.stdout.contains("hint: give the model something to get wrong"), "{}", h.stdout);
+}
+
+#[test]
+fn a_timed_model_that_never_ends_says_it_was_sampled() {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let mut h = host();
+    // a real clock, so the time limit ends the search
+    h.clock = || START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    h.add_file(
+        "ticker.p",
+        "fun Elapse(lo: int, hi: int);\n\
+         event eTick: int;\n\
+         machine Ticker {\n\
+           start state S {\n\
+             entry { send this, eTick, 0; }\n\
+             on eTick do (n: int) { Elapse(1000, 1000); send this, eTick, n + 1; }\n\
+           }\n\
+         }\n\
+         test tcTicker [main=Ticker]: { Ticker };\n",
+    );
+    let args = ["check", "ticker.p", "--seed", "1", "--timeout", "1s", "--no-mutation", "--warn", "all"];
+    snappea(&mut h, &[&args[..], &["--format", "text"]].concat());
+    assert!(h.stdout.contains("timed model: sampled"), "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("note: timed model: clocks only grow"), "{}", h.stdout);
+    snappea(&mut h, &[&args[..], &["--json"]].concat());
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["test_cases"][0]["incomplete_reason"], "timed_model_sampled", "{}", v["test_cases"][0]);
+}
+
+#[test]
+fn a_passing_check_reports_where_schedules_branch() {
+    let mut h = host();
+    snappea(&mut h, &["check", "tcFine", "coins.p", "--seed", "1", "--no-mutation", "--warn", "all", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let case = &v["test_cases"][0];
+    assert_eq!(case["search_complete"], true, "{}", case);
+    assert!(case.get("incomplete_reason").is_none(), "{}", case);
+    assert!(case["branching"]["scheduling_points_with_choice"].is_number(), "{}", case);
 }

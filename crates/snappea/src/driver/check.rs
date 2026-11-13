@@ -66,6 +66,10 @@ const SNAPPEA_FILES: &[&str] = &[
     crate::driver::scenario::SNAPPEA_FILE_NAME,
 ];
 
+/// The schedules `snappea check -v` keeps in `verbose.trace.json`: each takes about 100 KB
+/// of memory until the check ends.
+pub const VERBOSE_TRACE_SCHEDULES: usize = 500;
+
 /// How to check a project (upstream: `CheckerConfiguration`).
 #[derive(Debug, Clone)]
 pub struct CheckConfig {
@@ -549,9 +553,11 @@ impl Plateau {
         Plateau { not_before: start + share / 4.0, last_novel: 0 }
     }
 
-    /// Whether the test case can stop at `now`, after `schedules` schedules.
-    pub fn reached(&self, now: f64, schedules: usize) -> bool {
-        now >= self.not_before && schedules >= Self::MIN_SCHEDULES && schedules >= 2 * self.last_novel
+    /// Whether the test case can stop at `now`, after `schedules` schedules. Never while
+    /// an exhaustive search is `exhausting`: finishing it proves the test, and it gets
+    /// the rest of the test case's time to do so.
+    pub fn reached(&self, now: f64, schedules: usize, exhausting: bool) -> bool {
+        !exhausting && now >= self.not_before && schedules >= Self::MIN_SCHEDULES && schedules >= 2 * self.last_novel
     }
 }
 
@@ -565,6 +571,8 @@ struct ConsoleOut<'h> {
     /// Schedules finished, and whether the plateau stopped the search.
     schedules: usize,
     plateaued: bool,
+    /// An exhaustive search is still under way.
+    exhausting: bool,
 }
 
 impl ConsoleOut<'_> {
@@ -608,10 +616,13 @@ impl Output for ConsoleOut<'_> {
     }
     fn cancelled(&mut self) -> bool {
         let now = self.host.now();
-        if self.plateau.is_some_and(|p| p.reached(now, self.schedules)) {
+        if self.plateau.is_some_and(|p| p.reached(now, self.schedules, self.exhausting)) {
             self.plateaued = true;
         }
         self.plateaued || self.deadline.map(|d| now >= d).unwrap_or(false)
+    }
+    fn exhausting(&mut self, running: bool) {
+        self.exhausting = running;
     }
 }
 
@@ -648,7 +659,7 @@ fn run_engine(
         };
         Tracker::new(phase, start, deadline.map(|d| d - start))
     });
-    let mut out = ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false };
+    let mut out = ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false, exhausting: false };
     out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
@@ -674,6 +685,8 @@ struct WorkerOut<'a> {
     timed_out: &'a AtomicBool,
     /// The last schedule of any worker that reached new coverage.
     novel: &'a std::sync::atomic::AtomicUsize,
+    /// This worker's exhaustive search is still under way.
+    exhausting: &'a AtomicBool,
 }
 
 impl Output for WorkerOut<'_> {
@@ -688,6 +701,9 @@ impl Output for WorkerOut<'_> {
     }
     fn cancelled(&mut self) -> bool {
         self.timed_out.load(Ordering::Relaxed)
+    }
+    fn exhausting(&mut self, running: bool) {
+        self.exhausting.store(running, Ordering::Relaxed);
     }
 }
 
@@ -706,14 +722,15 @@ fn run_workers(
     let (prog, code_coverage) = (checker.prog, !checker.code.probes.is_empty());
     let timed_out = AtomicBool::new(false);
     let novel = std::sync::atomic::AtomicUsize::new(0);
+    let exhausting: Vec<AtomicBool> = (0..pool.count()).map(|_| AtomicBool::new(false)).collect();
     let (tx, rx) = mpsc::channel();
     let jobs: Vec<Job<'_>> = (0..pool.count())
         .map(|index| {
             let tx = tx.clone();
-            let (timed_out, novel) = (&timed_out, &novel);
+            let (timed_out, novel, exhausting) = (&timed_out, &novel, &exhausting[index]);
             Box::new(move || {
                 let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
-                let mut out = WorkerOut { tx, timed_out, novel };
+                let mut out = WorkerOut { tx, timed_out, novel, exhausting };
                 let part = checker.explore(tc, opts, pool, index, &mut out);
                 let _ = out.tx.send(Message::Done(index, Box::new(part)));
             }) as Job<'_>
@@ -732,6 +749,7 @@ fn run_workers(
         out.tick(pool.started(), pool.bugs());
         out.schedules = pool.started();
         out.schedule_novel(novel.load(Ordering::Relaxed));
+        out.exhausting = exhausting.iter().any(|e| e.load(Ordering::Relaxed));
         if !timed_out.load(Ordering::Relaxed) && out.cancelled() {
             timed_out.store(true, Ordering::Relaxed);
         }
@@ -762,6 +780,14 @@ pub struct CaseOutcome {
     /// at least the true count) and its deepest schedule's choices. A search that reaches
     /// few more states than its depth explores little more than one run.
     pub exhaustive_states: Option<(usize, usize)>,
+    /// The exhaustive search was still running when time ran out: more time may finish
+    /// it. Its untried alternatives along the path it was exploring (summed over workers).
+    pub exhaustive_unfinished: Option<usize>,
+    /// The test tracked time (clocks, latencies or `--timed`).
+    pub time_tracked: bool,
+    /// Scheduling points with a choice per schedule, and the machines that branch most
+    /// (see [`crate::checker::branching`]).
+    pub branching: Option<(f64, Vec<crate::checker::branching::MachineBranching>)>,
     /// Seconds the test case took.
     pub elapsed: f64,
     /// The `.schedule` file written for the bug (as `cfg.output_directory` names it).
@@ -802,6 +828,10 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     };
     let tc = select_test_case(host, loaded, &cfg.test_case_name)?;
     let mut opts = engine_options(cfg, seed);
+    opts.branching = cfg.style == Style::Snappea;
+    if cfg.style == Style::Snappea {
+        opts.verbose_trace_schedules = VERBOSE_TRACE_SCHEDULES;
+    }
     if cfg.driver_facts {
         let sources = loaded.sources.source_map();
         let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
@@ -938,6 +968,13 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         plateaued: res.cancelled && plateaued,
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
         exhaustive_states: res.exhaustive.as_ref().map(|x| (x.distinct_states, x.max_depth)),
+        exhaustive_unfinished: res
+            .exhaustive
+            .as_ref()
+            .filter(|x| x.running && !x.complete() && res.report.num_bugs == 0)
+            .map(|x| x.frontier),
+        time_tracked: res.time_tracked,
+        branching: res.branching.as_ref().map(|b| (b.points_per_schedule(), b.machines(prog))),
         elapsed: process_elapsed,
         schedule_file,
         code_coverage,
@@ -1032,4 +1069,16 @@ fn emit_traces(
         format_0_00(host.max_memory_gb())
     ));
     Ok(schedule_file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plateau_waits_for_an_exhaustive_search() {
+        let p = Plateau::new(0.0, 10.0);
+        assert!(p.reached(5.0, 1000, false));
+        assert!(!p.reached(5.0, 1000, true));
+    }
 }

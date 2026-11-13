@@ -43,7 +43,8 @@ plus PCT trials with 0, 2, and 10 priority-change points. Delays temporarily hol
 one runnable actor while others execute; they release it if nothing else can run.
 Their checkpoints distinguish the delayed actor, starting point, duration, ordering,
 and whether the delay has ended. Delayed schedules and PCT schedules are unfair;
-only the fair guided-random arm performs liveness temperature checks.
+only the fair guided-random arm performs liveness temperature checks (exhaustive search
+checks cycles instead; see below).
 
 After actor contention, a bounded early pilot also explores these schedulers before
 resuming a converging exhaustive search. Tiny finite searches finish before this
@@ -97,12 +98,37 @@ sampled. Up to 256 checkpoints retain at most 262,144 random choices. This is
 enabled for native random feedback, including automatic search after its
 exhaustive phase. Compatibility mode retains its original behavior.
 
-A completed exhaustive search ends the run early. Timed models start directly
-with feedback because exhaustive time tracking is not supported, and so do models
-with foreign functions, unless their implementation declares itself searchable
-(`ForeignFunctions::searchable` in the [Rust library](library.md)). Cyclic hot
-monitors also continue through fair feedback: closing a repeated state is not a
-liveness proof. Stalling changes strategy; it never certifies a model as safe.
+A completed exhaustive search ends the run early. Timed models are searched the same
+way: the state cache compares clocks too, so a timed model that ends can finish its
+search. One that loops never returns to an explored state, since clocks only grow; it
+is sampled, and its test line says `timed model: sampled`
+(`"incomplete_reason": "timed_model_sampled"` in JSON). Models with foreign functions
+start directly with feedback, unless their implementation declares itself searchable
+(`ForeignFunctions::searchable` in the [Rust library](library.md)). Stalling
+changes strategy; it never certifies a model as safe.
+
+Exhaustive search checks liveness on cycles. When a schedule returns to a state already
+on its own path while a liveness monitor is hot, the steps since that state form a
+cycle the model can repeat forever. If the monitor stayed out of cold states through
+the cycle, and the cycle is fair (every machine that could run at every step of it ran,
+and every `$$` choice made in it took both values), the check fails at once:
+
+```
+Answered detected liveness bug in hot state 'Waiting': the last 6 steps return to an
+earlier state, so the model can repeat them forever without the monitor entering a
+cold state.
+```
+
+A retry loop that never succeeds is then found on the first schedule that closes it,
+as cheaply as a deadlock. Plain `$` and `choose` choices need not vary: a network that
+may lose every retry is a real livelock. The saved schedule ends with the cycle and
+names its start in a `--snappea-lasso:<step>` header; `snappea replay` checks that the
+end returns to that state. Other cycles are pruned. A search that pruned a cycle
+through a state where a liveness monitor was not cold (an unfair cycle, or one through
+a cold state) has not verified liveness, since another cycle through that state could
+be a bug: it continues with fair feedback search. With several workers, any pruned
+cycle counts, since the shared state cache can hide a cycle from the worker that closes
+it.
 
 By default the selected test cases **share 10 seconds**: each gets the time left divided
 by the test cases left. A test case stops early, marked `stopped: coverage stopped
@@ -112,7 +138,26 @@ share; the time it leaves goes to the test cases after it. This keeps a check of
 model fast enough to run after every change, but explores less: the Raft tutorial's
 known bug is found in about 6 of 10 such runs, and every time with `--timeout 10s`.
 `--timeout` gives each test case its own fixed limit instead, with no early stop; set
-it before trusting a pass on a large model. A timeout or early stop means the search is
+it before trusting a pass on a large model. A test case whose exhaustive search is
+still running never stops early for coverage: finishing the search proves more than
+sampling finds.
+
+A passing test case that did not cover every schedule says why, with
+`incomplete_reason` in JSON:
+
+- `exhaustive_search_unfinished`: the exhaustive search was still running when time
+  ran out (`untried_alternatives` counts those left on its current path). The hint
+  suggests a longer `--timeout`. How much longer cannot be projected reliably: the
+  state cache makes later branches much cheaper than earlier ones.
+- `sampled`: too many schedules, so the search sampled them.
+- `timed_model_sampled`: as above, for a timed model.
+
+For these, the output shows where schedules branch, averaged per schedule: the
+scheduling points with a choice, the machines ready to run at them, and the
+`$`/`choose` choices each machine made (`branching` in JSON; `-v` prints it for every
+test case). It also notes when most schedules reach the same few states
+(`distinct_states` in JSON). Reduce the top machines first; see `snappea guide
+modeling`. A timeout or early stop means the search is
 incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
 coverage was not reached within the run budget. Exit status is 0 when no bug or
@@ -152,7 +197,17 @@ schedules, and share the states already explored. The first bug, or every worker
 completing its part, stops the run. `--seed` sets their starting seeds, but worker
 timing can change which bug wins and how many schedules run. Bug schedules record the
 choices and replay exactly, whatever the worker count.
-`-v` shows progress and statistics and uses one worker.
+
+Schedule counts depend on the order the search tries alternatives, which the seed
+sets. Without `--seed` each run picks a new seed, so `all N schedules` differs between
+runs of the same model; the number of distinct states it reached (`distinct_states` in
+JSON) does not, for a given worker count. With `--seed` and `-j 1`, a search that ends
+before its time limit repeats its counts exactly. A time limit, the shared budget and
+several workers make counts depend on timing; under the shared budget, which test
+cases run together also changes each one's share. Paste `distinct_states`, or pass
+`--seed` and `-j 1`, when a document needs a count readers can reproduce.
+`-v` shows progress and statistics and uses one worker; its
+`verbose.trace.json` keeps the first 500 schedules.
 
 While a check runs, `snappea check` shows how far it has got on stderr. On a terminal
 that is a status line, redrawn in place and cleared when each test case ends:
@@ -420,16 +475,27 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
-Each mutant runs only the test cases that ran the changed code, in turns. First every
-mutant gets a turn of 10 schedules on each of its test cases: most mutants a test case
-detects at all, it detects within a few schedules, so short first turns find the test
-case that detects them sooner. Then the undetected ones get more turns, round robin over
-their test cases, each three times longer than the last on that test case (at most
-100 schedules), up to a budget learned from the first turns: 3 times the schedules that
-95% of the detected mutants needed, at least 100 and at most 1000 (1000 when fewer than
-20 were detected). JSON gives it as `schedules_per_mutant`. `snappea check mutation`
-then keeps giving undetected mutants turns, up to 1000 schedules each, until its time
-limit: a deeper search for a CI gate, where `snappea check` stops at the budget.
+Each mutant runs only the test cases that ran the changed code, in turns, smallest
+first: the test cases whose unchanged search was complete in the fewest schedules, then
+the rest. First every mutant gets a turn of 10 schedules on each of its test cases:
+most mutants a test case detects at all, it detects within a few schedules, so short
+first turns find the test case that detects them sooner. A test case whose unchanged
+search was complete in at most 1000 schedules instead gets one turn of up to 1000,
+enough for the mutant's search to complete too, so its verdict there is exact. Then the
+undetected ones get more turns, round robin over their test cases, each three times
+longer than the last on that test case (at most 100 schedules), up to a budget per test
+case learned from the first turns: 3 times the schedules that 95% of the detected
+mutants needed, at least 100 and at most 1000 (1000 when fewer than 20 were detected).
+Each test case gets the whole budget, so a large test case does not starve a small one
+that would detect the mutant. When a turn's exhaustive search pruned a cycle while a
+liveness monitor was hot without settling whether the cycle can repeat forever, the
+mutant's later turns on that test case run fair schedules, which check hot monitors'
+temperature, so a mutant that loops without progress is found in a short turn. JSON gives it as `schedules_per_mutant`. `snappea check
+mutation` then keeps giving undetected mutants turns, up to 1000 schedules per test
+case, until its time limit: a deeper search for a CI gate, where `snappea check` stops
+at the budget. When every undetected mutant's search was incomplete, the console says
+so with a hint to run `snappea check mutation` before adding assertions or
+suppressions, and JSON has `deeper_search_may_detect: true`.
 
 Removing a whole `if`, `while`, `foreach` or body is a *coarse* mutant: the other
 mutants inside it change part of what it removes. A mutant inside one gets its first
@@ -437,8 +503,9 @@ turns with the others, but the rest of its budget only after every mutant outsid
 undetected coarse mutant had its own. When no test case detects the coarse mutant, no
 test case notices that code removed at all, which is the gap to close first, so the
 undetected mutants inside it are listed with it: the console shows
-`removed the whole body (3 statements) (and 2 more undetected inside it)`, and JSON
-lists them under the coarse mutant's `undetected_inside`. Given the time, every mutant
+`removed the whole body (3 statements) (and 2 more undetected inside it; -v lists them)`,
+`-v` lists them under it, and JSON lists them under the coarse mutant's
+`undetected_inside`, each with its `file` and `line`. Given the time, every mutant
 gets its full budget; when the time limit stops the run, what it cut first is the
 confirmation of mutants inside a gap already found. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
@@ -452,7 +519,10 @@ would change a value. While the test cases check the unchanged model, they recor
 each such mutant, whether its change would have changed a value: for `<`, `<=`, `>` and
 `>=`, whether the operands were ever equal; for `+` and `-`, whether the right operand
 was ever nonzero; for a removed assignment, whether it ever stored a value other than
-the one already there; for a removed `+=` or `-=` on a set or map, whether the element
+the one already there (unless computing the value or where it goes has an effect: a
+`new`, a choice, or a call to a foreign function or to a function that sends, raises,
+announces, changes state, creates a machine, writes a field or makes a choice; removing
+that removes the effect, so the mutant always runs); for a removed `+=` or `-=` on a set or map, whether the element
 was ever missing or present. A mutant whose change never would is not run: it is
 undetected, with 0 schedules, and the console says why, for example
 `` `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never
@@ -469,6 +539,38 @@ check depends on: see the unchecked-state lint)` and JSON names the variable as
 `unchecked_variable`. Only changes inside a plain assignment, append or map write whose
 values involve no call, `new`, choice or operation that can fail are skipped.
 
+Some mutants no test case can detect, as the code shows. They are not run: the console
+counts them as `equivalent (not run)`, and JSON lists them under `mutation.equivalent`
+with a `reason`:
+
+- removing an `if` with no `else` whose condition is a bare `$` or `choose()` (or its
+  negation): the checker already explores the run that skips the branch, as in fault
+  injection like `if ($) { return; }`;
+- swapping `>` and `>=` (or `<` and `<=`) in a guard whose branch only assigns one
+  compared value to the other, `if (a > b) { b = a; }`: at equality it assigns the value
+  already there;
+- swapping `+` and `-` in the one increment `f = f + 1` of an `int` field whose values
+  are only copied (into variables, named tuple fields, parameters and event payloads),
+  compared with `==` or `!=` against each other or 0, and reset to 0: a version, tag or
+  epoch. Counting down gives values as new as counting up.
+
+One more kind runs, and if no test case detects it, it is reported as likely equivalent
+instead of undetected (`Likely equivalent, not counted as undetected:` in the console,
+`mutation.likely_equivalent` in JSON), so `--deny mutation` does not fail on it. The
+rule: the mutant empties a `do` handler, removes its one statement, or empties a
+function that is only ever the one statement of such handlers; the function runs nowhere
+else; and every event the handler handles is optional in every test case that ran the
+mutant. An event is optional in a test case when every `send` or `raise` of it in the
+test case's machines is the whole branch of an `if` on a bare `$` or `choose()`, such
+as a crash injected with `if ($) { send server, eCrash; }`. A handler that does nothing
+is then the history where the fault never happened. A test case that always sends the
+event, a crash in every run, does not qualify.
+
+When an undetected mutant changes code under a `$` or `choose()` condition, the console
+adds a hint: code like that is often fault injection in a machine that stands in for the
+environment, which should be marked `// snappea: driver` so it is not mutated. `snappea
+guide faults` has recipes for timers, crashes and lossy networks as drivers.
+
 A mutant that keeps the model from finishing is stopped early. Before the mutants run,
 each test case runs 100 schedules of the unchanged model. When at most 40% of those
 reach the step bound and a mutant's do far more often, the mutant stops and counts as
@@ -477,9 +579,10 @@ schedules all at the bound, as many in a row as the unchanged model would reach 
 than 1% of the time (2 when it never does). Such a change, like an increment
 turned into a decrement in a retry loop, breaks the model too badly to be a useful
 finding, and running it out costs more than every other mutant. The console adds one
-line, `3 of them only by running every schedule to the step bound: no spec checks that
-the model makes progress.`, and JSON has the count as `detected_by_step_bound`: a
-liveness spec would make those real detections. A model whose schedules mostly reach the
+line, `3 of them because nearly every schedule ran to the step bound: the change made
+the model loop without finishing.`, and JSON has the count as `detected_by_step_bound`.
+A liveness spec (a hot state the loop never leaves) reports such a loop as a bug
+instead, often on the first schedule that closes the loop. A model whose schedules mostly reach the
 bound anyway, such as a server that never stops, has none. Those 100 schedules also set
 each test case's step bound for its mutants: 10 times the longest of them that ended,
 with the liveness threshold scaled to match, when the unchanged model still passes with
@@ -522,7 +625,12 @@ if (req.units <= stock && !(req.order in reservations)) {
 ```
 
 `mutation` allows every mutant in the code that follows; `mutation:<kind>` allows one
-kind (the IDs in the table above). Suppressed mutants do not run and are counted as
+kind (the IDs in the table above), and `mutation:<kind>,<kind>` several, as in
+`allow mutation:remove-statement,condition-false -- reason`.
+
+Suppression is the right answer for best-effort operations: cancelling a timer, warming
+a cache, sending a hint. The design must be correct with or without them, so no test
+case can detect their removal, and the reason says so. Suppressed mutants do not run and are counted as
 suppressed. A misspelled kind fails linting, so it cannot silently allow nothing.
 
 ## Driver limits

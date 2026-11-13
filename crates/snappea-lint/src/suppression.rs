@@ -182,8 +182,8 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>,
                     };
                     let (ids, reason) =
                         ids.split_once("--").map_or((ids, None), |(ids, reason)| (ids, Some(reason.trim())));
-                    let ids = ids.trim();
-                    let ids: Vec<_> = ids.split(',').map(str::trim).collect();
+                    let ids = expand_mutation_kinds(ids.trim().split(',').map(str::trim));
+                    let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
                     if ids.iter().any(|id| !known(id)) {
                         invalid.push(bad("unknown or empty lint rule ID in suppression"));
                         return;
@@ -216,6 +216,21 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>,
         }
     }
     (allowed, invalid)
+}
+
+/// The IDs of one suppression, with a bare mutation kind after `mutation:<kind>` read as
+/// another kind of it: `mutation:remove-statement,condition-false` allows both.
+fn expand_mutation_kinds<'a>(ids: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in ids {
+        let after_kind = out.last().is_some_and(|p| p.starts_with("mutation:"));
+        if after_kind && MUTATIONS.contains(&id) {
+            out.push(format!("mutation:{id}"));
+        } else {
+            out.push(id.to_string());
+        }
+    }
+    out
 }
 
 fn comments(text: &str, start: usize, end: usize, f: &mut impl FnMut(usize, &str)) {

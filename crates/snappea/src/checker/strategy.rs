@@ -194,6 +194,12 @@ pub trait Strategy {
     fn observe_state(&mut self, _hash: u64) -> bool {
         true
     }
+    /// After [`Strategy::observe_state`] ended a schedule at a state where a liveness
+    /// monitor was not cold: the cycle, if that state is one the schedule passed before
+    /// (see [`crate::checker::exhaustive::ExhaustiveStrategy::closed_cycle`]).
+    fn closed_cycle(&mut self) -> Option<crate::checker::exhaustive::Cycle> {
+        None
+    }
     /// Independent coverage novelty history of the current scheduler phase. Coverage
     /// reports still merge every phase; revisiting an epoch restores its history.
     fn coverage_epoch(&self) -> u64 {
@@ -213,6 +219,11 @@ pub trait Strategy {
     fn observe_frontier(&mut self, _machine: u32, _state: u32, _event: u32) {}
     /// Validated exhaustive completion, including liveness requirements.
     fn search_complete(&self) -> bool {
+        false
+    }
+    /// An exhaustive search is under way and has not given up: stopping now leaves a
+    /// search that might have finished.
+    fn exhausting(&self) -> bool {
         false
     }
     /// Statistics of an exhaustive search.
@@ -578,6 +589,9 @@ pub struct ScheduleTrace {
     pub time: Option<String>,
     /// `--snappea-latency:<key>=<value>`: the resolved profile entries.
     pub latency: Vec<(String, String)>,
+    /// `--snappea-lasso:<n>`: the schedule ends where it was after `n` steps, closing a
+    /// cycle that can repeat forever (a liveness bug found by exhaustive search).
+    pub lasso: Option<usize>,
     pub steps: Vec<ScheduleStep>,
 }
 
@@ -599,6 +613,9 @@ impl ScheduleTrace {
         }
         for (k, v) in &self.latency {
             s.push_str(&format!("--snappea-latency:{}={}\n", k, v));
+        }
+        if let Some(n) = self.lasso {
+            s.push_str(&format!("--snappea-lasso:{}\n", n));
         }
         // steps are newline-separated, with no newline after the last (upstream format)
         for (i, st) in self.steps.iter().enumerate() {
@@ -632,6 +649,8 @@ impl ScheduleTrace {
             } else if let Some(v) = line.strip_prefix("--snappea-latency:") {
                 let (k, v) = v.rsplit_once('=').ok_or_else(|| format!("bad latency entry {v}"))?;
                 t.latency.push((k.to_string(), v.to_string()));
+            } else if let Some(v) = line.strip_prefix("--snappea-lasso:") {
+                t.lasso = Some(v.parse().map_err(|_| format!("bad lasso start {v}"))?);
             } else if line.starts_with("--") {
                 continue;
             } else if let Some(v) = line.strip_prefix('(').and_then(|l| l.strip_suffix(')')) {
@@ -657,12 +676,15 @@ pub struct ReplayStrategy {
     /// Report the step bound as reached once this many steps were replayed (used to
     /// reproduce a schedule that ended at the bound; upstream replays never hit it).
     pub(crate) stop_at: Option<usize>,
+    /// For a lasso: the state hash at the cycle's start, and whether the end returned to it.
+    lasso_start: Option<u64>,
+    closed: bool,
 }
 
 impl ReplayStrategy {
     pub fn new(trace: ScheduleTrace) -> Self {
         let is_fair = trace.is_fair;
-        ReplayStrategy { trace, index: 0, is_fair, error: None, stop_at: None }
+        ReplayStrategy { trace, index: 0, is_fair, error: None, stop_at: None, lasso_start: None, closed: false }
     }
 
     /// Records why the trace cannot be followed (upstream's `ErrorText`) and returns
@@ -741,6 +763,30 @@ impl Strategy for ReplayStrategy {
     }
     fn diverged(&self) -> bool {
         self.error.is_some()
+    }
+    fn wants_state_hash(&self) -> bool {
+        self.trace.lasso.is_some_and(|start| self.index == start || self.index == self.trace.steps.len())
+    }
+    fn observe_state(&mut self, hash: u64) -> bool {
+        let Some(start) = self.trace.lasso else { return true };
+        if self.index == start && self.lasso_start.is_none() {
+            self.lasso_start = Some(hash);
+        }
+        if self.index < self.trace.steps.len() {
+            return true;
+        }
+        self.closed = self.lasso_start == Some(hash);
+        if !self.closed {
+            self.error = Some(format!(
+                "Trace is not reproducible: the schedule does not return to its state after step {}.",
+                start
+            ));
+        }
+        false
+    }
+    fn closed_cycle(&mut self) -> Option<crate::checker::exhaustive::Cycle> {
+        let start = self.trace.lasso.filter(|_| self.closed)?;
+        Some(crate::checker::exhaustive::Cycle { start, fair: true })
     }
 }
 

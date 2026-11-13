@@ -138,6 +138,7 @@ fn schedule_text_round_trips() {
         test_name: Some("tcMain".into()),
         time: Some("timed=1;profile=same-az".into()),
         latency: vec![("Client->Server.eReq".into(), "100..200".into()), ("cost.disk".into(), "5".into())],
+        lasso: Some(2),
         steps: vec![
             ScheduleStep::Operation(0),
             ScheduleStep::Bool(true),
@@ -151,7 +152,7 @@ fn schedule_text_round_trips() {
         text,
         "--fair-scheduling\n--liveness-temperature-threshold:50000\n--test-method:tcMain\n\
          --snappea-time:timed=1;profile=same-az\n--snappea-latency:Client->Server.eReq=100..200\n\
-         --snappea-latency:cost.disk=5\n(0)\nTrue\n3\nFalse\n(12)"
+         --snappea-latency:cost.disk=5\n--snappea-lasso:2\n(0)\nTrue\n3\nFalse\n(12)"
     );
     assert_eq!(ScheduleTrace::parse(&text).unwrap(), trace);
     let plain = ScheduleTrace { steps: vec![ScheduleStep::Operation(1)], ..Default::default() };

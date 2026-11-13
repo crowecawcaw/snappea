@@ -177,7 +177,8 @@ impl Strategy for AutoStrategy {
         let stats = dfs.exhaustive_stats().unwrap();
         // a program that does not repeat itself given the same choices cannot be exhausted
         let repeatable = dfs.replay_error().is_none();
-        if !more && stats.finished && self.dfs_bounds == 0 && (!self.has_hot || stats.cycle_prunes == 0) && repeatable {
+        let live = !SearchStats { hot_monitors: self.has_hot, ..stats.clone() }.liveness_unverified();
+        if !more && stats.finished && self.dfs_bounds == 0 && live && repeatable {
             self.complete = true;
             let Some(shared) = &self.split else {
                 return false;
@@ -196,9 +197,11 @@ impl Strategy for AutoStrategy {
         if self.window_work >= WINDOW {
             let states = stats.distinct_states.saturating_sub(self.window_states);
             let prunes = stats.pruned_schedules.saturating_sub(self.window_prunes);
-            // A shrinking frontier or more graph closures than discoveries supports
-            // continuing DFS. Novel states/coverage alone can grow forever.
-            let closing = prunes > 0 && prunes >= states;
+            // A shrinking frontier, or graph closures at least half as frequent as
+            // discoveries, supports continuing DFS. Novel states/coverage alone can grow
+            // forever, but a finite state space that DFS is still discovering already
+            // closes often (a lossy network: about 2 closures per 3 discoveries).
+            let closing = prunes > 0 && prunes.saturating_mul(2) >= states;
             if closing {
                 // Cache closures show convergence even if a narrow DFS frontier
                 // fluctuates. Renew the stall budget while that evidence continues;
@@ -315,15 +318,30 @@ impl Strategy for AutoStrategy {
         }
         dfs.observe_state(hash)
     }
+    fn closed_cycle(&mut self) -> Option<super::exhaustive::Cycle> {
+        if self.probing || self.interrupted {
+            return None;
+        }
+        self.dfs.as_mut().and_then(|dfs| dfs.closed_cycle())
+    }
     fn exhaustive_stats(&self) -> Option<SearchStats> {
         self.dfs
             .as_ref()
-            .and_then(|dfs| dfs.exhaustive_stats())
-            .map(|stats| SearchStats { finished: self.complete, depth_bound_hits: self.dfs_bounds, ..stats })
+            .and_then(|dfs| dfs.exhaustive_stats().map(|stats| (stats, dfs.pending_alternatives())))
+            .map(|(stats, frontier)| SearchStats {
+                finished: self.complete,
+                depth_bound_hits: self.dfs_bounds,
+                running: !self.complete,
+                frontier,
+                ..stats
+            })
             .or_else(|| self.parked.clone())
     }
     fn search_complete(&self) -> bool {
         self.complete
+    }
+    fn exhausting(&self) -> bool {
+        self.dfs.is_some() && !self.complete
     }
 }
 

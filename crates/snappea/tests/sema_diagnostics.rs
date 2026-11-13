@@ -77,3 +77,18 @@ fn every_type_error_suggests_a_fix() {
     let (sm, a) = analysis("machine M { var x: int; start state S { entry { x = \"s\"; } } }");
     assert!(a.diagnostics(&sm).iter().all(|d| d.help.is_some()));
 }
+
+#[test]
+fn an_unclosed_test_module_points_to_per_variant_drivers() {
+    // a shared helper creates either variant, so both are in every test's module
+    let src = "machine Server { start state S { } }
+               machine MemoryOnlyServer { start state S { } }
+               fun Start(memoryOnly: bool) { if (memoryOnly) { new MemoryOnlyServer(); } else { new Server(); } }
+               machine Main { start state S { entry { Start(false); } } }
+               test tcFixed [main=Main]: { Main, Server };";
+    let (sm, a) = analysis(src);
+    let messages = a.messages(&sm);
+    assert!(messages[0].contains("interface MemoryOnlyServer is created but not implemented"), "{messages:?}");
+    let help = a.diagnostics(&sm)[0].help.clone().unwrap();
+    assert!(help.contains("do not add it") && help.contains("`Run(new Server(..))`"), "{help}");
+}

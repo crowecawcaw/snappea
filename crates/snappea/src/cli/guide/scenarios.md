@@ -16,10 +16,20 @@
 - For **each acceptance precondition**, make it false while all others hold; combined invalid conditions can hide missing enforcement.
 - Cover each meaningful valid value class and the output partition boundaries (for example, below/exactly-at/above capacity), not just one representative input.
 - Exercise operations on both sides of lifecycle boundaries; querying state alone does not test enforcement.
+- Add a lifecycle-boundary test per terminal state: start a second actor only after the first finished. Concurrent tests reach those states too rarely.
 - Exercise stale operations against a successor's live state, not only empty/expired state.
 - Include stale/rejected operations and useful success. Always rejecting can satisfy safety while violating the contract.
 - Use bounded choices that preserve these relationships; schedule count alone says little.
 - Bound a history generator's input IDs and values to preserve contract-relevant cases; let the checker explore schedules independently. Check a few manually calculated valid and invalid histories against the oracle before relying on generated histories. See the bounded history generator (`snappea guide example bounded-history`).
+
+## Drivers
+
+- The driver is the test's main machine, the machines under `PTst/`, and machines marked `// snappea: driver`. Mutation testing does not change drivers, so a spec still knows what should happen when the design is broken. Have drivers announce their intent and plans (the requested seat, the planned messages) instead of letting the spec learn them from design code.
+- External services, networks and timers are environment stand-ins: drivers, not design. Put them under `PTst/` or mark them, and announce ground truth (what was really delivered or stored) from them.
+- Compare design variants (flawed and fixed) with one thin driver per variant that does only the `new`, and share the rest through functions that take the created machine: `Run(new Server(..))`. A shared helper that creates either variant puts both in every test's module, which the module check rejects; adding the other variant's machine to the test is the wrong fix.
+- With timeouts, giving up always satisfies "every request ends". Also require the work to be attempted or served.
+- Prefer notifications to poll loops. A poll loop turns missing progress into a livelock, which is expensive to detect.
+- Funnel a machine's exits through one notification point, so mutation reports one missing check, not one per exit.
 
 ## Choose discriminating tests
 
@@ -36,8 +46,14 @@
 - Named scenario coverage establishes occurrence, not correctness; add independent assertions for results.
 - Inspect surviving mutants: missing scenario/check, equivalent behavior, irrelevant abstraction, or incomplete search? Check budgets and completion before deciding.
 - If removing a write survives, read the state through public behavior; announcement-only checks can miss it.
+- Best-effort operations (cancel, warmup, hints) are expected survivors: suppress them with a reason that says why the design must not depend on them.
 - Explain intentional exceptions. Do not suppress unresolved risks to obtain a passing command.
 - Report asserted properties, bounds, assumptions, completion, and unresolved findings.
+
+## Time and observed logs
+
+- `--timed` drops orders the latency profile rules out, such as a reply arriving after its timeout fired. Untimed checking keeps them, which covers latencies outside the profile. Run both: they are complementary.
+- A spec meant for `snappea observe` must accept every order the real system can log, not only the orders the model produces. The first event seen for a key may be any event.
 
 ## Progress
 
