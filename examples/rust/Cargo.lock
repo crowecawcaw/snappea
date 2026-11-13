@@ -482,6 +482,7 @@ dependencies = [
 name = "snappea-lint"
 version = "0.2.0"
 dependencies = [
+ "serde_json",
  "snappea-syntax",
 ]
 
