@@ -21,6 +21,11 @@ const TOPICS: &[(&str, &str, &str)] = &[
     ("modeling", "What to model: boundaries, atomic steps, interference", include_str!("guide/modeling.md")),
     ("scenarios", "Choose scenarios and independent oracles that can fail", include_str!("guide/scenarios.md")),
     ("recovery", "Crashes, retries and durable state", include_str!("guide/recovery.md")),
+    (
+        "scenario-monitors",
+        "`scenario` monitors: prove a test reached a race; read their summary",
+        include_str!("guide/scenario-monitors.md"),
+    ),
     ("python", "Capture real Python calls and check them against P specs", include_str!("guide/python.md")),
     ("syntax", "P syntax and a complete small model", include_str!("guide/syntax.md")),
 ];

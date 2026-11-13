@@ -1,10 +1,8 @@
-# Checks the example P model the way a project using snappea would: install the released
-# CLI, then run the model's test cases. A copy of this file works in your own repository;
-# change the working directory and the test cases. See
+# Checks the example P model the way a project using snappea would, with this checkout's
+# build of snappea: the model can use lint rules and features not yet released.
+# examples/model/github-workflow.yml is the copyable version, which installs the released
+# CLI; keep the two in step. See
 # https://crowecawcaw.github.io/snappea/docs/github-actions.html
-#
-# examples/model/github-workflow.yml links here. model-example.yml checks the same model
-# with this checkout's build of snappea instead.
 
 name: Check the P model
 
@@ -25,10 +23,18 @@ jobs:
         working-directory: examples/model
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-model
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The latest release; add `-s -- --version 0.1.0` after `sh` to pin one.
-      - name: Install snappea
-        run: curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh
+      # Where examples/model/github-workflow.yml installs the released CLI.
+      - name: Build snappea from this checkout
+        working-directory: .
+        run: |
+          cargo build -p snappea --bin snappea --locked
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
 
       - name: Type-check and list the test cases
         run: snappea tests

@@ -18,6 +18,7 @@ pub mod driver_facts;
 pub mod engine;
 pub mod exhaustive;
 pub mod feedback;
+pub mod flow_lints;
 pub mod foreign;
 pub mod interp;
 pub mod javafmt;

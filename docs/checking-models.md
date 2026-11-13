@@ -5,6 +5,7 @@ questions:
   - "How do checks, exploration, coverage and mutation testing behave?"
   - "What makes a check fail?"
   - "What does a bug report say, and how do I read a runtime error, liveness or deadlock report?"
+  - "What do the scenario coverage terms mean, and when does a scenario fail a check?"
 ---
 
 # Checking P models
@@ -311,8 +312,35 @@ a value for a message), which run only when an assertion fails. A bug stops a te
 the console and with `coverage.partial: true` in JSON. The combined total includes
 these results and is also marked partial when any test case finds a bug.
 
-Scenario monitors appear in the console as a unified summary, including scenarios
-that were never satisfied. JSON includes the scenario artifacts under `scenarios`
+Scenario monitors (`scenario` declarations) appear in the console as a unified summary,
+including scenarios that were never satisfied:
+
+```text
+Unified scenario coverage across 1 test case:
+  1/2 scenarios covered in >=1 test case; 1 coverage gap.
+  [covered] ConflictThenRetry: covered in 1/1 test cases (tcTwoClients); 53 total triggers, 6 satisfying timelines (summed per test case)
+  [  GAP  ] RefusedTwice: never covered in any of 1 test case; best progress anywhere 2/3 states
+```
+
+- **total triggers**: explored schedules that satisfied the scenario (entered a `cold`
+  state other than its start), summed over the test cases.
+- **satisfying timelines**: distinct timelines among those schedules, summed over the
+  test cases. A timeline abstracts a schedule by the order in which each machine received
+  its events (`--timeline-repr`), so schedules that differ only in unrelated
+  interleavings count once.
+- **best progress anywhere N/M states**: the most distinct states of the scenario that
+  one schedule entered, out of its M states.
+
+Scenarios watch every test case without being selected with `assert ... in`, so they
+are not listed as outside the selected tests. In `snappea check` a scenario ignores an
+observed event its state does not handle; `snappea-compat` fails as upstream P does.
+A scenario no selected test case satisfies is a required coverage gap: it is listed
+under `Not covered`, counted in `summary.coverage_gaps` (and `summary.scenario_gaps`),
+and fails the check. Accept an intended one with
+`// snappea-lint: allow coverage -- reason` before the scenario. `snappea guide
+scenario-monitors` shows how to write them.
+
+JSON includes the scenario artifacts under `scenarios`
 for the suite and for each test case with scenarios. The same artifacts are still
 written to `scenario_coverage.json` for merging across runs.
 
@@ -324,8 +352,19 @@ entered is listed, but its handlers are what the gate counts). `assert false` pa
 must never run. Components outside the selected tests do not enter the totals. To accept
 an intentional gap, place `// snappea-lint: allow coverage -- reason` before its
 statement, handler, function, or machine; coverage suppressions need a reason and are
-validated with the other scoped lint directives. They remain in the raw coverage totals,
+validated with the other scoped lint directives. A suppression before an `if` or `while`
+also covers its condition outcomes. They remain in the raw coverage totals,
 while `coverage.required` in JSON shows post-suppression counts.
+
+Suppressed sites that never ran are listed under their own heading, each with its
+reason, not as plain uncovered code:
+
+```text
+Not covered, suppressed:
+  PTst/Tests.p:129  SwapHolder.Forwarding, on eLoadTop: never handled (suppressed: used only by tcBugPointerOnlyCas)
+```
+
+In JSON they are under `coverage.uncovered_suppressed`; `coverage.uncovered` holds the rest.
 
 The list after the test cases names, for each piece of code that never ran, the
 outermost one: a handler that was never triggered rather than each of its statements.
@@ -347,21 +386,21 @@ spec or assertion depends on:
 ```
 $ snappea check tcAtomicReserve
 ...
-Mutation testing: 13 of 34 mutants detected (0.1s)
+Mutation testing: 19 of 39 mutants detected (1.8s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Inventory.p:24  Inventory.Init entry: removed `stock = units;`
   PSrc/Inventory.p:32  Inventory.Serving, on eReserveReq: `req.units <= stock` → `req.units < stock`
-  PSrc/Inventory.p:35  Inventory.Serving, on eReserveReq: removed `send req.client, eReserveResp, (order = req.order, ok = f...`
-  PSrc/Inventory.p:48  Inventory.Serving, on eReleaseReq: `stock + units` → `stock - units`
+  PSrc/Inventory.p:35  Inventory.Serving, on eReserveReq: `false` → `true`
+  PSrc/Inventory.p:49  Inventory.Serving, on eReleaseReq: removed the whole `if (req.order in reservations)` (and 4 more undetected inside it)
   ...
 ```
 
-Here the spec catches overselling but nothing else: an inventory that starts with no
-stock, refuses an order that fits exactly, never answers a refused order, or loses stock
-on release passes every test case. Each line is a choice: add a spec or an assertion
-that the change would break (a liveness spec that every order gets an answer, an
-assertion that a refusal is justified), add a test case that drives the code into the
-situation, or decide the code does not matter.
+Here the specs catch overselling and an order that never gets an answer, but nothing
+else: an inventory that starts with no stock, refuses an order that fits exactly,
+reports a refusal as a success, or loses stock on release passes every test case. Each
+line is a choice: add a spec or an assertion that the change would break (an assertion
+that a refusal is justified, or that an order's answer matches the reservation), add a
+test case that drives the code into the situation, or decide the code does not matter.
 
 A mutant changes one place in the code of the machines under test:
 

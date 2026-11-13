@@ -63,7 +63,7 @@ machine Inventory {
   }
 }
 
-// One order: reserves its units, then may cancel and release them.
+// Orders that reserve stock, then may cancel.
 machine OrderClient {
   var inventory: Inventory;
   var order: string;
