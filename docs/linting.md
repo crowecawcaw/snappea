@@ -49,6 +49,7 @@ model covers every requirement or faithfully represents the implementation.
 | `unselected-spec` | A spec is selected by no test or runnable implementation in the loaded project. | Add `assert MySpec in ...` to a test/module, or suppress for an observation-only spec. |
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
+| `announce-and-send` | Adjacent `announce` and `send` expose the same event and payload to a spec twice. | Remove the redundant `announce`, or suppress an intentional duplicate. |
 | `unused-payload-field` | An event handler in a spec declares a named payload field but never reads it outside assertion messages. Formatting a field in an error message does not check it. | Validate or use the field, or suppress an intentional abstraction. |
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
@@ -153,6 +154,32 @@ and strings. It forgets uncertain facts at branch joins, loops, receives, and
 calls with possible side effects. It does not assume float self-equality, prove
 arbitrary arithmetic identities, or perform whole-program symbolic execution.
 
+### Announcing and sending the same event
+
+Specs observe `send` as well as `announce`. This reports completion twice:
+
+```p
+announce eClientDone, id;
+send owner, eClientDone, id;
+```
+
+Keep the `send`; a separate announcement is unnecessary. If the announcement means
+something different, give it a distinct event name that expresses that fact.
+
+`announce-and-send` checks adjacent statements in either order, inside a function
+or handler, for an event observed by a spec. It requires identical, repeatable
+payload expressions and a send target without calls or nondeterministic choices.
+It does not infer equivalence across assignments, branches, or helper calls. This
+conservative check reports concrete duplicate observation, not a guessed
+request/reply relationship. Intentional duplicates can use a scoped suppression on
+the second statement:
+
+```p
+announce eClientDone, id;
+// snappea-lint: allow announce-and-send -- this test deliberately reports completion twice
+send owner, eClientDone, id;
+```
+
 ### Unused payload fields
 
 A handler that receives `(revision, digest)` but checks only `revision` does not
@@ -162,8 +189,8 @@ to a field does not count as reading it. Passing or copying the whole payload is
 conservatively treated as using every field; this is not interprocedural dataflow
 analysis. Reading a field also does not prove it contributes to a useful property.
 An index on the left of an assignment is a read: `requested[r.id] = r.amount;` reads
-both fields. A handler whose body is only `assert false` (with or without a message)
-reports an event that must not happen, so it need not read every field. P has no
+both fields. A handler that unconditionally reaches `assert false` (with an optional message
+and preceding literal or formatted diagnostic prints without helper calls) reports an event that must not happen, so it need not read every field. P has no
 partial or `_` binding for payloads; to track one field of an event another spec
 checks fully, suppress the finding with a reason.
 
