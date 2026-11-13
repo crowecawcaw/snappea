@@ -1510,3 +1510,50 @@ fn typos_in_commands_options_and_test_names_get_suggestions() {
     let out = format!("{}{}", h.stdout, h.stderr);
     assert!(out.contains("to check files, pass .p or .pproj paths"), "{out}");
 }
+
+#[test]
+fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
+    for nested in [false, true] {
+        let id = if nested { "mutation-nested" } else { "mutation" };
+        let source = COUNTER
+            .replace(
+                "total = total + n;",
+                &format!("// snappea-lint: allow {id} -- guard scope\nif (n > 0) {{ total = total + n; }}"),
+            )
+            .replace(
+                "announce eTotal, total;",
+                "// snappea-lint: allow mutation:remove-not -- stale example\nannounce eTotal, total;",
+            );
+        let mut h = host();
+        h.add_file("counter.p", &source);
+        assert_eq!(
+            snappea(
+                &mut h,
+                &[
+                    "check",
+                    "mutation",
+                    "counter.p",
+                    "--warn",
+                    "mutation",
+                    "--list-suppressions",
+                    "--json-report",
+                    "result.json"
+                ]
+            ),
+            0,
+            "{}{}",
+            h.stdout,
+            h.stderr
+        );
+        let report: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        let mutation = &report["mutation"];
+        let suppressed = mutation["suppressed_details"].as_array().unwrap();
+        assert_eq!(suppressed.len() as u64, mutation["suppressed"].as_u64().unwrap());
+        assert!(suppressed.iter().any(|m| m["change"].as_str().unwrap().contains("whole `if")), "{mutation}");
+        assert_eq!(suppressed.iter().any(|m| m["change"] == "removed `total = total + n;`"), nested, "{mutation}");
+        assert!(suppressed.iter().all(|m| m["reasons"] == serde_json::json!(["guard scope"])));
+        assert_eq!(mutation["stale_suppressions"].as_array().unwrap().len(), 1, "{mutation}");
+        assert!(h.stdout.contains("matches no mutant in the selected model"), "{}", h.stdout);
+        assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
+    }
+}

@@ -100,6 +100,6 @@ machine Network {
   their removal with a reason; one comment can name several kinds:
 
 ```p
-// snappea-lint: allow mutation:remove-statement,condition-false -- best-effort cancel
+// snappea-lint: allow mutation-nested:remove-statement,condition-false -- best-effort cancel
 if (armed) { send timer, eCancelTimer; }
 ```

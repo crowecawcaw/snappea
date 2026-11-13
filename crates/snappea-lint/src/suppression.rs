@@ -24,7 +24,12 @@ pub fn program_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
 }
 
 fn is_mutation(id: &str) -> bool {
-    id == "mutation" || id.strip_prefix("mutation:").is_some_and(|k| MUTATIONS.contains(&k))
+    id == "mutation"
+        || id == "mutation-nested"
+        || id
+            .strip_prefix("mutation:")
+            .or_else(|| id.strip_prefix("mutation-nested:"))
+            .is_some_and(|k| MUTATIONS.contains(&k))
 }
 
 pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) {
@@ -109,6 +114,45 @@ pub fn mutation_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
     allowed_ids(directives(ctx, &|_| true).0).filter(|(_, id)| is_mutation(id)).collect()
 }
 
+/// A mutation suppression and the nested code it excludes unless explicitly opted in.
+#[derive(Debug, Clone)]
+pub struct MutationSuppression {
+    pub span: Span,
+    pub kind: String,
+    pub reason: String,
+    pub nested: bool,
+    children: Vec<Span>,
+}
+
+impl MutationSuppression {
+    pub fn matches(&self, span: Span, kind: &str) -> bool {
+        let inside =
+            |outer: Span, inner: Span| outer.file == inner.file && outer.start <= inner.start && inner.end <= outer.end;
+        (self.kind == "mutation" || self.kind.strip_prefix("mutation:") == Some(kind))
+            && inside(self.span, span)
+            && (self.nested || !self.children.iter().any(|child| inside(*child, span)))
+    }
+}
+
+pub fn mutation_suppression_details(ctx: &Context<'_>) -> Vec<MutationSuppression> {
+    let scopes = scopes(ctx);
+    directives(ctx, &|_| true)
+        .0
+        .into_iter()
+        .filter(|(_, id, _)| is_mutation(id))
+        .map(|(span, id, reason)| {
+            let nested = id == "mutation-nested" || id.starts_with("mutation-nested:");
+            let kind = if nested { id.replacen("mutation-nested", "mutation", 1) } else { id };
+            let children = scopes
+                .iter()
+                .copied()
+                .filter(|s| s.file == span.file && s.start >= span.start && s.end <= span.end && *s != span)
+                .collect();
+            MutationSuppression { span, kind, reason, nested, children }
+        })
+        .collect()
+}
+
 /// The source scopes intentionally omitted from `snappea check` coverage requirements,
 /// with the reason each suppression gives after `--`.
 pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<(Span, String)> {
@@ -128,7 +172,7 @@ fn allowed_ids(allowed: Vec<Allowed>) -> impl Iterator<Item = (Span, String)> {
 /// Every `snappea-lint: allow` directive: the scope, ID and reason it allows, and the
 /// findings for malformed ones (with an ID `known` rejects, or not before a declaration
 /// or statement).
-fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>, Vec<Finding>) {
+fn scopes(ctx: &Context<'_>) -> Vec<Span> {
     let mut scopes = Vec::new();
     for d in ctx.declarations() {
         match d {
@@ -160,6 +204,11 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>,
             _ => {}
         }
     }
+    scopes
+}
+
+fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>, Vec<Finding>) {
+    let scopes = scopes(ctx);
     let mut allowed = Vec::new();
     let mut invalid = Vec::new();
     for (i, file) in ctx.sources.files().iter().enumerate() {
@@ -224,9 +273,12 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>,
 fn expand_mutation_kinds<'a>(ids: impl Iterator<Item = &'a str>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for id in ids {
-        let after_kind = out.last().is_some_and(|p| p.starts_with("mutation:"));
-        if after_kind && MUTATIONS.contains(&id) {
-            out.push(format!("mutation:{id}"));
+        let prefix = out
+            .last()
+            .and_then(|p| p.split_once(':').map(|(prefix, _)| prefix.to_string()))
+            .filter(|p| p == "mutation" || p == "mutation-nested");
+        if let Some(prefix) = prefix.filter(|_| MUTATIONS.contains(&id)) {
+            out.push(format!("{prefix}:{id}"));
         } else {
             out.push(id.to_string());
         }

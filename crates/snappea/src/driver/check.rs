@@ -115,6 +115,7 @@ pub struct CheckConfig {
     /// each gets the rest divided by the test cases left, as [`CheckConfig::time_share`].
     pub suite_budget: Option<f64>,
     pub verbose: bool,
+    pub list_suppressions: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
     /// Include execution-time source and value captures for visual replay.
@@ -220,6 +221,7 @@ impl Default for CheckConfig {
             time_share: None,
             suite_budget: None,
             verbose: false,
+            list_suppressions: false,
             xml_trace: false,
             inspection_trace: false,
             timeline: Default::default(),
