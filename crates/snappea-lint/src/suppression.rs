@@ -55,8 +55,27 @@ pub fn driver_machines(ctx: &Context<'_>) -> Vec<Span> {
 
 /// Every `// snappea: driver` directive: the machine declaration each marks, and the
 /// findings for malformed ones (another directive, or not before a machine).
-fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>) {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestIntent {
+    pub span: Span,
+    pub expected_bug: Option<String>,
+    pub boundary: Option<String>,
+}
+
+pub fn test_intents(ctx: &Context<'_>) -> Vec<TestIntent> {
+    snappea_directives(ctx).2
+}
+
+fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>, Vec<TestIntent>) {
     let machines: Vec<Span> = ctx.machines().filter(|m| m.kind == MachineKind::Impl).map(|m| m.span).collect();
+    let tests: Vec<Span> = ctx
+        .declarations()
+        .filter_map(|d| match d {
+            TopDecl::SafetyTest(t) => Some(t.span),
+            _ => None,
+        })
+        .collect();
+    let mut intents: Vec<TestIntent> = Vec::new();
     let mut marked = Vec::new();
     let mut invalid = Vec::new();
     each_comment(ctx, &mut |id, text, start, comment, next| {
@@ -65,9 +84,46 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>) {
         };
         let span = Span::new(id, start as u32, (start + 2 + comment.len()) as u32);
         let bad = |message: &str| Finding::new("invalid-directive", span, message);
+        let directive = directive.trim();
+        let word = directive.split_whitespace().next().unwrap_or_default();
+        if matches!(word, "expect-bug" | "boundary") {
+            let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
+            let target = tests.iter().find(|t| t.file == id && Some(t.start) == next);
+            let Some(target) = target.filter(|_| text[line_start..start].trim().is_empty()) else {
+                invalid.push(bad("put the test intent directive on its own line directly before a test declaration"));
+                return;
+            };
+            let value = if word == "expect-bug" {
+                serde_json::from_str::<String>(directive[word.len()..].trim()).ok().filter(|s| !s.trim().is_empty())
+            } else {
+                directive[word.len()..]
+                    .trim()
+                    .strip_prefix("--")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+            };
+            let Some(value) = value else {
+                invalid.push(bad("use '// snappea: expect-bug \"failure text\"' or '// snappea: boundary -- reason', with nonempty text"));
+                return;
+            };
+            let i = intents.iter().position(|t| t.span == *target).unwrap_or_else(|| {
+                intents.push(TestIntent { span: *target, expected_bug: None, boundary: None });
+                intents.len() - 1
+            });
+            let slot = if word == "expect-bug" { &mut intents[i].expected_bug } else { &mut intents[i].boundary };
+            if slot.is_some() {
+                invalid.push(bad("duplicate test intent directive; declare each intent once"));
+            } else {
+                *slot = Some(value);
+            }
+            return;
+        }
         let directive = directive.split_once("--").map_or(directive, |(d, _)| d).trim();
         if directive != "driver" {
-            invalid.push(bad("unknown snappea directive; the only one is '// snappea: driver' before a machine"));
+            invalid.push(bad(
+                "unknown snappea directive; use driver before a machine, or expect-bug/boundary before a test",
+            ));
             return;
         }
         let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
@@ -77,7 +133,7 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>) {
             _ => invalid.push(bad("put '// snappea: driver' on its own line directly before a machine declaration")),
         }
     });
-    (marked, invalid)
+    (marked, invalid, intents)
 }
 
 /// Calls `f(file, text, start, comment, next)` for every comment of the sources, with

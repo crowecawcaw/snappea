@@ -238,6 +238,37 @@ impl Scope {
         scope
     }
 
+    /// Partition one test into driver code and design/spec code. Shared helpers stay
+    /// with the design, so a negative control cannot cover them for a passing test.
+    pub fn partition_drivers(prog: &Program, tc: &TestCase, drivers: &[bool]) -> (Scope, Scope) {
+        let all = Scope::test_case(prog, tc);
+        let (_, main) = prog.test_case_module(tc);
+        let is_driver = |i: usize| main.is_some_and(|m| m.idx() == i) || drivers.get(i).copied().unwrap_or(false);
+        let mut driver = Scope::of(
+            prog,
+            all.machines.iter().enumerate().filter(|(i, yes)| **yes && is_driver(*i)).map(|(i, _)| MachineId(i as u32)),
+        );
+        let design = Scope::of(
+            prog,
+            all.machines
+                .iter()
+                .enumerate()
+                .filter(|(i, yes)| **yes && !is_driver(*i))
+                .map(|(i, _)| MachineId(i as u32)),
+        );
+        driver.exclude(&design);
+        (driver, design)
+    }
+
+    /// Remove another scope, including shared helper functions.
+    pub fn exclude(&mut self, other: &Scope) {
+        for (a, b) in [(&mut self.machines, &other.machines), (&mut self.funs, &other.funs)] {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x &= !*y;
+            }
+        }
+    }
+
     /// Adds the machines and functions of `other`.
     pub fn add(&mut self, other: &Scope) {
         for (a, b) in [(&mut self.machines, &other.machines), (&mut self.funs, &other.funs)] {
@@ -309,6 +340,28 @@ pub struct CodeMap {
 }
 
 impl CodeMap {
+    /// Only the hits represented by this map. Used when negative controls contribute
+    /// driver coverage but must not fill positive design coverage gaps.
+    pub fn restrict_hits(&self, hits: &Hits) -> Hits {
+        let mut probes = ProbeSet::default();
+        for (id, point) in self.probe_point.iter().enumerate() {
+            if point.is_some() && hits.probes.contains(id as u32) {
+                probes.insert(id as u32);
+            }
+        }
+        Hits {
+            probes,
+            handled: hits.handled.iter().filter(|k| self.handler_point.contains_key(k)).copied().collect(),
+            transition_pairs: hits
+                .transition_pairs
+                .iter()
+                .filter(|k| self.transition_point.contains_key(k))
+                .copied()
+                .collect(),
+            states: hits.states.iter().filter(|k| self.state_point.contains_key(k)).copied().collect(),
+        }
+    }
+
     /// The points of `scope`, from `probes` (the probes of the program's code). Code that
     /// must never run (`assert false`, and what starts with it) has no point.
     pub fn new(prog: &Program, probes: &[Probe], scope: &Scope) -> CodeMap {

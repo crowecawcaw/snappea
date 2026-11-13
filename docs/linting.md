@@ -457,3 +457,11 @@ cargo test -p snappea --test lint_cli
 
 Tests include frozen agent-produced models, clean models, named handlers, module
 selection across files, local dataflow boundaries, and suppression scope.
+
+
+Test intent can be declared with `// snappea: expect-bug "failure text"` or
+`// snappea: boundary -- reason` immediately before a test. Malformed or duplicate
+directives are `invalid-directive` findings. Expected-bug tests skip progress
+obligation lints; boundary tests do not skip lints. See
+[expected bugs and boundary tests](checking-models.md#expected-bugs-and-boundary-tests)
+for matching, coverage, and selection behavior.
