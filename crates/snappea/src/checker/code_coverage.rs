@@ -181,12 +181,14 @@ pub struct Scope {
 
 impl Scope {
     /// Loaded components outside the selected tests' modules, excluded from totals.
+    /// Scenario monitors are not listed: they watch every test case, and their coverage
+    /// is whether one was satisfied.
     pub fn excluded(&self, prog: &Program) -> Vec<Uncovered> {
         prog.machines
             .iter()
             .enumerate()
             .filter_map(|(i, m)| {
-                if self.machines.get(i).copied().unwrap_or(false) || m.span.is_dummy() {
+                if self.machines.get(i).copied().unwrap_or(false) || m.span.is_dummy() || m.is_scenario() {
                     return None;
                 }
                 let loc = prog.sources.location(m.span);
@@ -368,9 +370,12 @@ impl CodeMap {
                 }
             }
         }
+        let message_only = message_only_funs(prog);
         let mut excluded = vec![false; probes.len()];
         for (id, p) in probes.iter().enumerate() {
-            excluded[id] = must_not_run(probes, id) || p.parent.is_some_and(|q| excluded[q as usize]);
+            excluded[id] = must_not_run(probes, id)
+                || p.parent.is_some_and(|q| excluded[q as usize])
+                || message_only.contains(&root_fun(prog, p.fun));
             if excluded[id] || !included(p.fun) || p.kind == ProbeKind::Changes {
                 continue;
             }
@@ -471,17 +476,50 @@ impl CodeMap {
         }
     }
 
+    /// The reason of the innermost `coverage` suppression (scope and reason) whose scope
+    /// holds point `i`.
+    fn suppression<'s>(&self, i: usize, suppressions: &'s [(Span, String)]) -> Option<&'s str> {
+        let point = self.point_spans.get(i)?;
+        suppressions
+            .iter()
+            .filter(|(scope, _)| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
+            .min_by_key(|(scope, _)| scope.end - scope.start)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    /// What never ran in `coverage` (see [`CodeCoverage::uncovered`]), split into what no
+    /// suppression covers and what `coverage` suppressions accept, the latter with
+    /// `(suppressed: <reason>)` after what was missed.
+    pub fn split_uncovered(
+        &self,
+        coverage: &CodeCoverage,
+        suppressions: &[(Span, String)],
+    ) -> (Vec<Uncovered>, Vec<Uncovered>) {
+        let (mut open, mut accepted) = (Vec::new(), Vec::new());
+        for (i, mut u) in coverage.uncovered_points() {
+            match self.suppression(i as usize, suppressions) {
+                Some(reason) => {
+                    u.what = format!("{} (suppressed: {})", u.what, reason);
+                    accepted.push(u);
+                }
+                None => open.push(u),
+            }
+        }
+        for v in [&mut open, &mut accepted] {
+            v.sort();
+            v.dedup();
+        }
+        (open, accepted)
+    }
+
     /// Required points not reached by any selected test and not covered by a scoped
     /// `coverage` suppression. Conditions and transition pairs are advisory.
-    pub fn required_uncovered(&self, coverage: &CodeCoverage, suppressions: &[Span]) -> Vec<Uncovered> {
+    pub fn required_uncovered(&self, coverage: &CodeCoverage, suppressions: &[(Span, String)]) -> Vec<Uncovered> {
         let mut out = Vec::new();
         for (i, p) in self.points.iter().enumerate() {
-            let point = self.point_spans[i];
             if coverage.hit.contains(&(i as u32))
                 || !matches!(p.kind, PointKind::Statement | PointKind::Handler | PointKind::Then | PointKind::Else)
-                || suppressions
-                    .iter()
-                    .any(|scope| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
+                || self.suppression(i, suppressions).is_some()
             {
                 continue;
             }
@@ -498,14 +536,10 @@ impl CodeMap {
     }
 
     /// Required coverage counts after scoped suppressions.
-    pub fn required_summary(&self, coverage: &CodeCoverage, suppressions: &[Span]) -> Summary {
+    pub fn required_summary(&self, coverage: &CodeCoverage, suppressions: &[(Span, String)]) -> Summary {
         let mut s = Summary::default();
         for (i, p) in self.points.iter().enumerate() {
-            let point = self.point_spans[i];
-            if suppressions
-                .iter()
-                .any(|scope| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
-            {
+            if self.suppression(i, suppressions).is_some() {
                 continue;
             }
             let hit = coverage.hit.contains(&(i as u32));
@@ -556,6 +590,14 @@ impl CodeCoverage {
     /// outermost one (a handler never triggered, not each of its statements), with
     /// consecutive statements that were never reached as one entry.
     pub fn uncovered(&self) -> Vec<Uncovered> {
+        let mut out: Vec<Uncovered> = self.uncovered_points().into_iter().map(|(_, u)| u).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// [`CodeCoverage::uncovered`] unsorted, with the index of each entry's first point.
+    fn uncovered_points(&self) -> Vec<(u32, Uncovered)> {
         let mut out = Vec::new();
         let mut i = 0;
         while i < self.points.len() {
@@ -580,16 +622,17 @@ impl CodeCoverage {
                     i += 1;
                 }
             }
-            out.push(Uncovered {
-                file: p.file.clone(),
-                line: p.line,
-                end_line,
-                context: p.context.clone(),
-                what: p.missed.clone(),
-            });
+            out.push((
+                this,
+                Uncovered {
+                    file: p.file.clone(),
+                    line: p.line,
+                    end_line,
+                    context: p.context.clone(),
+                    what: p.missed.clone(),
+                },
+            ));
         }
-        out.sort();
-        out.dedup();
         out
     }
 
@@ -748,6 +791,68 @@ pub fn uncovered_lines(heading: &str, uncovered: &[Uncovered], hint: &str) -> Ve
     out
 }
 
+/// The function a receive case is in, or `f` itself.
+fn root_fun(prog: &Program, f: FunId) -> FunId {
+    match prog.fun(f).parent {
+        Some(p) => root_fun(prog, p),
+        None => f,
+    }
+}
+
+/// The functions that only assertion messages call, directly or through other such
+/// functions, e.g. a `Name(e): string` helper for a message. They run only when an
+/// assertion fails, so coverage does not require them, as it does not require code
+/// after `assert false`.
+fn message_only_funs(prog: &Program) -> FxHashSet<FunId> {
+    use crate::checker::checked::{each_expr, visit_stmts};
+    use crate::checker::mutation::visit_expr;
+    use crate::sema::ExprKind;
+    // (caller, callee, whether the call is in an assertion message)
+    let mut sites: Vec<(FunId, FunId, bool)> = Vec::new();
+    for (i, f) in prog.funs.iter().enumerate() {
+        let Some(body) = &f.body else { continue };
+        let caller = FunId(i as u32);
+        visit_stmts(body, &mut |s| {
+            if let StmtKind::FunCall { fun, .. } = &s.kind {
+                sites.push((caller, *fun, false));
+            }
+            let mut calls = |e: &crate::sema::Expr, in_message: bool| {
+                visit_expr(e, &mut |e| {
+                    if let ExprKind::FunCall { fun, .. } = &e.kind {
+                        sites.push((caller, *fun, in_message));
+                    }
+                })
+            };
+            if let StmtKind::Assert { message, .. } = &s.kind {
+                calls(message, true);
+            }
+            each_expr(s, &mut |e| calls(e, false));
+        });
+    }
+    let mut handlers = FxHashSet::default();
+    for st in &prog.states {
+        handlers.extend(st.entry.iter().chain(&st.exit).copied());
+        for h in &st.handlers {
+            if let HandlerAction::Do(f) | HandlerAction::Goto { with: Some(f), .. } = h.action {
+                handlers.insert(f);
+            }
+        }
+    }
+    let mut only: FxHashSet<FunId> =
+        sites.iter().filter(|s| s.2).map(|s| s.1).filter(|f| !handlers.contains(f)).collect();
+    loop {
+        let before = only.len();
+        for &(caller, callee, in_message) in &sites {
+            if !in_message && !only.contains(&caller) {
+                only.remove(&callee);
+            }
+        }
+        if only.len() == before {
+            return only;
+        }
+    }
+}
+
 /// Whether probe `id` marks code that must never run: an `assert false` statement, or a
 /// branch or function that starts with one.
 fn must_not_run(probes: &[Probe], id: usize) -> bool {
@@ -864,12 +969,12 @@ mod tests {
         let point_spans = [span(1, 2), span(2, 3), span(4, 5), span(6, 7), span(8, 9), span(10, 11), span(12, 13)];
         let map = CodeMap { points, point_spans: point_spans.to_vec(), ..Default::default() };
         let coverage = map.empty();
-        let required = map.required_summary(&coverage, &[span(4, 5)]);
+        let required = map.required_summary(&coverage, &[(span(4, 5), String::new())]);
         assert_eq!(required.statements, Count { covered: 0, total: 1 });
         assert_eq!(required.branches, Count { covered: 0, total: 1 });
         assert_eq!(required.handlers, Count { covered: 0, total: 1 });
         assert_eq!((required.conditions.total, required.transition_pairs.total), (0, 0));
-        let gaps = map.required_uncovered(&coverage, &[span(4, 5)]);
+        let gaps = map.required_uncovered(&coverage, &[(span(4, 5), String::new())]);
         assert_eq!(gaps.len(), 3);
         assert!(gaps.iter().any(|u| u.line == 3), "an uncalled Entry does not hide required statements");
     }

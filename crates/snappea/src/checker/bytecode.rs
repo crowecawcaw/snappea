@@ -308,6 +308,9 @@ impl Dest {
 #[derive(Debug, Clone, Default)]
 pub struct CodeBlock {
     pub ops: Vec<Op>,
+    /// The expression or statement each instruction of `ops` comes from, for runtime
+    /// errors' source locations.
+    pub spans: Vec<Span>,
     /// Slots in a frame: declared variables plus hidden iterator slots.
     pub frame_size: u32,
     /// Slots the parameters occupy, in order.

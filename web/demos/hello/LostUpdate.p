@@ -72,6 +72,7 @@ machine Main {
     on ClientFinished do {
       finishedClients = finishedClients + 1;
       if (finishedClients == 2) {
+        // snappea-lint: allow unplanned-driver-stage -- this demo is about a safety bug; the clients always finish
         send counter, ReadFinalValue, this;
         goto Verify;
       }

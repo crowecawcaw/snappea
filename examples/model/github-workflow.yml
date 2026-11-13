@@ -1,1 +1,45 @@
-../../.github/workflows/check-model.yml
+# Checks the example P model the way a project using snappea would: install the released
+# CLI, then run the model's test cases. A copy of this file works in your own repository;
+# change the working directory and the test cases. See
+# https://crowecawcaw.github.io/snappea/docs/github-actions.html
+#
+# This repository's CI runs the same steps with its own build of snappea, so that changes to
+# the model and to snappea land together: see .github/workflows/check-model.yml.
+
+name: Check the P model
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: examples/model
+    steps:
+      - uses: actions/checkout@v7
+
+      # The latest release; add `-s -- --version 0.1.0` after `sh` to pin one.
+      - name: Install snappea
+        run: curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh
+
+      - name: Type-check and list the test cases
+        run: snappea tests
+
+      # Exit status 1 (a bug or missing required coverage) or 2 (an error) fails the job.
+      - name: Check the model
+        run: snappea check tcAtomicReserve
+
+      # The failing schedule, its log and a replay file, to download from the run page.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: snappea-output
+          path: examples/model/PCheckerOutput

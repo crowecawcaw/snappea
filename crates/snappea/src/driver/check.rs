@@ -510,6 +510,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         fail_on_max_steps: cfg.fail_on_max_steps,
         strategy_bound: cfg.strategy_bound,
         upstream_feedback: cfg.style == Style::Upstream,
+        scenarios_ignore_unhandled: cfg.style != Style::Upstream,
         full_exploration: cfg.full_exploration,
         replay: None,
         record_test_name: !cfg.test_case_name.is_empty(),
@@ -522,6 +523,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         latency: cfg.latency.clone(),
         latency_profile: cfg.latency_profile.clone(),
         timed: cfg.timed,
+        snappea_reports: cfg.style == Style::Snappea,
         ..CheckerOptions::default()
     }
 }

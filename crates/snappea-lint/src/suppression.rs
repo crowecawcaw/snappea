@@ -20,7 +20,7 @@ fn is_program_rule(id: &str) -> bool {
 /// The scopes `// snappea-lint: allow` comments give rules of [`crate::PROGRAM_RULES`],
 /// with the rule each allows.
 pub fn program_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
-    directives(ctx, &|_| true).0.into_iter().filter(|(_, id)| is_program_rule(id)).collect()
+    allowed_ids(directives(ctx, &|_| true).0).filter(|(_, id)| is_program_rule(id)).collect()
 }
 
 fn is_mutation(id: &str) -> bool {
@@ -34,7 +34,7 @@ pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Find
     findings.retain(|f| {
         !allowed
             .iter()
-            .any(|(s, id)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
+            .any(|(s, id, _)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
     });
     findings.extend(invalid);
     findings.extend(snappea_directives(ctx).1);
@@ -106,24 +106,29 @@ fn each_comment(ctx: &Context<'_>, f: &mut OnComment<'_>) {
 /// The mutation suppressions of the sources: the code each covers, and `mutation` or
 /// `mutation:<kind>`. Malformed directives are reported by linting, not here.
 pub fn mutation_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
-    directives(ctx, &|_| true).0.into_iter().filter(|(_, id)| is_mutation(id)).collect()
+    allowed_ids(directives(ctx, &|_| true).0).filter(|(_, id)| is_mutation(id)).collect()
 }
 
-/// The source scopes intentionally omitted from `snappea check` coverage requirements.
-pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<Span> {
-    directives(ctx, &|id| {
+/// The source scopes intentionally omitted from `snappea check` coverage requirements,
+/// with the reason each suppression gives after `--`.
+pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<(Span, String)> {
+    let (allowed, _) = directives(ctx, &|id| {
         id == "coverage" || rules.iter().any(|rule| rule.id() == id) || is_mutation(id) || is_program_rule(id)
-    })
-    .0
-    .into_iter()
-    .filter_map(|(span, id)| (id == "coverage").then_some(span))
-    .collect()
+    });
+    allowed.into_iter().filter(|(_, id, _)| id == "coverage").map(|(span, _, reason)| (span, reason)).collect()
 }
 
-/// Every `snappea-lint: allow` directive: the scope and ID it allows, and the findings
-/// for malformed ones (with an ID `known` rejects, or not before a declaration or
-/// statement).
-fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<(Span, String)>, Vec<Finding>) {
+/// A suppression: the scope, the ID it allows, and its reason (empty without `--`).
+type Allowed = (Span, String, String);
+
+fn allowed_ids(allowed: Vec<Allowed>) -> impl Iterator<Item = (Span, String)> {
+    allowed.into_iter().map(|(span, id, _)| (span, id))
+}
+
+/// Every `snappea-lint: allow` directive: the scope, ID and reason it allows, and the
+/// findings for malformed ones (with an ID `known` rejects, or not before a declaration
+/// or statement).
+fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>, Vec<Finding>) {
     let mut scopes = Vec::new();
     for d in ctx.declarations() {
         match d {
@@ -198,7 +203,7 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<(Span, St
                         scopes.iter().filter(|s| s.file == id && s.start == token.span.start).max_by_key(|s| s.end);
                     if let Some(target) = target {
                         for rule in ids {
-                            allowed.push((*target, rule.to_string()));
+                            allowed.push((*target, rule.to_string(), reason.unwrap_or_default().to_string()));
                         }
                     } else {
                         invalid.push(bad(

@@ -227,7 +227,8 @@ fn report_native(
             // `message` is `line L:C detail`; the location is shown separately
             let detail =
                 message.split_once(' ').and_then(|(_, m)| m.split_once(' ')).map_or(message.as_str(), |(_, m)| m);
-            vec![render_snippet(sm, Some(*span), &format!("syntax error: {}", detail), Some(&parse_help(detail)))]
+            let (headline, help) = syntax_error(detail);
+            vec![render_snippet(sm, Some(*span), &headline, Some(&help))]
         }
         Err(CompileError::NotSupported { file, line, col, keyword }) => {
             let help = format!(
@@ -259,6 +260,105 @@ fn report_native(
         ),
     );
     false
+}
+
+/// The headline and suggested fix `snappea` shows for a syntax error, from the
+/// parser's message. A reserved word used as a name gets its own headline.
+pub(crate) fn syntax_error(detail: &str) -> (String, String) {
+    match reserved_word(detail) {
+        Some((word, meaning, rename)) => (
+            format!("'{}' is a reserved word ({}) and cannot be used as a name", word, meaning),
+            format!("rename it, e.g. '{}'; `snappea guide syntax` lists the reserved words", rename),
+        ),
+        None => (format!("syntax error: {}", detail), parse_help(detail)),
+    }
+}
+
+/// Reserved words that read like ordinary names, with what each means in P and a
+/// rename to suggest.
+const NAME_LIKE_KEYWORDS: &[(&str, &str, &str)] = &[
+    ("values", "the map-values function", "vals"),
+    ("keys", "the map-keys function", "ks"),
+    ("to", "the conversion operator, `x to int`", "dest"),
+    ("default", "the default-value function", "dflt"),
+    ("format", "the string-format function", "fmt"),
+    ("choose", "the nondeterministic-choice function", "pick"),
+    ("sizeof", "the size function", "size"),
+    ("in", "the membership operator", "input"),
+    ("as", "the type-cast operator", "alias"),
+    ("data", "a type name", "payload"),
+    ("any", "a type name", "anyValue"),
+    ("string", "a type name", "str"),
+    ("map", "a type name", "table"),
+    ("set", "a type name", "items"),
+    ("seq", "a type name", "list"),
+    ("event", "the event declaration keyword", "ev"),
+    ("state", "the state declaration keyword", "st"),
+    ("start", "the start-state keyword", "begin"),
+    ("type", "the type declaration keyword", "kind"),
+    ("test", "the test declaration keyword", "tst"),
+    ("main", "a test-declaration keyword", "mainMachine"),
+    ("module", "the module declaration keyword", "mod"),
+    ("param", "the parameter declaration keyword", "prm"),
+    ("receive", "the receive statement", "recv"),
+    ("send", "the send statement", "snd"),
+    ("new", "the machine-creation operator", "fresh"),
+    ("print", "the print statement", "out"),
+    ("this", "the current machine", "self_"),
+    ("entry", "the state-entry keyword", "entryPoint"),
+    ("exit", "the state-exit keyword", "exitPoint"),
+    ("receives", "a machine-declaration keyword", "inbox"),
+    ("sends", "a machine-declaration keyword", "outbox"),
+    ("creates", "a machine-declaration keyword", "spawned"),
+    ("safe", "a module keyword", "isSafe"),
+    ("union", "a module keyword", "merged"),
+    ("rename", "a module keyword", "renamed"),
+    ("compose", "a module keyword", "composed"),
+    ("is", "a PVerifier keyword", "isX"),
+    ("sent", "a PVerifier keyword", "wasSent"),
+    ("targets", "a PVerifier keyword", "dests"),
+    ("inflight", "a PVerifier keyword", "pending"),
+    ("pure", "a PVerifier keyword", "pureFn"),
+    ("assume", "a PVerifier keyword", "assumption"),
+    ("requires", "a PVerifier keyword", "pre"),
+    ("ensures", "a PVerifier keyword", "post"),
+    ("invariant", "a PVerifier keyword", "inv"),
+    ("using", "a PVerifier keyword", "usingX"),
+    ("except", "a PVerifier keyword", "exceptX"),
+    ("forall", "a PVerifier keyword", "all"),
+    ("exists", "a PVerifier keyword", "some"),
+    ("prove", "a PVerifier keyword", "check"),
+    ("axiom", "a PVerifier keyword", "ax"),
+];
+
+/// The reserved word a syntax error is about, with its meaning and a rename, when a
+/// reserved word stands where a name belongs: `mismatched input 'values' expecting
+/// Iden`, or a parse that stops at a lone name-like keyword (`no viable alternative
+/// at input 'to'`).
+fn reserved_word(detail: &str) -> Option<(String, String, String)> {
+    let (word, expects_name) = if let Some(rest) = detail.strip_prefix("mismatched input '") {
+        let (word, expecting) = rest.split_once("' expecting ")?;
+        let expects_name = expecting == "Iden"
+            || (expecting.starts_with('{')
+                && expecting.trim_matches(|c| c == '{' || c == '}').split(", ").any(|t| t == "Iden"));
+        (word, expects_name)
+    } else {
+        let rest = detail.strip_prefix("no viable alternative at input '")?;
+        // Only words that are functions, operators or types: a lone statement or
+        // declaration keyword here is more likely misplaced than used as a name.
+        const LONE: &[&str] = &[
+            "values", "keys", "to", "default", "format", "choose", "sizeof", "in", "as", "data", "any", "string",
+            "map", "set", "seq",
+        ];
+        (rest.strip_suffix('\'').filter(|w| LONE.contains(w))?, false)
+    };
+    match NAME_LIKE_KEYWORDS.iter().find(|(w, _, _)| *w == word) {
+        Some((w, meaning, rename)) => Some((w.to_string(), meaning.to_string(), rename.to_string())),
+        None if expects_name && crate::syntax::token::TokenKind::keyword(word).is_some() => {
+            Some((word.to_string(), "a P keyword".into(), format!("{}_", word)))
+        }
+        None => None,
+    }
 }
 
 /// A suggested fix for a syntax error, from its message.
@@ -301,7 +401,24 @@ pub(crate) fn parse_help(detail: &str) -> String {
 
 #[cfg(test)]
 mod parse_help_tests {
-    use super::parse_help;
+    use super::{parse_help, syntax_error};
+
+    #[test]
+    fn reserved_word_as_name_is_named() {
+        let (head, help) = syntax_error("mismatched input 'values' expecting Iden");
+        assert_eq!(head, "'values' is a reserved word (the map-values function) and cannot be used as a name");
+        assert!(help.contains("'vals'"), "{help}");
+        let (head, _) = syntax_error("no viable alternative at input 'to'");
+        assert!(head.starts_with("'to' is a reserved word"), "{head}");
+        let (head, help) = syntax_error("mismatched input 'while' expecting Iden");
+        assert!(head.starts_with("'while' is a reserved word (a P keyword)"), "{head}");
+        assert!(help.contains("'while_'"), "{help}");
+        // Not about a name: keep the parser's text.
+        let (head, _) = syntax_error("no viable alternative at input 'else'");
+        assert_eq!(head, "syntax error: no viable alternative at input 'else'");
+        let (head, _) = syntax_error("mismatched input 'else' expecting ';'");
+        assert!(head.starts_with("syntax error:"), "{head}");
+    }
 
     #[test]
     fn one_field_named_tuple_suggests_trailing_comma() {

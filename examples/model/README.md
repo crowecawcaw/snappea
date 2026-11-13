@@ -8,7 +8,8 @@ implement, checked against the same [InventoryCorrect spec](PSpec/inventory.p).
   stock change, where the applications call `emit`.
 * [`PTst/TestDriver.p`](PTst/TestDriver.p): three orders of 1 or 2 units compete for 3
   units of stock.
-* [`PTst/TestScript.p`](PTst/TestScript.p): one test case per design.
+* [`PTst/TestScript.p`](PTst/TestScript.p): one test case per design, and the
+  `OrdersAnswered` spec: every order gets an answer.
 
 The model has two designs for a reservation:
 
@@ -25,19 +26,20 @@ From the repository root:
 ```sh
 cargo build -p snappea --bin snappea
 cd examples/model
-../../target/debug/snappea check tcAtomicReserve
+../../target/debug/snappea check tcAtomicReserve --timeout 1m
 ../../target/debug/snappea check tcCheckThenReserve
 ```
 
-The first explores every interleaving and data choice and finds no bug. Scoped coverage
+The first explores every interleaving and data choice and finds no bug: no oversell,
+and every order gets an answer. Scoped coverage
 comments in the shared model identify the check-then-reserve paths that this test does
 not exercise; those paths are exercised by the second test. Run `snappea check` without
 a test name to select both designs:
 
 ```text
 Checking Inventory: 1 test case
-ok    tcAtomicReserve (all 20260 schedules, 3.98s)
-🫛 The test case passed in 3.99s, peak memory 9 MB. Output: PCheckerOutput/
+ok    tcAtomicReserve (all 27753 schedules, 4 workers, 3.01s)
+🫛 The test case passed in 3.02s, peak memory 30 MB. Output: PCheckerOutput/
 ```
 
 The second finds the oversell within a few schedules, and exits with 1:
@@ -62,7 +64,7 @@ checks that every example's `specs/inventory.p` links here.
 
 ## In CI
 
-[`github-workflow.yml`](github-workflow.yml) links to this repository's
-[check-model.yml](../../.github/workflows/check-model.yml), a workflow you can copy: it
-installs the released `snappea` with the install script and checks this model on every
-pull request. See [GitHub Actions](https://crowecawcaw.github.io/snappea/docs/github-actions.html).
+[`github-workflow.yml`](github-workflow.yml) is a workflow you can copy: it installs the
+released `snappea` with the install script and checks this model on every pull request.
+This repository runs the same steps with its own build of `snappea` in
+[check-model.yml](../../.github/workflows/check-model.yml). See [GitHub Actions](https://crowecawcaw.github.io/snappea/docs/github-actions.html).
