@@ -45,7 +45,7 @@ movement and the door's closing take time (other machines run in between).
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way | pass, exhaustive |
+| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way | pass; exhaustive (8,360 schedules, ~4s) with some seeds, sampled with others |
 | `tcCallWhileClosing` | Car at 0; both press 0 | The second press lands while the doors open, dwell or close: it needs its own opening | pass, exhaustive |
 | `tcCallWhilePassing` | Car at 2 called to 0; the other presses 1 at any moment | Press before the car reaches 1 (stop there) or after it passed (come back) | pass, exhaustive |
 | `tcObstructedDoor` | Doors blocked twice before closing | The car must wait, then still serve the next floor | pass, exhaustive |
@@ -53,7 +53,8 @@ movement and the door's closing take time (other machines run in between).
 | `tcBugMoveBeforeClosed` | `EagerController` | **Expected to fail**: `car moved from floor 0 with its doors open` | fail |
 
 The `ReopenedForLatePress` scenario confirms the checks reach a press for the current
-floor after the doors opened there, followed by another opening.
+floor after the doors opened there, followed by another opening there before the car
+moves.
 
 ## What building it taught
 
@@ -75,9 +76,14 @@ floor after the doors opened there, followed by another opening.
 ## Run
 
 ```sh
-snappea check tcTwoPassengers tcCallWhileClosing tcCallWhilePassing tcObstructedDoor tcGeneratedRides --deny mutation
+snappea check tcTwoPassengers tcCallWhileClosing tcCallWhilePassing tcObstructedDoor tcGeneratedRides --timeout 30s --deny mutation
 snappea check tcBugMoveBeforeClosed     # exits 1: car moved from floor 0 with its doors open
 ```
+
+Without `--timeout` the test cases share 10s and may stop before covering every
+schedule. The search order depends on the seed: with some `--seed` values
+`tcTwoPassengers` finishes all 8,360 schedules in seconds, with others it is still
+sampling after minutes. An exhaustive run reports `all N schedules`.
 
 ## Bounds and omissions
 

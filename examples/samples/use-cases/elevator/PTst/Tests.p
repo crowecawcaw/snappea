@@ -157,12 +157,16 @@ machine BuggyMoveBeforeClosed {
 }
 
 // Covered: a press for the current floor arrived after the doors opened there, and the
-// doors opened there again.
-scenario ReopenedForLatePress observes eRequested, eMotorStopped, eDoorOpened, eDoorClosed {
+// doors opened there again before the car moved. (A press after the car started moving
+// does not count: the motor has not reported the new floor yet.)
+scenario ReopenedForLatePress observes eElevatorPlanned, eRequested, eMotorStarted, eMotorStopped, eDoorOpened, eDoorClosed {
   var floor: int;
   var opened: bool;
   start hot state Watching {
-    on eMotorStopped do (m: (floor: int)) { floor = m.floor; opened = false; }
+    // snappea-lint: allow unused-payload-field -- only the start floor matters here
+    on eElevatorPlanned do (p: (floor: int, floors: int, requests: int)) { floor = p.floor; }
+    on eMotorStarted do { opened = false; }
+    on eMotorStopped do (m: (floor: int)) { floor = m.floor; }
     on eDoorOpened do { opened = true; }
     on eRequested do (r: (floor: int)) {
       if (opened && r.floor == floor) { goto WaitReopen; }
@@ -171,10 +175,12 @@ scenario ReopenedForLatePress observes eRequested, eMotorStopped, eDoorOpened, e
   }
   hot state WaitReopen {
     on eDoorOpened goto Covered;
-    ignore eRequested, eMotorStopped, eDoorClosed;
+    // The car left without reopening: this press is not the case we want.
+    on eMotorStarted do { opened = false; goto Watching; }
+    ignore eElevatorPlanned, eRequested, eMotorStopped, eDoorClosed;
   }
   cold state Covered {
-    ignore eRequested, eMotorStopped, eDoorOpened, eDoorClosed;
+    ignore eElevatorPlanned, eRequested, eMotorStarted, eMotorStopped, eDoorOpened, eDoorClosed;
   }
 }
 

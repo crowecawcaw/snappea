@@ -75,9 +75,15 @@ before the breaker opened arriving after it closed again.
 ## Run
 
 ```sh
-snappea check tcConcurrentCallers tcHalfOpenRace tcLateFailure tcSuccessResetsCount tcDuplicateCooldown --deny mutation
+snappea check tcConcurrentCallers tcHalfOpenRace tcLateFailure tcSuccessResetsCount tcDuplicateCooldown --timeout 30s --deny mutation
 snappea check tcBugHalfOpenAdmitsAll      # exits 1: call 30 sent while a half-open trial was in flight
 ```
+
+The `--timeout` matters: without it the test cases share 10s, and the tests marked
+exhaustive above may stop before covering every schedule. Each completes in under 10s
+(`tcConcurrentCallers`, the largest, explores about 19,000 schedules), but the search
+order depends on the seed: with some `--seed` values `tcHalfOpenRace` (2,500
+schedules) is only sampled within 30s. An exhaustive run reports `all N schedules`.
 
 ## Bounds and omissions
 

@@ -257,7 +257,6 @@ machine BuggyHalfOpenRace {
 // Covered: a result sent before the breaker opened arrived after it had closed again.
 scenario LateResultAfterReclose observes eDispatched, eBreakerChanged, eResultSeen {
   var early: set[int];
-  var transitions: int;
   start hot state WaitOpen {
     on eDispatched do (d: (call: int)) { early += (d.call); }
     on eBreakerChanged do (c: (mode: tBreakerState)) { if (c.mode == Open) { goto WaitClose; } }
