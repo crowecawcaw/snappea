@@ -465,6 +465,8 @@ A mutant changes one place in the code of the machines under test:
 | `empty-body` | removes every statement of a function or handler body but its `return`s |
 | `condition-true`, `condition-false` | replaces an `if` condition by `true` or `false` |
 | `swap-operator` | `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-`, `&&` and `\|\|` |
+| `drop-conjunct` | `a && b` becomes `a` or `b`, in separate mutants |
+| `drop-disjunct` | `a \|\| b` becomes `a` or `b`, in separate mutants |
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
 
