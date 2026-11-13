@@ -80,8 +80,8 @@ pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> Result<usize, Exi
 }
 
 fn syntax_error(host: &mut dyn Host, sm: &SourceMap, e: crate::syntax::ParseError) -> Exit {
-    let help = crate::project::parse_help(&e.message);
-    let text = render_snippet(sm, Some(e.span), &format!("syntax error: {}", e.message), Some(&help));
+    let (headline, help) = crate::project::syntax_error(&e.message);
+    let text = render_snippet(sm, Some(e.span), &headline, Some(&help));
     host.write(Stream::Err, &text, None);
     Exit(2)
 }
