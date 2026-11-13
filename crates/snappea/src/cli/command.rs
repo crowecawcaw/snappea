@@ -134,6 +134,7 @@ Output:
       --coverage-file <FILE>
                             Write every statement, branch and event handler no test
                             case ran to FILE
+      --list-suppressions   List suppressed mutants with reasons and stale suppressions.
   -v, --verbose             Show progress and statistics, and log every schedule.
                             Uses one worker.
       --progress <WHEN>     auto, off or json. auto (default) shows a status line
@@ -837,6 +838,7 @@ const CHECK_OPTS: &[Opt] = &[
     flag("timed", None),
     value("out", Some('o')),
     flag("verbose", Some('v')),
+    flag("list-suppressions", None),
     value("mutation-timeout", None),
     flag("no-mutation", None),
     value("warn", None),
@@ -960,6 +962,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.output_path = o.to_string();
     }
     cfg.verbose = a.has("verbose");
+    cfg.list_suppressions = a.has("list-suppressions");
     cfg.driver_facts = !a.has("no-driver-facts");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
@@ -1271,7 +1274,8 @@ fn run_check(
         }
         Mutation::After(Some(limit)) | Mutation::Only(limit) => {
             // the sources parsed when they were loaded
-            let suppressed = snappea_lint::mutation_suppressions(&loaded.sources.source_map()).unwrap_or_default();
+            let suppressed =
+                snappea_lint::mutation_suppression_details(&loaded.sources.source_map()).unwrap_or_default();
             let sources = loaded.sources.source_map();
             let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
             let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
@@ -1287,6 +1291,14 @@ fn run_check(
             );
             for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
                 con.inner.out_line(&l);
+            }
+            if report.blanket_suppressions > 0 {
+                con.inner.out_line("hint: blanket mutation suppressions also hide other mutation kinds; prefer mutation:<kind>. Use --list-suppressions to inspect their scope.");
+            }
+            if cfg.list_suppressions || cfg.verbose {
+                for line in report.suppression_lines() {
+                    con.inner.out_line(&line);
+                }
             }
             // those inside an undetected coarse mutant too
             undetected = report.undetected().len() + report.subsumed();

@@ -624,6 +624,13 @@ its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
 
 ### Suppressing a mutant
 
+A suppression applies only to mutations directly on the following statement or
+declaration. Mutations in nested statements remain active. Opt into a nested scope
+with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a reason.
+Use `--list-suppressions` to inspect every suppressed mutant and stale directive;
+JSON includes `suppressed_details` and `stale_suppressions` alongside the count.
+
+
 When a change cannot or need not be detected, say so with the
 [lint suppression comment](linting.md#suppress-intentional-findings), on its own line
 before the statement, handler, function or machine:

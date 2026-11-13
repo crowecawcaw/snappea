@@ -359,7 +359,8 @@ spec AtomicCommit observes eCommitted {
 ```
 
 The comment allows only the named rule within the following machine, test,
-implementation, state, handler, function, or statement, including its nested code. It does not suppress
+implementation, state, handler, function, or statement, including its nested code
+for lint and coverage rules. Mutation suppressions use the narrower scope below. It does not suppress
 sibling declarations or statements. Multiple rule IDs are comma-separated:
 
 ```p
@@ -367,11 +368,21 @@ sibling declarations or statements. Multiple rule IDs are comma-separated:
 ```
 
 The same comment excludes code from `snappea check`'s mutation testing:
-`allow mutation` for every mutant of the following code, or `allow mutation:<kind>`
+`allow mutation` for every mutant directly on the following statement or declaration,
+or `allow mutation:<kind>`
 (`remove-statement`, `condition-true`, `condition-false`, `swap-operator`, `remove-not`,
 `flip-boolean`, `empty-body`, `drop-conjunct`, `drop-disjunct`) for one kind; after a `mutation:<kind>`, a bare kind
 names another, so `allow mutation:remove-statement,condition-false` allows both. See
 [mutation testing](checking-models.md#suppressing-a-mutant).
+
+Mutation suppressions do not capture nested statements. A suppression on an `if`
+covers removing the `if` and mutating its condition, but not assignments or sends in
+its branches. Use `mutation-nested` or `mutation-nested:<kind>` when the whole nested
+scope is deliberately exempt; the comma shorthand works with that prefix too.
+Prefer named kinds over a blanket suppression. `snappea check --list-suppressions`
+(or `-v`) lists suppressed changes and their reasons, plus directives matching no
+mutant in the selected model. JSON retains the `mutation.suppressed` count and adds
+`suppressed_details` and `stale_suppressions` lists.
 
 `allow coverage` accepts deliberate missing statement, handler, or branch coverage in
 `snappea check`. Coverage suppressions require a nonempty reason after `--`:

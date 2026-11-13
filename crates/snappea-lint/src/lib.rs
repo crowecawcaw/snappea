@@ -13,7 +13,7 @@ pub use rules::{
     EnumValueShadowsMachine, NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts,
     TautologicalAssert, UnobservedHandler, UnselectedSpec, UnusedPayloadField,
 };
-pub use suppression::MUTATIONS;
+pub use suppression::{MutationSuppression, MUTATIONS};
 
 /// Rules that need the type-checked program, which `snappea` runs on it (see
 /// `snappea::checker::checked`): their IDs and descriptions, so suppression comments and
@@ -185,6 +185,10 @@ pub fn lint_observation(sources: &SourceMap) -> Result<Vec<Finding>, ParseError>
 
 /// The code `// snappea-lint: allow mutation[:<kind>]` comments exclude from mutation
 /// testing, with the ID each allows (`mutation` or `mutation:<kind>`).
+pub fn mutation_suppression_details(sources: &SourceMap) -> Result<Vec<MutationSuppression>, ParseError> {
+    Ok(suppression::mutation_suppression_details(&Context::parse(sources)?))
+}
+
 pub fn mutation_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
     Ok(suppression::mutation_suppressions(&Context::parse(sources)?))
 }
