@@ -216,9 +216,9 @@ pub trait Strategy {
         false
     }
     /// An exhaustive search is under way and has not given up: stopping now leaves a
-    /// search that might have finished. Its estimated share done, from 0 to 1.
-    fn exhausting(&self) -> Option<f64> {
-        None
+    /// search that might have finished.
+    fn exhausting(&self) -> bool {
+        false
     }
     /// Statistics of an exhaustive search.
     fn exhaustive_stats(&self) -> Option<crate::checker::exhaustive::SearchStats> {

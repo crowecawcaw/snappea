@@ -378,11 +378,10 @@ pub trait Output {
     fn cancelled(&mut self) -> bool {
         false
     }
-    /// After every schedule: whether an exhaustive search is still under way, and its
-    /// estimated share done (see [`crate::checker::strategy::Strategy::exhausting`]).
-    /// `snappea check` keeps such a search going when coverage stops growing, since
-    /// finishing it proves more than sampling would find.
-    fn exhausting(&mut self, _progress: Option<f64>) {}
+    /// After every schedule: whether an exhaustive search is still under way (see
+    /// [`crate::checker::strategy::Strategy::exhausting`]). `snappea check` keeps such a search going when coverage
+    /// stops growing, since finishing it proves more than sampling would find.
+    fn exhausting(&mut self, _running: bool) {}
 }
 
 impl Output for Vec<String> {
@@ -1139,7 +1138,7 @@ impl<'p> Checker<'p> {
                 }
             }
             let more = !is_replay && !ended_by_bug && strategy.prepare_next_iteration();
-            out.borrow_mut().exhausting(strategy.exhausting().filter(|_| more));
+            out.borrow_mut().exhausting(more && strategy.exhausting());
             if !reported_complete && strategy.search_complete() {
                 reported_complete = true;
                 pool.exhausted();

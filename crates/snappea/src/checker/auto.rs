@@ -320,15 +320,12 @@ impl Strategy for AutoStrategy {
     fn exhaustive_stats(&self) -> Option<SearchStats> {
         self.dfs
             .as_ref()
-            .and_then(|dfs| {
-                dfs.exhaustive_stats().map(|stats| (stats, dfs.pending_alternatives(), dfs.explored_fraction()))
-            })
-            .map(|(stats, frontier, dfs_done)| SearchStats {
+            .and_then(|dfs| dfs.exhaustive_stats().map(|stats| (stats, dfs.pending_alternatives())))
+            .map(|(stats, frontier)| SearchStats {
                 finished: self.complete,
                 depth_bound_hits: self.dfs_bounds,
                 running: !self.complete,
                 frontier,
-                explored_ppm: (dfs_done * 1e6) as u32,
                 ..stats
             })
             .or_else(|| self.parked.clone())
@@ -336,8 +333,8 @@ impl Strategy for AutoStrategy {
     fn search_complete(&self) -> bool {
         self.complete
     }
-    fn exhausting(&self) -> Option<f64> {
-        self.dfs.as_ref().filter(|_| !self.complete).map(|dfs| dfs.explored_fraction())
+    fn exhausting(&self) -> bool {
+        self.dfs.is_some() && !self.complete
     }
 }
 
