@@ -423,6 +423,38 @@ check depends on: see the unchecked-state lint)` and JSON names the variable as
 `unchecked_variable`. Only changes inside a plain assignment, append or map write whose
 values involve no call, `new`, choice or operation that can fail are skipped.
 
+Some mutants no test case can detect, as the code shows. They are not run: the console
+counts them as `equivalent (not run)`, and JSON lists them under `mutation.equivalent`
+with a `reason`:
+
+- removing an `if` with no `else` whose condition is a bare `$` or `choose()` (or its
+  negation): the checker already explores the run that skips the branch, as in fault
+  injection like `if ($) { return; }`;
+- swapping `>` and `>=` (or `<` and `<=`) in a guard whose branch only assigns one
+  compared value to the other, `if (a > b) { b = a; }`: at equality it assigns the value
+  already there;
+- swapping `+` and `-` in the one increment `f = f + 1` of an `int` field whose values
+  are only copied (into variables, named tuple fields, parameters and event payloads),
+  compared with `==` or `!=` against each other or 0, and reset to 0: a version, tag or
+  epoch. Counting down gives values as new as counting up.
+
+One more kind runs, and if no test case detects it, it is reported as likely equivalent
+instead of undetected (`Likely equivalent, not counted as undetected:` in the console,
+`mutation.likely_equivalent` in JSON), so `--deny mutation` does not fail on it. The
+rule: the mutant empties a `do` handler, removes its one statement, or empties a
+function that is only ever the one statement of such handlers; the function runs nowhere
+else; and every event the handler handles is optional in every test case that ran the
+mutant. An event is optional in a test case when every `send` or `raise` of it in the
+test case's machines is the whole branch of an `if` on a bare `$` or `choose()`, such
+as a crash injected with `if ($) { send server, eCrash; }`. A handler that does nothing
+is then the history where the fault never happened. A test case that always sends the
+event, a crash in every run, does not qualify.
+
+When an undetected mutant changes code under a `$` or `choose()` condition, the console
+adds a hint: code like that is often fault injection in a machine that stands in for the
+environment, which should be marked `// snappea: driver` so it is not mutated. `snappea
+guide faults` has recipes for timers, crashes and lossy networks as drivers.
+
 A mutant that keeps the model from finishing is stopped early. Before the mutants run,
 each test case runs 100 schedules of the unchanged model. When at most 40% of those
 reach the step bound and a mutant's do far more often, the mutant stops and counts as
@@ -477,7 +509,12 @@ if (req.units <= stock && !(req.order in reservations)) {
 ```
 
 `mutation` allows every mutant in the code that follows; `mutation:<kind>` allows one
-kind (the IDs in the table above). Suppressed mutants do not run and are counted as
+kind (the IDs in the table above), and `mutation:<kind>,<kind>` several, as in
+`allow mutation:remove-statement,condition-false -- reason`.
+
+Suppression is the right answer for best-effort operations: cancelling a timer, warming
+a cache, sending a hint. The design must be correct with or without them, so no test
+case can detect their removal, and the reason says so. Suppressed mutants do not run and are counted as
 suppressed. A misspelled kind fails linting, so it cannot silently allow nothing.
 
 ## Driver limits
