@@ -751,6 +751,9 @@ struct State {
     planned: Vec<usize>,
     /// Turns taken on each of them.
     visits: Vec<u32>,
+    /// Whether its next turns on each of them run fair schedules only (see
+    /// [`TurnResult::live_cycles`]).
+    fair: Vec<bool>,
     /// Schedules run on each of them.
     ran_on: Vec<usize>,
     schedules: usize,
@@ -775,6 +778,8 @@ struct Turn {
     test: usize,
     visit: u32,
     schedules: usize,
+    /// Run fair schedules only (see [`TurnResult::live_cycles`]).
+    fair: bool,
 }
 
 /// What a turn found.
@@ -785,6 +790,10 @@ struct TurnResult {
     step_bound: bool,
     schedules: usize,
     complete: bool,
+    /// Its exhaustive search pruned a cycle while a liveness monitor was hot, without
+    /// telling whether the model can repeat it forever: the mutant may loop without
+    /// progress, which only fair schedules check, so its next turns there run them.
+    live_cycles: bool,
 }
 
 impl State {
@@ -798,6 +807,7 @@ impl State {
             complete: vec![false; k],
             planned: vec![0; k],
             visits: vec![0; k],
+            fair: vec![false; k],
             ran_on: vec![0; k],
             ..State::default()
         }
@@ -829,13 +839,14 @@ impl State {
         } else {
             turn_length(visit).min(budget - self.planned[test])
         };
-        Some(Turn { test, visit, schedules })
+        Some(Turn { test, visit, schedules, fair: self.fair[test] })
     }
 
     fn record(&mut self, turn: Turn, r: TurnResult) {
         self.turns += 1;
         self.planned[turn.test] += turn.schedules;
         self.visits[turn.test] += 1;
+        self.fair[turn.test] |= r.live_cycles;
         self.ran_on[turn.test] += r.schedules;
         self.schedules += r.schedules;
         let t = self.covering[turn.test];
@@ -975,12 +986,23 @@ impl Mutants<'_> {
         let tc = &self.passed[t].0;
         // each visit to a test case explores other schedules
         let seed = self.opts[t].seed.wrapping_add(turn.visit.wrapping_mul(7919));
-        let opts = CheckerOptions { seed, iterations: turn.schedules, ..self.opts[t].clone() };
+        let mut opts = CheckerOptions { seed, iterations: turn.schedules, ..self.opts[t].clone() };
+        if turn.fair {
+            opts.strategy = StrategyKind::Feedback;
+        }
         let mut watch = Watch::new(Box::new(Forward(out)), self.baseline[t]);
         let res = match checker.check(tc, &opts, &mut watch) {
             Ok(res) => res,
             // a change the checker cannot run is one a test case notices
-            Err(_) => return Some(TurnResult { bug: true, step_bound: false, schedules: 0, complete: false }),
+            Err(_) => {
+                return Some(TurnResult {
+                    bug: true,
+                    step_bound: false,
+                    schedules: 0,
+                    complete: false,
+                    live_cycles: false,
+                })
+            }
         };
         let step_bound = watch.runaway;
         if res.report.num_bugs == 0 && res.cancelled && !step_bound {
@@ -991,6 +1013,7 @@ impl Mutants<'_> {
             step_bound,
             schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
             complete: res.exhaustive.as_ref().is_some_and(|x| x.complete()),
+            live_cycles: res.exhaustive.as_ref().is_some_and(|x| x.liveness_unverified()),
         })
     }
 
@@ -1018,14 +1041,15 @@ impl Mutants<'_> {
             rank[i] = r;
         }
         // waiting turns as (turns taken, rank, mutant, test, visit), smallest first
-        type Waiting = std::cmp::Reverse<(usize, usize, usize, usize, u32, usize)>;
+        type Waiting = std::cmp::Reverse<(usize, usize, usize, usize, u32, usize, bool)>;
         struct Queue {
             waiting: std::collections::BinaryHeap<Waiting>,
             running: usize,
             closed: bool,
         }
-        let entry =
-            |i: usize, s: &State, t: Turn| std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit, t.schedules));
+        let entry = |i: usize, s: &State, t: Turn| {
+            std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit, t.schedules, t.fair))
+        };
         let mut waiting = std::collections::BinaryHeap::new();
         for &i in order {
             if let Some(t) = states[i].next_turn(budget) {
@@ -1045,9 +1069,11 @@ impl Mutants<'_> {
                         let next = {
                             let mut q = queue.0.lock().unwrap();
                             loop {
-                                if let Some(std::cmp::Reverse((_, _, i, test, visit, schedules))) = q.waiting.pop() {
+                                if let Some(std::cmp::Reverse((_, _, i, test, visit, schedules, fair))) =
+                                    q.waiting.pop()
+                                {
                                     q.running += 1;
-                                    break Some((i, Turn { test, visit, schedules }));
+                                    break Some((i, Turn { test, visit, schedules, fair }));
                                 }
                                 if q.closed {
                                     break None;
@@ -1198,7 +1224,10 @@ mod tests {
 
     fn pass_with(state: &mut State, budget: usize, complete: bool) -> Turn {
         let turn = state.next_turn(budget).unwrap();
-        state.record(turn, TurnResult { bug: false, step_bound: false, schedules: turn.schedules, complete });
+        state.record(
+            turn,
+            TurnResult { bug: false, step_bound: false, schedules: turn.schedules, complete, live_cycles: false },
+        );
         turn
     }
 
@@ -1226,12 +1255,25 @@ mod tests {
     }
 
     #[test]
+    fn a_hot_cycle_left_unresolved_moves_the_test_case_to_fair_schedules() {
+        let mut s = state(2);
+        let turn = s.next_turn(0).unwrap();
+        assert!(!turn.fair);
+        s.record(turn, TurnResult { bug: false, step_bound: false, schedules: 10, complete: false, live_cycles: true });
+        pass_with(&mut s, 0, false);
+        let turn = s.next_turn(TURN).unwrap();
+        assert_eq!((turn.test, turn.fair), (0, true));
+        pass_with(&mut s, TURN, false);
+        assert!(!s.next_turn(TURN).unwrap().fair, "only on the test case that pruned the cycle");
+    }
+
+    #[test]
     fn a_small_complete_test_case_runs_first_and_to_completion() {
         // test case 7 was complete without the change, test case 3 was not
         let mut s = State::new(vec![7, 3], vec![true, false]);
         let turn = s.next_turn(0).unwrap();
         assert_eq!((turn.test, turn.schedules), (0, SCHEDULES));
-        s.record(turn, TurnResult { bug: false, step_bound: false, schedules: 40, complete: true });
+        s.record(turn, TurnResult { bug: false, step_bound: false, schedules: 40, complete: true, live_cycles: false });
         assert_eq!(pass_with(&mut s, 0, false).schedules, FIRST_TURN);
         // more turns only on the other one
         while let Some(t) = s.next_turn(TURN) {
@@ -1243,11 +1285,14 @@ mod tests {
         // and the budget it learns from is the other test cases'
         let mut s = State::new(vec![7, 3], vec![true, false]);
         let turn = s.next_turn(0).unwrap();
-        s.record(turn, TurnResult { bug: false, step_bound: false, schedules: SCHEDULES, complete: false });
+        s.record(
+            turn,
+            TurnResult { bug: false, step_bound: false, schedules: SCHEDULES, complete: false, live_cycles: false },
+        );
         pass_with(&mut s, 0, false);
         assert_eq!(s.next_turn(TURN).unwrap().test, 1);
         let turn = s.next_turn(TURN).unwrap();
-        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 4, complete: false });
+        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 4, complete: false, live_cycles: false });
         assert_eq!(s.needed, Some(FIRST_TURN + 4));
     }
 
@@ -1276,13 +1321,19 @@ mod tests {
     fn a_step_bound_result_ends_the_turns_as_detected() {
         let mut s = state(2);
         let turn = s.next_turn(SCHEDULES).unwrap();
-        s.record(turn, TurnResult { bug: false, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        s.record(
+            turn,
+            TurnResult { bug: false, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false, live_cycles: false },
+        );
         assert!(s.next_turn(SCHEDULES).is_none());
         assert_eq!((s.detected, s.step_bound), (Some(0), true));
         // a bug in the same turn is the stronger result
         let mut s = state(1);
         let turn = s.next_turn(SCHEDULES).unwrap();
-        s.record(turn, TurnResult { bug: true, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false });
+        s.record(
+            turn,
+            TurnResult { bug: true, step_bound: true, schedules: RUNAWAY_SAMPLE, complete: false, live_cycles: false },
+        );
         assert_eq!((s.detected, s.step_bound), (Some(0), false));
     }
 
@@ -1299,7 +1350,7 @@ mod tests {
         assert!(s.next_turn(SCHEDULES).is_none());
         let mut s = state(2);
         let turn = s.next_turn(SCHEDULES).unwrap();
-        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false });
+        s.record(turn, TurnResult { bug: true, step_bound: false, schedules: 3, complete: false, live_cycles: false });
         assert!(s.next_turn(SCHEDULES).is_none());
         assert_eq!(s.detected, Some(0));
     }

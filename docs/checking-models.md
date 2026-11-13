@@ -374,7 +374,10 @@ longer than the last on that test case (at most 100 schedules), up to a budget p
 case learned from the first turns: 3 times the schedules that 95% of the detected
 mutants needed, at least 100 and at most 1000 (1000 when fewer than 20 were detected).
 Each test case gets the whole budget, so a large test case does not starve a small one
-that would detect the mutant. JSON gives it as `schedules_per_mutant`. `snappea check
+that would detect the mutant. When a turn's exhaustive search pruned a cycle while a
+liveness monitor was hot without settling whether the cycle can repeat forever, the
+mutant's later turns on that test case run fair schedules, which check hot monitors'
+temperature, so a mutant that loops without progress is found in a short turn. JSON gives it as `schedules_per_mutant`. `snappea check
 mutation` then keeps giving undetected mutants turns, up to 1000 schedules per test
 case, until its time limit: a deeper search for a CI gate, where `snappea check` stops
 at the budget. When every undetected mutant's search was incomplete, the console says
