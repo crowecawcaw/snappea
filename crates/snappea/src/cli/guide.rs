@@ -123,6 +123,7 @@ Topics:
   modeling   What to model: boundaries, atomic steps, interference
   scenarios  Choose scenarios and independent oracles that can fail
   recovery   Crashes, retries and durable state
+  faults     Model timers, crashes and lossy networks as drivers
   python     Capture real Python calls and check them against P specs
   syntax     P syntax and a complete small model
 
