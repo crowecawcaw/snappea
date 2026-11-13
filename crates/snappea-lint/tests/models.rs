@@ -302,3 +302,23 @@ fn assertion_messages_do_not_check_payload_fields() {
     assert!(!has(&model(r#"assert p.id > 0 && p.value > 0, format("request {0}", p.id);"#), "unused-payload-field"));
     assert!(!has(&model(r#"assert false, format("unexpected {0}", p);"#), "unused-payload-field"));
 }
+
+#[test]
+fn forbidden_event_handlers_may_log_before_assert_false() {
+    let model = |body| {
+        format!("event E: (id: int, value: int); spec S observes E {{ start state A {{ on E do (p: (id: int, value: int)) {{ {body} }} }} }}")
+    };
+    for body in [
+        r#"print "unexpected event"; assert false;"#,
+        r#"print format("unexpected id {0}", p.id); assert false, "forbidden";"#,
+        r#"{ print "unexpected event"; assert false; }"#,
+    ] {
+        let fs = findings(&[&model(body)]);
+        assert!(
+            !fs.iter().any(|f| matches!(f.rule, "unused-payload-field" | "tautological-assert" | "permissive-monitor")),
+            "{body}: {fs:?}"
+        );
+    }
+    assert!(has(&model(r#"if (p.id < 0) { assert false; }"#), "unused-payload-field"));
+    assert!(has(&model(r#"print Helper(); assert false;"#), "unused-payload-field"));
+}
