@@ -23,10 +23,11 @@ const safe = p.run(["check", "safe.p", "--timeout", "1s"], {
 if (safe.exitCode !== 0 || !/\(all \d+ schedules?/.test(safe.stdout)) {
   throw new Error(`expected exhaustive completion: ${safe.stdout}${safe.stderr}`);
 }
-// Timed models use sampling, so a safe run must stop at the deadline as incomplete.
+// A timed model that loops never repeats a state (its clock only grows), so it is
+// sampled: a safe run must stop at the deadline as incomplete.
 const started = performance.now();
 const busy = p.run(["check", "busy.p", "--timed", "--timeout", "1s", "--json-report", "busy.json"], {
-  "/work/busy.p": "// snappea-lint: allow no-model-machine -- single-machine fixture tests the timed search deadline\nmachine Main { start state Init { } }",
+  "/work/busy.p": "fun Elapse(lo: int, hi: int);\nevent eTick;\n// snappea-lint: allow no-model-machine -- single-machine fixture tests the timed search deadline\nmachine Main { start state Init { entry { send this, eTick; } on eTick do { Elapse(1000, 1000); send this, eTick; } } }",
 }, { seed: 1 });
 const busyReport = JSON.parse(busy.files["/work/busy.json"]);
 if (busy.exitCode !== 0 || busyReport.summary.status !== "search_incomplete"
