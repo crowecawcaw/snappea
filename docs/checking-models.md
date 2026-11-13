@@ -4,6 +4,7 @@ personas: ["application-developer", "coding-agent"]
 questions:
   - "How do checks, exploration, coverage and mutation testing behave?"
   - "What makes a check fail?"
+  - "What does a bug report say, and how do I read a runtime error, liveness or deadlock report?"
 ---
 
 # Checking P models
@@ -250,6 +251,46 @@ these options, before or after the command (for example, `snappea --json check`)
 Argument errors, including unknown options and missing values, also produce a JSON
 error result and write `--json-report` when requested. JSON keys retain insertion order.
 
+### Bug reports
+
+A bug's report says what failed. `snappea-compat` prints upstream's text instead.
+
+* An assertion: `Assertion Failed: <file:line:col> <message>`. `format`, `print`, assertion
+  messages and the payloads in `bug.txt` show enum values by name (`Done`, not `2`).
+* A runtime error, such as reading a missing map key, an index out of range, or sending
+  to a null target: what went wrong in P terms, the machine and state, the source with
+  the failing expression underlined, and a fix:
+
+  ```
+  error: map 'carts' has no key 1 (in Store(2), state 'Open')
+    --> PSrc/Store.p:25:9
+     |
+  25 |   total = carts[cart] + 1;
+     |           ^^^^^^^^^^^
+     |
+     = help: test `cart in carts` first, or add the key before reading it
+  ```
+
+* A liveness bug: the spec still in a hot state when the execution ended, then its
+  fields, which show what it was still waiting for:
+
+  ```
+  Lifecycle detected liveness bug in hot state 'Running' at the end of program execution.
+  Lifecycle's fields: open = {3}, closed = 0
+  ```
+
+* A deadlock: the machines waiting to receive, and each spec in a hot state with its
+  fields. Match tests on the spec rather than on machine ids, which depend on creation
+  order:
+
+  ```
+  Deadlock detected. RacyConsumer(3) is waiting to receive an event, but no other controlled
+  tasks are enabled, while spec TakeBlocksOnlyWhenEmpty is in hot state 'ItemsOutstanding'
+  (wants = {1: 1}, queued = [10], sleeping = {1}, outstanding = 1).
+  ```
+
+The JSON result has the same text in each failed test case's `bug.report`.
+
 ## Coverage
 
 The [coverage guide](https://snappea.dev/docs/coverage.html) explains the types of
@@ -265,7 +306,8 @@ suite's `coverage`; each test and observed spec has the first two counts as well
 Coverage counts what the explored schedules ran, in the machines and monitors each test
 case includes: statements, both outcomes of each `if`, and the `do` and `goto` event
 handlers of each state. Code that starts with `assert false` must never run, so it is
-not counted. A bug stops a test case early, so its coverage is marked partial in
+not counted, nor are functions only assertion messages call (such as a helper that names
+a value for a message), which run only when an assertion fails. A bug stops a test case early, so its coverage is marked partial in
 the console and with `coverage.partial: true` in JSON. The combined total includes
 these results and is also marked partial when any test case finds a bug.
 

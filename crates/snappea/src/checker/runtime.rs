@@ -284,6 +284,10 @@ pub struct Config {
     pub assembly_name: String,
     /// How schedules are abstracted into timelines.
     pub timeline: TimelineConfig,
+    /// Report as `snappea` does rather than as upstream: enum values by name in
+    /// `format` and traces, runtime errors with their source location and a fix, and
+    /// liveness and deadlock reports with the hot specs' fields.
+    pub snappea_reports: bool,
 }
 
 impl Default for Config {
@@ -303,6 +307,7 @@ impl Default for Config {
             logging: true,
             assembly_name: "PImplementation".into(),
             timeline: TimelineConfig::default(),
+            snappea_reports: false,
         }
     }
 }
@@ -673,6 +678,9 @@ impl<'p> Runtime<'p> {
         let name = self.event_name(e.id);
         if e.payload.is_null() {
             name.to_string()
+        } else if self.config.snappea_reports && e.id != GOTO_EVENT {
+            let ty = &self.prog.event(e.id).payload;
+            format!("{} with payload ({})", name, e.payload.to_named(ty, self.prog, true))
         } else {
             format!("{} with payload ({})", name, e.payload.to_escaped(self.prog))
         }
@@ -779,8 +787,31 @@ impl<'p> Runtime<'p> {
         Stop
     }
 
-    /// Reports an unhandled .NET exception thrown inside an action.
-    pub fn report_exception(&mut self, actor: Actor, exc: &Exception, action: &str) -> Stop {
+    /// Where a runtime error happened, for [`Config::snappea_reports`]:
+    /// `Store(2), state 'Open'` or `spec Lifecycle, state 'Running'`.
+    pub fn error_context(&self, actor: Actor) -> String {
+        match actor {
+            Actor::Machine(m) => match self.machines[m].state {
+                Some(_) => format!("{}, state '{}'", self.machines[m].name, self.machine_state_name(m)),
+                None => self.machines[m].name.to_string(),
+            },
+            Actor::Monitor(mon) => format!(
+                "spec {}, state '{}'",
+                self.prog.machine(self.monitors[mon].decl).name,
+                self.state_name(self.monitors[mon].state)
+            ),
+        }
+    }
+
+    /// Reports an unhandled .NET exception thrown inside an action; `at` is the failing
+    /// expression or statement, when known.
+    pub fn report_exception(
+        &mut self,
+        actor: Actor,
+        exc: &Exception,
+        action: &str,
+        at: Option<crate::syntax::Span>,
+    ) -> Stop {
         self.failure.get_or_insert(Failure::Exception(exc.ty.to_string(), exc.message.clone()));
         if let Actor::Machine(m) = actor {
             let short = exc.ty.rsplit('.').next().unwrap_or(&exc.ty).to_string();
@@ -791,7 +822,10 @@ impl<'p> Runtime<'p> {
                 self.machine_state_name(m),
                 short
             );
-            self.log(|_| format!("<ExceptionLog> {}", body));
+            // snappea's report names the error in P terms, not as a .NET exception
+            if !self.config.snappea_reports {
+                self.log(|_| format!("<ExceptionLog> {}", body));
+            }
             if self.json_enabled() {
                 let d = Details {
                     log: Some(body),
@@ -812,6 +846,12 @@ impl<'p> Runtime<'p> {
                     Some(&text),
                 );
             }
+        }
+        if self.config.snappea_reports {
+            let src = crate::checker::report::source_text(self.prog, at);
+            let (what, help) = crate::checker::report::describe_exception(exc, src.as_deref());
+            let text = crate::checker::report::render(self.prog, &what, &self.error_context(actor), at, &help);
+            return self.report_bug(text);
         }
         let ctx = match actor {
             Actor::Machine(m) => {
@@ -896,9 +936,10 @@ impl<'p> Runtime<'p> {
                 self.monitors[i].temperature += 1;
                 if self.monitors[i].temperature > threshold {
                     let msg = format!(
-                        "{} detected potential liveness bug in hot state '{}'.",
-                        self.monitor_full_name(i),
-                        self.state_name(self.monitors[i].state)
+                        "{} detected potential liveness bug in hot state '{}'.{}",
+                        self.spec_report_name(i),
+                        self.state_name(self.monitors[i].state),
+                        self.spec_fields_line(i)
                     );
                     return Err(self.report_bug(msg));
                 }
@@ -1008,8 +1049,52 @@ impl<'p> Runtime<'p> {
             }
         }
         msg.push_str(if n == 1 { " is " } else { " are " });
-        msg.push_str("waiting to receive an event, but no other controlled tasks are enabled.");
+        msg.push_str("waiting to receive an event, but no other controlled tasks are enabled");
+        if self.config.snappea_reports {
+            // the promise the deadlock breaks, which does not depend on creation order
+            let hot: Vec<String> = (0..self.monitors.len())
+                .filter(|&i| !self.prog.machine(self.monitors[i].decl).is_scenario())
+                .filter_map(|i| {
+                    let state = self.monitor_hot_state(i)?;
+                    let fields =
+                        crate::checker::report::spec_fields(self.prog, self.monitors[i].decl, &self.monitors[i].fields);
+                    let name = &self.prog.machine(self.monitors[i].decl).name;
+                    Some(match fields.is_empty() {
+                        true => format!("spec {} is in hot state '{}'", name, state),
+                        false => format!("spec {} is in hot state '{}' ({})", name, state, fields),
+                    })
+                })
+                .collect();
+            if !hot.is_empty() {
+                msg.push_str(", while ");
+                msg.push_str(&hot.join(" and "));
+            }
+        }
+        msg.push('.');
         Err(self.report_bug(msg))
+    }
+
+    /// A spec's name in a liveness report: `PImplementation.Lifecycle` as upstream, or
+    /// with [`Config::snappea_reports`] just `Lifecycle`.
+    fn spec_report_name(&self, mon: usize) -> String {
+        match self.config.snappea_reports {
+            true => self.prog.machine(self.monitors[mon].decl).name.clone(),
+            false => self.monitor_full_name(mon),
+        }
+    }
+
+    /// With [`Config::snappea_reports`], a line with the fields of spec `mon` to end its
+    /// liveness report: what it is still waiting for. Empty otherwise.
+    fn spec_fields_line(&self, mon: usize) -> String {
+        if !self.config.snappea_reports {
+            return String::new();
+        }
+        let decl = self.monitors[mon].decl;
+        let fields = crate::checker::report::spec_fields(self.prog, decl, &self.monitors[mon].fields);
+        match fields.is_empty() {
+            true => String::new(),
+            false => format!("\n{}'s fields: {}", self.prog.machine(decl).name, fields),
+        }
     }
 
     /// `GetNondeterministicBooleanChoice`.
@@ -1132,9 +1217,10 @@ impl<'p> Runtime<'p> {
             if let Some(s) = self.monitors[i].state {
                 if self.prog.state(s).temperature == Temperature::Hot {
                     let msg = format!(
-                        "{} detected liveness bug in hot state '{}' at the end of program execution.",
-                        self.monitor_full_name(i),
-                        self.prog.state(s).name
+                        "{} detected liveness bug in hot state '{}' at the end of program execution.{}",
+                        self.spec_report_name(i),
+                        self.prog.state(s).name,
+                        self.spec_fields_line(i)
                     );
                     let _ = self.report_bug(msg);
                     return;

@@ -342,7 +342,8 @@ fn reserved_word(detail: &str) -> Option<(String, String, String)> {
             || (expecting.starts_with('{')
                 && expecting.trim_matches(|c| c == '{' || c == '}').split(", ").any(|t| t == "Iden"));
         (word, expects_name)
-    } else if let Some(rest) = detail.strip_prefix("no viable alternative at input '") {
+    } else {
+        let rest = detail.strip_prefix("no viable alternative at input '")?;
         // Only words that are functions, operators or types: a lone statement or
         // declaration keyword here is more likely misplaced than used as a name.
         const LONE: &[&str] = &[
@@ -350,8 +351,6 @@ fn reserved_word(detail: &str) -> Option<(String, String, String)> {
             "map", "set", "seq",
         ];
         (rest.strip_suffix('\'').filter(|w| LONE.contains(w))?, false)
-    } else {
-        return None;
     };
     match NAME_LIKE_KEYWORDS.iter().find(|(w, _, _)| *w == word) {
         Some((w, meaning, rename)) => Some((w.to_string(), meaning.to_string(), rename.to_string())),

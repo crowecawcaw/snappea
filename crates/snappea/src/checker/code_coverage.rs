@@ -368,9 +368,12 @@ impl CodeMap {
                 }
             }
         }
+        let message_only = message_only_funs(prog);
         let mut excluded = vec![false; probes.len()];
         for (id, p) in probes.iter().enumerate() {
-            excluded[id] = must_not_run(probes, id) || p.parent.is_some_and(|q| excluded[q as usize]);
+            excluded[id] = must_not_run(probes, id)
+                || p.parent.is_some_and(|q| excluded[q as usize])
+                || message_only.contains(&root_fun(prog, p.fun));
             if excluded[id] || !included(p.fun) || p.kind == ProbeKind::Changes {
                 continue;
             }
@@ -746,6 +749,68 @@ pub fn uncovered_lines(heading: &str, uncovered: &[Uncovered], hint: &str) -> Ve
         out.push(format!("  ... {} more{}", uncovered.len() - shown.len(), hint));
     }
     out
+}
+
+/// The function a receive case is in, or `f` itself.
+fn root_fun(prog: &Program, f: FunId) -> FunId {
+    match prog.fun(f).parent {
+        Some(p) => root_fun(prog, p),
+        None => f,
+    }
+}
+
+/// The functions that only assertion messages call, directly or through other such
+/// functions, e.g. a `Name(e): string` helper for a message. They run only when an
+/// assertion fails, so coverage does not require them, as it does not require code
+/// after `assert false`.
+fn message_only_funs(prog: &Program) -> FxHashSet<FunId> {
+    use crate::checker::checked::{each_expr, visit_stmts};
+    use crate::checker::mutation::visit_expr;
+    use crate::sema::ExprKind;
+    // (caller, callee, whether the call is in an assertion message)
+    let mut sites: Vec<(FunId, FunId, bool)> = Vec::new();
+    for (i, f) in prog.funs.iter().enumerate() {
+        let Some(body) = &f.body else { continue };
+        let caller = FunId(i as u32);
+        visit_stmts(body, &mut |s| {
+            if let StmtKind::FunCall { fun, .. } = &s.kind {
+                sites.push((caller, *fun, false));
+            }
+            let mut calls = |e: &crate::sema::Expr, in_message: bool| {
+                visit_expr(e, &mut |e| {
+                    if let ExprKind::FunCall { fun, .. } = &e.kind {
+                        sites.push((caller, *fun, in_message));
+                    }
+                })
+            };
+            if let StmtKind::Assert { message, .. } = &s.kind {
+                calls(message, true);
+            }
+            each_expr(s, &mut |e| calls(e, false));
+        });
+    }
+    let mut handlers = FxHashSet::default();
+    for st in &prog.states {
+        handlers.extend(st.entry.iter().chain(&st.exit).copied());
+        for h in &st.handlers {
+            if let HandlerAction::Do(f) | HandlerAction::Goto { with: Some(f), .. } = h.action {
+                handlers.insert(f);
+            }
+        }
+    }
+    let mut only: FxHashSet<FunId> =
+        sites.iter().filter(|s| s.2).map(|s| s.1).filter(|f| !handlers.contains(f)).collect();
+    loop {
+        let before = only.len();
+        for &(caller, callee, in_message) in &sites {
+            if !in_message && !only.contains(&caller) {
+                only.remove(&callee);
+            }
+        }
+        if only.len() == before {
+            return only;
+        }
+    }
 }
 
 /// Whether probe `id` marks code that must never run: an `assert false` statement, or a
