@@ -948,7 +948,8 @@ impl<'p> Checker<'p> {
                         }
                     }),
                     driver_facts: driver_facts.take(),
-                    branching: branching.take(),
+                    // every 8th schedule: the averages hold, at an eighth of the cost
+                    branching: branching.take_if(|_| i.is_multiple_of(8)),
                     buffers: std::mem::take(&mut buffers),
                     ..Setup::default()
                 };

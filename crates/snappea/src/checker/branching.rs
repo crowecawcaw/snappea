@@ -3,8 +3,8 @@
 //! small model change usually traces back to one machine here, such as a forwarder
 //! that adds a hop to every message or a fault injector with a large budget.
 //!
-//! Counts cover every schedule run, including the prefixes an exhaustive search replays,
-//! so they describe an average schedule rather than the size of the search tree.
+//! Counts cover every eighth schedule run, including the prefixes an exhaustive search
+//! replays, so they describe an average schedule rather than the size of the search tree.
 
 use crate::sema::Program;
 

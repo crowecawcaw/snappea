@@ -1918,6 +1918,7 @@ fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn globs() {
