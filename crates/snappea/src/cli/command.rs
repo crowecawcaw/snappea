@@ -1204,6 +1204,7 @@ fn run_check(
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
     let not_tested = mutation.get("not_tested").and_then(Value::as_u64).unwrap_or(0) as usize;
     let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
+    let deeper = mutation.get("deeper_search_may_detect").and_then(Value::as_bool).unwrap_or(false);
     let summary = check_summary(
         failed,
         n,
@@ -1212,7 +1213,7 @@ fn run_check(
         required_gap_count,
         &required_uncovered,
         mutation_time_limit_reached,
-        (undetected, mutation_failed),
+        (undetected, mutation_failed, deeper),
         not_tested,
         &skipped,
     );
@@ -1334,7 +1335,7 @@ fn check_summary(
     coverage_gaps: usize,
     uncovered: &[crate::checker::code_coverage::Uncovered],
     mutation_time_limit_reached: bool,
-    (mutants_undetected, mutation_failed): (usize, bool),
+    (mutants_undetected, mutation_failed, deeper): (usize, bool, bool),
     mutants_not_tested: usize,
     skipped: &[&str],
 ) -> Value {
@@ -1346,7 +1347,14 @@ fn check_summary(
             skipped.join(", ")
         ));
     }
-    if failed == 0 && mutants_undetected > 0 {
+    if failed == 0 && mutants_undetected > 0 && deeper {
+        notes.push(format!(
+            "{} mutant{} not detected, but no search for them was complete. Run `snappea check mutation`, \
+             which searches deeper, before adding assertions or suppressions.",
+            mutants_undetected,
+            plural(mutants_undetected)
+        ));
+    } else if failed == 0 && mutants_undetected > 0 {
         notes.push(format!(
             "{} mutant{} not detected: the model ran the changed code but no assertion failed. \
              Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
@@ -1873,19 +1881,19 @@ mod tests {
             context: "Main.S, on ePing".into(),
             what: "if (x) never true".into(),
         };
-        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false), 0, &[]);
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false, false), 0, &[]);
         assert_eq!(coverage["status"], "coverage_failed");
         assert_eq!(coverage["message"], "Required coverage was not reached within the run budget (3 points)");
         assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
         assert_eq!(coverage["mutation_time_limit_reached"], true);
 
-        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(failed["status"], "tests_failed");
 
-        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false), 0, &[]);
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(incomplete["status"], "search_incomplete");
 
-        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false), 0, &[]);
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false, false), 0, &[]);
         assert_eq!(passed["status"], "passed");
         assert!(passed["note"].is_null());
     }
@@ -1893,19 +1901,21 @@ mod tests {
     #[test]
     fn check_summary_notes_skipped_checks_and_undetected_mutants() {
         let partial =
-            check_summary(0, 1, 0, false, 0, &[], false, (0, false), 0, &["mutation testing (--no-mutation)"]);
+            check_summary(0, 1, 0, false, 0, &[], false, (0, false, false), 0, &["mutation testing (--no-mutation)"]);
         assert_eq!(partial["status"], "passed");
         assert!(partial["note"].as_str().unwrap().starts_with("Not checked: mutation testing (--no-mutation)."));
 
-        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true), 0, &[]);
+        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true, false), 0, &[]);
         assert_eq!(denied["status"], "mutation_failed");
         assert_eq!(denied["message"], "2 mutants not detected (--deny mutation)");
 
-        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false), 0, &[]);
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false, false), 0, &[]);
         assert_eq!(weak["mutants_undetected"], 4);
         assert!(weak["note"].as_str().unwrap().starts_with("4 mutants not detected"));
+        let shallow = check_summary(0, 1, 0, false, 0, &[], false, (2, true, true), 0, &[]);
+        assert!(shallow["note"].as_str().unwrap().contains("Run `snappea check mutation`"), "{}", shallow["note"]);
 
-        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false), 17, &[]);
+        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false, false), 17, &[]);
         assert_eq!(unfinished["mutants_not_tested"], 17);
         assert!(unfinished["note"].as_str().unwrap().contains("17 mutants not tested"));
     }

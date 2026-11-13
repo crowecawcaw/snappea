@@ -41,7 +41,8 @@ plus PCT trials with 0, 2, and 10 priority-change points. Delays temporarily hol
 one runnable actor while others execute; they release it if nothing else can run.
 Their checkpoints distinguish the delayed actor, starting point, duration, ordering,
 and whether the delay has ended. Delayed schedules and PCT schedules are unfair;
-only the fair guided-random arm performs liveness temperature checks.
+only the fair guided-random arm performs liveness temperature checks (exhaustive search
+checks cycles instead; see below).
 
 After actor contention, a bounded early pilot also explores these schedulers before
 resuming a converging exhaustive search. Tiny finite searches finish before this
@@ -98,9 +99,31 @@ exhaustive phase. Compatibility mode retains its original behavior.
 A completed exhaustive search ends the run early. Timed models start directly
 with feedback because exhaustive time tracking is not supported, and so do models
 with foreign functions, unless their implementation declares itself searchable
-(`ForeignFunctions::searchable` in the [Rust library](library.md)). Cyclic hot
-monitors also continue through fair feedback: closing a repeated state is not a
-liveness proof. Stalling changes strategy; it never certifies a model as safe.
+(`ForeignFunctions::searchable` in the [Rust library](library.md)). Stalling changes
+strategy; it never certifies a model as safe.
+
+Exhaustive search checks liveness on cycles. When a schedule returns to a state already
+on its own path while a liveness monitor is hot, the steps since that state form a
+cycle the model can repeat forever. If the monitor stayed out of cold states through
+the cycle, and the cycle is fair (every machine that could run at every step of it ran,
+and every `$$` choice made in it took both values), the check fails at once:
+
+```
+Answered detected liveness bug in hot state 'Waiting': the last 6 steps return to an
+earlier state, so the model can repeat them forever without the monitor entering a
+cold state.
+```
+
+A retry loop that never succeeds is then found on the first schedule that closes it,
+as cheaply as a deadlock. Plain `$` and `choose` choices need not vary: a network that
+may lose every retry is a real livelock. The saved schedule ends with the cycle and
+names its start in a `--snappea-lasso:<step>` header; `snappea replay` checks that the
+end returns to that state. Other cycles are pruned. A search that pruned a cycle
+through a state where a liveness monitor was not cold (an unfair cycle, or one through
+a cold state) has not verified liveness, since another cycle through that state could
+be a bug: it continues with fair feedback search. With several workers, any pruned
+cycle counts, since the shared state cache can hide a cycle from the worker that closes
+it.
 
 By default the selected test cases **share 10 seconds**: each gets the time left divided
 by the test cases left. A test case stops early, marked `stopped: coverage stopped
@@ -339,16 +362,24 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
-Each mutant runs only the test cases that ran the changed code, in turns. First every
-mutant gets a turn of 10 schedules on each of its test cases: most mutants a test case
-detects at all, it detects within a few schedules, so short first turns find the test
-case that detects them sooner. Then the undetected ones get more turns, round robin over
-their test cases, each three times longer than the last on that test case (at most
-100 schedules), up to a budget learned from the first turns: 3 times the schedules that
-95% of the detected mutants needed, at least 100 and at most 1000 (1000 when fewer than
-20 were detected). JSON gives it as `schedules_per_mutant`. `snappea check mutation`
-then keeps giving undetected mutants turns, up to 1000 schedules each, until its time
-limit: a deeper search for a CI gate, where `snappea check` stops at the budget.
+Each mutant runs only the test cases that ran the changed code, in turns, smallest
+first: the test cases whose unchanged search was complete in the fewest schedules, then
+the rest. First every mutant gets a turn of 10 schedules on each of its test cases:
+most mutants a test case detects at all, it detects within a few schedules, so short
+first turns find the test case that detects them sooner. A test case whose unchanged
+search was complete in at most 1000 schedules instead gets one turn of up to 1000,
+enough for the mutant's search to complete too, so its verdict there is exact. Then the
+undetected ones get more turns, round robin over their test cases, each three times
+longer than the last on that test case (at most 100 schedules), up to a budget per test
+case learned from the first turns: 3 times the schedules that 95% of the detected
+mutants needed, at least 100 and at most 1000 (1000 when fewer than 20 were detected).
+Each test case gets the whole budget, so a large test case does not starve a small one
+that would detect the mutant. JSON gives it as `schedules_per_mutant`. `snappea check
+mutation` then keeps giving undetected mutants turns, up to 1000 schedules per test
+case, until its time limit: a deeper search for a CI gate, where `snappea check` stops
+at the budget. When every undetected mutant's search was incomplete, the console says
+so with a hint to run `snappea check mutation` before adding assertions or
+suppressions, and JSON has `deeper_search_may_detect: true`.
 
 Removing a whole `if`, `while`, `foreach` or body is a *coarse* mutant: the other
 mutants inside it change part of what it removes. A mutant inside one gets its first
@@ -356,8 +387,9 @@ turns with the others, but the rest of its budget only after every mutant outsid
 undetected coarse mutant had its own. When no test case detects the coarse mutant, no
 test case notices that code removed at all, which is the gap to close first, so the
 undetected mutants inside it are listed with it: the console shows
-`removed the whole body (3 statements) (and 2 more undetected inside it)`, and JSON
-lists them under the coarse mutant's `undetected_inside`. Given the time, every mutant
+`removed the whole body (3 statements) (and 2 more undetected inside it; -v lists them)`,
+`-v` lists them under it, and JSON lists them under the coarse mutant's
+`undetected_inside`, each with its `file` and `line`. Given the time, every mutant
 gets its full budget; when the time limit stops the run, what it cut first is the
 confirmation of mutants inside a gap already found. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
@@ -371,7 +403,10 @@ would change a value. While the test cases check the unchanged model, they recor
 each such mutant, whether its change would have changed a value: for `<`, `<=`, `>` and
 `>=`, whether the operands were ever equal; for `+` and `-`, whether the right operand
 was ever nonzero; for a removed assignment, whether it ever stored a value other than
-the one already there; for a removed `+=` or `-=` on a set or map, whether the element
+the one already there (unless computing the value or where it goes has an effect: a
+`new`, a choice, or a call to a foreign function or to a function that sends, raises,
+announces, changes state, creates a machine, writes a field or makes a choice; removing
+that removes the effect, so the mutant always runs); for a removed `+=` or `-=` on a set or map, whether the element
 was ever missing or present. A mutant whose change never would is not run: it is
 undetected, with 0 schedules, and the console says why, for example
 `` `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never

@@ -30,7 +30,9 @@ const EXAMPLES: &[&str] =
 #[test]
 fn every_topic_prints_markdown() {
     let dir = std::env::temp_dir();
-    for topic in ["", "workflow", "testing", "modeling", "scenarios", "recovery", "faults", "python", "syntax", "examples"] {
+    for topic in
+        ["", "workflow", "testing", "modeling", "scenarios", "recovery", "faults", "python", "syntax", "examples"]
+    {
         let args: Vec<&str> = std::iter::once("guide").chain((!topic.is_empty()).then_some(topic)).collect();
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");

@@ -388,9 +388,10 @@ impl Carriers {
 ///
 /// An event is optional in a test case when every send or raise of it in the test
 /// case's machines (and in global functions) is in a branch of an `if` on `$` or
-/// `choose()` that does nothing but send. The mutants judged this way empty a handler of
-/// optional events only, or remove its one statement, or empty a function that is the
-/// one statement of such handlers.
+/// `choose()` that does nothing but send. The mutants judged this way empty a `do`
+/// handler of optional events only, or remove its one statement, or empty a function
+/// that is the one statement of such handlers; the function must run nowhere else (not
+/// as an entry, exit or `goto ... with` function, a `receive` case, or another call).
 pub struct FaultModel {
     /// For each event: the test cases (by index) it is optional in.
     optional: FxHashMap<EventId, Vec<bool>>,
@@ -399,6 +400,8 @@ pub struct FaultModel {
     /// For each function: the functions whose one statement calls it, and whether every
     /// call of it is such a statement.
     callers: FxHashMap<FunId, (Vec<FunId>, bool)>,
+    /// Functions that also run other than as a `do` handler or the one statement of one.
+    elsewhere: FxHashSet<FunId>,
 }
 
 impl FaultModel {
@@ -476,14 +479,24 @@ impl FaultModel {
             })
             .collect();
         let mut handles: FxHashMap<FunId, Vec<EventId>> = FxHashMap::default();
+        let mut elsewhere: FxHashSet<FunId> = FxHashSet::default();
         for s in &prog.states {
+            elsewhere.extend(s.entry.into_iter().chain(s.exit));
             for h in &s.handlers {
-                if let HandlerAction::Do(f) = h.action {
-                    handles.entry(f).or_default().push(h.event);
+                match h.action {
+                    HandlerAction::Do(f) => handles.entry(f).or_default().push(h.event),
+                    HandlerAction::Goto { with: Some(f), .. } => {
+                        elsewhere.insert(f);
+                    }
+                    _ => {}
                 }
             }
         }
-        FaultModel { optional, handles, callers }
+        for funs in payload_funs(prog).into_values() {
+            elsewhere.extend(funs.into_iter().filter(|f| !handles.contains_key(f)));
+        }
+        elsewhere.extend(callers.iter().filter(|(_, (_, only))| !only).map(|(f, _)| *f));
+        FaultModel { optional, handles, callers, elsewhere }
     }
 
     /// Why the undetected mutant `m` is likely equivalent, given the test cases (by index)
@@ -515,7 +528,7 @@ impl FaultModel {
     /// Whether `f` handles only events optional in `tests`, or is the one statement of
     /// such handlers only; collects the events.
     fn fault_fun(&self, f: FunId, tests: &[usize], events: &mut Vec<EventId>, depth: usize) -> bool {
-        if depth > 4 {
+        if depth > 4 || self.elsewhere.contains(&f) {
             return false;
         }
         if let Some(handled) = self.handles.get(&f) {
@@ -701,7 +714,18 @@ mod tests {
               }
               fun Restart() { epoch = epoch + 1; goto S; }
             }
-            machine Crasher { start state S { entry (t: Server) { if ($) { send t, eCrash; } } } }
+            event eWipe;
+            machine Cache {
+              var n: int;
+              start state S { entry Wipe; on eWipe do Wipe; on eReq do (c: machine) { n = n + 1; send c, eResp; } }
+              fun Wipe() { n = 0; }
+            }
+            machine Crasher { start state S { entry (t: Server) {
+              var c: Cache; c = new Cache();
+              if ($) { send t, eCrash; }
+              if ($) { send c, eWipe; }
+              send c, eReq, this;
+            } } }
             machine Main { start state S {
               entry { var s: Server; s = new Server(); new Crasher(s); send s, eReq, this; }
               ignore eResp;
@@ -710,7 +734,7 @@ mod tests {
             machine Main2 { start state S {
               entry { var s: Server; s = new Server(); new Always(s); }
             } }
-            test tc [main=Main]: { Server, Crasher, Main };
+            test tc [main=Main]: { Server, Crasher, Cache, Main };
             test tc2 [main=Main2]: { Server, Always, Main2 };";
         let prog = program(src);
         let ms = all(&prog);
@@ -731,5 +755,7 @@ mod tests {
         assert!(judge("removed `Restart();`", &[tc, tc2]).is_none());
         // a request handler: its event is always sent
         assert!(judge("removed `send c, eResp;`", &[tc]).is_none());
+        // a handler that is also an entry function runs without the fault too
+        assert!(judge("removed `n = 0;`", &[tc]).is_none());
     }
 }
