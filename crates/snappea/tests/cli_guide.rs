@@ -30,7 +30,7 @@ const EXAMPLES: &[&str] =
 #[test]
 fn every_topic_prints_markdown() {
     let dir = std::env::temp_dir();
-    for topic in ["", "workflow", "testing", "modeling", "scenarios", "recovery", "python", "syntax", "examples"] {
+    for topic in ["", "workflow", "testing", "modeling", "scenarios", "recovery", "faults", "python", "syntax", "examples"] {
         let args: Vec<&str> = std::iter::once("guide").chain((!topic.is_empty()).then_some(topic)).collect();
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");
@@ -55,10 +55,48 @@ fn every_topic_prints_markdown() {
     }
 }
 
+/// The fault recipes compile and pass together, driven by a client that retries.
+#[test]
+fn fault_recipes_check() {
+    let guide = include_str!("../src/cli/guide/faults.md");
+    let mut model: String = guide
+        .split("```p\n")
+        .skip(1)
+        .filter_map(|b| b.split_once("```").map(|(code, _)| code))
+        .filter(|code| code.contains("machine "))
+        .collect();
+    model.push_str(
+        "event eAsked; event eAnswered;
+        spec Progress observes eAsked, eAnswered {
+          start cold state Idle { on eAsked goto Waiting; }
+          hot state Waiting { on eAnswered goto Idle; }
+        }
+        machine Client {
+          var net: Network; var server: Server; var timer: Timer;
+          start state S {
+            entry {
+              server = new Server(); new Crasher(server); net = new Network(1); timer = new Timer(this);
+              announce eAsked;
+              send net, eForward, (dst = server, e = eReq, v = this);
+              send timer, eStartTimer;
+            }
+            on eTimeout do { send net, eForward, (dst = server, e = eReq, v = this); send timer, eStartTimer; }
+            on eResp goto Got with { send timer, eCancelTimer; announce eAnswered; }
+          }
+          state Got { ignore eResp, eTimeout; }
+        }
+        test tc [main=Client]: assert Progress in { Client, Server, Crasher, Network, Timer };",
+    );
+    let dir = temp("faults");
+    std::fs::write(dir.join("faults.p"), model).unwrap();
+    let out = snappea(&["check", "faults.p", "--no-mutation", "--timeout", "1s", "--format", "text"], &dir);
+    assert!(out.status.success(), "{}", text(&out));
+}
+
 #[test]
 fn guide_text_points_only_to_existing_topics_and_examples() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/guide");
-    let topics = ["workflow", "testing", "modeling", "scenarios", "recovery", "python", "syntax", "examples"];
+    let topics = ["workflow", "testing", "modeling", "scenarios", "recovery", "faults", "python", "syntax", "examples"];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&src).unwrap().map(|e| e.unwrap().path()).collect();
     for e in EXAMPLES {
         pages.extend(std::fs::read_dir(src.join("examples").join(e)).unwrap().map(|e| e.unwrap().path()));

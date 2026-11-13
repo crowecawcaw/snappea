@@ -4,6 +4,7 @@
 
 - Separate durable effects/outcome records from volatile worker memory, pending replies, and local flags.
 - Restart clears volatile state; retain committed durable state unless modeling storage loss explicitly.
+- Inject crashes, timeouts and message loss from driver machines; see `snappea guide faults` for recipes.
 - Preserve request identity across retries. Generating a new ID changes the idempotency contract.
 - Model effect + outcome memo atomically only if a real primitive co-commits them. Otherwise allow a crash between writes.
 
