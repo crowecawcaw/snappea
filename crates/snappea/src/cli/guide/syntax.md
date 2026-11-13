@@ -86,7 +86,38 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 - Sequences: `s += (sizeof(s), value);` appends; `s -= (index);` removes. Sets: `items += (value);`. These are distinct operations.
 - Maps use `map[keyType, valueType]`, membership (`k in m`), indexing (`m[k]`), and `keys(m)`. `foreach (item in collection)` iterates a set, sequence, or `keys(map)`; declare `item` as a local before the loop. Avoid using a machine field as the iterator.
 - Put handler/function locals at the start of that block, before executable statements. P keywords are reserved; using one as a variable, field, function or type name is a parse error, so rename it (`vals`, not `values`). Reserved words that look like names: `values`, `keys`, `to`, `as`, `in`, `default`, `format`, `choose`, `sizeof`, `data`, `any`, `string`, `map`, `set`, `seq`, `start`, `state`, `event`, `type`, `test`, `main`, `module`, `param`, `entry`, `exit`, `this`, `new`, `send`, `receive`, `print`, `receives`, `sends`, `creates`, `safe`, `union`, `rename`, `compose`; and the PVerifier words `is`, `sent`, `targets`, `inflight`, `pure`, `assume`, `requires`, `ensures`, `invariant`, `using`, `except`, `forall`, `exists`, `prove`, `axiom`.
+- `goto S, v;` enters state `S` and passes `v` to its `entry (x: T)`. A state whose entry takes a parameter needs one on every `goto`. To re-enter it from places that have no value, keep the value in a machine variable instead: set it once in a separate start state (`start state Init { entry (cfg: Config) { config = cfg; goto Idle; } }`) and give `Idle` a plain `entry { ... }`.
+- P has no `sender()`. Put the sender in the payload (`event eReq: (client: machine, id: int);`, `send s, eReq, (client = this, id = 1);`) and reply to `p.client`.
+- A state must handle every event that reaches it: `on E do`, `on E goto S`, `defer E;` (keep it for a later state) or `ignore E;` (drop it). A `receive` takes only its own cases, and only while it waits; other events stay queued for the state.
 - `send target, event, payload` delivers to a machine; `receive { case event: (p: Type) { ... } }` waits; `announce event, payload` records a monitor-visible event. `send`, `receive`, and `new` are scheduling points; assignments do not yield.
+
+## Messages, transitions and bindings
+
+- `$$` is a fair nondeterministic Boolean: under fair exploration, a choice made
+  repeatedly cannot keep selecting only one outcome forever. `$` has no such
+  fairness promise. Use explicit finite bounds when a test needs bounded losses;
+  see `snappea guide faults`.
+- A module can bind an interface to an implementation with `Machine -> Interface`
+  inside its machine set. Creation through that interface uses the bound machine;
+  this lets tests replace an implementation while keeping its clients.
+- An `event` variable can supply the event in `send target, e, payload;`. Its
+  runtime payload must match the selected event's declared type.
+- Specs observe `send` as well as `announce`. Observe the real send when available;
+  use `announce` for facts nobody receives. Announcing and sending the same event
+  makes the spec observe it twice.
+- `receive` selects its listed cases. An unlisted event can remain queued when the
+  current state has a handler for it; an event the state cannot handle fails the
+  run. Do not assume a receive silently accepts every unrelated event.
+- In a receive loop, include an operation ID in replies and check it against the
+  current request. A late reply from a previous iteration is not a fresh answer.
+- `goto` inside a called function ends the current handler too: statements after
+  that call do not run. `raise E, payload;` also ends the current action and handles
+  the event in the current machine. Prefer `raise` when the current state's event
+  handler should choose the next action; use `goto S, payload;` when the destination
+  state is known and its entry action should consume the payload.
+
+For independent specs, completion patterns and timeout tests, see
+`snappea guide spec-patterns`.
 
 ## Checking
 

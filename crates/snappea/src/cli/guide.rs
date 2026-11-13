@@ -26,6 +26,11 @@ const TOPICS: &[(&str, &str, &str)] = &[
         "`scenario` monitors: prove a test reached a race; read their summary",
         include_str!("guide/scenario-monitors.md"),
     ),
+    (
+        "spec-patterns",
+        "Pin down inputs, replies and progress; test timeouts and convergence",
+        include_str!("guide/spec-patterns.md"),
+    ),
     ("faults", "Model timers, crashes and lossy networks as drivers", include_str!("guide/faults.md")),
     ("python", "Capture real Python calls and check them against P specs", include_str!("guide/python.md")),
     ("syntax", "P syntax and a complete small model", include_str!("guide/syntax.md")),
@@ -128,6 +133,8 @@ Topics:
   modeling   What to model: boundaries, atomic steps, interference
   scenarios  Choose scenarios and independent oracles that can fail
   recovery   Crashes, retries and durable state
+  scenario-monitors  Prove a test reached a race
+  spec-patterns  Pin down inputs, replies and progress; test timeouts and convergence
   faults     Model timers, crashes and lossy networks as drivers
   python     Capture real Python calls and check them against P specs
   syntax     P syntax and a complete small model

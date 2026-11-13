@@ -10,7 +10,7 @@ pub(crate) mod check;
 pub(crate) mod collect;
 pub(crate) mod csharp;
 pub mod diag;
-pub(crate) mod errors;
+pub mod errors;
 pub(crate) mod modules;
 pub mod program;
 pub(crate) mod scope;

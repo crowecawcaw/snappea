@@ -82,7 +82,10 @@ impl<'a> Analyzer<'a> {
     pub fn resolve_mod_expr(&mut self, e: &'a ast::ModExpr, depth: usize) -> Result<RMod, Fatal> {
         let g = self.scopes.global();
         if depth > 256 {
-            return Err(self.e.internal_error(e.span, "module expression nesting is too deep"));
+            return Err(self
+                .e
+                .internal_error(e.span, "module expression nesting is too deep")
+                .help("name parts of the module with `module M = ...;` and refer to them by name"));
         }
         Ok(match &e.kind {
             ast::ModExprKind::Paren(inner) | ast::ModExprKind::Main { module: inner, .. } => {
@@ -100,7 +103,23 @@ impl<'a> Analyzer<'a> {
                 for b in binds {
                     let iname = b.interface.as_ref().unwrap_or(&b.machine);
                     let Some(i) = self.scopes.lookup_interface(g, &iname.name) else {
-                        return Err(self.e.missing_declaration(iname.span, "interface", &iname.name));
+                        let d = self.e.missing_declaration(iname.span, "interface", &iname.name);
+                        let spec = self
+                            .scopes
+                            .lookup_machine(g, &iname.name)
+                            .filter(|m| self.prog.machines[m.idx()].is_spec());
+                        return Err(match spec {
+                            Some(m) if self.prog.machines[m.idx()].is_scenario() => d.help(format!(
+                                "'{}' is a scenario: it watches every test case on its own, so remove it from the machine list",
+                                iname.name
+                            )),
+                            Some(_) => d.help(format!(
+                                "'{0}' is a spec, not a machine: remove it from the machine list and attach it with `assert`, \
+                                 e.g. `test tc [main=Main]: assert {0} in {{ Main, ... }};`",
+                                iname.name
+                            )),
+                            None => d,
+                        });
                     };
                     let Some(m) = self.scopes.lookup_machine(g, &b.machine.name) else {
                         return Err(self.e.missing_declaration(b.machine.span, "machine", &b.machine.name));
@@ -676,7 +695,10 @@ impl<'a> Analyzer<'a> {
                             "Invalid parameter list: Duplicate integer value '{}' found. All test values must be unique (e.g., [2, 2] is not allowed).",
                             i
                         );
-                        return Err(self.e.internal_error(body_span, &msg));
+                        return Err(self
+                            .e
+                            .internal_error(body_span, &msg)
+                            .help("list each value once, e.g. `(n in [1, 2, 3])`"));
                     }
                     seen_ints.push(i);
                 }
@@ -709,7 +731,11 @@ impl<'a> Analyzer<'a> {
 
     /// `SimpleExprEval.Eval` over the typed assume expression.
     fn simple_eval(&self, store: &[(VarId, ParamValue)], e: &Expr) -> Result<ParamValue, Fatal> {
-        let bad = || self.e.internal_error(e.span, "unsupported expression in test assumption");
+        let bad = || {
+            self.e
+                .internal_error(e.span, "unsupported expression in test assumption")
+                .help("use only params, literals, arithmetic, comparisons and `&&`, `||`, `!` in `assume`")
+        };
         let int = |v: ParamValue| match v {
             ParamValue::Int(i) => Ok(i),
             _ => Err(bad()),
@@ -779,7 +805,12 @@ impl<'a> Analyzer<'a> {
                 None => true,
                 Some(a) => match self.simple_eval(&store, a)? {
                     ParamValue::Bool(b) => b,
-                    _ => return Err(self.e.internal_error(a.span, "test assumption is not a boolean")),
+                    _ => {
+                        return Err(self
+                            .e
+                            .internal_error(a.span, "test assumption is not a boolean")
+                            .help("write `assume` as a condition, e.g. `assume (n > 0)`"))
+                    }
                 },
             };
             if keep {
@@ -963,7 +994,9 @@ impl<'a> Analyzer<'a> {
                 return Err(self.e.no_main(span, &msg));
             }
             // Upstream: refinement checking is not implemented.
-            return Err(self.e.internal_error(span, "refinement tests are not supported"));
+            return Err(self.e.internal_error(span, "refinement tests are not supported").help(
+                "check the implementation against the spec with `test t [main=M]: assert Spec in { ... };` instead",
+            ));
         }
         Ok(())
     }

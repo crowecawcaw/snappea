@@ -471,6 +471,10 @@ A mutant changes one place in the code of the machines under test:
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
 
+Global functions declared under `PTst/` are test scaffolding and are not mutated,
+even when design code calls them. Production helpers they call outside `PTst/`
+remain eligible for mutation. Directory matching is case-insensitive.
+
 Spec monitors and the [drivers](#driver-limits) are the tests, so they are not mutated,
 and neither are assertions, `print` or format strings. Conditions on a choice (`$`,
 `$$`, `choose`) are not forced, swapped or negated: the checker already explores every
@@ -668,7 +672,7 @@ The limits are of these kinds, most telling first:
 | Kind | Example |
 | --- | --- |
 | `sequence` | `each Client sends eAcquire, then eRelease, once each` |
-| `order` | `no Client sends eAcquire after eRelease`; `User sends eRegister once, before everything else` |
+| `order` | `no Client sends eAcquire after eRelease`; `User sends eRegister once, before everything else; no schedule runs without it` |
 | `instances` | `creates 1 LockServer and 2 Client, never more` |
 | `count` | `each Client sends eWithdraw at most twice` (only when it is at most twice: every driver stops somewhere, and higher limits rarely matter) |
 | `values` | `Proposer is only created with proposerId = 1 or 2`; `eWithdraw is always sent with amount = 10` |
