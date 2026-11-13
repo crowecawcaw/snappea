@@ -889,14 +889,60 @@ fn check_includes_scenario_coverage_in_console_and_json() {
         include_str!("../../../tests/upstream/RegressionTests/Feature1SMLevelDecls/Correct/ScenarioCoverageBasic/ScenarioCoverageBasic.p"),
         "\ntest tcScenario [main=Main]: { Main, Server };"
     ));
-    assert_eq!(snappea(&mut h, &["check", "scenario.p", "--json-report=r.json"]), 0, "{}", h.stderr);
+    // a scenario no test case satisfies is a coverage gap, like code no test case ran
+    assert_eq!(
+        snappea(&mut h, &["check", "scenario.p", "--format", "text", "--json-report=r.json"]),
+        1,
+        "{}",
+        h.stderr
+    );
     assert!(h.stdout.contains("1/2 scenarios covered"), "{}", h.stdout);
     assert!(h.stdout.contains("[  GAP  ] NeverCovered"));
+    assert!(h.stdout.contains("NeverCovered: scenario never satisfied in 1 test case\n"), "{}", h.stdout);
+    // scenarios watch every test case without being selected
+    assert!(!h.stdout.contains("Outside the selected tests"), "{}", h.stdout);
+    assert!(h.stdout.contains("Coverage requirements were not met for 1 point."), "{}", h.stdout);
     let result: serde_json::Value = serde_json::from_str(&read(&h, "r.json")).unwrap();
+    assert_eq!(result["summary"]["status"], "coverage_failed");
+    assert_eq!(result["summary"]["coverage_gaps"], 1);
+    assert_eq!(result["summary"]["scenario_gaps"], 1);
+    assert_eq!(result["summary"]["uncovered"][0]["context"], "NeverCovered");
     let artifact: serde_json::Value =
         serde_json::from_str(&read(&h, "PCheckerOutput/tcScenario/scenario_coverage.json")).unwrap();
     assert_eq!(result["scenarios"], serde_json::json!([artifact]));
     assert_eq!(result["test_cases"][0]["scenarios"], result["scenarios"][0]);
+
+    // accepted with a coverage suppression on the scenario
+    let text = read(&h, "scenario.p").replace(
+        "scenario NeverCovered",
+        "// snappea-lint: allow coverage -- eNever is reserved for v2\nscenario NeverCovered",
+    );
+    h.add_file("scenario.p", &text);
+    assert_eq!(snappea(&mut h, &["check", "scenario.p", "--format", "text"]), 0, "{}", h.stdout);
+    assert!(
+        h.stdout
+            .contains("NeverCovered: scenario never satisfied in 1 test case (suppressed: eNever is reserved for v2)"),
+        "{}",
+        h.stdout
+    );
+}
+
+#[test]
+fn scenarios_ignore_observed_events_they_do_not_handle() {
+    let mut h = host();
+    h.add_file(
+        "s.p",
+        "event eA;\n\
+         machine Main { start state S { entry { var s: Server; s = new Server(); send s, eA; send s, eA; } } }\n\
+         machine Server { start state S { on eA do { } } }\n\
+         scenario SawA observes eA { start state Wait { on eA goto Done; } cold state Done { } }\n\
+         test tcA [main=Main]: { Main, Server };\n",
+    );
+    assert_eq!(snappea(&mut h, &["check", "s.p", "--no-mutation", "--warn", "lint"]), 0, "{}{}", h.stdout, h.stderr);
+    // snappea-compat keeps upstream's failure
+    assert_eq!(compat(&mut h, &["check", "-tc", "tcA", "--schedules", "1"]), 1, "{}", h.stdout);
+    let log = read(&h, "PCheckerOutput/tcA/BugFinding/generatedOutput_0_0.txt");
+    assert!(log.contains("received event 'PImplementation.eA' that cannot be handled"), "{}", log);
 }
 
 /// A counter whose spec only checks that the total stays non-negative.

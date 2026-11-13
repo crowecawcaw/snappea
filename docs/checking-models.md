@@ -4,6 +4,7 @@ personas: ["application-developer", "coding-agent"]
 questions:
   - "How do checks, exploration, coverage and mutation testing behave?"
   - "What makes a check fail?"
+  - "What do the scenario coverage terms mean, and when does a scenario fail a check?"
 ---
 
 # Checking P models
@@ -269,8 +270,35 @@ not counted. A bug stops a test case early, so its coverage is marked partial in
 the console and with `coverage.partial: true` in JSON. The combined total includes
 these results and is also marked partial when any test case finds a bug.
 
-Scenario monitors appear in the console as a unified summary, including scenarios
-that were never satisfied. JSON includes the scenario artifacts under `scenarios`
+Scenario monitors (`scenario` declarations) appear in the console as a unified summary,
+including scenarios that were never satisfied:
+
+```text
+Unified scenario coverage across 1 test case:
+  1/2 scenarios covered in >=1 test case; 1 coverage gap.
+  [covered] ConflictThenRetry: covered in 1/1 test cases (tcTwoClients); 53 total triggers, 6 satisfying timelines (summed per test case)
+  [  GAP  ] RefusedTwice: never covered in any of 1 test case; best progress anywhere 2/3 states
+```
+
+- **total triggers**: explored schedules that satisfied the scenario (entered a `cold`
+  state other than its start), summed over the test cases.
+- **satisfying timelines**: distinct timelines among those schedules, summed over the
+  test cases. A timeline abstracts a schedule by the order in which each machine received
+  its events (`--timeline-repr`), so schedules that differ only in unrelated
+  interleavings count once.
+- **best progress anywhere N/M states**: the most distinct states of the scenario that
+  one schedule entered, out of its M states.
+
+Scenarios watch every test case without being selected with `assert ... in`, so they
+are not listed as outside the selected tests. In `snappea check` a scenario ignores an
+observed event its state does not handle; `snappea-compat` fails as upstream P does.
+A scenario no selected test case satisfies is a required coverage gap: it is listed
+under `Not covered`, counted in `summary.coverage_gaps` (and `summary.scenario_gaps`),
+and fails the check. Accept an intended one with
+`// snappea-lint: allow coverage -- reason` before the scenario. `snappea guide
+scenario-monitors` shows how to write them.
+
+JSON includes the scenario artifacts under `scenarios`
 for the suite and for each test case with scenarios. The same artifacts are still
 written to `scenario_coverage.json` for merging across runs.
 

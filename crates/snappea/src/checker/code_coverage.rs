@@ -181,12 +181,14 @@ pub struct Scope {
 
 impl Scope {
     /// Loaded components outside the selected tests' modules, excluded from totals.
+    /// Scenario monitors are not listed: they watch every test case, and their coverage
+    /// is whether one was satisfied.
     pub fn excluded(&self, prog: &Program) -> Vec<Uncovered> {
         prog.machines
             .iter()
             .enumerate()
             .filter_map(|(i, m)| {
-                if self.machines.get(i).copied().unwrap_or(false) || m.span.is_dummy() {
+                if self.machines.get(i).copied().unwrap_or(false) || m.span.is_dummy() || m.is_scenario() {
                     return None;
                 }
                 let loc = prog.sources.location(m.span);
@@ -902,12 +904,12 @@ mod tests {
         let point_spans = [span(1, 2), span(2, 3), span(4, 5), span(6, 7), span(8, 9), span(10, 11), span(12, 13)];
         let map = CodeMap { points, point_spans: point_spans.to_vec(), ..Default::default() };
         let coverage = map.empty();
-        let required = map.required_summary(&coverage, &[span(4, 5)]);
+        let required = map.required_summary(&coverage, &[(span(4, 5), String::new())]);
         assert_eq!(required.statements, Count { covered: 0, total: 1 });
         assert_eq!(required.branches, Count { covered: 0, total: 1 });
         assert_eq!(required.handlers, Count { covered: 0, total: 1 });
         assert_eq!((required.conditions.total, required.transition_pairs.total), (0, 0));
-        let gaps = map.required_uncovered(&coverage, &[span(4, 5)]);
+        let gaps = map.required_uncovered(&coverage, &[(span(4, 5), String::new())]);
         assert_eq!(gaps.len(), 3);
         assert!(gaps.iter().any(|u| u.line == 3), "an uncalled Entry does not hide required statements");
     }

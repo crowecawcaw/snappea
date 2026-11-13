@@ -1117,20 +1117,42 @@ fn run_check(
     let suite = map.coverage(&hits);
     let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
     let required = map.required_summary(&suite, &coverage_suppressions);
-    let required_uncovered = map.required_uncovered(&suite, &coverage_suppressions);
-    let (uncovered, uncovered_suppressed) = map.split_uncovered(&suite, &coverage_suppressions);
+    let mut required_uncovered = map.required_uncovered(&suite, &coverage_suppressions);
+    let (mut uncovered, mut uncovered_suppressed) = map.split_uncovered(&suite, &coverage_suppressions);
+    // a scenario no test case satisfied is a gap like code no test case ran
+    let (scenario_gaps, scenario_accepted) = scenario::gaps(prog, &scenarios, &coverage_suppressions);
+    for (list, add) in [
+        (&mut required_uncovered, &scenario_gaps),
+        (&mut uncovered, &scenario_gaps),
+        (&mut uncovered_suppressed, &scenario_accepted),
+    ] {
+        list.extend(add.iter().cloned());
+        list.sort();
+    }
     let required_missing = required.statements.covered < required.statements.total
         || required.branches.covered < required.branches.total
-        || required.handlers.covered < required.handlers.total;
+        || required.handlers.covered < required.handlers.total
+        || !scenario_gaps.is_empty();
     let required_gap_count = required.statements.total - required.statements.covered + required.branches.total
         - required.branches.covered
         + required.handlers.total
-        - required.handlers.covered;
+        - required.handlers.covered
+        + scenario_gaps.len();
     let coverage_warned = !only && failed == 0 && gates.coverage == Gate::Warn && required_missing;
     let coverage_failed = !only && failed == 0 && gates.coverage == Gate::Deny && required_missing;
-    let coverage_failure_message =
-        format!("Required coverage was not reached within the run budget ({} points).", required_gap_count);
-    let coverage_failure_help = "Add scenarios that reach the listed sites, or increase the timeout if exploration ran out of time. For deliberate omissions, add a scoped `coverage` suppression with a reason; use --warn coverage only for exploratory checking.";
+    let coverage_failure_message = format!(
+        "Required coverage was not reached within the run budget ({} point{}).",
+        required_gap_count,
+        plural(required_gap_count)
+    );
+    let coverage_failure_help = format!(
+        "Add scenarios that reach the listed sites, or increase the timeout if exploration ran out of time.{} For deliberate omissions, add a scoped `coverage` suppression with a reason; use --warn coverage only for exploratory checking.",
+        if scenario_gaps.is_empty() {
+            ""
+        } else {
+            " For a scenario never satisfied, add or extend a test case that drives the model through it."
+        }
+    );
     let excluded = scope.excluded(prog);
     if !only {
         if n > 1 {
@@ -1157,8 +1179,9 @@ fn run_check(
             con.inner.out_line(&format!("{coverage_failure_message} {coverage_failure_help}"));
         } else if coverage_warned {
             con.inner.out_line(&format!(
-                "Warning: required coverage was not reached within the run budget ({} points; --warn coverage).",
-                required_gap_count
+                "Warning: required coverage was not reached within the run budget ({} point{}; --warn coverage).",
+                required_gap_count,
+                plural(required_gap_count)
             ));
         }
         if !scenarios.is_empty() {
@@ -1208,7 +1231,7 @@ fn run_check(
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
     let not_tested = mutation.get("not_tested").and_then(Value::as_u64).unwrap_or(0) as usize;
     let mutation_failed = undetected > 0 && gates.mutation == Gate::Deny;
-    let summary = check_summary(
+    let mut summary = check_summary(
         failed,
         n,
         incomplete,
@@ -1220,6 +1243,7 @@ fn run_check(
         not_tested,
         &skipped,
     );
+    summary["scenario_gaps"] = json!(scenario_gaps.len());
     let out = match cfg.output_path.trim_end_matches('/') {
         "" if cfg.output_path.is_empty() => ".",
         o => o,

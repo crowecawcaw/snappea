@@ -30,7 +30,18 @@ const EXAMPLES: &[&str] =
 #[test]
 fn every_topic_prints_markdown() {
     let dir = std::env::temp_dir();
-    for topic in ["", "workflow", "testing", "modeling", "scenarios", "recovery", "python", "syntax", "examples"] {
+    for topic in [
+        "",
+        "workflow",
+        "testing",
+        "modeling",
+        "scenarios",
+        "scenario-monitors",
+        "recovery",
+        "python",
+        "syntax",
+        "examples",
+    ] {
         let args: Vec<&str> = std::iter::once("guide").chain((!topic.is_empty()).then_some(topic)).collect();
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");
@@ -58,7 +69,17 @@ fn every_topic_prints_markdown() {
 #[test]
 fn guide_text_points_only_to_existing_topics_and_examples() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/guide");
-    let topics = ["workflow", "testing", "modeling", "scenarios", "recovery", "python", "syntax", "examples"];
+    let topics = [
+        "workflow",
+        "testing",
+        "modeling",
+        "scenarios",
+        "scenario-monitors",
+        "recovery",
+        "python",
+        "syntax",
+        "examples",
+    ];
     let mut pages: Vec<PathBuf> = std::fs::read_dir(&src).unwrap().map(|e| e.unwrap().path()).collect();
     for e in EXAMPLES {
         pages.extend(std::fs::read_dir(src.join("examples").join(e)).unwrap().map(|e| e.unwrap().path()));

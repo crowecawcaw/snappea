@@ -284,6 +284,9 @@ pub struct Config {
     pub assembly_name: String,
     /// How schedules are abstracted into timelines.
     pub timeline: TimelineConfig,
+    /// A scenario monitor ignores an observed event its state has no handler for, instead
+    /// of failing: scenarios measure coverage and check nothing. Upstream fails.
+    pub scenarios_ignore_unhandled: bool,
 }
 
 impl Default for Config {
@@ -303,6 +306,7 @@ impl Default for Config {
             logging: true,
             assembly_name: "PImplementation".into(),
             timeline: TimelineConfig::default(),
+            scenarios_ignore_unhandled: true,
         }
     }
 }
@@ -2650,6 +2654,11 @@ impl<'p> Runtime<'p> {
                     return Err(self.report_bug(format!("prt.State[{}] missing event handler for {}", state, event)));
                 }
                 Some(HandlerAction::Defer) => return Ok(()),
+                None if self.config.scenarios_ignore_unhandled
+                    && self.prog.machine(self.monitors[mon].decl).is_scenario() =>
+                {
+                    return Ok(())
+                }
                 None => {
                     self.monitor_state_log(mon, false);
                     self.monitors[mon].state = None;

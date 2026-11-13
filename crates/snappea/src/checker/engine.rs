@@ -88,6 +88,9 @@ pub struct CheckerOptions {
     pub latency_profile: Option<String>,
     /// `--timed`: time-aware scheduling.
     pub timed: bool,
+    /// See [`Config::scenarios_ignore_unhandled`](crate::checker::runtime::Config::scenarios_ignore_unhandled).
+    /// On by default; `snappea-compat` turns it off, as upstream fails.
+    pub scenarios_ignore_unhandled: bool,
 }
 
 impl Default for CheckerOptions {
@@ -123,6 +126,7 @@ impl Default for CheckerOptions {
             latency: None,
             latency_profile: None,
             timed: false,
+            scenarios_ignore_unhandled: true,
         }
     }
 }
@@ -1235,6 +1239,7 @@ fn run_config(opts: &CheckerOptions) -> Config {
         logging: opts.strategy == StrategyKind::Replay || opts.verbose || opts.log_every_schedule,
         assembly_name: opts.assembly_name.clone(),
         timeline: opts.timeline,
+        scenarios_ignore_unhandled: opts.scenarios_ignore_unhandled,
     }
 }
 

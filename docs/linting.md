@@ -229,7 +229,8 @@ machine Server {
 that no check depends on, at the field's declaration. `unchecked-event` reports
 an event the model sends or announces that no spec observes and that no machine acts
 on: its handlers (in every machine) neither assert, change state, create machines,
-nor write or send anything a check depends on. An event a machine handles in some states
+nor write or send anything a check depends on. When only a scenario observes the event,
+the finding says so: scenarios measure coverage and check nothing. An event a machine handles in some states
 but not others counts as checked, since it can fail as unhandled; so does `halt`.
 Driver machines (see [mark driver machines](#mark-driver-machines)) and a test's main
 machine are not reported: they are the checks. The analysis over-approximates:

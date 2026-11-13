@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::checker::code_coverage::Uncovered;
 use crate::checker::engine::{culture_order, TestReport};
 use crate::checker::jsonlog::Json;
 
@@ -184,6 +185,48 @@ pub fn merge(artifacts: &[Artifact]) -> String {
         out.push('\n');
     }
     out
+}
+
+/// The scenarios no test case of `artifacts` satisfied, as coverage gaps at their
+/// declarations: those no `coverage` suppression (scope and reason) accepts, and those one
+/// does, the latter with `(suppressed: <reason>)` after what was missed.
+pub fn gaps(
+    prog: &crate::sema::Program,
+    artifacts: &[Artifact],
+    suppressions: &[(crate::syntax::Span, String)],
+) -> (Vec<Uncovered>, Vec<Uncovered>) {
+    let (mut open, mut accepted) = (Vec::new(), Vec::new());
+    for m in prog.machines.iter().filter(|m| m.is_scenario() && !m.span.is_dummy()) {
+        let entries = artifacts.iter().flat_map(|a| &a.scenarios).filter(|e| e.name == m.cs_name);
+        let (mut ran, mut satisfied) = (0, false);
+        for e in entries {
+            ran += 1;
+            satisfied |= e.satisfied;
+        }
+        if ran == 0 || satisfied {
+            continue;
+        }
+        let loc = prog.sources.location(m.span);
+        let line = loc.line.max(0) as u32;
+        let mut gap = Uncovered {
+            file: loc.file.unwrap_or_default(),
+            line,
+            end_line: line,
+            context: m.name.clone(),
+            what: format!("scenario never satisfied in {} test case{}", ran, if ran == 1 { "" } else { "s" }),
+        };
+        let reason = suppressions
+            .iter()
+            .find(|(scope, _)| scope.file == m.span.file && scope.start <= m.span.start && m.span.start < scope.end);
+        match reason {
+            Some((_, reason)) => {
+                gap.what = format!("{} (suppressed: {})", gap.what, reason);
+                accepted.push(gap);
+            }
+            None => open.push(gap),
+        }
+    }
+    (open, accepted)
 }
 
 /// Whether a path lies in a rotated history directory (`<Mode>0`..`<Mode>9`).

@@ -688,7 +688,27 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
     let mut reported: FxHashSet<EventId> = FxHashSet::default();
     for (e, span, m, announce) in sent {
         if !matters.contains(&e) && reported.insert(e) {
-            let message = if announce {
+            // scenarios observe events but check nothing: say so, so the author does not
+            // take the scenario for the check
+            let scenarios: Vec<&str> = prog
+                .machines
+                .iter()
+                .filter(|d| d.is_scenario() && d.observes.contains(&e))
+                .map(|d| d.name.as_str())
+                .collect();
+            let message = if !scenarios.is_empty() {
+                format!(
+                    "machine {} {} '{}', but only scenario{} {} observe{} it, and scenarios check nothing, so the model passes whatever it {}; observe it in a spec{}",
+                    prog.machine(m).name,
+                    if announce { "announces" } else { "sends" },
+                    prog.event(e).name,
+                    if scenarios.len() == 1 { "" } else { "s" },
+                    scenarios.join(", "),
+                    if scenarios.len() == 1 { "s" } else { "" },
+                    if announce { "announces" } else { "sends" },
+                    if announce { ", or let the scenario watch a sent event instead" } else { "" }
+                )
+            } else if announce {
                 format!(
                     "machine {} announces '{}', but no spec observes it, so the model passes whatever it announces",
                     prog.machine(m).name,
@@ -921,6 +941,29 @@ mod tests {
             .map(|f| f.message.split('\'').nth(1).unwrap().to_string())
             .collect();
         assert_eq!(found, ["copy", "log", "keyed"]);
+    }
+
+    fn findings(src: &str, rule: &str) -> Vec<String> {
+        let prog = program(src);
+        let tests = prog.test_cases();
+        lints(&prog, &tests, &vec![false; prog.machines.len()])
+            .into_iter()
+            .filter(|f| f.rule == rule)
+            .map(|f| f.message)
+            .collect()
+    }
+
+    #[test]
+    fn an_event_only_a_scenario_observes_is_named_as_such() {
+        let src = "event eConflict;\n\
+            machine Store { start state S { entry { announce eConflict; } } }\n\
+            scenario Conflicted observes eConflict { start state W { on eConflict goto D; } cold state D { } }\n\
+            machine Main { start state S { entry { new Store(); } } }\n\
+            test tc [main=Main]: { Store, Main };\n";
+        assert_eq!(
+            findings(src, "unchecked-event"),
+            ["machine Store announces 'eConflict', but only scenario Conflicted observes it, and scenarios check nothing, so the model passes whatever it announces; observe it in a spec, or let the scenario watch a sent event instead"]
+        );
     }
 
     #[test]
