@@ -1160,8 +1160,38 @@ fn run_check(
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
         }
         let heading = if n > 1 { "Not covered by any test case:" } else { "Not covered by the test case:" };
-        for l in uncovered_lines(heading, &uncovered, " (--json lists all)") {
+        let (conditions, pairs) = map.advisory_uncovered(&suite, &coverage_suppressions);
+        let actionable: Vec<_> = uncovered
+            .iter()
+            .filter(|gap| conditions.binary_search(gap).is_err() && pairs.binary_search(gap).is_err())
+            .cloned()
+            .collect();
+        for l in uncovered_lines(heading, &actionable, " (--json lists all)") {
             con.inner.out_line(&l);
+        }
+        if !actionable.is_empty() {
+            if incomplete == 0 && failed == 0 {
+                con.inner.out_line("No schedule of the selected tests reaches these gaps: their searches completed. Run other tests or add a scenario that reaches the missing behavior.");
+            }
+            con.inner.out_line("For an impossible spec event, use a handler with `assert false` to state that contract. For an unreachable defensive branch, remove it and document why it is unnecessary, or use `allow coverage` with a reason.");
+        }
+        for l in uncovered_lines(
+            "Informational condition coverage (does not fail the check):",
+            &conditions,
+            " (--json lists all)",
+        ) {
+            con.inner.out_line(&l);
+        }
+        if !pairs.is_empty() {
+            con.inner.out_line(&format!(
+                "{} transition pairs not taken (informational; -v to list, --json lists all).",
+                pairs.len()
+            ));
+            if cfg.verbose {
+                for l in uncovered_lines("Informational transition pairs:", &pairs, " (--json lists all)") {
+                    con.inner.out_line(&l);
+                }
+            }
         }
         for l in uncovered_lines("Not covered, suppressed:", &uncovered_suppressed, " (--json lists all)") {
             con.inner.out_line(&l);

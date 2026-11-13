@@ -645,13 +645,13 @@ fn check_reports_what_never_ran() {
         h.stdout
     );
     let expected = "Not covered by the test case:\n  \
-         ping.p:7      Server.Ready, on ePing: condition from == this never true\n  \
          ping.p:7      Server.Ready, on ePing: if (from == this) never true\n  \
          ping.p:10     Server.Ready, on eStop: goto Stopped never taken\n  \
          ping.p:13     Server.Stopped entry: never ran\n  \
-         ping.p:20     Client.Init entry: condition i > 0 never true\n  \
          ping.p:21-22  Client.Init entry: not reached: i = i - 1;\n";
     assert!(h.stdout.contains(expected), "{}", h.stdout);
+    assert!(h.stdout.contains("Informational condition coverage (does not fail the check):"), "{}", h.stdout);
+    assert!(h.stdout.contains("No schedule of the selected tests reaches these gaps"), "{}", h.stdout);
     // the JSON result has the same, and all of it
     let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
     assert_eq!(
@@ -1452,4 +1452,37 @@ fn a_passing_check_reports_where_schedules_branch() {
     assert_eq!(case["search_complete"], true, "{}", case);
     assert!(case.get("incomplete_reason").is_none(), "{}", case);
     assert!(case["branching"]["scheduling_points_with_choice"].is_number(), "{}", case);
+}
+
+#[test]
+fn transition_pair_details_are_verbose_only() {
+    let model = r#"
+        machine Main {
+            var viaA: bool;
+            start state S { entry { if ($) { viaA = true; goto A; } else { goto B; } } }
+            state A { entry { goto B; } }
+            state B { entry { if (viaA) { goto D; } else { goto C; } } }
+            state C { }
+            state D { }
+        }
+        test tc [main=Main]: { Main };
+    "#;
+    for verbose in [false, true] {
+        let mut h = host();
+        h.add_file("pairs.p", model);
+        let mut args = vec!["check", "pairs.p", "--no-mutation", "--warn", "lint", "--json-report", "result.json"];
+        if verbose {
+            args.push("-v");
+        }
+        assert_eq!(snappea(&mut h, &args), 0, "{} {}", h.stdout, h.stderr);
+        assert!(h.stdout.contains("2 transition pairs not taken (informational"), "{}", h.stdout);
+        assert_eq!(h.stdout.contains("never taken consecutively"), verbose, "{}", h.stdout);
+        assert!(!h.stdout.contains("Not covered by the test case:"), "{}", h.stdout);
+        let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        assert!(result["coverage"]["uncovered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["what"].as_str().unwrap().contains("never taken consecutively")));
+    }
 }

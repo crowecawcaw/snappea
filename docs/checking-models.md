@@ -352,7 +352,10 @@ The JSON result has the same text in each failed test case's `bug.report`.
 The [coverage guide](https://snappea.dev/docs/coverage.html) explains the types of
 coverage and how to use the gaps. In addition to statements, branches and handlers,
 checks measure atomic condition outcomes in `if`/`while` decisions and consecutive
-state-transition pairs on a single instance. Structural transition pairs may be
+state-transition pairs on a single implementation-machine instance (not spec monitors).
+Text output lists required gaps first, then informational condition gaps. Missing
+transition pairs are summarized in one line; use `-v` for details or `--json` for
+the complete list. These informational gaps do not fail the coverage gate. Structural transition pairs may be
 unreachable because of guards or data constraints. Loaded components outside the
 selected tests are listed separately, excluded from totals.
 

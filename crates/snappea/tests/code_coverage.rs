@@ -121,7 +121,7 @@ fn transition_history_is_not_combined_across_instances_or_schedules() {
 }
 
 #[test]
-fn observe_merges_witnessed_pairs_without_joining_separate_executions() {
+fn observe_merges_monitor_coverage_without_transition_pair_targets() {
     use snappea::checker::observe::{ObserveOptions, ObservedEvent, Parser, Spec, Timestamp};
     use snappea::checker::value::Value;
     struct Events;
@@ -157,12 +157,13 @@ fn observe_merges_witnessed_pairs_without_joining_separate_executions() {
     let mut merged = run(&["eA", "eStep"]);
     let right = run(&["eB", "eStep"]);
     merged.merge(&right).unwrap();
-    assert_eq!((merged.summary().transition_pairs.covered, merged.summary().transition_pairs.total), (2, 3));
-    assert!(merged.uncovered().iter().any(|u| u.what == "A -> B -> C never taken consecutively"));
+    assert_eq!(merged.summary().transition_pairs.total, 0);
+    assert_eq!((merged.summary().handlers.covered, merged.summary().handlers.total), (4, 4));
+    assert!(merged.uncovered().is_empty());
     let restored = CodeCoverage::from_json(&merged.to_json(true)).unwrap();
     assert_eq!(restored, merged);
     merged.merge(&run(&["eA", "eStep", "eStep"])).unwrap();
-    assert_eq!(merged.summary().transition_pairs.covered, 3);
+    assert_eq!(merged.summary().transition_pairs.total, 0);
 }
 
 #[test]
@@ -220,4 +221,23 @@ fn return_after_endless_loop_is_not_required_coverage() {
     );
     // nothing after the loops is required: no statement, branch or condition gaps
     assert!(c.uncovered().is_empty(), "{:?}", c.uncovered());
+}
+
+#[test]
+fn monitor_transition_pairs_are_not_coverage_targets() {
+    let c = coverage(
+        r#"
+        event eStep;
+        spec Contract observes eStep {
+            start state A { on eStep goto B; }
+            state B { on eStep goto A; }
+        }
+        machine Main {
+            start state S { entry { announce eStep; announce eStep; } }
+        }
+        test tc [main=Main]: assert Contract in { Main };
+    "#,
+    );
+    assert_eq!(c.summary().transition_pairs.total, 0);
+    assert!(c.points.iter().any(|p| p.kind == PointKind::Handler));
 }
