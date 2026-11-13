@@ -26,6 +26,7 @@ machine NoteServer {
     }
     on eUpdate do (u: tUpdate) {
       if (u.req in applied) {
+        announce eReplayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
         // The client lost our reply and retried: answer as before, change nothing.
         send u.client, eUpdateOk, (req = u.req, version = applied[u.req]);
         return;

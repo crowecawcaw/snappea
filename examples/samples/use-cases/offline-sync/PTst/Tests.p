@@ -2,10 +2,10 @@
 // of the design under test; the machines here only set up the run and announce intent.
 
 // What the network does to the reply to a client's first update.
-//   Reliable:  delivers it.
-//   LoseReply: drops it; the client times out and resends.
-//   SlowReply: delivers it late; the client times out, resends, and gets both replies.
-enum tFault { Reliable, LoseReply, SlowReply }
+//   Reliable:   delivers it.
+//   LoseReply:  drops it; the client times out and resends.
+//   DelayReply: delivers it late; the client times out, resends, and gets both replies.
+enum tFault { Reliable, LoseReply, DelayReply }
 
 // One user's offline change. `edit` names it; client `client` makes it.
 type tOp = (client: int, edit: int, isDelete: bool, fault: tFault);
@@ -37,19 +37,11 @@ machine LossyLink {
                              content = u.content, deleted = u.deleted);
     }
     on eUpdateOk do (r: (req: int, version: int)) {
-      if (TimedOut()) {
-        if (fault == SlowReply) { new Courier((to = client, ok = true, okReply = r, conflictReply = default((req: int, server: tNote)))); }
-        fault = Reliable;
-        return;
-      }
+      if (TimedOut(eUpdateOk, r)) { return; }
       send client, eUpdateOk, r;
     }
     on eUpdateConflict do (r: (req: int, server: tNote)) {
-      if (TimedOut()) {
-        if (fault == SlowReply) { new Courier((to = client, ok = false, okReply = default((req: int, version: int)), conflictReply = r)); }
-        fault = Reliable;
-        return;
-      }
+      if (TimedOut(eUpdateConflict, r)) { return; }
       send client, eUpdateConflict, r;
     }
     on eFetch do (c: machine) {
@@ -61,10 +53,15 @@ machine LossyLink {
     }
   }
 
-  fun TimedOut(): bool {
+  // Applies the fault to this reply, once. Returns whether the reply was taken away.
+  fun TimedOut(e: event, payload: any): bool {
     if (fault == Reliable) { return false; }
     announce eTimedOut, (client = clientId,);
     send client, eSyncTimeout;
+    if (fault == DelayReply) {
+      new Courier((dest = client, e = e, payload = payload));
+    }
+    fault = Reliable;
     return true;
   }
 }
@@ -73,12 +70,8 @@ machine LossyLink {
 // after the timeout, before or after anything the link sends later.
 machine Courier {
   start state Carrying {
-    entry (d: (to: machine, ok: bool, okReply: (req: int, version: int), conflictReply: (req: int, server: tNote))) {
-      if (d.ok) {
-        send d.to, eUpdateOk, d.okReply;
-      } else {
-        send d.to, eUpdateConflict, d.conflictReply;
-      }
+    entry (d: (dest: machine, e: event, payload: any)) {
+      send d.dest, d.e, d.payload;
     }
   }
 }
@@ -171,7 +164,7 @@ machine SlowReply {
   start state Init {
     entry {
       new SyncDriver((server = new NoteServer(InitialNote()), ops = Ops2(
-        (client = 1, edit = 11, isDelete = false, fault = SlowReply),
+        (client = 1, edit = 11, isDelete = false, fault = DelayReply),
         (client = 2, edit = 21, isDelete = false, fault = Reliable))));
     }
   }
@@ -187,7 +180,7 @@ machine GeneratedSync {
       var fault: tFault;
       while (i < 3) {
         fault = Reliable;
-        if ($) { fault = LoseReply; } else if ($) { fault = SlowReply; }
+        if ($) { fault = LoseReply; } else if ($) { fault = DelayReply; }
         ops += (i, (client = i + 1, edit = (i + 1) * 10 + 1, isDelete = $, fault = fault));
         i = i + 1;
       }
@@ -230,7 +223,7 @@ machine BuggyStaleReply {
       announce eSyncPlanned, (clients = 2, initial = initial);
       announce eOpPlanned, (client = 1, edit = 11, isDelete = false);
       announce eOpPlanned, (client = 2, edit = 21, isDelete = false);
-      clients += (0, new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = SlowReply)),
+      clients += (0, new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = DelayReply)),
         id = 1, note = initial, edit = 11, isDelete = false)));
       clients += (1, new SyncClient((owner = this, server = server, id = 2, note = initial, edit = 21, isDelete = false)));
     }
@@ -278,11 +271,11 @@ test tcGeneratedSync [main=GeneratedSync]:
 
 // expect-bug: based on version 1 overwrote version 2
 test tcBugLastWriterWins [main=BuggyLastWriterWins]:
-  assert NoLostUpdates, SyncCompletes in { BuggyLastWriterWins, SyncDriver, LossyLink, LastWriterWinsServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { BuggyLastWriterWins, SyncDriver, LossyLink, Courier, LastWriterWinsServer, SyncClient };
 
 // expect-bug: conflicted with itself
 test tcBugNoRequestIds [main=BuggyNoRequestIds]:
-  assert NoLostUpdates, SyncCompletes in { BuggyNoRequestIds, SyncDriver, LossyLink, ForgetfulServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { BuggyNoRequestIds, SyncDriver, LossyLink, Courier, ForgetfulServer, SyncClient };
 
 // expect-bug: took a late reply as fresh
 test tcBugStaleReply [main=BuggyStaleReply]:
