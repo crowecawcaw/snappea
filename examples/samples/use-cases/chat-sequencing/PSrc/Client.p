@@ -1,5 +1,6 @@
 // A chat client. It displays messages strictly in sequence order: the next expected
-// seq is displayed, an older one (a duplicate after a resume) is skipped. When its
+// seq is displayed; any other is skipped. An older one is a duplicate from a replay; a
+// newer one overtook the replay and will come again in it. When its
 // connection drops it reconnects at once, resuming after the last seq it displayed.
 
 // From the network: this client's connection dropped.
@@ -25,7 +26,6 @@ machine Client {
         displayed = d.sn;
         announce eDisplayed, (client = id, sn = d.sn, msg = d.msg);
       }
-      // d.sn <= displayed: a duplicate replayed after a resume; skip it.
     }
     on eDisconnected do {
       send network, eConnect, (client = this, server = server, after = displayed);
