@@ -55,3 +55,70 @@ machine ForgetfulServer {
     }
   }
 }
+
+// Treats every conflict as fresh: a late conflict for an earlier attempt, arriving
+// after the merged retry was sent, makes it merge and push again on that old version.
+// Otherwise the same as SyncClient.
+machine NaiveSyncClient {
+  var owner: machine;
+  var server: machine;
+  var id: int;
+  var note: tNote;
+  var edit: int;
+  var base: int;
+  var content: set[int];
+
+  start state Offline {
+    entry (input: tClientInit) {
+      owner = input.owner;
+      server = input.server;
+      id = input.id;
+      note = input.note;
+      edit = input.edit;
+      base = note.version;
+      content = note.content;
+      content += (edit);
+      Push();
+      goto Pushing;
+    }
+  }
+
+  state Pushing {
+    on eUpdateOk do (r: (req: int, version: int)) {
+      note = (version = r.version, content = content, deleted = false);
+      goto Idle;
+    }
+    on eUpdateConflict do (r: (req: int, server: tNote)) {
+      var e: int;
+      // BUG: no check that the conflict is newer than this attempt's base.
+      foreach (e in r.server.content) {
+        content += (e);
+      }
+      base = r.server.version;
+      Push();
+    }
+    on eSyncTimeout do {
+      Push();
+    }
+  }
+
+  state Idle {
+    entry {
+      announce eOpDone, (client = id, edit = edit, applied = true, version = note.version);
+      send owner, eClientIdle;
+    }
+    ignore eUpdateOk, eUpdateConflict;
+    on ePull do {
+      send server, eFetch, this;
+    }
+    on eFetchResp do (n: tNote) {
+      note = n;
+      announce eSynced, (client = id, note = note);
+    }
+  }
+
+  fun Push() {
+    send server, eUpdate, (client = this, clientId = id, req = edit, base = base,
+                           content = content, deleted = false);
+  }
+}

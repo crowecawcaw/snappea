@@ -93,7 +93,9 @@ fun Run(s: tSetup) {
 // The stale-ack race: one job, two workers, and one delivery may outlive its
 // visibility timeout. The job is redelivered to the other worker while the first is
 // still working; the first worker's ack then carries a stale receipt and must be
-// rejected, and the job must still be completed exactly once.
+// rejected, and the job must still be completed exactly once. The slow delivery's
+// timer may fire twice, so a duplicate can arrive after the redelivery and must not
+// re-show the job. Exhaustive.
 machine SlowWorker {
   start state Init {
     entry { Run((jobs = 1, workers = 2, slow = 1, duplicates = true, crash = false)); }
@@ -109,15 +111,6 @@ machine WorkerCrash {
   }
 }
 
-// Two workers, two jobs, one slow delivery: redelivery of one job while the other is
-// in flight, and long-polling workers that must be woken by a visibility timeout or
-// released when the last job completes.
-machine TwoJobsTwoWorkers {
-  start state Init {
-    entry { Run((jobs = 2, workers = 2, slow = 1, duplicates = true, crash = false)); }
-  }
-}
-
 // More workers than jobs: three workers, two jobs, no timeouts. One worker waits
 // (long-polls) while the others work; it must be released only when the last job
 // completes, not by the first ack.
@@ -127,7 +120,8 @@ machine MoreWorkersThanJobs {
   }
 }
 
-// Generated: two jobs, two workers, one slow delivery, and maybe a crash. Sampled.
+// Generated: two jobs, two workers, one slow delivery whose timer may fire twice, and
+// maybe a crash: redelivery of one job while the other is in flight. Sampled.
 machine Generated {
   start state Init {
     entry { Run((jobs = 2, workers = 2, slow = 1, duplicates = true, crash = $)); }
@@ -139,9 +133,6 @@ test tcSlowWorker [main=SlowWorker]:
 
 test tcWorkerCrash [main=WorkerCrash]:
   assert ReceiptsFence, JobsComplete in { WorkerCrash, Timers, Queue, Sink, Worker };
-
-test tcTwoJobsTwoWorkers [main=TwoJobsTwoWorkers]:
-  assert ReceiptsFence, JobsComplete in { TwoJobsTwoWorkers, Timers, Queue, Sink, Worker };
 
 test tcMoreWorkersThanJobs [main=MoreWorkersThanJobs]:
   assert ReceiptsFence, JobsComplete in { MoreWorkersThanJobs, Timers, Queue, Sink, Worker };

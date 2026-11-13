@@ -148,19 +148,18 @@ machine OneNodeDown {
   }
 }
 
-// Exactly a majority of five: node 1 stands with nodes 2 and 3 up and nodes 4 and 5
-// unreachable. One grant (two votes) is not enough; the second grant (three of five)
-// must win.
-machine FiveNodesTwoDown {
+// Exactly a majority of an even cluster: four nodes, node 4 unreachable, node 1
+// stands. Two votes of four (its own and one grant) are half, not a majority, and must
+// not win; the second grant (three of four) must.
+machine FourNodesOneDown {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 5;
+      announce eClusterSize, 4;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 0, votedTerm = 0)));
       nodes += (3, new Unreachable());
-      nodes += (4, new Unreachable());
       announce eElectionsStarted;
       Timeout(this, nodes, 0);
     }
@@ -280,10 +279,10 @@ test tcOneNodeDown [main=OneNodeDown]:
   assert ElectionSafety, SomeLeaderElected in
   { OneNodeDown, Unreachable, Node };
 
-// Nodes 4 and 5 never answer, so CandidaciesConclude does not apply.
-test tcFiveNodesTwoDown [main=FiveNodesTwoDown]:
+// Node 4 never answers, so CandidaciesConclude does not apply.
+test tcFourNodesOneDown [main=FourNodesOneDown]:
   assert ElectionSafety, SomeLeaderElected in
-  { FiveNodesTwoDown, Unreachable, Node };
+  { FourNodesOneDown, Unreachable, Node };
 
 test tcGeneratedElection [main=GeneratedElection]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in

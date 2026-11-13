@@ -46,11 +46,10 @@ apply and ack are separate steps, so timeouts, redeliveries and crashes interlea
 
 | Test | Drives | Why it matters |
 | --- | --- | --- |
-| `tcSlowWorker` | One job, two workers, one delivery outlives its timeout | The stale-ack race: redelivery while the first worker still works; its ack must be rejected |
+| `tcSlowWorker` | One job, two workers, one delivery outlives its timeout, its timer maybe firing twice | The stale-ack race: redelivery while the first worker still works; its ack must be rejected; a duplicate timer after the redelivery must not re-show the job; the waiting worker is woken by the timeout |
 | `tcWorkerCrash` | One job, two workers, one worker crashes at any point | Crash before apply, between apply and ack, or after ack: the job is redelivered, effect recorded once |
-| `tcTwoJobsTwoWorkers` | Two jobs, one slow delivery whose timer may fire twice | A duplicate timer after redelivery must not re-show the job; waiting workers woken and released |
 | `tcMoreWorkersThanJobs` | Three workers, two jobs | A waiting worker is released only when the last job completes |
-| `tcGenerated` | Two jobs, slow delivery, maybe a crash | Combinations; sampled |
+| `tcGenerated` | Two jobs, slow delivery with a possible duplicate timer, maybe a crash | Redelivery of one job while the other is in flight; sampled |
 | `tcBugAckByJobId` | `AckByIdQueue` in the slow-worker race | **Expected to fail**: `job 1 was completed by an ack with stale receipt 1` |
 
 The consequence in the negative control: the first worker's late ack deletes the job
@@ -60,12 +59,13 @@ nobody would retry it, and the queue reports success for work it cannot vouch fo
 ## Run
 
 ```sh
-snappea check tcSlowWorker tcWorkerCrash tcTwoJobsTwoWorkers tcMoreWorkersThanJobs tcGenerated --deny mutation
+snappea check tcSlowWorker tcWorkerCrash tcMoreWorkersThanJobs tcGenerated --timeout 30s --deny mutation
 snappea check tcBugAckByJobId      # exits 1 with the stale ack above
 ```
 
-`tcSlowWorker` (8.5k schedules) and `tcWorkerCrash` (19k) explore every schedule; the
-two-job and three-worker tests are sampled.
+The core races are exhaustive: `tcSlowWorker` (34k schedules, about 15 s) and
+`tcWorkerCrash` (20k). `tcMoreWorkersThanJobs` (three workers) and `tcGenerated` are
+sampled; the three-worker test has over 180k schedules.
 
 ## Bounds and omissions
 

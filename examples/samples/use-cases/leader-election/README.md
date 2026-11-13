@@ -9,7 +9,7 @@ questions:
 
 # Term-based leader election
 
-Three nodes (five in one test) elect a leader the way Raft does, without the log: a
+Three nodes (four in one test) elect a leader the way Raft does, without the log: a
 node whose election timer fires increments its term, votes for itself and asks the
 others for votes; a node grants at most one vote per term; a candidate with a majority
 of the cluster becomes leader. A higher term in any request or reply makes a node adopt
@@ -56,7 +56,7 @@ durable; everything else is volatile.
 | `tcHigherTermReply` | Node 3 (and sometimes node 2) restarts at term 5; node 1 stands in term 1 | A candidate or leader gets a reply with a higher term; a loser must next stand above it |
 | `tcStaleVoteReply` | Node 1's timer fires twice in a row | Replies to its term-1 requests arrive during its term-2 candidacy and must not count |
 | `tcOneNodeDown` | Node 3 never answers | A majority, not unanimity: one grant plus the self-vote must win |
-| `tcFiveNodesTwoDown` | Five nodes, two never answer; node 1 stands | Exactly at the boundary: two votes of five must not win, three must |
+| `tcFourNodesOneDown` | Four nodes, one never answers; node 1 stands | Exactly at the boundary: two votes of four are half, not a majority, and must not win; three must |
 | `tcDeposedLeader` | Node 1 stands in term 1, node 3 (restarted at term 5) in term 6; a client request to node 1 at any moment | A leader that sees a higher term in a request or a reply must stop accepting requests |
 | `tcGeneratedElection` | One or two candidates, maybe a crash and restart of a non-candidate | Crashes at any moment, including between granting one candidate and seeing the other |
 | `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | **Expected to fail**: `node 3 voted twice in term 1: for 2 and for 1` |
@@ -65,20 +65,26 @@ durable; everything else is volatile.
 
 ```sh
 snappea check tcTwoCandidates tcSplitVote tcHigherTermReply tcStaleVoteReply tcOneNodeDown \
-  tcFiveNodesTwoDown tcDeposedLeader tcGeneratedElection --timeout 30s --deny mutation
+  tcFourNodesOneDown tcDeposedLeader tcGeneratedElection --timeout 30s --deny mutation
 snappea check tcBugVoteNotPersisted      # exits 1 with the double vote above
 ```
 
-All but `tcGeneratedElection` explore every schedule (`tcTwoCandidates` 8k,
-`tcSplitVote` 11k schedules, a few seconds each).
+`tcTwoCandidates` (8k schedules), `tcStaleVoteReply`, `tcOneNodeDown` and
+`tcFourNodesOneDown` explore every schedule within a few seconds. `tcDeposedLeader`
+(80k) needs about a minute to finish (`--timeout 2m`); every step-down mutant fails it
+within 60 schedules. `tcSplitVote`, `tcHigherTermReply` and `tcGeneratedElection` are
+sampled: the uncontested rounds pick any node, so their search does not finish in 30 s.
 
 ## Bounds and omissions
 
-Three nodes, at most two contested candidates, at most one crash. A crash and its
-restart are one step, and only a follower crashes: requests to a crashed node are
-retried, so they are modeled as delayed, not lost. Not modeled: the log, heartbeats
-(so a leader that failed to step down could not be observed; those step-down lines
-carry mutation suppressions saying so), pre-vote, and message loss without retry.
+Three nodes (four in `tcFourNodesOneDown`), at most two contested candidates, at most
+one crash. A crash and its restart are one step, and only a follower crashes: requests
+to a crashed node are retried, so they are modeled as delayed, not lost. Not modeled:
+the log, heartbeats, pre-vote, and message loss without retry. A leader's only action
+is accepting a client request, which is how `tcDeposedLeader` observes a missed
+step-down. A *candidate* that misses one acts exactly like a follower (it counts only
+replies for its own term, refuses clients, stands again on its next timeout), so those
+two `goto Follower` lines carry mutation suppressions.
 Raft persists `votedFor` so a retried request from the same candidate is granted again;
 with no retries, "voted in this term" is the whole rule here.
 
@@ -98,11 +104,19 @@ bounded checker can always find split votes that repeat until the bound.
   grants) let `CandidaciesConclude` check that "heard all replies" is true, and
   announcing each node's starting disk state (`eDisk`) made restored terms checkable.
 - `tcOneNodeDown` is the only test where unanimity and majority differ.
+- An earlier version suppressed the leader's step-down mutants as unobservable
+  ("voting only"). They were not equivalent: a deposed leader kept accepting work.
+  Giving the leader one observable action (`eClientAnswered`) and a scenario that
+  deposes it (`tcDeposedLeader`) replaced six suppressions with assertions. A
+  hard-coded `votes >= 2` needed a coverage suppression; the general majority rule
+  with a four-node test checks the even-size boundary instead.
 
 ## Testing the implementation
 
 Emit `eStood` after the candidate persists its term and self-vote, `eAnswered` after a
-voter persists and before it replies, and `eBecameLeader` on the role change. To force
+voter persists and before it replies, `eBecameLeader` on the role change, and
+`eClientAnswered` where a node accepts or redirects a client write. To force
 the persistence race: let node 3 grant node 1, crash and restart node 3 before node 2's
 request reaches it (hold that request in a test transport), then deliver it. The
-restarted node must refuse.
+restarted node must refuse. To force a deposed leader: once node 1 leads, deliver a
+RequestVote with a higher term to it, then send it a client write; it must redirect.
