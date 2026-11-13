@@ -12,6 +12,7 @@
 //! - forces the condition of an `if` to `true` or to `false`;
 //! - swaps an operator: `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-` (numbers),
 //!   `&&` and `||`;
+//! - drops either side of `&&` or `||`;
 //! - removes a `!`;
 //! - flips a `true` or `false` literal.
 //!
@@ -52,6 +53,10 @@ pub enum Change {
     FlipBool,
     /// Every top-level statement of the body but `return` is removed.
     EmptyBody,
+    /// Drop the left (true) or right (false) clause of a conjunction.
+    DropConjunct { left: bool },
+    /// Drop the left (true) or right (false) clause of a disjunction.
+    DropDisjunct { left: bool },
 }
 
 impl Change {
@@ -66,6 +71,8 @@ impl Change {
             Change::DropNot => "remove-not",
             Change::FlipBool => "flip-boolean",
             Change::EmptyBody => "empty-body",
+            Change::DropConjunct { .. } => "drop-conjunct",
+            Change::DropDisjunct { .. } => "drop-disjunct",
         }
     }
 }
@@ -481,6 +488,11 @@ fn change(target: Target<'_>) {
                 *op = new;
             }
         }
+        Target::Expr(e, Change::DropConjunct { left } | Change::DropDisjunct { left }) => {
+            if let ExprKind::Binary { lhs, rhs, .. } = &e.kind {
+                *e = if left { (**rhs).clone() } else { (**lhs).clone() };
+            }
+        }
         Target::Expr(e, Change::DropNot) => {
             if let ExprKind::Unary { operand, .. } = &mut e.kind {
                 let inner =
@@ -639,8 +651,17 @@ fn walk_expr(prog: &Program, e: &mut Expr, stmt: Span, visit: &mut dyn FnMut(Spa
     match &e.kind {
         ExprKind::Binary { op, .. } if logic(*op) && has_choice(e) => {}
         ExprKind::Binary { op, .. } => {
-            if let Some(new) = swapped(prog, *op, e) {
+            let op = *op;
+            if let Some(new) = swapped(prog, op, e) {
                 visit(stmt, Target::Expr(e, Change::Operator(new)));
+            }
+            for left in [true, false] {
+                let change = match op {
+                    BinOp::And => Change::DropConjunct { left },
+                    BinOp::Or => Change::DropDisjunct { left },
+                    _ => continue,
+                };
+                visit(stmt, Target::Expr(e, change));
             }
         }
         ExprKind::Unary { op: UnOp::Not, .. } if has_choice(e) => {}
@@ -740,6 +761,11 @@ fn describe(sm: &SourceMap, target: &Target<'_>) -> (Change, Span, String) {
             };
             (*c, e.span, description)
         }
+        Target::Expr(e, c @ (Change::DropConjunct { left } | Change::DropDisjunct { left })) => {
+            let ExprKind::Binary { lhs, rhs, .. } = &e.kind else { unreachable!() };
+            let kept = if *left { rhs } else { lhs };
+            (*c, e.span, format!("`{}` → `{}`", code(sm, e.span), code(sm, kept.span)))
+        }
         Target::Expr(e, c @ Change::DropNot) => {
             let ExprKind::Unary { operand, .. } = &e.kind else { unreachable!() };
             (*c, e.span, format!("`{}` → `{}`", code(sm, e.span), code(sm, operand.span)))
@@ -797,6 +823,8 @@ mod tests {
                 (7, "condition-true", "`n < 3 && !(n == 0)` replaced by `true`"),
                 (7, "condition-false", "`n < 3 && !(n == 0)` replaced by `false`"),
                 (7, "swap-operator", "`n < 3 && !(n == 0)` → `n < 3 || !(n == 0)`"),
+                (7, "drop-conjunct", "`n < 3 && !(n == 0)` → `!(n == 0)`"),
+                (7, "drop-conjunct", "`n < 3 && !(n == 0)` → `n < 3`"),
                 (7, "swap-operator", "`n < 3` → `n <= 3`"),
                 (7, "remove-not", "`!(n == 0)` → `n == 0`"),
                 (7, "swap-operator", "`n == 0` → `n != 0`"),
@@ -910,9 +938,52 @@ mod tests {
             Change::DropNot,
             Change::FlipBool,
             Change::EmptyBody,
+            Change::DropConjunct { left: true },
+            Change::DropDisjunct { left: true },
         ]
         .map(Change::name);
         assert_eq!(names.as_slice(), snappea_lint::MUTATIONS);
+    }
+
+    #[test]
+    fn each_dropped_boolean_clause_is_detected_by_the_truth_table() {
+        use crate::checker::engine::{Checker, CheckerOptions};
+        use crate::checker::strategy::StrategyKind;
+        for (condition, count) in [("p.a && p.b", 2), ("p.a || p.b", 2), ("p.a && (p.b || p.c)", 4)] {
+            let source = format!(
+                r#"
+                machine Server {{ start state S {{ entry (p: (a: bool, b: bool, c: bool)) {{
+                    var accepted: bool;
+                    if ({condition}) {{ accepted = true; }}
+                    assert accepted == ({condition}), "missing guard clause";
+                }} }} }}
+                machine Main {{ start state S {{ entry {{ new Server((a = $, b = $, c = $)); }} }} }}
+                test tc [main=Main]: {{ Main, Server }};
+            "#
+            );
+            let mut sm = SourceMap::new();
+            sm.add("model.p", source);
+            let prog = crate::sema::compile(&sm, &Default::default()).unwrap().program;
+            let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
+            let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+            let mutations: Vec<_> = mutants(&prog, &funs, &probes)
+                .into_iter()
+                .filter(|m| matches!(m.change, Change::DropConjunct { .. } | Change::DropDisjunct { .. }))
+                .collect();
+            assert_eq!(mutations.len(), count, "{condition}");
+            let options = CheckerOptions { strategy: StrategyKind::Dfs, iterations: 0, ..Default::default() };
+            let run = |p: &Program| Checker::new(p).check(&p.test_cases()[0], &options, &mut Vec::new()).unwrap();
+            assert_eq!(run(&prog).report.num_bugs, 0);
+            for m in mutations {
+                let result = run(&apply(&prog, &m));
+                assert!(result.report.num_bugs > 0, "{}", m.description);
+                assert!(
+                    result.report.bug_reports.iter().any(|b| b.contains("missing guard clause")),
+                    "{:?}",
+                    result.report.bug_reports
+                );
+            }
+        }
     }
 
     #[test]

@@ -10,6 +10,8 @@ pub const MUTATIONS: &[&str] = &[
     "remove-not",
     "flip-boolean",
     "empty-body",
+    "drop-conjunct",
+    "drop-disjunct",
 ];
 
 /// Whether `id` names mutation testing: `mutation`, or `mutation:<kind>`.
