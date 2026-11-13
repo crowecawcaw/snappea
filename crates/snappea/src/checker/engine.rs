@@ -1177,6 +1177,11 @@ impl<'p> Checker<'p> {
             unverifiable,
             ..s
         });
+        if let Some(stats) = &mut result.exhaustive {
+            for handoff in &mut stats.auto_handoffs {
+                handoff.worker = index + 1;
+            }
+        }
         result.scheduler_stats = strategy.scheduler_stats();
         result.time_tracked = time.is_some();
         result.branching = branching;

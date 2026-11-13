@@ -37,9 +37,24 @@ use rustc_hash::FxHashMap;
 
 use crate::checker::strategy::{OpInfo, SharedRandom, Strategy};
 
+/// A permanent handoff from exhaustive search to sampling in auto mode.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AutoHandoff {
+    /// One-based worker number; counts below belong to this worker.
+    pub worker: usize,
+    /// Completed schedules, including interleaved samples, at the handoff.
+    pub after_schedules: usize,
+    /// Exhaustive choice points examined at the handoff.
+    pub choices: u64,
+    /// Why auto abandoned exhaustive search.
+    pub reason: String,
+}
+
 /// Statistics of an exhaustive search.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchStats {
+    /// Permanent auto handoffs, one per worker that abandoned exhaustive search.
+    pub auto_handoffs: Vec<AutoHandoff>,
     /// Distinct program states reached at scheduling points.
     pub distinct_states: usize,
     /// Schedules cut short at an already explored state.
@@ -521,6 +536,8 @@ impl SearchStats {
 
     /// Adds another worker's part of a split search: complete only when every part is.
     pub fn combine(&mut self, other: &SearchStats) {
+        self.auto_handoffs.extend(other.auto_handoffs.iter().cloned());
+        self.auto_handoffs.sort_by_key(|h| h.worker);
         self.distinct_states += other.distinct_states;
         self.pruned_schedules += other.pruned_schedules;
         self.cycle_prunes += other.cycle_prunes;

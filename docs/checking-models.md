@@ -149,8 +149,15 @@ A passing test case that did not cover every schedule says why, with
   ran out (`untried_alternatives` counts those left on its current path). The hint
   suggests a longer `--timeout`. How much longer cannot be projected reliably: the
   state cache makes later branches much cheaper than earlier ones.
-- `sampled`: too many schedules, so the search sampled them.
+- `sampled`: auto handed off to sampling, or a sampling strategy was selected.
 - `timed_model_sampled`: as above, for a timed model.
+
+When auto abandons exhaustive search, text and `auto_handoffs` in JSON report the
+reason and point of the handoff for each worker: its completed schedules (including
+interleaved samples) and exhaustive choices. Reasons distinguish resource limits,
+a large frontier that is not converging, a depth bound, non-repeatable execution,
+and unverified liveness. Giving a parked search more time runs more samples; it
+does not resume exhaustive search. Temporary sampling probes are not handoffs.
 
 For these, the output shows where schedules branch, averaged per schedule: the
 scheduling points with a choice, the machines ready to run at them, and the

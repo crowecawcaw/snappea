@@ -493,7 +493,11 @@ fn auto_resource_limit_falls_back_without_claiming_exhaustion() {
         test tcMain [main=Main]: { Main };";
     let result = check(src, &opts(StrategyKind::Auto, 30));
     assert_eq!(result.report.num_bugs, 0);
-    assert!(!result.exhaustive.unwrap().finished);
+    let stats = result.exhaustive.unwrap();
+    assert!(!stats.finished);
+    assert_eq!(stats.auto_handoffs.len(), 1);
+    assert!(stats.auto_handoffs[0].reason.contains("limit"));
+    assert!(stats.auto_handoffs[0].choices > 0);
     assert!(result.report.explored_fair_schedules > 0);
 }
 
@@ -646,6 +650,8 @@ fn auto_depth_bound_hands_off_to_fair_feedback_and_replays_the_bug() {
     let stats = result.exhaustive.unwrap();
     assert!(!stats.finished);
     assert_eq!(stats.depth_bound_hits, 1);
+    assert_eq!(stats.auto_handoffs[0].reason, "a schedule reached the depth bound");
+    assert_eq!(stats.auto_handoffs[0].after_schedules, 1);
     let replay = check(
         src,
         &CheckerOptions {

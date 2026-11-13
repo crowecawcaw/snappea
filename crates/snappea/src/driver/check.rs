@@ -783,6 +783,8 @@ pub struct CaseOutcome {
     /// The exhaustive search was still running when time ran out: more time may finish
     /// it. Its untried alternatives along the path it was exploring (summed over workers).
     pub exhaustive_unfinished: Option<usize>,
+    /// Why and when each auto worker abandoned exhaustive search.
+    pub auto_handoffs: Vec<crate::checker::exhaustive::AutoHandoff>,
     /// The test tracked time (clocks, latencies or `--timed`).
     pub time_tracked: bool,
     /// Scheduling points with a choice per schedule, and the machines that branch most
@@ -973,6 +975,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
             .as_ref()
             .filter(|x| x.running && !x.complete() && res.report.num_bugs == 0)
             .map(|x| x.frontier),
+        auto_handoffs: res.exhaustive.as_ref().map(|x| x.auto_handoffs.clone()).unwrap_or_default(),
         time_tracked: res.time_tracked,
         branching: res.branching.as_ref().map(|b| (b.points_per_schedule(), b.machines(prog))),
         elapsed: process_elapsed,
