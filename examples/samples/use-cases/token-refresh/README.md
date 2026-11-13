@@ -43,10 +43,20 @@ storage, so the other tab does not retry with the old token either, and the user
 in again. The model checks that this never triggers reuse detection, and that giving
 up happens only after a lost response or a revocation.
 
-A server-side grace period (accepting the just-rotated token once more, returning the
-same new pair) would let the tab retry. It also lets an attacker with a stolen token
-use it during that window, and it would hide the missing lock in `tcBugNoLock`. It is
-not modeled here.
+This is a deliberate trade: a network failure in the middle of a refresh (rare) costs
+the user a login, in exchange for a server that never accepts a rotated-out token. The
+progress spec states it honestly: after a lost response every waiting tab may give up,
+and `tcLostRefreshResponse` checks that both do, without tripping reuse detection. The
+server-side family is left valid but unused (token 2 is never presented); it expires
+with the session. The excuse is global, so the model does not show that only the tabs
+affected by the loss give up.
+
+If forced re-login is not acceptable, the usual fixes change the server: a grace
+period (accepting the just-rotated token once more, returning the same new pair), or
+an idempotent refresh keyed by a request id the tab stores before sending, so a retry
+with the same id gets the same pair. A grace period also lets an attacker with a
+stolen token use it during that window, and it would hide the missing lock in
+`tcBugNoLock`. Neither is modeled here.
 
 ## Files
 
