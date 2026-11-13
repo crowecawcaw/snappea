@@ -472,7 +472,7 @@ impl<'p> Runtime<'p> {
             Err(Fault::Stop) => Err(Stop),
             Err(Fault::Exc(e)) => {
                 let action = exec.action.clone();
-                Err(self.report_exception(actor, &e, &action))
+                Err(self.report_exception(actor, &e, &action, current_span(exec)))
             }
         }
     }
@@ -718,8 +718,12 @@ impl<'p> Runtime<'p> {
         let buf = &mut self.format_buf;
         buf.clear();
         let mut ends = Vec::with_capacity(vals.len());
-        for v in vals {
-            v.write_display(buf, self.prog);
+        let named = self.config.snappea_reports;
+        for (i, v) in vals.iter().enumerate() {
+            match types.get(i) {
+                Some(ty) if named => v.write_named(buf, ty, self.prog, false),
+                _ => v.write_display(buf, self.prog),
+            }
             ends.push(buf.len());
         }
         let args: Vec<&str> = ends
@@ -967,6 +971,22 @@ impl<'p> Runtime<'p> {
                     }
                 }};
             }
+            // A failing instruction records its position first, so the error can name
+            // its source (see `CodeBlock::spans`).
+            macro_rules! throw {
+                ($e:expr) => {{
+                    exec.frames[frame_idx].pc = pc;
+                    return Err($e.into());
+                }};
+            }
+            macro_rules! tri {
+                ($e:expr) => {
+                    match $e {
+                        Ok(v) => v,
+                        Err(e) => throw!(e),
+                    }
+                };
+            }
             loop {
                 *left -= 1;
                 if *left <= 0 {
@@ -1081,22 +1101,22 @@ impl<'p> Runtime<'p> {
                         stack.push(Value::NamedTuple(Rc::new(NamedTuple { names: names.clone(), values: vs })));
                     }
                     Op::TupleGet(i) => {
-                        let v = tuple_get(&pop(stack), *i, prog)?;
+                        let v = tri!(tuple_get(&pop(stack), *i, prog));
                         stack.push(v);
                     }
                     Op::LocalTupleGet { slot, index } => {
                         charge!(1);
-                        let v = tuple_get(&stack[base + *slot as usize], *index, prog)?;
+                        let v = tri!(tuple_get(&stack[base + *slot as usize], *index, prog));
                         stack.push(v);
                     }
                     Op::SeqGet => {
                         let idx = pop(stack);
-                        let v = seq_get(&pop(stack), &idx, prog)?;
+                        let v = tri!(seq_get(&pop(stack), &idx, prog));
                         stack.push(v);
                     }
                     Op::MapGet { java_null } => {
                         let key = pop(stack);
-                        let v = map_get(&pop(stack), &key, *java_null && java, prog)?;
+                        let v = tri!(map_get(&pop(stack), &key, *java_null && java, prog));
                         stack.push(v);
                     }
                     Op::MapGetOf { map, key, java_null } => {
@@ -1105,29 +1125,29 @@ impl<'p> Runtime<'p> {
                         let m = (*map == Operand::Stack).then(|| pop(stack));
                         let (locals, fields) = (&stack[base..], self.fields(actor));
                         let (m, k) = (in_place(*map, &m, locals, fields), in_place(*key, &k, locals, fields));
-                        let v = map_get(m, k, *java_null && java, prog)?;
+                        let v = tri!(map_get(m, k, *java_null && java, prog));
                         stack.push(v);
                     }
                     Op::Sizeof => {
-                        let v = size_of(&pop(stack))?;
+                        let v = tri!(size_of(&pop(stack)));
                         stack.push(v);
                     }
                     Op::SizeofOf(c) => {
                         charge!(c.work());
                         let owned = (*c == Operand::Stack).then(|| pop(stack));
-                        let v = size_of(in_place(*c, &owned, &stack[base..], self.fields(actor)))?;
+                        let v = tri!(size_of(in_place(*c, &owned, &stack[base..], self.fields(actor))));
                         stack.push(v);
                     }
                     Op::KeysSizeof(m) => {
                         charge!(m.work());
                         let owned = (*m == Operand::Stack).then(|| pop(stack));
-                        let n = map_of(in_place(*m, &owned, &stack[base..], self.fields(actor)), prog)?.len();
+                        let n = tri!(map_of(in_place(*m, &owned, &stack[base..], self.fields(actor)), prog)).len();
                         charge!(1);
                         stack.push(Value::Int(n as i64));
                     }
                     Op::KeysContains => {
                         let m = pop(stack);
-                        let m = map_of(&m, prog)?;
+                        let m = tri!(map_of(&m, prog));
                         charge!(1);
                         let item = pop(stack);
                         stack.push(Value::Bool(m.contains_key(&item)));
@@ -1135,11 +1155,11 @@ impl<'p> Runtime<'p> {
                     Op::KeyAt { map, index } => {
                         charge!(map.work());
                         let m = self.operand(actor, stack, base, *map);
-                        let m = map_of(&m, prog)?;
+                        let m = tri!(map_of(&m, prog));
                         charge!(2);
                         let i = stack[base + *index as usize].as_int();
                         if i < 0 || i as usize >= m.len() {
-                            return Err(index_oor().into());
+                            throw!(index_oor());
                         }
                         let key = if java {
                             crate::checker::javafmt::map_keys_in_java_order(m).swap_remove(i as usize)
@@ -1155,7 +1175,7 @@ impl<'p> Runtime<'p> {
                             Value::Seq(s) => s.contains(&item),
                             Value::Set(s) => s.contains(&item),
                             Value::Map(m) => m.contains_key(&item),
-                            Value::Null => return Err(nre().into()),
+                            Value::Null => throw!(nre()),
                             _ => false,
                         };
                         stack.push(Value::Bool(b));
@@ -1164,7 +1184,7 @@ impl<'p> Runtime<'p> {
                     Op::PrintFormat { base, nargs, types } => {
                         let at = stack.len() - *nargs as usize;
                         let text = match self.logging || self.json_enabled() || java {
-                            true => Some(self.format(base, &stack[at..], types)?),
+                            true => Some(tri!(self.format(base, &stack[at..], types))),
                             false => None,
                         };
                         stack.truncate(at);
@@ -1178,14 +1198,14 @@ impl<'p> Runtime<'p> {
                     Op::Bin(op) => {
                         let b = pop(stack);
                         let a = pop(stack);
-                        let r = bin(*op, a, b, java)?;
+                        let r = tri!(bin(*op, a, b, java));
                         stack.push(r);
                     }
                     Op::IntBin { op, lhs, rhs, dst } => {
                         charge!(lhs.work() + rhs.work());
                         let b = self.operand(actor, stack, base, *rhs);
                         let a = self.operand(actor, stack, base, *lhs);
-                        let r = int_bin(*op, a, b, java)?;
+                        let r = tri!(int_bin(*op, a, b, java));
                         match dst {
                             Dest::Stack => stack.push(r),
                             Dest::Local(slot) => {
@@ -1198,7 +1218,7 @@ impl<'p> Runtime<'p> {
                         charge!(lhs.work() + rhs.work());
                         let b = self.operand(actor, stack, base, *rhs);
                         let a = self.operand(actor, stack, base, *lhs);
-                        let r = int_bin(*op, a, b, java)?;
+                        let r = tri!(int_bin(*op, a, b, java));
                         charge!(1);
                         if !r.as_bool() {
                             pc = *target as usize;
@@ -1207,7 +1227,7 @@ impl<'p> Runtime<'p> {
                     Op::Not => {
                         let a = pop(stack);
                         if a.is_null() {
-                            return Err(nre().into());
+                            throw!(nre());
                         }
                         stack.push(Value::Bool(!a.as_bool()));
                     }
@@ -1261,7 +1281,7 @@ impl<'p> Runtime<'p> {
                         self.step_work = work!();
                         let v = self.call_foreign(actor, *fun, &stack[at..]);
                         set_work!(self.step_work);
-                        let v = v?;
+                        let v = tri!(v);
                         stack.truncate(at);
                         stack.push(v);
                     }
@@ -1283,7 +1303,7 @@ impl<'p> Runtime<'p> {
                         let slot = base + *iter_slot as usize;
                         let idx = stack[slot + 1].as_int();
                         if idx < 0 {
-                            return Err(modified().into());
+                            throw!(modified());
                         }
                         let item = match &stack[slot] {
                             Value::Seq(s) => s.get(idx as usize).cloned(),
@@ -1705,11 +1725,18 @@ impl<'p> Runtime<'p> {
                 let ev_id = match &event {
                     Value::Event(e) => *e,
                     Value::Null => {
-                        let msg = format!(
-                            "Machine cannot send a null event. Machine {} trying to send null event in state {}.",
-                            name,
-                            self.machine_state_name(m)
-                        );
+                        let msg = if self.config.snappea_reports {
+                            let at = current_span(exec);
+                            let help = "the event variable is null here; give it an event before sending it";
+                            let ctx = self.error_context(actor);
+                            crate::checker::report::render(prog, "cannot send a null event", &ctx, at, help)
+                        } else {
+                            format!(
+                                "Machine cannot send a null event. Machine {} trying to send null event in state {}.",
+                                name,
+                                self.machine_state_name(m)
+                            )
+                        };
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Events.Event", prog).into()),
@@ -1718,12 +1745,19 @@ impl<'p> Runtime<'p> {
                 let target = match target {
                     Value::Machine(r) => r,
                     Value::Null => {
-                        let msg = format!(
-                            "Target in send cannot be null. Machine {} trying to send event {} to null target in state {}.",
-                            name,
-                            ev_name,
-                            self.machine_state_name(m)
-                        );
+                        let msg = if self.config.snappea_reports {
+                            let at = current_span(exec);
+                            let what = format!("cannot send {} to a null target", ev_name);
+                            let help = crate::checker::report::null_target_help(prog, at);
+                            crate::checker::report::render(prog, &what, &self.error_context(actor), at, &help)
+                        } else {
+                            format!(
+                                "Target in send cannot be null. Machine {} trying to send event {} to null target in state {}.",
+                                name,
+                                ev_name,
+                                self.machine_state_name(m)
+                            )
+                        };
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(&other, "PChecker.Runtime.Values.PMachineValue", prog).into()),
@@ -1801,6 +1835,8 @@ impl<'p> Runtime<'p> {
                 };
                 let ptext = if payload.is_null() || !(self.logging || self.json_enabled()) {
                     String::new()
+                } else if self.config.snappea_reports {
+                    format!(" with payload {}", payload.to_named(&prog.event(ev_id).payload, prog, true))
                 } else {
                     format!(" with payload {}", payload.to_escaped(prog))
                 };
@@ -1980,6 +2016,13 @@ fn wait_event_names(names: &[String]) -> String {
             format!("'{}' or '{}'", arr.join("', '"), names[n - 1])
         }
     }
+}
+
+/// The expression or statement of the instruction the innermost frame of `exec` last ran
+/// (its `pc` is past it).
+fn current_span(exec: &Exec) -> Option<crate::syntax::Span> {
+    let frame = exec.frames.last()?;
+    frame.code.spans.get(frame.pc.checked_sub(1)?).copied()
 }
 
 fn foreign_missing(name: &str) -> Exception {

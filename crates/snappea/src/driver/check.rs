@@ -522,6 +522,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         latency: cfg.latency.clone(),
         latency_profile: cfg.latency_profile.clone(),
         timed: cfg.timed,
+        snappea_reports: cfg.style == Style::Snappea,
         ..CheckerOptions::default()
     }
 }

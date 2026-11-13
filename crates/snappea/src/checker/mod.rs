@@ -29,6 +29,7 @@ pub mod observe_json;
 pub mod observe_report;
 mod portfolio;
 pub mod random;
+pub mod report;
 pub mod rl;
 pub mod runtime;
 pub mod statehash;

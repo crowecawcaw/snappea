@@ -139,7 +139,23 @@ impl<'a> Errors<'a> {
 
     pub fn illegal_type_in_coerce(&self, span: Span) -> Diagnostic {
         Diagnostic::new(span, "coerce expects an interface, int, or float type")
-            .help("coerce to an interface, `int` or `float`, e.g. `x as int`")
+            .help("`to` converts to `int`, `float` or an interface: `e to int`, `n to float`, `m to I`; P has no conversion to an enum, so map an int to enum values explicitly, e.g. `if (n == 0) { s = A; } else { s = B; }`")
+    }
+
+    /// `x as T` where `x` and `T` are both int, float or enum types: `as` only
+    /// changes the static type, so it cannot turn one of these into another.
+    pub fn as_between_numeric_types(&self, span: Span, old: &PType, new: &PType, prog: &Program) -> Diagnostic {
+        let to = new.original_repr(prog);
+        self.incomparable_types(span, old, new, prog)
+            .help(format!("`as` changes the static type and does not convert a value; to convert, use `x to {}`", to))
+    }
+
+    /// `x to T` between types that `to` cannot convert.
+    pub fn illegal_to(&self, span: Span, old: &PType, new: &PType, prog: &Program) -> Diagnostic {
+        self.incomparable_types(span, old, new, prog).help(
+            "`to` converts between int and float, from an enum to int, and from a machine to an interface; \
+             `as` changes only the static type, e.g. of an `any` value",
+        )
     }
 
     pub fn illegal_interface_coerce(&self, span: Span, old: &str, new: &str, outlier: &str) -> Diagnostic {
@@ -173,7 +189,7 @@ impl<'a> Errors<'a> {
                 expected.iter().map(|t| format_type(t, prog)).collect::<Vec<_>>().join("; ")
             ),
         )
-        .help("give it a value of the expected type, convert it (e.g. `x as int`), or change the declared type")
+        .help("give it a value of the expected type, convert it (`e to int`, `n to float`, or `v as T` for an `any` value), or change the declared type")
     }
 
     pub fn type_mismatch_kinds(&self, span: Span, actual: &PType, expected: &[TypeKind], prog: &Program) -> Diagnostic {
@@ -185,7 +201,7 @@ impl<'a> Errors<'a> {
                 expected.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")
             ),
         )
-        .help("give it a value of one of the expected types, or convert it (`x as int`)")
+        .help("give it a value of one of the expected types, or convert it (`e to int`, `n to float`, or `v as T` for an `any` value)")
     }
 
     pub fn missing_named_tuple_entry(&self, span: Span, tuple: &PType, field: &str, prog: &Program) -> Diagnostic {
@@ -203,7 +219,7 @@ impl<'a> Errors<'a> {
             span,
             format!("types {} and {} are incomparable", lhs.original_repr(prog), rhs.original_repr(prog)),
         )
-        .help("compare values of the same type; convert one side first (`x as int`)")
+        .help("compare values of the same type; convert one side first, e.g. `e to int` for an enum or `n to float` for an int")
     }
 
     pub fn misplaced_this(&self, span: Span) -> Diagnostic {
@@ -221,7 +237,7 @@ impl<'a> Errors<'a> {
                 rhs.original_repr(prog)
             ),
         )
-        .help("convert one operand so both match, e.g. `a + (b as float)`")
+        .help("convert one operand so both match, e.g. `a + (b to float)`")
     }
 
     pub fn more_than_one_parameter_for_handlers(&self, span: Span, count: usize) -> Diagnostic {

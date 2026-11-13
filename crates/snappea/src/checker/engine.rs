@@ -88,6 +88,9 @@ pub struct CheckerOptions {
     pub latency_profile: Option<String>,
     /// `--timed`: time-aware scheduling.
     pub timed: bool,
+    /// Report as `snappea` does (see [`Config::snappea_reports`]); off for
+    /// `snappea-compat`, which keeps upstream's text.
+    pub snappea_reports: bool,
 }
 
 impl Default for CheckerOptions {
@@ -123,6 +126,7 @@ impl Default for CheckerOptions {
             latency: None,
             latency_profile: None,
             timed: false,
+            snappea_reports: false,
         }
     }
 }
@@ -1235,6 +1239,7 @@ fn run_config(opts: &CheckerOptions) -> Config {
         logging: opts.strategy == StrategyKind::Replay || opts.verbose || opts.log_every_schedule,
         assembly_name: opts.assembly_name.clone(),
         timeline: opts.timeline,
+        snappea_reports: opts.snappea_reports,
     }
 }
 

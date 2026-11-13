@@ -14,7 +14,13 @@ to:
 
 * Options: its own, shorter ones (`snappea <command> --help`).
 * Errors: parse, type and lint errors show the source around them and a suggested fix;
-  other errors add a `hint:` line. The messages themselves are upstream's.
+  other errors add a `hint:` line. The messages themselves are upstream's, except that
+  a reserved word used as a name is named as such.
+* Bug reports: runtime errors (a missing map key, a send to a null target, ...) are
+  described in P terms with their source location and a fix; liveness reports drop the
+  `PImplementation.` prefix and list the hot spec's fields; deadlock reports name the
+  specs in a hot state. `format`, `print` and the trace's payloads show enum values by
+  name. See [bug reports](checking-models.md#bug-reports).
 * Console: one line per test case, the bug's report and its `snappea replay` command, and a
   summary with time and peak memory. Upstream's progress only with `-v`.
 * Output folder: `PCheckerOutput/<test>/` with fixed names (`bug.txt`, `bug.schedule`,

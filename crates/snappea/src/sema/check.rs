@@ -652,7 +652,16 @@ impl<'a> Analyzer<'a> {
         match kind {
             ast::CastKind::As => {
                 if !new.is_assignable_from(&old, prog) && !old.is_assignable_from(&new, prog) {
-                    let d = self.e.incomparable_types(span, &old, &new, prog);
+                    let numeric = |t: &PType| {
+                        t.is_same_type_as(&PType::Int, prog)
+                            || t.is_same_type_as(&PType::Float, prog)
+                            || t.is_kind(prog, TypeKind::Enum)
+                    };
+                    let d = if numeric(&old) && numeric(&new) {
+                        self.e.as_between_numeric_types(span, &old, &new, prog)
+                    } else {
+                        self.e.incomparable_types(span, &old, &new, prog)
+                    };
                     self.report(d)?;
                     return Ok(err_expr(span));
                 }
@@ -670,7 +679,9 @@ impl<'a> Analyzer<'a> {
                     if new.is_same_type_as(&PType::Int, prog) {
                         return Ok(x);
                     }
-                    if new.is_same_type_as(&PType::Float, prog) || new.is_kind(prog, TypeKind::Enum) {
+                    // Upstream also lists enum targets here, but the guard above rejects
+                    // them: P has no int-to-enum conversion.
+                    if new.is_same_type_as(&PType::Float, prog) {
                         return Ok(expr(ExprKind::Coerce(Box::new(x)), new, span));
                     }
                 } else if old.is_same_type_as(&PType::Float, prog) {
@@ -712,7 +723,7 @@ impl<'a> Analyzer<'a> {
                         }
                     }
                 }
-                let d = self.e.incomparable_types(span, &old, &new, prog);
+                let d = self.e.illegal_to(span, &old, &new, prog);
                 self.report(d)?;
                 Ok(err_expr(span))
             }

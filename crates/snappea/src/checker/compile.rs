@@ -239,6 +239,10 @@ struct LoopCtx {
 struct Compiler<'a> {
     prog: &'a Program,
     ops: Vec<Op>,
+    /// The source of each instruction in `ops` (see [`CodeBlock::spans`]).
+    spans: Vec<crate::syntax::Span>,
+    /// The expression or statement being compiled, the source of what is emitted.
+    span: crate::syntax::Span,
     next_hidden: u32,
     loops: Vec<LoopCtx>,
     /// Emit the specialized and fused instructions.
@@ -271,6 +275,8 @@ fn compile_fun(
     let mut c = Compiler {
         prog,
         ops: Vec::new(),
+        spans: Vec::new(),
+        span: f.span,
         next_hidden: f.frame_size,
         loops: Vec::new(),
         fuse,
@@ -291,7 +297,7 @@ fn compile_fun(
     c.emit(Op::Return);
     let param_slots: Vec<u32> = f.params.iter().map(|v| prog.var(*v).slot).collect();
     let params_in_order = param_slots.iter().enumerate().all(|(i, s)| *s as usize == i);
-    CodeBlock { ops: c.ops, frame_size: c.next_hidden, param_slots, params_in_order }
+    CodeBlock { ops: c.ops, spans: c.spans, frame_size: c.next_hidden, param_slots, params_in_order }
 }
 
 impl<'a> Compiler<'a> {
@@ -338,6 +344,7 @@ impl<'a> Compiler<'a> {
     fn emit(&mut self, op: Op) -> usize {
         let op = self.fuse(op);
         self.ops.push(op);
+        self.spans.push(self.span);
         self.ops.len() - 1
     }
 
@@ -428,6 +435,7 @@ impl<'a> Compiler<'a> {
         match fused {
             (n, fused) if self.can_fuse(n) => {
                 self.ops.truncate(self.ops.len() - n);
+                self.spans.truncate(self.ops.len());
                 Ok(fused)
             }
             _ => Err(op),
@@ -505,6 +513,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn stmt(&mut self, s: &Stmt) {
+        let outer = std::mem::replace(&mut self.span, s.span);
+        self.stmt_inner(s);
+        self.span = outer;
+    }
+
+    fn stmt_inner(&mut self, s: &Stmt) {
         let probe = match s.kind {
             StmtKind::Block(_) | StmtKind::Nop => None,
             _ => self.probe(ProbeKind::Stmt, s.span),
@@ -844,6 +858,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn expr(&mut self, e: &Expr) {
+        let outer = std::mem::replace(&mut self.span, e.span);
+        self.expr_inner(e);
+        self.span = outer;
+    }
+
+    fn expr_inner(&mut self, e: &Expr) {
         match &e.kind {
             ExprKind::Var(v) => {
                 let d = self.prog.var(*v);

@@ -820,7 +820,8 @@ fn has_effect(prog: &Program, checked: &Checked, matters: &FxHashSet<EventId>, f
 }
 
 /// Calls `f` with each expression directly in statement `s` (not nested statements).
-fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
+/// An assertion's message is not among them.
+pub(crate) fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
     let mut go = |e: &Expr| crate::checker::mutation::visit_expr(e, f);
     match &s.kind {
         StmtKind::Assert { cond, .. } | StmtKind::Assume { cond, .. } => go(cond),

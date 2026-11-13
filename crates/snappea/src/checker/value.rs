@@ -523,6 +523,98 @@ impl Value {
         }
     }
 
+    /// [`Value::to_display`], or with `escaped` [`Value::to_escaped`], of a value of
+    /// static type `ty`, with enum values by name rather than as integers. `snappea`
+    /// formats values this way; upstream (and `snappea-compat`) prints the integers.
+    pub fn to_named(&self, ty: &PType, prog: &Program, escaped: bool) -> String {
+        let mut s = String::new();
+        self.write_named(&mut s, ty, prog, escaped);
+        s
+    }
+
+    pub(crate) fn write_named(&self, out: &mut String, ty: &PType, prog: &Program, escaped: bool) {
+        let plain = |v: &Value, out: &mut String| match escaped {
+            true => v.write_escaped(out, prog),
+            false => v.write_display(out, prog),
+        };
+        if !mentions_enum(ty, prog) {
+            return plain(self, out);
+        }
+        match (self, ty.canonicalize(prog)) {
+            (Value::Int(i), PType::Enum(id)) => match prog.enums[id.idx()].elems.iter().find(|e| e.value == *i) {
+                Some(e) => out.push_str(&e.name),
+                None => write!(out, "{}", i).unwrap(),
+            },
+            (Value::Tuple(vs), PType::Tuple(ts)) if vs.len() == ts.len() => {
+                out.push('<');
+                for (v, t) in vs.iter().zip(ts.iter()) {
+                    v.write_named(out, t, prog, escaped);
+                    out.push(',');
+                }
+                out.push('>');
+            }
+            (Value::NamedTuple(t), PType::NamedTuple(fs)) => {
+                out.push('<');
+                for (n, v) in t.names.iter().zip(t.values.iter()) {
+                    out.push_str(n);
+                    out.push(':');
+                    match fs.iter().find(|(f, _)| f == n) {
+                        Some((_, ft)) => v.write_named(out, ft, prog, escaped),
+                        None => plain(v, out),
+                    }
+                    out.push_str(", ");
+                }
+                out.push('>');
+            }
+            (Value::Seq(s), PType::Seq(t)) => {
+                out.push('(');
+                for (i, v) in s.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    v.write_named(out, &t, prog, escaped);
+                }
+                out.push(')');
+            }
+            (Value::Set(s), PType::Set(t)) => {
+                let mut items: Vec<String> = s.iter().map(|v| v.to_named(&t, prog, escaped)).collect();
+                if !escaped {
+                    items.sort();
+                }
+                out.push('(');
+                for (i, v) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push('<');
+                    out.push_str(v);
+                    out.push('>');
+                }
+                out.push(')');
+            }
+            (Value::Map(m), PType::Map(kt, vt)) => {
+                let mut items: Vec<(String, String)> =
+                    m.iter().map(|(k, v)| (k.to_named(&kt, prog, escaped), v.to_named(&vt, prog, escaped))).collect();
+                if !escaped {
+                    items.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+                out.push('(');
+                for (i, (k, v)) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push('<');
+                    out.push_str(k);
+                    out.push_str("->");
+                    out.push_str(v);
+                    out.push('>');
+                }
+                out.push(')');
+            }
+            _ => plain(self, out),
+        }
+    }
+
     /// `IPValue.ToEscapedString()`: strings quoted, nested nulls as `null`, containers in
     /// enumeration order.
     pub fn to_escaped(&self, prog: &Program) -> String {
@@ -595,6 +687,22 @@ impl Value {
             }
             other => other.write_display(out, prog),
         }
+    }
+}
+
+/// Whether values of type `ty` can hold enum values, which [`Value::to_named`] names.
+fn mentions_enum(ty: &PType, prog: &Program) -> bool {
+    match ty {
+        PType::Enum(_) => true,
+        PType::TypeDef(_) => match ty.canonicalize(prog) {
+            PType::TypeDef(_) => false,
+            t => mentions_enum(&t, prog),
+        },
+        PType::Seq(t) | PType::Set(t) => mentions_enum(t, prog),
+        PType::Map(k, v) => mentions_enum(k, prog) || mentions_enum(v, prog),
+        PType::Tuple(ts) => ts.iter().any(|t| mentions_enum(t, prog)),
+        PType::NamedTuple(fs) => fs.iter().any(|(_, t)| mentions_enum(t, prog)),
+        _ => false,
     }
 }
 
