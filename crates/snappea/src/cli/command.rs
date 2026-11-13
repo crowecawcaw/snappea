@@ -384,9 +384,9 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
             Some(c @ ("check" | "replay" | "tests" | "observe" | "coverage" | "guide")) => {
                 dispatch(&[c.to_string(), "--help".into()], host)
             }
-            Some(c) => usage_error(host, &format!("unknown command '{}'", c), None),
+            Some(c) => usage_error(host, &unknown_command(c), None),
         },
-        c => usage_error(host, &format!("unknown command '{}'", c), None),
+        c => usage_error(host, &unknown_command(c), None),
     }
 }
 
@@ -482,7 +482,13 @@ pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> 
             let name = a.split('=').next().unwrap_or(a);
             return Err(match RENAMED.iter().find(|(old, _)| *old == name) {
                 Some((_, new)) => format!("unknown option '{}': it was renamed, use '{}'", name, new),
-                None => format!("unknown option '{}'", a),
+                None => {
+                    let longs = spec.iter().chain(OUTPUT_OPTS).map(|o| o.long).filter(|l| !l.is_empty());
+                    match crate::sema::errors::closest(name.trim_start_matches('-'), longs) {
+                        Some(l) => format!("unknown option '{}'; did you mean '--{}'?", a, l),
+                        None => format!("unknown option '{}'", a),
+                    }
+                }
             });
         };
         let v = match (opt.takes_value, inline) {
@@ -667,13 +673,24 @@ fn is_source(arg: &str) -> bool {
     l.ends_with(".pproj") || l.ends_with(".p")
 }
 
+/// `unknown command 'chek'; did you mean 'check'?`, with the commands.
+fn unknown_command(c: &str) -> String {
+    const COMMANDS: [&str; 7] = ["check", "replay", "tests", "observe", "coverage", "guide", "version"];
+    let mut m = format!("unknown command '{}'", c);
+    if let Some(s) = crate::sema::errors::closest(c, COMMANDS) {
+        m.push_str(&format!("; did you mean '{}'?", s));
+    }
+    m.push_str(&format!("{}{}", if m.ends_with('?') { " Commands: " } else { "; commands: " }, COMMANDS.join(", ")));
+    m
+}
+
 /// Splits positionals into the sources (`.pproj`, `.p`) and the rest.
 fn sources(cfg: &mut CheckConfig, positional: &[String]) -> Result<Vec<String>, String> {
     let mut rest = Vec::new();
     for a in positional {
         if a.to_lowercase().ends_with(".pproj") {
             if let Some(p) = &cfg.input.pproj {
-                return Err(format!("two project files given: '{}' and '{}'", p, a));
+                return Err(format!("two project files given: '{}' and '{}'; pass one .pproj", p, a));
             }
             cfg.input.pproj = Some(a.clone());
         } else if is_source(a) {
@@ -715,7 +732,17 @@ fn select_tests(names: &[String], patterns: &[String]) -> Result<Vec<String>, St
     }
     for p in patterns {
         if !names.iter().any(|n| glob_match(p, n)) {
-            return Err(format!("no test case matches '{}'. Test cases: {}", p, names.join(", ")));
+            let mut m = format!("no test case matches '{}'. Test cases: {}", p, names.join(", "));
+            if let Some(s) = crate::sema::errors::closest(p, names.iter().map(String::as_str)) {
+                m = format!("no test case matches '{}'; did you mean '{}'? Test cases: {}", p, s, names.join(", "));
+            }
+            if p.contains('/') || p.contains('.') {
+                m.push_str(&format!(
+                    ". '{}' is read as a test case name; to check files, pass .p or .pproj paths, e.g. `snappea check src/*.p`",
+                    p
+                ));
+            }
+            return Err(m);
         }
     }
     Ok(names.iter().filter(|n| patterns.iter().any(|p| glob_match(p, n))).cloned().collect())
@@ -754,7 +781,13 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     cfg.ignore_foreign_files = true;
     match sources(&mut cfg, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
-        Ok(_) => return usage_error(host, "lint accepts sources (.p or .pproj), not test names", Some("check lint")),
+        Ok(rest) => {
+            let m = format!(
+                "'{}' is not a .p or .pproj file; lint takes sources only, e.g. `snappea check lint src/*.p`",
+                rest[0]
+            );
+            return usage_error(host, &m, Some("check lint"));
+        }
         Err(m) => return usage_error(host, &m, Some("check lint")),
     }
     with_output(host, &a, "lint", |host| {
@@ -977,7 +1010,10 @@ fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
         cfg.user_set_max_fair_steps = true;
     }
     if cfg.max_fair_steps < cfg.max_unfair_steps {
-        return Err("'--fair-max-steps' must be at least '--max-steps'".into());
+        return Err(format!(
+            "'--fair-max-steps' ({}) must be at least '--max-steps' ({}); raise it, or leave it out to use 10 x '--max-steps'",
+            cfg.max_fair_steps, cfg.max_unfair_steps
+        ));
     }
     cfg.fail_on_max_steps = a.has("fail-on-max-steps");
     Ok(())
@@ -1045,7 +1081,7 @@ fn run_check(
         Exit(ERROR)
     })?;
     if selected.is_empty() {
-        error(con.inner, "the sources declare no test case");
+        error(con.inner, "the sources declare no test case; add one, e.g. `test tcMain [main=Main]: { Main };`");
         return Err(Exit(ERROR));
     }
     let n = selected.len();
@@ -1893,8 +1929,14 @@ fn coverage(args: &[String], host: &mut dyn Host) -> i32 {
         [m, _, extra, ..] if m == "merge" => {
             return usage_error(host, &format!("unexpected argument '{}'", extra), Some("coverage"))
         }
-        [] => return usage_error(host, "missing subcommand: merge", Some("coverage")),
-        [other, ..] => return usage_error(host, &format!("unknown subcommand '{}'", other), Some("coverage")),
+        [] => {
+            let m = "missing subcommand: use `merge [DIR]` or `merge-observe REPORT.json...`";
+            return usage_error(host, m, Some("coverage"));
+        }
+        [other, ..] => {
+            let m = format!("unknown subcommand '{}': use `merge [DIR]` or `merge-observe REPORT.json...`", other);
+            return usage_error(host, &m, Some("coverage"));
+        }
     };
     with_output(host, &a, "coverage", |host| {
         let full = full_path(&host.cwd(), Path::new(&dir));

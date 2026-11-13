@@ -114,7 +114,7 @@ pub trait Parser {
     /// declares, for [`ObserveOptions::unknown_events`]. Parsers that drop such events
     /// silently should override this; the default reports none.
     fn parse_entry(&self, entry: &str, spec: &Spec) -> Result<ParsedEntry, String> {
-        Ok(ParsedEntry { events: self.parse(entry, spec)?, unknown_events: Vec::new() })
+        Ok(ParsedEntry { events: self.parse(entry, spec)?, ..ParsedEntry::default() })
     }
 }
 
@@ -124,6 +124,9 @@ pub struct ParsedEntry {
     pub events: Vec<ObservedEvent>,
     /// Names of events in the entry that the P sources do not declare.
     pub unknown_events: Vec<String>,
+    /// The key of each name in `unknown_events`, in the same order, when the parser knows
+    /// it. Lets a report say an unknown event is in a key `--key` did not select.
+    pub unknown_keys: Vec<String>,
 }
 
 /// A spec monitor ready to check events, plus helpers parsers use to build them.
@@ -396,6 +399,8 @@ pub struct UnknownEvent {
     pub location: String,
     /// A declared event with a similar name.
     pub suggestion: Option<String>,
+    /// The key it first appeared in, when keys were selected and this one was not.
+    pub unselected_key: Option<String>,
 }
 
 impl UnknownEvent {
@@ -407,6 +412,9 @@ impl UnknownEvent {
             if self.count == 1 { "" } else { "s" },
             self.location
         );
+        if let Some(k) = &self.unselected_key {
+            m.push_str(&format!(", in key {} (not selected)", k));
+        }
         if let Some(s) = &self.suggestion {
             m.push_str(&format!("; did you mean {}?", s));
         }
@@ -427,7 +435,13 @@ struct UnknownTracker {
 
 impl UnknownTracker {
     /// Counts `name`; `true` the first time it is seen.
-    fn note(&mut self, prog: &Program, name: &str, location: impl FnOnce() -> String) -> bool {
+    fn note(
+        &mut self,
+        prog: &Program,
+        name: &str,
+        unselected_key: Option<&str>,
+        location: impl FnOnce() -> String,
+    ) -> bool {
         if let Some(u) = self.seen.iter_mut().find(|u| u.name == name) {
             u.count += 1;
             return false;
@@ -437,6 +451,7 @@ impl UnknownTracker {
             count: 1,
             location: location(),
             suggestion: suggest_event(prog, name),
+            unselected_key: unselected_key.map(str::to_string),
         });
         true
     }
@@ -889,14 +904,16 @@ impl<'p> Spec<'p> {
             let mut evs = Vec::new();
             for (index, entry) in entries.iter().enumerate() {
                 let parsed = if opts.unknown_events == UnknownEvents::Ignore {
-                    parser.parse(entry, self).map(|events| ParsedEntry { events, unknown_events: Vec::new() })
+                    parser.parse(entry, self).map(|events| ParsedEntry { events, ..ParsedEntry::default() })
                 } else {
                     parser.parse_entry(entry, self)
                 };
                 match parsed {
-                    Ok(ParsedEntry { events: v, unknown_events }) => {
-                        for name in unknown_events {
-                            unknown.note(self.prog, &name, || entry_location(opts, parser, input, index));
+                    Ok(ParsedEntry { events: v, unknown_events, unknown_keys }) => {
+                        for (i, name) in unknown_events.iter().enumerate() {
+                            let key = unknown_keys.get(i).map(String::as_str);
+                            let unselected = key.filter(|k| !keys.is_empty() && !keys.contains(k));
+                            unknown.note(self.prog, name, unselected, || entry_location(opts, parser, input, index));
                         }
                         for e in v {
                             if self.observes_event(e.event) && (keys.is_empty() || keys.contains(e.key.as_str())) {
@@ -1091,15 +1108,17 @@ impl<'s> ObserveSession<'s> {
         }
         self.entries += 1;
         let parsed = if self.opts.unknown_events == UnknownEvents::Ignore {
-            parser.parse(java_trim(entry), self.spec).map(|events| ParsedEntry { events, unknown_events: Vec::new() })
+            parser.parse(java_trim(entry), self.spec).map(|events| ParsedEntry { events, ..ParsedEntry::default() })
         } else {
             parser.parse_entry(java_trim(entry), self.spec)
         };
         let events = match parsed {
-            Ok(ParsedEntry { events, unknown_events }) => {
-                for name in unknown_events {
+            Ok(ParsedEntry { events, unknown_events, unknown_keys }) => {
+                for (i, name) in unknown_events.iter().enumerate() {
                     let (opts, prog) = (&self.opts, self.spec.prog);
-                    let first = self.unknown.note(prog, &name, || entry_location(opts, parser, input, line));
+                    let key = unknown_keys.get(i).map(String::as_str);
+                    let unselected = key.filter(|k| !opts.keys.is_empty() && !opts.keys.iter().any(|s| s == k));
+                    let first = self.unknown.note(prog, name, unselected, || entry_location(opts, parser, input, line));
                     if first && self.opts.unknown_events == UnknownEvents::Error {
                         // stop at the first unknown name: report it with what is known so far
                         let error = self.unknown.seen.last().expect("just noted").error();

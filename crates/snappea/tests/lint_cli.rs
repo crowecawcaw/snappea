@@ -22,7 +22,7 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 13);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 14);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -180,7 +180,7 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 13);
+    assert_eq!(h.stdout.lines().count(), 14);
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("unchecked-state"));
     assert!(h.stdout.contains("unplanned-driver-stage") && h.stdout.contains("unreachable-statement"));

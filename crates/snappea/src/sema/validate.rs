@@ -165,7 +165,11 @@ impl<'a> Analyzer<'a> {
                 return Ok(());
             }
         }
-        Err(self.e.type_mismatch(span, payload, &[p], &self.prog))
+        let ty = crate::sema::errors::format_type(payload, &self.prog);
+        Err(self.e.type_mismatch(span, payload, &[p], &self.prog).help(format!(
+            "the handler's parameter receives the event's payload, of type {ty}: declare it as `(v: {ty})`, \
+             or change the event's payload type"
+        )))
     }
 
     fn validate_spec_observes(&mut self, mid: MachineId) {
