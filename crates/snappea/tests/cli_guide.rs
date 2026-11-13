@@ -37,6 +37,7 @@ fn every_topic_prints_markdown() {
         "modeling",
         "scenarios",
         "scenario-monitors",
+        "spec-patterns",
         "recovery",
         "faults",
         "python",
@@ -46,7 +47,10 @@ fn every_topic_prints_markdown() {
         let args: Vec<&str> = std::iter::once("guide").chain((!topic.is_empty()).then_some(topic)).collect();
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");
-        assert!(String::from_utf8_lossy(&out.stdout).starts_with("# "), "guide {topic} is not Markdown");
+        assert!(
+            ["# ", "---\n"].iter().any(|prefix| String::from_utf8_lossy(&out.stdout).starts_with(prefix)),
+            "guide {topic} is not Markdown"
+        );
     }
     for e in EXAMPLES {
         let main = snappea(&["guide", "example", e], &dir);
@@ -114,6 +118,7 @@ fn guide_text_points_only_to_existing_topics_and_examples() {
         "modeling",
         "scenarios",
         "scenario-monitors",
+        "spec-patterns",
         "recovery",
         "faults",
         "python",

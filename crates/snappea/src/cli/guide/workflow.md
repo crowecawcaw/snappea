@@ -79,3 +79,6 @@ test. Add a test for any that pass. Restore the code.
 - Every deliberate break from step 5 fails a test.
 - DESIGN.md states the contract, primitives, scenarios, model bounds, what the model
   found, and what is not covered.
+
+Before accepting a passing model, use `snappea guide spec-patterns` to check that
+inputs, replies and the full planned work are pinned down by independent specs.

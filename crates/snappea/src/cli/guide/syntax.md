@@ -91,6 +91,34 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 - A state must handle every event that reaches it: `on E do`, `on E goto S`, `defer E;` (keep it for a later state) or `ignore E;` (drop it). A `receive` takes only its own cases, and only while it waits; other events stay queued for the state.
 - `send target, event, payload` delivers to a machine; `receive { case event: (p: Type) { ... } }` waits; `announce event, payload` records a monitor-visible event. `send`, `receive`, and `new` are scheduling points; assignments do not yield.
 
+## Messages, transitions and bindings
+
+- `$$` is a fair nondeterministic Boolean: under fair exploration, a choice made
+  repeatedly cannot keep selecting only one outcome forever. `$` has no such
+  fairness promise. Use explicit finite bounds when a test needs bounded losses;
+  see `snappea guide faults`.
+- A module can bind an interface to an implementation with `Machine -> Interface`
+  inside its machine set. Creation through that interface uses the bound machine;
+  this lets tests replace an implementation while keeping its clients.
+- An `event` variable can supply the event in `send target, e, payload;`. Its
+  runtime payload must match the selected event's declared type.
+- Specs observe `send` as well as `announce`. Observe the real send when available;
+  use `announce` for facts nobody receives. Announcing and sending the same event
+  makes the spec observe it twice.
+- `receive` selects its listed cases. An unlisted event can remain queued when the
+  current state has a handler for it; an event the state cannot handle fails the
+  run. Do not assume a receive silently accepts every unrelated event.
+- In a receive loop, include an operation ID in replies and check it against the
+  current request. A late reply from a previous iteration is not a fresh answer.
+- `goto` inside a called function ends the current handler too: statements after
+  that call do not run. `raise E, payload;` also ends the current action and handles
+  the event in the current machine. Prefer `raise` when the current state's event
+  handler should choose the next action; use `goto S, payload;` when the destination
+  state is known and its entry action should consume the payload.
+
+For independent specs, completion patterns and timeout tests, see
+`snappea guide spec-patterns`.
+
 ## Checking
 
 ```sh
