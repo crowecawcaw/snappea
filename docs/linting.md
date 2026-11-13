@@ -49,7 +49,7 @@ model covers every requirement or faithfully represents the implementation.
 | `unselected-spec` | A spec is selected by no test or runnable implementation in the loaded project. | Add `assert MySpec in ...` to a test/module, or suppress for an observation-only spec. |
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
-| `unused-payload-field` | An event handler in a spec declares a named payload field but never reads it. | Validate or use the field, or suppress an intentional abstraction. |
+| `unused-payload-field` | An event handler in a spec declares a named payload field but never reads it outside assertion messages. Formatting a field in an error message does not check it. | Validate or use the field, or suppress an intentional abstraction. |
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |

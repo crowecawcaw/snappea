@@ -3,6 +3,7 @@
 // measured on the client's clock.
 spec ResolvesWithinDeadline observes eOutcome {
   start state Watching {
+    // snappea-lint: allow unused-payload-field -- deadline applies to both success and failure; ok is diagnostic only
     on eOutcome do (o: (ok: bool, started: int)) {
       assert Elapsed(o.started) <= ms(1000),
         format("resolved (ok = {0}) after up to {1}us; deadline is 1000000us",

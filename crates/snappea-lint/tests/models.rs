@@ -281,3 +281,24 @@ fn observation_lint_keeps_only_spec_rules_and_bad_suppressions() {
     let rules: Vec<_> = snappea_lint::lint_observation(&sm).unwrap().into_iter().map(|f| f.rule).collect();
     assert_eq!(rules, ["unobserved-handler", "invalid-suppression"]);
 }
+
+#[test]
+fn assertion_messages_do_not_check_payload_fields() {
+    let model = |body| {
+        format!("event E: (id: int, value: int); spec S observes E {{ start state A {{ on E do (p: (id: int, value: int)) {{ {body} }} }} }}")
+    };
+    for body in [
+        r#"assert p.value > 0, format("request {0}", p.id);"#,
+        r#"assert p.value > 0, format("request {0}", p);"#,
+        r#"if (p.value > 0) { assert p.value == 1, format("request {0}", p.id); }"#,
+    ] {
+        let fs = findings(&[&model(body)]);
+        assert!(fs.iter().any(|f| f.rule == "unused-payload-field" && f.message.contains("p.id")), "{body}: {fs:?}");
+        assert!(
+            !fs.iter().any(|f| f.rule == "unused-payload-field" && f.message.contains("p.value")),
+            "{body}: {fs:?}"
+        );
+    }
+    assert!(!has(&model(r#"assert p.id > 0 && p.value > 0, format("request {0}", p.id);"#), "unused-payload-field"));
+    assert!(!has(&model(r#"assert false, format("unexpected {0}", p);"#), "unused-payload-field"));
+}
