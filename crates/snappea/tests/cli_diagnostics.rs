@@ -63,3 +63,28 @@ fn a_reserved_word_used_as_a_name_is_named() {
     assert!(out.contains("mismatched input 'values' expecting Iden"), "{out}");
     assert!(!out.contains("reserved word"), "{out}");
 }
+
+#[test]
+fn cast_help_suggests_to_for_conversions() {
+    // `as` between an enum and int changes only the static type.
+    let (code, out) = check(
+        "enum tSku { A, B }\nmachine M { var t: map[int, int]; start state S { entry { var s: tSku; t[s as int] = 1; } } }\n",
+        &[],
+    );
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("error: types tSku and int are incomparable"), "{out}");
+    assert!(
+        out.contains("`as` changes the static type and does not convert a value; to convert, use `x to int`"),
+        "{out}"
+    );
+
+    // P has no int-to-enum conversion; the help must not suggest `as`.
+    let (code, out) = check(
+        "enum tSku { A, B }\nmachine M { start state S { entry { var s: tSku; s = choose(2) to tSku; } } }\n",
+        &[],
+    );
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("error: coerce expects an interface, int, or float type"), "{out}");
+    assert!(out.contains("P has no conversion to an enum"), "{out}");
+    assert!(!out.contains(" as int"), "{out}");
+}

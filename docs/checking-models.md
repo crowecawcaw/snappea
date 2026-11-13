@@ -202,7 +202,7 @@ error: got type: string, expected: int
   |           ^^^^^^^
 7 |     }
   |
-  = help: give it a value of the expected type, convert it (e.g. `x as int`), or change the declared type
+  = help: give it a value of the expected type, convert it (`e to int`, `n to float`, or `v as T` for an `any` value), or change the declared type
 ```
 
 `snappea-compat` prints them as `p compile` does. `snappea check` prints one line per test case with its coverage and, for a bug, its report and the
