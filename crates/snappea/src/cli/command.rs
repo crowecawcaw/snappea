@@ -1632,6 +1632,18 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     if let Some(reason) = incomplete_reason(case) {
         v["incomplete_reason"] = json!(reason);
     }
+    if !case.auto_handoffs.is_empty() {
+        v["auto_handoffs"] = json!(case
+            .auto_handoffs
+            .iter()
+            .map(|h| json!({
+                "worker": h.worker,
+                "after_schedules": h.after_schedules,
+                "choices": h.choices,
+                "reason": h.reason,
+            }))
+            .collect::<Vec<_>>());
+    }
     if let Some(frontier) = case.exhaustive_unfinished {
         v["untried_alternatives"] = json!(frontier);
     }
@@ -1665,6 +1677,12 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
 
 /// One test case's result line, and for a bug its report and how to replay it.
 fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig) {
+    for handoff in &case.auto_handoffs {
+        host.out_line(&format!(
+            "      auto {}: worker {} switched from exhaustive search to sampling after {} schedules ({} exhaustive choices): {}",
+            case.test_case, handoff.worker, handoff.after_schedules, handoff.choices, handoff.reason
+        ));
+    }
     let s = case.schedules;
     // a bug ends an exhaustive search early, so its extent only matters without one
     let schedules = match case.exhaustive_finished.filter(|_| case.bugs == 0) {
