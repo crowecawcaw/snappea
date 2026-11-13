@@ -178,6 +178,8 @@ pub struct TestReport {
 /// Coverage of one scenario monitor across a run (`TestReport.Scenario*`).
 #[derive(Debug, Clone, Default)]
 pub struct ScenarioCoverage {
+    /// Shortest observed accepting history, retained only for native reporting.
+    pub witness: Option<super::runtime::ScenarioWitness>,
     pub name: String,
     /// Schedules that satisfied the scenario.
     pub trigger_count: usize,
@@ -224,6 +226,9 @@ impl TestReport {
         self.timelines.extend(other.timelines);
         for s in other.scenarios {
             let cov = self.scenario(&s.name);
+            if let Some(w) = &s.witness {
+                super::runtime::ScenarioWitness::retain_best(&mut cov.witness, w);
+            }
             cov.trigger_count += s.trigger_count;
             cov.satisfying_timelines.extend(s.satisfying_timelines);
             cov.max_states_reached = cov.max_states_reached.max(s.max_states_reached);
@@ -1085,6 +1090,9 @@ impl<'p> Checker<'p> {
                         cov.total_states = sc.total_states;
                     }
                     if sc.satisfied {
+                        if let Some(w) = &sc.witness {
+                            super::runtime::ScenarioWitness::retain_best(&mut cov.witness, w);
+                        }
                         cov.trigger_count += 1;
                         cov.satisfying_timelines.insert(abstract_timeline);
                     }

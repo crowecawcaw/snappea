@@ -825,3 +825,95 @@ fn auto_does_not_reward_revisited_phase_coverage_as_new() {
         result.scheduler_stats
     );
 }
+
+#[test]
+fn scenario_evidence_ends_at_acceptance_and_does_not_change_exploration() {
+    let src = r#"
+        event eTick: int; event eDone: int;
+        machine Main { start state S { entry {
+            if ($) { announce eTick, 7; }
+            announce eDone, 42;
+            announce eTick, 99;
+        } } }
+        scenario Reached observes eTick, eDone {
+            start hot state Waiting { ignore eTick; on eDone goto Accepted; }
+            cold state Accepted { ignore eTick, eDone; }
+        }
+        test tcMain [main=Main]: { Main };
+    "#;
+    let options = opts(StrategyKind::Dfs, 0);
+    let before = check(src, &options);
+    let after = check(src, &CheckerOptions { snappea_reports: true, ..options });
+    assert_eq!(before.report.num_bugs, after.report.num_bugs);
+    assert_eq!(before.report.explored_unfair_schedules, after.report.explored_unfair_schedules);
+    assert_eq!(before.report.timelines, after.report.timelines);
+    assert_eq!(before.exhaustive, after.exhaustive);
+    let old = &before.report.scenarios[0];
+    let new = &after.report.scenarios[0];
+    assert!(old.witness.is_none());
+    assert_eq!(old.trigger_count, new.trigger_count);
+    assert_eq!(old.satisfying_timelines, new.satisfying_timelines);
+    let w = new.witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 1);
+    assert_eq!(w.accepting_state, "Accepted");
+    assert!(!w.truncated);
+    assert!(w.events[0].contains("Main("), "{w:?}");
+    assert!(w.events[0].contains("eDone") && w.events[0].contains("42"), "{w:?}");
+    assert!(w.events[0].contains("model.p:"), "{w:?}");
+    assert!(!w.events.iter().any(|e| e.contains("99")));
+    let artifact = snappea::driver::scenario::from_report(&after.report, "tcMain");
+    assert_eq!(snappea::driver::scenario::Artifact::parse(&artifact.to_json()).unwrap(), artifact);
+    let longer_src = src.replace("if ($) { announce eTick, 7; }", "announce eTick, 7;");
+    let longer = check(&longer_src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    assert_eq!(longer.report.scenarios[0].witness.as_ref().unwrap().observed_events, 2);
+    let mut reverse = after.report.clone();
+    reverse.merge(longer.report.clone());
+    assert_eq!(reverse.scenarios[0].witness.as_ref().unwrap().observed_events, 1);
+    let mut combined = longer.report;
+    combined.merge(after.report);
+    assert_eq!(combined.scenarios[0].witness.as_ref().unwrap().observed_events, 1);
+}
+
+#[test]
+fn scenario_evidence_is_bounded_and_reports_truncation() {
+    let src = r#"
+        event eTick; event eDone;
+        machine Main { start state S { entry {
+            var i: int; while (i < 200) { announce eTick; i = i + 1; }
+            announce eDone;
+        } } }
+        scenario Reached observes eTick, eDone {
+            start hot state Waiting { ignore eTick; on eDone goto Accepted; }
+            cold state Accepted { ignore eTick, eDone; }
+        }
+        test tcMain [main=Main]: { Main };
+    "#;
+    let result = check(src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    let w = result.report.scenarios[0].witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 201);
+    assert_eq!(w.events.len(), 128);
+    assert!(w.truncated);
+    assert_eq!(w.accepting_state, "Accepted");
+}
+
+#[test]
+fn scenario_evidence_clips_unicode_payloads_by_character() {
+    let payload = "🫛".repeat(1100);
+    let src = format!(
+        r#"
+        event eData: string;
+        machine Main {{ start state S {{ entry {{ announce eData, "{payload}"; }} }} }}
+        scenario Reached observes eData {{
+            start hot state Waiting {{ on eData goto Accepted; }}
+            cold state Accepted {{ ignore eData; }}
+        }}
+        test tcMain [main=Main]: {{ Main }};
+    "#
+    );
+    let result = check(&src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    let w = result.report.scenarios[0].witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 1);
+    assert_eq!(w.events[0].chars().count(), 1024);
+    assert!(w.truncated);
+    assert_eq!(w.accepting_state, "Accepted");
+}

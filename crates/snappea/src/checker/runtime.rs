@@ -2213,6 +2213,7 @@ impl<'p> Runtime<'p> {
                     reached: std::collections::BTreeSet::new(),
                     saw_start_entry: false,
                     satisfied: false,
+                    witness: self.config.snappea_reports.then(ScenarioWitness::default),
                 });
             }
             let fields = self.code.field_defaults[decl.idx()].clone();
@@ -2292,6 +2293,11 @@ impl<'p> Runtime<'p> {
                 let is_start_entry = !sc.saw_start_entry;
                 sc.saw_start_entry = true;
                 if self.prog.state(st).temperature == Temperature::Cold && !is_start_entry {
+                    if !sc.satisfied {
+                        if let Some(w) = &mut sc.witness {
+                            w.accepting_state = self.prog.state(st).name.clone();
+                        }
+                    }
                     sc.satisfied = true;
                 }
             }
@@ -2482,6 +2488,34 @@ impl<'p> Runtime<'p> {
     /// `Monitor.MonitorEvent`. With no sender, the monitor reads the event stamp
     /// as its clock (used for recorded observations).
     pub fn monitor_event(&mut self, mon: usize, e: Event, sender_idx: Option<usize>) -> Result<(), Stop> {
+        // Reporting only: this history is never read by the scheduler or state hash.
+        let decl = self.monitors[mon].decl;
+        if let Some(i) = self.scenarios.iter().position(|s| s.decl == decl && !s.satisfied && s.witness.is_some()) {
+            let w = self.scenarios[i].witness.as_mut().unwrap();
+            w.observed_events = w.observed_events.saturating_add(1);
+            if w.events.len() < ScenarioWitness::MAX_EVENTS {
+                let state = self.monitors[mon].state;
+                let at =
+                    state.map(|s| self.prog.state(s).handler_for(e.id).map_or(self.prog.state(s).span, |h| h.span));
+                let location = at.map(|s| self.prog.sources.location(s));
+                let source = location.map(|l| format!("{}:{}", l.file.unwrap_or_default(), l.line)).unwrap_or_default();
+                let actor = sender_idx.map(|i| self.machines[i].name.to_string()).unwrap_or_else(|| "external".into());
+                let text = format!(
+                    "{}: {} -> {} in {} (scenario handler/state at {})",
+                    actor,
+                    self.event_with_payload(&e),
+                    self.prog.machine(decl).name,
+                    self.state_name(state),
+                    source
+                );
+                let w = self.scenarios[i].witness.as_mut().unwrap();
+                let clipped: String = text.chars().take(1024).collect();
+                w.truncated |= clipped.len() < text.len();
+                w.events.push(clipped);
+            } else {
+                w.truncated = true;
+            }
+        }
         let sender: Option<Rc<str>> = sender_idx.map(|i| self.machines[i].name.clone());
         self.cov_monitor_process(mon, e.id, sender_idx);
         self.log(|rt| {
@@ -2914,6 +2948,33 @@ pub struct ScenarioProgress {
     pub saw_start_entry: bool,
     /// Entered a cold (accepting) state other than its start state.
     pub satisfied: bool,
+    /// Bounded reporting evidence, frozen at first acceptance.
+    pub witness: Option<ScenarioWitness>,
+}
+
+/// An observed scenario history ending at its first accepting state, not a full replay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScenarioWitness {
+    pub observed_events: usize,
+    pub events: Vec<String>,
+    pub accepting_state: String,
+    pub truncated: bool,
+}
+
+impl ScenarioWitness {
+    pub const MAX_EVENTS: usize = 128;
+
+    /// Prefer the shortest observed history; break ties deterministically across workers.
+    pub fn retain_best(best: &mut Option<Self>, candidate: &Self) {
+        let key = |w: &Self| (w.observed_events, w.truncated);
+        if best.as_ref().is_none_or(|b| {
+            key(candidate) < key(b)
+                || (key(candidate) == key(b)
+                    && (&candidate.events, &candidate.accepting_state) < (&b.events, &b.accepting_state))
+        }) {
+            *best = Some(candidate.clone());
+        }
+    }
 }
 
 /// `MonitorMapWithScenarios`: the module's monitors plus every scenario monitor observing

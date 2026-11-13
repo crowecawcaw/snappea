@@ -1256,6 +1256,11 @@ fn run_check(
         }
         if !scenarios.is_empty() {
             con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            if cfg.verbose {
+                for line in scenario::evidence_lines(&scenarios) {
+                    con.inner.out_line(&line);
+                }
+            }
         }
     }
     let mut undetected = 0;

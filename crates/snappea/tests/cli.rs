@@ -954,6 +954,13 @@ fn check_includes_scenario_coverage_in_console_and_json() {
         serde_json::from_str(&read(&h, "PCheckerOutput/tcScenario/scenario_coverage.json")).unwrap();
     assert_eq!(result["scenarios"], serde_json::json!([artifact]));
     assert_eq!(result["test_cases"][0]["scenarios"], result["scenarios"][0]);
+    let entries = artifact["scenarios"].as_array().unwrap();
+    assert!(entries.iter().filter(|s| s["satisfied"] == true).all(|s| s["satisfyingExecution"].is_object()));
+    assert!(entries.iter().filter(|s| s["satisfied"] == false).all(|s| s.get("satisfyingExecution").is_none()));
+    assert!(!h.stdout.contains("Evidence for"));
+    snappea(&mut h, &["check", "scenario.p", "--no-mutation", "--format", "text", "-v"]);
+    assert!(h.stdout.contains("Evidence for"), "{}", h.stdout);
+    assert!(h.stdout.contains("scenario handler/state at scenario.p:"), "{}", h.stdout);
 
     // accepted with a coverage suppression on the scenario
     let text = read(&h, "scenario.p").replace(

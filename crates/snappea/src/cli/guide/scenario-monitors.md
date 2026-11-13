@@ -1,7 +1,7 @@
 # Scenario monitors
 
-A `scenario` monitor proves a test reached a situation, such as a race: it measures
-coverage and checks nothing. Use it when a passing test means little unless some
+A `scenario` monitor records that an event pattern occurred: it measures coverage
+and checks nothing. Make the pattern distinguish the situation you want to reach. Use it when a passing test means little unless some
 schedule hit a specific interleaving. (`snappea guide scenarios` is about choosing test
 scenarios; this page is about the `scenario` declaration.)
 
@@ -68,3 +68,35 @@ scenario RefusedTwice observes eCasResp { ... }
 ```
 
 See [checking models](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md#coverage).
+
+
+## Inspect what actually matched
+
+`snappea check -v` shows one satisfying execution for each covered scenario, naming
+its test case. JSON includes `satisfyingExecution` in each covered scenario entry,
+also saved in that test's `scenario_coverage.json`. Older artifacts without evidence
+still load. Normal text keeps the compact coverage summary.
+
+The evidence lists the events observed by that scenario, including ignored events,
+through its first acceptance. Each line includes the sending/announcing actor,
+event and payload, scenario state before handling, and scenario handler location
+(or state location when there is no handler). These are observation events, not a
+record of message delivery to the destination machine. Other actors' steps and
+unobserved events are omitted; this is not a full replay trace.
+
+The checker keeps the shortest observed accepting history by event count, combining
+workers and selected tests. It does not search for a globally shortest history.
+Evidence retains at most 128 events and 1024 characters per event; `truncated` marks
+omissions, while `observedEvents` and `acceptingState` describe the acceptance even
+when the retained prefix does not reach it. Recording evidence does not change
+scheduling, state hashing, or scenario acceptance.
+
+Check whether the history really demonstrates the named race. For example,
+`eRollbackRequested` followed by `eConfigApplied` does not establish that rollback
+overtook a delayed push: an ordinary ordered execution could match too. Announce an
+event such as `eStalePushRejected` at the branch that distinguishes the race, then
+require that event in the scenario. Carry operation or version IDs and compare them
+so events from unrelated operations cannot satisfy the intended sequence.
+
+Use an existing design event when it establishes the same fact. Keep correctness
+assertions in specs; a satisfied scenario alone does not prove correctness.
