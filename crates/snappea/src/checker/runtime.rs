@@ -247,6 +247,8 @@ pub struct Monitor {
     pub fields: Vec<Value>,
     pub state: Option<StateId>,
     pub temperature: usize,
+    /// Schedule steps made when the monitor last entered a cold state (0 if never).
+    pub cold_at: usize,
     pub pending_transition: Transition,
     pub goto_payload: Option<Value>,
 }
@@ -486,6 +488,8 @@ pub struct Runtime<'p> {
     spare_execs: Vec<Box<Exec>>,
     /// See [`Buffers::machine_refs`].
     machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
+    /// Fair choices (`$$`) of this schedule: the step, the choice's code site, the value.
+    fair_choices: Vec<(usize, u64, bool)>,
 }
 
 impl<'p> Runtime<'p> {
@@ -574,6 +578,7 @@ impl<'p> Runtime<'p> {
             op_infos,
             spare_execs,
             machine_refs,
+            fair_choices: Vec::new(),
         }
     }
 
@@ -907,6 +912,63 @@ impl<'p> Runtime<'p> {
         Ok(())
     }
 
+    /// Checks the cycle a pruned schedule closed, if it returned to a state on its own
+    /// path: a fair cycle through which a hot monitor never enters a cold state can
+    /// repeat forever, a liveness bug. The schedule (prefix and cycle) replays it.
+    fn check_lasso(&mut self) -> Result<(), Stop> {
+        if !self.config.liveness_enabled {
+            return Ok(());
+        }
+        let liveness_monitor = |m: &Monitor| {
+            let decl = self.prog.machine(m.decl);
+            !decl.is_scenario()
+                && decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot)
+                && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
+        };
+        if !self.monitors.iter().any(liveness_monitor) {
+            return Ok(());
+        }
+        let Some(cycle) = self.strategy.closed_cycle() else { return Ok(()) };
+        let steps = self.trace.steps.len();
+        if !cycle.fair || cycle.start >= steps || !self.fair_choices_vary(cycle.start) {
+            return Ok(());
+        }
+        let Some(i) = (0..self.monitors.len()).find(|&i| {
+            let m = &self.monitors[i];
+            liveness_monitor(m)
+                && m.state.is_some_and(|s| self.prog.state(s).temperature == Temperature::Hot)
+                && m.cold_at <= cycle.start
+        }) else {
+            return Ok(());
+        };
+        self.trace.lasso = Some(cycle.start);
+        let n = steps - cycle.start;
+        let msg = format!(
+            "{} detected liveness bug in hot state '{}': the last {} step{} return{} to an earlier state, so the model can repeat {} forever without the monitor entering a cold state.",
+            self.monitor_full_name(i),
+            self.state_name(self.monitors[i].state),
+            n,
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "s" } else { "" },
+            if n == 1 { "it" } else { "them" },
+        );
+        Err(self.report_bug(msg))
+    }
+
+    /// Whether every fair choice (`$$`) made since step `start` took both values there.
+    fn fair_choices_vary(&self, start: usize) -> bool {
+        let made: Vec<_> = self.fair_choices.iter().filter(|c| c.0 >= start).collect();
+        made.iter().all(|(_, site, value)| made.iter().any(|(_, s, v)| s == site && v != value))
+    }
+
+    /// `$$`: a choice the cycles of a liveness bug must take both ways (see
+    /// [`Runtime::check_lasso`]). `site` identifies the choice in the code.
+    pub fn choose_fair_bool(&mut self, caller: &str, site: u64) -> Result<bool, Stop> {
+        let b = self.choose_bool(2, caller)?;
+        self.fair_choices.push((self.trace.steps.len() - 1, site, b));
+        Ok(b)
+    }
+
     pub(crate) fn check_cancelled(&mut self) -> Result<(), Stop> {
         if self.cancelled.is_some_and(|f| f()) {
             self.stopped = true;
@@ -960,6 +1022,7 @@ impl<'p> Runtime<'p> {
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
             if !self.strategy.observe_state(hash) {
+                self.check_lasso()?;
                 self.pruned = true;
                 self.stopped = true;
                 return Err(Stop);
@@ -2035,6 +2098,7 @@ impl<'p> Runtime<'p> {
                 fields,
                 state: self.prog.machine(decl).start_state,
                 temperature: 0,
+                cold_at: 0,
                 pending_transition: Transition::None,
                 goto_payload: None,
             });
@@ -2068,6 +2132,7 @@ impl<'p> Runtime<'p> {
             fields,
             state: self.prog.machine(decl).start_state,
             temperature: 0,
+            cold_at: 0,
             pending_transition: Transition::None,
             goto_payload: None,
         });
@@ -2285,6 +2350,7 @@ impl<'p> Runtime<'p> {
         self.monitors[mon].state = Some(target);
         if self.prog.state(target).temperature == Temperature::Cold {
             self.monitors[mon].temperature = 0;
+            self.monitors[mon].cold_at = self.trace.steps.len();
         }
         self.monitor_enter_state(mon, e)
     }

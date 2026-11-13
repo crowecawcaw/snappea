@@ -974,7 +974,7 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(h.stdout.contains("Mutation testing: 1 of 4 mutants detected"), "{}", h.stdout);
     assert!(
         h.stdout.contains(
-            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it)\n"
+            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it; -v lists them)\n"
         ),
         "{}",
         h.stdout
@@ -1064,7 +1064,8 @@ fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bou
     assert!(!listed.contains(&serde_json::json!("condition-true")), "{}", m);
     assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--format", "text"]), 0);
     assert!(
-        h.stdout.contains("2 of them only by running every schedule to the step bound: no spec checks"),
+        h.stdout
+            .contains("2 of them because nearly every schedule ran to the step bound: the change made the model loop"),
         "{}",
         h.stdout
     );

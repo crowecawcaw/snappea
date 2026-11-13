@@ -15,8 +15,12 @@
 //! When the search runs out of alternatives with no bound hit, every behaviour of the
 //! test within the step bound was explored: "no bug found" then means there is none (up
 //! to 64-bit hash collisions). Liveness is checked for schedules that end (a hot monitor
-//! at the end of a terminating schedule); the temperature-based check needs fair
-//! schedules and is off, so a search that pruned a cycle has not verified liveness.
+//! at the end of a terminating schedule) and on cycles: a schedule that returns to a
+//! state on its own path closes a lasso, and the runtime reports it as a liveness bug when
+//! a hot monitor stays out of cold states through the cycle and the cycle is fair
+//! ([`ExhaustiveStrategy::closed_cycle`]). Other cycles are pruned. A search that pruned a
+//! cycle while a liveness monitor was not cold has not verified liveness: the cycle it
+//! checked may differ from a fair one through the same state.
 //!
 //! Several workers split one search ([`Split`]). Every worker walks the top of the tree
 //! the same way, down to the first choice where the path has at least
@@ -43,6 +47,13 @@ pub struct SearchStats {
     /// Prunes that return to a state on the current execution path, rather than
     /// joining another explored path. Zero after completion establishes acyclicity.
     pub cycle_prunes: usize,
+    /// Cycle prunes at a state where a liveness monitor (one with hot states) was not in
+    /// a cold state, and no liveness bug was reported. Zero after completion establishes
+    /// liveness for a search on one worker.
+    pub live_cycle_prunes: usize,
+    /// The search was split across workers, whose shared state cache can hide a cycle
+    /// from the worker that would close it: liveness then needs no cycle prunes at all.
+    pub split: bool,
     /// Schedules stopped by the step bound (the search is not exhaustive then); counted
     /// by the engine.
     pub depth_bound_hits: usize,
@@ -50,8 +61,7 @@ pub struct SearchStats {
     pub max_depth: usize,
     /// Every alternative was explored.
     pub finished: bool,
-    /// The test has hot monitor states. The search does not check liveness on cycles,
-    /// so a finished search that pruned one has not verified liveness.
+    /// The test has hot monitor states (see [`SearchStats::liveness_unverified`]).
     pub hot_monitors: bool,
     /// Why finishing proves nothing about the test, if it does not: the program did not
     /// repeat its behaviour given the same choices, or its foreign functions keep state
@@ -73,6 +83,17 @@ struct Choice {
     taken: usize,
     /// Product of the alternative counts up to and including this choice (saturating).
     product: u64,
+}
+
+/// A schedule that returned to a state on its own path: the lasso's cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cycle {
+    /// The number of choices made before the cycle starts: the schedule's state after
+    /// them is the state it returned to.
+    pub start: usize,
+    /// Every operation enabled at every scheduling point of the cycle ran in it, so the
+    /// cycle can repeat forever under a fair scheduler.
+    pub fair: bool,
 }
 
 /// What the workers of a split search share: the explored-state cache (the smallest
@@ -197,6 +218,8 @@ pub struct ExhaustiveStrategy {
     visited: FxHashMap<u64, usize>,
     state_path: Vec<(usize, u64)>,
     path_states: rustc_hash::FxHashSet<u64>,
+    /// The state the last [`Strategy::observe_state`] pruned as a cycle on the path.
+    cycle: Option<u64>,
     stats: SearchStats,
     error: Option<String>,
 }
@@ -213,6 +236,7 @@ impl ExhaustiveStrategy {
             visited: FxHashMap::default(),
             state_path: Vec::new(),
             path_states: rustc_hash::FxHashSet::default(),
+            cycle: None,
             stats: SearchStats::default(),
             error: None,
         }
@@ -221,7 +245,37 @@ impl ExhaustiveStrategy {
     /// Explores only this worker's part of a split search.
     pub fn with_split(mut self, split: Split) -> Self {
         self.split = Some(split);
+        self.stats.split = true;
         self
+    }
+
+    /// The cycle the last pruned schedule closed, if it returned to a state on its own
+    /// path. Called when a liveness monitor was not cold there; counts the cycle as one
+    /// liveness was not verified on (the runtime reports a bug instead when it can).
+    ///
+    /// Fairness is weak fairness over operations: an operation enabled at every
+    /// scheduling point of the cycle must have run in it. Nondeterministic choices (`$`,
+    /// `choose`) are the environment's and need not vary; `$$` choices are checked by the
+    /// runtime.
+    pub(crate) fn closed_cycle(&mut self) -> Option<Cycle> {
+        let hash = self.cycle.take()?;
+        let start = self.state_path.iter().rev().find(|(_, h)| *h == hash)?.0;
+        self.stats.live_cycle_prunes += 1;
+        let end = self.pos.min(self.path.len());
+        let mut always: Option<Vec<u64>> = None;
+        let mut ran: Vec<u64> = Vec::new();
+        for c in self.path.get(start..end).unwrap_or_default() {
+            if c.kind != Kind::Operation {
+                continue;
+            }
+            ran.push(c.options[c.taken]);
+            match &mut always {
+                None => always = Some(c.options.clone()),
+                Some(a) => a.retain(|o| c.options.contains(o)),
+            }
+        }
+        let fair = always.is_some_and(|a| a.iter().all(|o| ran.contains(o)));
+        Some(Cycle { start, fair })
     }
 
     /// Allocated choice alternatives retained along the current DFS path.
@@ -308,6 +362,7 @@ impl Strategy for ExhaustiveStrategy {
     fn prepare_next_iteration(&mut self) -> bool {
         self.stats.max_depth = self.stats.max_depth.max(self.pos);
         self.pos = 0;
+        self.cycle = None;
         // backtrack to the deepest choice point with an untried alternative
         while let Some(c) = self.path.last_mut() {
             if c.taken + 1 < c.options.len() {
@@ -370,12 +425,16 @@ impl Strategy for ExhaustiveStrategy {
 
     fn observe_state(&mut self, hash: u64) -> bool {
         let cycle = self.path_states.contains(&hash);
+        self.cycle = None;
         if cycle {
             self.stats.cycle_prunes += 1;
         }
         if let Some(split) = &self.split {
             if !split.shared(self.pos) && !split.owned {
                 return false;
+            }
+            if cycle {
+                self.cycle = Some(hash);
             }
             if split.shared(self.pos) {
                 // the shared walk: only path-local (cycle) pruning, the same in every worker
@@ -404,6 +463,9 @@ impl Strategy for ExhaustiveStrategy {
             self.path_states.insert(hash);
             return true;
         }
+        if cycle {
+            self.cycle = Some(hash);
+        }
         let explore = match self.visited.get_mut(&hash) {
             Some(d) if *d <= self.pos => {
                 self.stats.pruned_schedules += 1;
@@ -426,6 +488,10 @@ impl Strategy for ExhaustiveStrategy {
         explore
     }
 
+    fn closed_cycle(&mut self) -> Option<Cycle> {
+        ExhaustiveStrategy::closed_cycle(self)
+    }
+
     fn exhaustive_stats(&self) -> Option<SearchStats> {
         // the last schedule counts even when no next iteration was prepared (a bug, the
         // schedule limit or a timeout ended the search)
@@ -437,10 +503,15 @@ impl SearchStats {
     /// The search explored every behaviour of the test: it finished, no schedule hit the
     /// step bound, liveness was checkable, and the program was searchable.
     pub fn complete(&self) -> bool {
-        self.finished
-            && self.depth_bound_hits == 0
-            && !(self.hot_monitors && self.cycle_prunes > 0)
-            && self.unverifiable.is_none()
+        self.finished && self.depth_bound_hits == 0 && !self.liveness_unverified() && self.unverifiable.is_none()
+    }
+
+    /// The search pruned a cycle that may hide a liveness bug: one at a state where a
+    /// liveness monitor was not cold (with workers, any cycle). A fair cycle that keeps a
+    /// hot monitor out of cold states is reported as a bug instead; when no such cycle
+    /// was pruned, every cycle through such a state was checked (see the module docs).
+    pub fn liveness_unverified(&self) -> bool {
+        self.hot_monitors && if self.split { self.cycle_prunes > 0 } else { self.live_cycle_prunes > 0 }
     }
 
     /// Adds another worker's part of a split search: complete only when every part is.
@@ -448,6 +519,8 @@ impl SearchStats {
         self.distinct_states += other.distinct_states;
         self.pruned_schedules += other.pruned_schedules;
         self.cycle_prunes += other.cycle_prunes;
+        self.live_cycle_prunes += other.live_cycle_prunes;
+        self.split = true;
         self.depth_bound_hits += other.depth_bound_hits;
         self.max_depth = self.max_depth.max(other.max_depth);
         self.finished &= other.finished;
@@ -471,12 +544,13 @@ impl SearchStats {
         );
         if let Some(why) = self.unverifiable.as_ref().filter(|_| self.finished) {
             out.push_str(&format!("\n{} Search finished, but it does not prove the absence of bugs: {}", prefix, why));
-        } else if self.finished && self.depth_bound_hits == 0 && self.hot_monitors && self.cycle_prunes > 0 {
+        } else if self.finished && self.depth_bound_hits == 0 && self.liveness_unverified() {
+            let n = if self.split { self.cycle_prunes } else { self.live_cycle_prunes };
             out.push_str(&format!(
-                "\n{} Search finished, but liveness was not verified: {} schedule{} returned to an earlier state, and exhaustive search does not check hot monitors on cycles. `snappea check` continues such tests with fair feedback search.",
+                "\n{} Search finished, but liveness was not verified: {} schedule{} returned to an earlier state while a liveness monitor was not cold, through a cycle that is unfair or leaves the hot state, and another cycle through that state could stay hot. `snappea check` continues such tests with fair feedback search.",
                 prefix,
-                self.cycle_prunes,
-                if self.cycle_prunes == 1 { "" } else { "s" }
+                n,
+                if n == 1 { "" } else { "s" }
             ));
         } else if self.finished && self.depth_bound_hits == 0 {
             out.push_str(&format!("\n{} Search finished: every behaviour of the test was explored.", prefix));
@@ -571,7 +645,11 @@ mod tests {
         assert!(!bounded.complete());
         let cyclic = SearchStats { cycle_prunes: 2, ..done.clone() };
         assert!(cyclic.complete(), "cycles are fine without hot monitors");
-        let live = SearchStats { hot_monitors: true, ..cyclic };
+        let cold = SearchStats { hot_monitors: true, ..cyclic.clone() };
+        assert!(cold.complete(), "every cycle was through states where liveness monitors were cold");
+        let split = SearchStats { split: true, ..cold.clone() };
+        assert!(!split.complete(), "workers may hide a cycle from each other");
+        let live = SearchStats { live_cycle_prunes: 1, ..cold };
         assert!(!live.complete());
         assert!(live.text(1, 10, "..").contains("liveness was not verified"), "{}", live.text(1, 10, ".."));
         let foreign = SearchStats { unverifiable: Some("why".into()), ..done.clone() };

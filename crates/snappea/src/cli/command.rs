@@ -1191,7 +1191,7 @@ fn run_check(
                 f64::from(limit),
                 only,
             );
-            for l in report.lines(SHOWN_UNCOVERED) {
+            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
                 con.inner.out_line(&l);
             }
             // those inside an undetected coarse mutant too

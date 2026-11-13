@@ -396,9 +396,10 @@ schedules all at the bound, as many in a row as the unchanged model would reach 
 than 1% of the time (2 when it never does). Such a change, like an increment
 turned into a decrement in a retry loop, breaks the model too badly to be a useful
 finding, and running it out costs more than every other mutant. The console adds one
-line, `3 of them only by running every schedule to the step bound: no spec checks that
-the model makes progress.`, and JSON has the count as `detected_by_step_bound`: a
-liveness spec would make those real detections. A model whose schedules mostly reach the
+line, `3 of them because nearly every schedule ran to the step bound: the change made
+the model loop without finishing.`, and JSON has the count as `detected_by_step_bound`.
+A liveness spec (a hot state the loop never leaves) reports such a loop as a bug
+instead, often on the first schedule that closes the loop. A model whose schedules mostly reach the
 bound anyway, such as a server that never stops, has none. Those 100 schedules also set
 each test case's step bound for its mutants: 10 times the longest of them that ended,
 with the liveness threshold scaled to match, when the unchanged model still passes with
