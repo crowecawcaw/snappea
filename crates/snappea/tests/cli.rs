@@ -1619,3 +1619,20 @@ fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
         assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
     }
 }
+
+#[test]
+fn duplicate_announce_and_send_fails_lint_before_checking() {
+    let mut h = host();
+    let source = "event eDone: int;\n\
+        machine Main { start state S { entry { var s: Server; s = new Server(); announce eDone, 42; send s, eDone, 42; } } }\n\
+        machine Server { start state S { ignore eDone; } }\n\
+        spec Guard observes eDone { start state S { on eDone do (n: int) { assert n == 42; } } }\n\
+        test tcMain [main=Main]: assert Guard in { Main, Server };";
+    h.add_file("duplicate.p", source);
+    assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation", "--format", "text"]), 2);
+    assert!(h.stderr.contains("announce-and-send"), "{}{}", h.stdout, h.stderr);
+    assert!(h.stderr.contains("specs observe sends too"), "{}", h.stderr);
+    assert!(!h.stdout.contains("Checking"));
+    h.add_file("duplicate.p", &source.replace("announce eDone, 42; ", ""));
+    assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+}
