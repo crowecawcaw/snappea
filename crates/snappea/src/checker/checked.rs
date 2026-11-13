@@ -511,7 +511,7 @@ pub struct Finding {
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
 /// and their receive cases.
-fn machine_funs(prog: &Program, m: MachineId) -> Vec<FunId> {
+pub(crate) fn machine_funs(prog: &Program, m: MachineId) -> Vec<FunId> {
     let mut seen: FxHashSet<FunId> = FxHashSet::default();
     let mut todo: Vec<FunId> = prog.machine(m).methods.clone();
     for s in &prog.machine(m).states {
@@ -725,6 +725,7 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
         }
     }
     // no-progress-spec
+    let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
     for t in &prog.tests {
         let module = &t.module;
         let hot = module.monitor_map.iter().any(|(m, _)| {
@@ -786,8 +787,27 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
                     t.name
                 ),
             });
+            continue;
+        }
+        // a design machine that sends a request and waits for the reply, reported where
+        // it waits, once for all the tests
+        for (m, e, span) in crate::checker::flow_lints::waiting_machines(prog, t, &is_driver) {
+            if !waiting_reported.insert(span) {
+                continue;
+            }
+            out.push(Finding {
+                rule: "no-progress-spec",
+                span,
+                message: format!(
+                    "machine {} waits for '{}' after sending a request, but no spec of test '{}' has a hot state, so a model that never replies passes",
+                    prog.machine(m).name,
+                    prog.event(e).name,
+                    t.name
+                ),
+            });
         }
     }
+    crate::checker::flow_lints::lints(prog, drivers, &mut out);
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
 }
@@ -840,7 +860,7 @@ fn has_effect(prog: &Program, checked: &Checked, matters: &FxHashSet<EventId>, f
 }
 
 /// Calls `f` with each expression directly in statement `s` (not nested statements).
-fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
+pub(crate) fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
     let mut go = |e: &Expr| crate::checker::mutation::visit_expr(e, f);
     match &s.kind {
         StmtKind::Assert { cond, .. } | StmtKind::Assume { cond, .. } => go(cond),
@@ -963,6 +983,70 @@ mod tests {
         assert_eq!(
             findings(src, "unchecked-event"),
             ["machine Store announces 'eConflict', but only scenario Conflicted observes it, and scenarios check nothing, so the model passes whatever it announces; observe it in a spec, or let the scenario watch a sent event instead"]
+        );
+    }
+
+    /// A driver that starts a second doctor only once the first says it is done.
+    const STAGES: &str = "event eDone;\n\
+        event eTreat: int;\n\
+        event ePlanned: int;\n\
+        spec Treated observes eTreat, ePlanned { start state S { on eTreat do (n: int) { assert n > 0; } ignore ePlanned; } }\n\
+        machine Doctor { start state S { entry (owner: Main) { announce eTreat, 1; send owner, eDone; } } }\n\
+        machine Main {\n\
+          start state First { entry { PLAN new Doctor(this); } on eDone goto Second; }\n\
+          state Second { entry { new Doctor(this); } ignore eDone; }\n\
+        }\n\
+        test tc [main=Main]: assert Treated in { Doctor, Main };\n";
+
+    #[test]
+    fn a_driver_stage_started_by_a_model_notification_needs_an_announced_plan() {
+        assert_eq!(
+            findings(&STAGES.replace("PLAN", ""), "unplanned-driver-stage"),
+            ["driver Main creates Doctor only after the model sends 'eDone', and announces no plan a spec observes, so if the model never sends it this stage never starts and every spec still passes"]
+        );
+        assert!(findings(&STAGES.replace("PLAN", "announce ePlanned, 2;"), "unplanned-driver-stage").is_empty());
+    }
+
+    #[test]
+    fn a_design_machine_waiting_for_a_reply_needs_a_hot_spec() {
+        let src = "event ePing: Client;\n\
+            event ePong;\n\
+            spec Pongs observes ePong { start state S { on ePong do { assert true; } } }\n\
+            machine Counter { start state S { on ePing do (c: Client) { send c, ePong; } } }\n\
+            machine Client {\n\
+              start state Init { entry (c: Counter) { send c, ePing, this; goto Waiting; } }\n\
+              state Waiting { on ePong goto Done; }\n\
+              state Done { }\n\
+            }\n\
+            machine Main { start state S { entry { new Client(new Counter()); } } }\n\
+            test tc [main=Main]: assert Pongs in { Counter, Client, Main };\n";
+        assert_eq!(
+            findings(src, "no-progress-spec"),
+            ["machine Client waits for 'ePong' after sending a request, but no spec of test 'tc' has a hot state, so a model that never replies passes"]
+        );
+        // a server waiting for requests is not waiting for a reply
+        assert!(findings(
+            &src.replace("state Waiting { on ePong goto Done; }", "state Waiting { }"),
+            "no-progress-spec"
+        )
+        .is_empty());
+        assert!(findings(&src.replace("start state S { on ePong", "start hot state S { on ePong"), "no-progress-spec")
+            .is_empty());
+    }
+
+    #[test]
+    fn statements_after_a_call_that_always_leaves_the_state_are_unreachable() {
+        let src = "event eT;\n\
+            machine Main {\n\
+              start state S { entry { send this, eT; } on eT do { if ($) { Resolve(); return; } Maybe(); return; } }\n\
+              state Done { }\n\
+              fun Resolve() { print \"done\"; goto Done; }\n\
+              fun Maybe() { if ($) { goto Done; } }\n\
+            }\n\
+            test tc [main=Main]: { Main };\n";
+        assert_eq!(
+            findings(src, "unreachable-statement"),
+            ["this statement never runs: the call to Resolve before it always leaves the state (goto Done)"]
         );
     }
 

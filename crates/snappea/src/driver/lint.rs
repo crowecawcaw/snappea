@@ -99,6 +99,8 @@ pub fn help(rule: &str) -> String {
         "unchecked-state" => "assert on the field in a spec or the test driver, send it in an event a spec observes, or remove it if the model does not need it",
         "unchecked-event" => "make a spec observe the event and assert on it, or have the machine that receives it act on it; remove the send if nothing should",
         "no-progress-spec" => "add a spec with a `hot` state the model leaves only by answering (for example, hot while a request is pending), and select it with `assert` in the test",
+        "unplanned-driver-stage" => "announce the plan first (e.g. `announce eOpsPlanned, n;` before starting any work) and make a spec observe it and stay `hot` until every planned operation finished",
+        "unreachable-statement" => "remove the statement, or move it before the call that leaves the state",
         "scenario-cold-start" => "mark the start state `hot` (or leave it unmarked) and mark the accepting state `cold`",
         _ => return suppress,
     };

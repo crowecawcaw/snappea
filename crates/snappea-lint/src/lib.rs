@@ -31,6 +31,14 @@ pub const PROGRAM_RULES: &[(&str, &str)] = &[
         "no-progress-spec",
         "A test waits for the model's responses, but none of its specs has a hot state, so a model that stops passes.",
     ),
+    (
+        "unplanned-driver-stage",
+        "A driver starts more work only after a model notification, and announces no plan a spec observes.",
+    ),
+    (
+        "unreachable-statement",
+        "A statement follows a goto, raise, or call that always leaves the state, so it never runs.",
+    ),
 ];
 
 /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
