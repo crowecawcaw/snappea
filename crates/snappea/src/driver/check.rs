@@ -8,7 +8,7 @@
 //! these steps; `snappea` shows the progress only with `--verbose`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -446,7 +446,7 @@ pub fn replay(
     opts.replay = Some(trace);
     opts.replay_bound_at_end = cfg.style == Style::Snappea && cfg.fail_on_max_steps;
     let start = host.now();
-    let (res, ..) = run_engine(host, loaded, tc, &opts, None, Some(1), false, None, None)?;
+    let (res, ..) = run_engine(host, loaded, tc, &opts, None, Some(1), false, None, None, None)?;
     // `ReplayStrategy` reports a schedule it cannot follow with `Error.ReportAndExit`
     if let Some(e) = &res.replay_error {
         return Err(report_and_exit_hint(
@@ -559,6 +559,36 @@ impl Plateau {
     }
 }
 
+/// More time for a test case whose exhaustive search is close to finishing when its
+/// share of the default time budget runs out: once, and only when the search's progress
+/// projects it to finish within [`Extension::MAX_SHARES`] more shares. A finished search
+/// proves the test; stopping it just short proves nothing more than sampling.
+#[derive(Debug, Clone, Copy)]
+pub struct Extension {
+    /// When the test case started, and its share of the budget, in seconds.
+    pub start: f64,
+    pub share: f64,
+}
+
+impl Extension {
+    /// Most extra time, in shares.
+    pub const MAX_SHARES: f64 = 2.0;
+    /// Least progress a projection is made from: earlier ones are too rough.
+    const MIN_PROGRESS: f64 = 0.02;
+
+    /// The seconds to add at `now` for a search with `progress` (0 to 1) done, if it is
+    /// projected to finish within the extension.
+    pub fn more(&self, now: f64, progress: f64) -> Option<f64> {
+        if progress < Self::MIN_PROGRESS {
+            return None;
+        }
+        let max = Self::MAX_SHARES * self.share;
+        let remaining = (now - self.start).max(0.0) * (1.0 - progress) / progress;
+        // the estimate is rough: allow half as much again
+        (remaining <= max).then(|| (1.5 * remaining).clamp(remaining, max))
+    }
+}
+
 /// Engine output on the console, with an optional deadline (`--timeout`) and progress.
 struct ConsoleOut<'h> {
     host: &'h mut dyn Host,
@@ -569,8 +599,12 @@ struct ConsoleOut<'h> {
     /// Schedules finished, and whether the plateau stopped the search.
     schedules: usize,
     plateaued: bool,
-    /// An exhaustive search is still under way.
-    exhausting: bool,
+    /// An exhaustive search is still under way, and its estimated share done.
+    exhausting: Option<f64>,
+    /// More time an exhaustive search may get to finish (taken once used).
+    extension: Option<Extension>,
+    /// The deadline was extended for an exhaustive search.
+    extended: bool,
 }
 
 impl ConsoleOut<'_> {
@@ -614,13 +648,21 @@ impl Output for ConsoleOut<'_> {
     }
     fn cancelled(&mut self) -> bool {
         let now = self.host.now();
-        if self.plateau.is_some_and(|p| p.reached(now, self.schedules, self.exhausting)) {
+        if self.plateau.is_some_and(|p| p.reached(now, self.schedules, self.exhausting.is_some())) {
             self.plateaued = true;
+        }
+        if let (Some(d), Some(progress)) = (self.deadline, self.exhausting) {
+            if now >= d {
+                if let Some(more) = self.extension.take().and_then(|e| e.more(now, progress)) {
+                    self.deadline = Some(now + more);
+                    self.extended = true;
+                }
+            }
         }
         self.plateaued || self.deadline.map(|d| now >= d).unwrap_or(false)
     }
-    fn exhausting(&mut self, running: bool) {
-        self.exhausting = running;
+    fn exhausting(&mut self, progress: Option<f64>) {
+        self.exhausting = progress;
     }
 }
 
@@ -637,7 +679,8 @@ fn run_engine(
     // where the test case sits in the run, and when its check started
     progress: Option<(Position, f64)>,
     plateau: Option<Plateau>,
-) -> Result<(CheckResult, usize, bool), Exit> {
+    extension: Option<Extension>,
+) -> Result<(CheckResult, usize, bool, bool), Exit> {
     let prog = &loaded.analysis.program;
     let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
     let opts = &CheckerOptions { assembly_name: loaded.sources.project_name.clone(), ..opts.clone() };
@@ -657,7 +700,17 @@ fn run_engine(
         };
         Tracker::new(phase, start, deadline.map(|d| d - start))
     });
-    let mut out = ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false, exhausting: false };
+    let mut out = ConsoleOut {
+        host,
+        deadline,
+        progress,
+        plateau,
+        schedules: 0,
+        plateaued: false,
+        exhausting: None,
+        extension,
+        extended: false,
+    };
     out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
@@ -667,8 +720,8 @@ fn run_engine(
         let schedules = r.report.explored_fair_schedules + r.report.explored_unfair_schedules;
         t.finish(out.host, |phase| set_counts(phase, schedules, r.report.num_bugs));
     }
-    let plateaued = out.plateaued;
-    result.map(|r| (r, workers, plateaued)).map_err(|e| report_and_exit(host, &e))
+    let (plateaued, extended) = (out.plateaued, out.extended);
+    result.map(|r| (r, workers, plateaued, extended)).map_err(|e| report_and_exit(host, &e))
 }
 
 /// A worker's output, sent to the thread that writes the console.
@@ -683,8 +736,9 @@ struct WorkerOut<'a> {
     timed_out: &'a AtomicBool,
     /// The last schedule of any worker that reached new coverage.
     novel: &'a std::sync::atomic::AtomicUsize,
-    /// This worker's exhaustive search is still under way.
-    exhausting: &'a AtomicBool,
+    /// This worker's exhaustive search: 0 when none is under way, else 1 plus its
+    /// share done in millionths.
+    exhausting: &'a AtomicU32,
 }
 
 impl Output for WorkerOut<'_> {
@@ -700,8 +754,8 @@ impl Output for WorkerOut<'_> {
     fn cancelled(&mut self) -> bool {
         self.timed_out.load(Ordering::Relaxed)
     }
-    fn exhausting(&mut self, running: bool) {
-        self.exhausting.store(running, Ordering::Relaxed);
+    fn exhausting(&mut self, progress: Option<f64>) {
+        self.exhausting.store(progress.map_or(0, |p| 1 + (p.clamp(0.0, 1.0) * 1e6) as u32), Ordering::Relaxed);
     }
 }
 
@@ -720,7 +774,7 @@ fn run_workers(
     let (prog, code_coverage) = (checker.prog, !checker.code.probes.is_empty());
     let timed_out = AtomicBool::new(false);
     let novel = std::sync::atomic::AtomicUsize::new(0);
-    let exhausting: Vec<AtomicBool> = (0..pool.count()).map(|_| AtomicBool::new(false)).collect();
+    let exhausting: Vec<AtomicU32> = (0..pool.count()).map(|_| AtomicU32::new(0)).collect();
     let (tx, rx) = mpsc::channel();
     let jobs: Vec<Job<'_>> = (0..pool.count())
         .map(|index| {
@@ -747,7 +801,13 @@ fn run_workers(
         out.tick(pool.started(), pool.bugs());
         out.schedules = pool.started();
         out.schedule_novel(novel.load(Ordering::Relaxed));
-        out.exhausting = exhausting.iter().any(|e| e.load(Ordering::Relaxed));
+        // the least advanced worker decides when the search ends
+        out.exhausting = exhausting
+            .iter()
+            .map(|e| e.load(Ordering::Relaxed))
+            .filter(|&e| e > 0)
+            .min()
+            .map(|e| f64::from(e - 1) / 1e6);
         if !timed_out.load(Ordering::Relaxed) && out.cancelled() {
             timed_out.store(true, Ordering::Relaxed);
         }
@@ -781,6 +841,11 @@ pub struct CaseOutcome {
     /// The exhaustive search was still running when time ran out: more time may finish
     /// it. Its untried alternatives along the path it was exploring (summed over workers).
     pub exhaustive_unfinished: Option<usize>,
+    /// With `exhaustive_unfinished`: the search's estimated share done (0 to 1).
+    pub exhaustive_progress: Option<f64>,
+    /// The test case got more than its share of the default time budget to finish its
+    /// exhaustive search (see [`Extension`]).
+    pub budget_extended: bool,
     /// The test tracked time (clocks, latencies or `--timed`).
     pub time_tracked: bool,
     /// Scheduling points with a choice per schedule, and the machines that branch most
@@ -842,7 +907,8 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         None => cfg.timeout.map(|t| engine_start + f64::from(t)),
     };
     let plateau = cfg.time_share.map(|share| Plateau::new(engine_start, share));
-    let (res, workers, plateaued) = run_engine(
+    let extension = cfg.time_share.map(|share| Extension { start: engine_start, share });
+    let (res, workers, plateaued, extended) = run_engine(
         host,
         loaded,
         &tc,
@@ -852,6 +918,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         cfg.code_coverage,
         cfg.progress.map(|p| (p, engine_start)),
         plateau,
+        extension,
     )?;
     let engine_elapsed = host.now() - engine_start;
     if res.cancelled {
@@ -971,6 +1038,12 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
             .as_ref()
             .filter(|x| x.running && !x.complete() && res.report.num_bugs == 0)
             .map(|x| x.frontier),
+        exhaustive_progress: res
+            .exhaustive
+            .as_ref()
+            .filter(|x| x.running && !x.complete())
+            .map(|x| f64::from(x.explored_ppm) / 1e6),
+        budget_extended: extended,
         time_tracked: res.time_tracked,
         branching: res.branching.as_ref().map(|b| (b.points_per_schedule(), b.machines(prog))),
         elapsed: process_elapsed,
@@ -1067,4 +1140,29 @@ fn emit_traces(
         format_0_00(host.max_memory_gb())
     ));
     Ok(schedule_file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plateau_waits_for_an_exhaustive_search() {
+        let p = Plateau::new(0.0, 10.0);
+        assert!(p.reached(5.0, 1000, false));
+        assert!(!p.reached(5.0, 1000, true));
+    }
+
+    #[test]
+    fn extension_only_for_searches_projected_to_finish() {
+        let e = Extension { start: 0.0, share: 10.0 };
+        // half done after 10s: about 10s left, within two shares; half as much again
+        assert_eq!(e.more(10.0, 0.5), Some(15.0));
+        // a tenth done: 90s left, beyond two shares
+        assert_eq!(e.more(10.0, 0.1), None);
+        // too early to project
+        assert_eq!(e.more(10.0, 0.01), None);
+        // capped at two shares
+        assert_eq!(e.more(10.0, 0.4), Some(20.0));
+    }
 }

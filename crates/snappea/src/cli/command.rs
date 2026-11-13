@@ -1463,31 +1463,57 @@ fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
     }
 }
 
-/// A `--timeout` worth trying for a search still running after `elapsed` seconds.
-fn longer_timeout(elapsed: f64) -> &'static str {
-    const STEPS: [(f64, &str); 5] = [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m"), (600.0, "10m")];
-    STEPS.iter().find(|(secs, _)| *secs >= 5.0 * elapsed).map_or("30m", |(_, s)| s)
+/// The `--timeout` an exhaustive search `progress` done (0 to 1) after `elapsed` seconds
+/// would likely finish with, with some room for the rough estimate; `None` beyond an hour.
+fn finish_timeout(elapsed: f64, progress: f64) -> Option<&'static str> {
+    const STEPS: [(f64, &str); 8] = [
+        (20.0, "20s"),
+        (60.0, "1m"),
+        (120.0, "2m"),
+        (300.0, "5m"),
+        (600.0, "10m"),
+        (1200.0, "20m"),
+        (1800.0, "30m"),
+        (3600.0, "1h"),
+    ];
+    let total = 1.5 * elapsed / progress.max(1e-9);
+    STEPS.iter().find(|(secs, _)| *secs >= total).map(|(_, s)| *s)
 }
 
-/// Where an average schedule branches: `31 scheduling points with a choice; Network
-/// could go next at 25 and made 3 choices, Sender at 20`.
+/// A share done as a percentage: `40%`, or `under 1%`.
+fn percent(share: f64) -> String {
+    if share < 0.01 {
+        "under 1%".into()
+    } else {
+        format!("{:.0}%", 100.0 * share)
+    }
+}
+
+/// Whether a search's schedules mostly reach states it already explored: at least
+/// [`REVISITS`] schedules per distinct state. Independent steps run in many orders that
+/// end in the same states, which a forwarder or a needless concurrent machine multiplies.
+fn mostly_revisits(case: &check::CaseOutcome) -> Option<usize> {
+    const REVISITS: usize = 10;
+    case.exhaustive_states.map(|(states, _)| states).filter(|&states| states > 0 && case.schedules >= REVISITS * states)
+}
+
+/// Where an average schedule branches: `31 scheduling points with a choice; ready at
+/// them: Network 25, Sender 20; choices made: Network 3`.
 fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBranching]) -> String {
     let n = |x: f64| if x >= 10.0 { format!("{:.0}", x) } else { format!("{:.1}", x) };
+    let list = |count: fn(&crate::checker::branching::MachineBranching) -> f64| {
+        let mut ms: Vec<_> = machines.iter().filter(|m| count(m) > 0.0).collect();
+        ms.sort_by(|a, b| count(b).total_cmp(&count(a)));
+        ms.iter().take(3).map(|m| format!("{} {}", m.machine, n(count(m)))).collect::<Vec<_>>().join(", ")
+    };
     let mut out = format!("{} scheduling points with a choice", n(points));
-    for (i, m) in machines.iter().take(3).enumerate() {
-        out.push_str(if i == 0 { "; " } else { ", " });
-        out.push_str(&m.machine);
-        if m.ready > 0.0 {
-            out.push_str(&format!("{} at {}", if i == 0 { " could go next" } else { "" }, n(m.ready)));
-        }
-        if m.choices > 0.0 {
-            out.push_str(&format!(
-                "{} made {} choice{}",
-                if m.ready > 0.0 { " and" } else { "" },
-                n(m.choices),
-                if m.choices == 1.0 { "" } else { "s" }
-            ));
-        }
+    let ready = list(|m| m.ready);
+    if !ready.is_empty() {
+        out.push_str(&format!("; ready at them: {}", ready));
+    }
+    let choices = list(|m| m.choices);
+    if !choices.is_empty() {
+        out.push_str(&format!("; `$`/`choose` choices: {}", choices));
     }
     out
 }
@@ -1511,6 +1537,14 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     }
     if let Some(frontier) = case.exhaustive_unfinished {
         v["untried_alternatives"] = json!(frontier);
+        let progress = case.exhaustive_progress.unwrap_or(0.0);
+        v["search_progress"] = json!((progress * 1000.0).round() / 1000.0);
+        if let Some(timeout) = finish_timeout(case.elapsed, progress) {
+            v["suggested_timeout"] = json!(timeout);
+        }
+    }
+    if case.budget_extended {
+        v["budget_extended"] = json!(true);
     }
     if let Some((states, _)) = case.exhaustive_states.filter(|_| case.bugs == 0) {
         v["distinct_states"] = json!(states);
@@ -1552,7 +1586,13 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
     let limit = format!(
         "{}{}",
         workers,
-        if case.timed_out {
+        if incomplete_reason(case) == Some("timed_model_sampled") {
+            if case.timed_out {
+                ", timed model: sampled, time limit reached"
+            } else {
+                ", timed model: sampled"
+            }
+        } else if case.timed_out {
             ", time limit reached"
         } else if case.plateaued {
             ", stopped: coverage stopped growing"
@@ -1571,23 +1611,45 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
         }
-        let branching = case.branching.as_ref().map(|(points, machines)| branching_text(*points, machines));
-        match incomplete_reason(case) {
-            Some("exhaustive_search_unfinished") => host.out_line(&format!(
-                "      hint: the exhaustive search was still running ({} alternatives left on its current path); give it more time, e.g. --timeout {}",
+        if case.budget_extended {
+            host.out_line("      note: ran past its share of the 10s budget to finish its exhaustive search");
+        }
+        let branching = case
+            .branching
+            .as_ref()
+            .filter(|(points, _)| *points >= 1.0)
+            .map(|(points, machines)| branching_text(*points, machines));
+        let reason = incomplete_reason(case);
+        let progress = case.exhaustive_progress.unwrap_or(0.0);
+        let finish = finish_timeout(case.elapsed, progress).filter(|_| reason == Some("exhaustive_search_unfinished"));
+        match (reason, finish) {
+            (Some(_), Some(timeout)) => host.out_line(&format!(
+                "      hint: the exhaustive search was still running, about {} done ({} alternatives left on its current path); it would likely finish with --timeout {}",
+                percent(progress),
                 case.exhaustive_unfinished.unwrap_or(0),
-                longer_timeout(case.elapsed)
+                timeout
             )),
-            Some(reason) => {
-                if reason == "timed_model_sampled" {
-                    host.out_line("      note: with time tracking, clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
+            (Some(reason), None) => {
+                if reason == "exhaustive_search_unfinished" {
+                    host.out_line(&format!(
+                        "      note: the exhaustive search was still running but only about {} done; more time is unlikely to finish it",
+                        percent(progress)
+                    ));
+                } else if reason == "timed_model_sampled" {
+                    host.out_line("      note: timed model: clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
+                }
+                if let Some(states) = mostly_revisits(case) {
+                    host.out_line(&format!(
+                        "      note: the schedules reached only {} distinct states: most run independent steps in another order to the same states",
+                        states
+                    ));
                 }
                 if let Some(b) = &branching {
                     host.out_line(&format!("      note: too many schedules to try them all. Per schedule: {}", b));
                     host.out_line("      hint: merge machines whose hop adds no order the spec cares about, shrink fault budgets, or split fault classes into separate tests (see `snappea guide modeling`)");
                 }
             }
-            None => {
+            (None, _) => {
                 if let Some(b) = branching.filter(|_| cfg.verbose) {
                     host.out_line(&format!("      Branching per schedule: {}", b));
                 }
@@ -1888,6 +1950,19 @@ fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn finish_timeout_projects_from_progress() {
+        // 10s for a quarter: 40s in all, 60s with room
+        assert_eq!(finish_timeout(10.0, 0.25), Some("1m"));
+        assert_eq!(finish_timeout(10.0, 0.9), Some("20s"));
+        // more than an hour: no suggestion
+        assert_eq!(finish_timeout(10.0, 0.001), None);
+        assert_eq!(finish_timeout(10.0, 0.0), None);
+        assert_eq!(percent(0.004), "under 1%");
+        assert_eq!(percent(0.25), "25%");
+    }
+
     use super::*;
 
     #[test]

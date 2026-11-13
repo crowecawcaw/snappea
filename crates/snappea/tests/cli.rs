@@ -1258,3 +1258,41 @@ fn mutants_that_only_write_unchecked_state_are_not_run() {
     snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--format", "text"]);
     assert!(h.stdout.contains("hint: give the model something to get wrong"), "{}", h.stdout);
 }
+
+#[test]
+fn a_timed_model_that_never_ends_says_it_was_sampled() {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let mut h = host();
+    // a real clock, so the time limit ends the search
+    h.clock = || START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    h.add_file(
+        "ticker.p",
+        "fun Elapse(lo: int, hi: int);\n\
+         event eTick: int;\n\
+         machine Ticker {\n\
+           start state S {\n\
+             entry { send this, eTick, 0; }\n\
+             on eTick do (n: int) { Elapse(1000, 1000); send this, eTick, n + 1; }\n\
+           }\n\
+         }\n\
+         test tcTicker [main=Ticker]: { Ticker };\n",
+    );
+    let args = ["check", "ticker.p", "--seed", "1", "--timeout", "1s", "--no-mutation", "--warn", "all"];
+    snappea(&mut h, &[&args[..], &["--format", "text"]].concat());
+    assert!(h.stdout.contains("timed model: sampled"), "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("note: timed model: clocks only grow"), "{}", h.stdout);
+    snappea(&mut h, &[&args[..], &["--json"]].concat());
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["test_cases"][0]["incomplete_reason"], "timed_model_sampled", "{}", v["test_cases"][0]);
+}
+
+#[test]
+fn a_passing_check_reports_where_schedules_branch() {
+    let mut h = host();
+    snappea(&mut h, &["check", "tcFine", "coins.p", "--seed", "1", "--no-mutation", "--warn", "all", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let case = &v["test_cases"][0];
+    assert_eq!(case["search_complete"], true, "{}", case);
+    assert!(case.get("incomplete_reason").is_none(), "{}", case);
+    assert!(case["branching"]["scheduling_points_with_choice"].is_number(), "{}", case);
+}

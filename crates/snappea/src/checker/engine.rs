@@ -378,10 +378,11 @@ pub trait Output {
     fn cancelled(&mut self) -> bool {
         false
     }
-    /// After every schedule: whether an exhaustive search is still under way (see
-    /// [`crate::checker::strategy::Strategy::exhausting`]). `snappea check` keeps such a search going when coverage
-    /// stops growing, since finishing it proves more than sampling would find.
-    fn exhausting(&mut self, _running: bool) {}
+    /// After every schedule: whether an exhaustive search is still under way, and its
+    /// estimated share done (see [`crate::checker::strategy::Strategy::exhausting`]).
+    /// `snappea check` keeps such a search going when coverage stops growing, since
+    /// finishing it proves more than sampling would find.
+    fn exhausting(&mut self, _progress: Option<f64>) {}
 }
 
 impl Output for Vec<String> {
@@ -936,9 +937,9 @@ impl<'p> Checker<'p> {
                     assignment,
                     foreign: self.foreign.clone(),
                     time: time.clone(),
-                    json_trace: verbose_json.as_ref().is_some_and(|v| {
-                        opts.verbose_trace_schedules == 0 || v.len() < opts.verbose_trace_schedules
-                    }),
+                    json_trace: verbose_json
+                        .as_ref()
+                        .is_some_and(|v| opts.verbose_trace_schedules == 0 || v.len() < opts.verbose_trace_schedules),
                     coverage: coverage_tables.as_ref().map(|t| {
                         let cov = Coverage::new(t.clone(), result.coverage.take().unwrap_or_default())
                             .with_condition_guidance(guided);
@@ -1138,7 +1139,7 @@ impl<'p> Checker<'p> {
                 }
             }
             let more = !is_replay && !ended_by_bug && strategy.prepare_next_iteration();
-            out.borrow_mut().exhausting(more && strategy.exhausting());
+            out.borrow_mut().exhausting(strategy.exhausting().filter(|_| more));
             if !reported_complete && strategy.search_complete() {
                 reported_complete = true;
                 pool.exhausted();

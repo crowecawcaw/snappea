@@ -55,6 +55,9 @@ pub struct SearchStats {
     pub running: bool,
     /// Untried alternatives along the path the search was exploring when it stopped.
     pub frontier: usize,
+    /// When `running`: the estimated share of the search done, in millionths (see
+    /// [`ExhaustiveStrategy::explored_fraction`]).
+    pub explored_ppm: u32,
     /// The test has hot monitor states. The search does not check liveness on cycles,
     /// so a finished search that pruned one has not verified liveness.
     pub hot_monitors: bool,
@@ -237,6 +240,20 @@ impl ExhaustiveStrategy {
     /// Untried alternatives remaining along the current DFS frontier.
     pub(crate) fn pending_alternatives(&self) -> usize {
         self.path.iter().map(|c| c.options.len() - c.taken - 1).sum()
+    }
+
+    /// Estimated share of the search tree explored, from where the current path is: the
+    /// alternatives finished at each choice point, each weighted by its share of the
+    /// tree as if siblings were the same size. Later siblings are usually smaller (they
+    /// reach states already explored), so this underestimates progress.
+    pub(crate) fn explored_fraction(&self) -> f64 {
+        let (mut done, mut weight) = (0.0, 1.0);
+        for c in &self.path {
+            let n = c.options.len() as f64;
+            done += weight * c.taken as f64 / n;
+            weight /= n;
+        }
+        done
     }
 
     /// The next decision of the current schedule: the path's choice while replaying it
@@ -456,6 +473,11 @@ impl SearchStats {
         self.depth_bound_hits += other.depth_bound_hits;
         self.max_depth = self.max_depth.max(other.max_depth);
         self.finished &= other.finished;
+        // the least advanced worker decides when the search ends
+        if other.running {
+            self.explored_ppm =
+                if self.running { self.explored_ppm.min(other.explored_ppm) } else { other.explored_ppm };
+        }
         self.running |= other.running;
         self.frontier += other.frontier;
         self.hot_monitors |= other.hot_monitors;
