@@ -471,17 +471,50 @@ impl CodeMap {
         }
     }
 
+    /// The reason of the innermost `coverage` suppression (scope and reason) whose scope
+    /// holds point `i`.
+    fn suppression<'s>(&self, i: usize, suppressions: &'s [(Span, String)]) -> Option<&'s str> {
+        let point = self.point_spans.get(i)?;
+        suppressions
+            .iter()
+            .filter(|(scope, _)| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
+            .min_by_key(|(scope, _)| scope.end - scope.start)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    /// What never ran in `coverage` (see [`CodeCoverage::uncovered`]), split into what no
+    /// suppression covers and what `coverage` suppressions accept, the latter with
+    /// `(suppressed: <reason>)` after what was missed.
+    pub fn split_uncovered(
+        &self,
+        coverage: &CodeCoverage,
+        suppressions: &[(Span, String)],
+    ) -> (Vec<Uncovered>, Vec<Uncovered>) {
+        let (mut open, mut accepted) = (Vec::new(), Vec::new());
+        for (i, mut u) in coverage.uncovered_points() {
+            match self.suppression(i as usize, suppressions) {
+                Some(reason) => {
+                    u.what = format!("{} (suppressed: {})", u.what, reason);
+                    accepted.push(u);
+                }
+                None => open.push(u),
+            }
+        }
+        for v in [&mut open, &mut accepted] {
+            v.sort();
+            v.dedup();
+        }
+        (open, accepted)
+    }
+
     /// Required points not reached by any selected test and not covered by a scoped
     /// `coverage` suppression. Conditions and transition pairs are advisory.
-    pub fn required_uncovered(&self, coverage: &CodeCoverage, suppressions: &[Span]) -> Vec<Uncovered> {
+    pub fn required_uncovered(&self, coverage: &CodeCoverage, suppressions: &[(Span, String)]) -> Vec<Uncovered> {
         let mut out = Vec::new();
         for (i, p) in self.points.iter().enumerate() {
-            let point = self.point_spans[i];
             if coverage.hit.contains(&(i as u32))
                 || !matches!(p.kind, PointKind::Statement | PointKind::Handler | PointKind::Then | PointKind::Else)
-                || suppressions
-                    .iter()
-                    .any(|scope| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
+                || self.suppression(i, suppressions).is_some()
             {
                 continue;
             }
@@ -498,14 +531,10 @@ impl CodeMap {
     }
 
     /// Required coverage counts after scoped suppressions.
-    pub fn required_summary(&self, coverage: &CodeCoverage, suppressions: &[Span]) -> Summary {
+    pub fn required_summary(&self, coverage: &CodeCoverage, suppressions: &[(Span, String)]) -> Summary {
         let mut s = Summary::default();
         for (i, p) in self.points.iter().enumerate() {
-            let point = self.point_spans[i];
-            if suppressions
-                .iter()
-                .any(|scope| scope.file == point.file && scope.start <= point.start && scope.end >= point.end)
-            {
+            if self.suppression(i, suppressions).is_some() {
                 continue;
             }
             let hit = coverage.hit.contains(&(i as u32));
@@ -556,6 +585,14 @@ impl CodeCoverage {
     /// outermost one (a handler never triggered, not each of its statements), with
     /// consecutive statements that were never reached as one entry.
     pub fn uncovered(&self) -> Vec<Uncovered> {
+        let mut out: Vec<Uncovered> = self.uncovered_points().into_iter().map(|(_, u)| u).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// [`CodeCoverage::uncovered`] unsorted, with the index of each entry's first point.
+    fn uncovered_points(&self) -> Vec<(u32, Uncovered)> {
         let mut out = Vec::new();
         let mut i = 0;
         while i < self.points.len() {
@@ -580,16 +617,17 @@ impl CodeCoverage {
                     i += 1;
                 }
             }
-            out.push(Uncovered {
-                file: p.file.clone(),
-                line: p.line,
-                end_line,
-                context: p.context.clone(),
-                what: p.missed.clone(),
-            });
+            out.push((
+                this,
+                Uncovered {
+                    file: p.file.clone(),
+                    line: p.line,
+                    end_line,
+                    context: p.context.clone(),
+                    what: p.missed.clone(),
+                },
+            ));
         }
-        out.sort();
-        out.dedup();
         out
     }
 

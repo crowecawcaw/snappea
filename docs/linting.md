@@ -311,8 +311,9 @@ The same comment excludes code from `snappea check`'s mutation testing:
 on eObserved do { validate(payload); }
 ```
 
-The raw coverage report still lists the point; the required coverage counts exclude its
-scope. A misspelled coverage suppression ID is an `invalid-suppression` finding.
+The coverage report lists the point under `Not covered, suppressed:` with its reason
+(`coverage.uncovered_suppressed` in JSON); the required coverage counts exclude its
+scope. Before an `if` or `while`, the suppression also covers its condition outcomes. A misspelled coverage suppression ID is an `invalid-suppression` finding.
 
 The `-- reason` suffix is optional, but explains the abstraction to reviewers.
 Comments must be on their own line. Unknown IDs, malformed directives, and

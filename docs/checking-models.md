@@ -282,8 +282,19 @@ entered is listed, but its handlers are what the gate counts). `assert false` pa
 must never run. Components outside the selected tests do not enter the totals. To accept
 an intentional gap, place `// snappea-lint: allow coverage -- reason` before its
 statement, handler, function, or machine; coverage suppressions need a reason and are
-validated with the other scoped lint directives. They remain in the raw coverage totals,
+validated with the other scoped lint directives. A suppression before an `if` or `while`
+also covers its condition outcomes. They remain in the raw coverage totals,
 while `coverage.required` in JSON shows post-suppression counts.
+
+Suppressed sites that never ran are listed under their own heading, each with its
+reason, not as plain uncovered code:
+
+```text
+Not covered, suppressed:
+  PTst/Tests.p:129  SwapHolder.Forwarding, on eLoadTop: never handled (suppressed: used only by tcBugPointerOnlyCas)
+```
+
+In JSON they are under `coverage.uncovered_suppressed`; `coverage.uncovered` holds the rest.
 
 The list after the test cases names, for each piece of code that never ran, the
 outermost one: a handler that was never triggered rather than each of its statements.

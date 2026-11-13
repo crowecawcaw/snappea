@@ -712,6 +712,41 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert_eq!(result["coverage"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["required"]["handlers"], serde_json::json!({"covered": 0, "total": 0}));
     assert_eq!(result["coverage"]["uncovered_required"].as_array().unwrap().len(), 0);
+    // a suppressed site is listed apart, with its reason, not as plain uncovered
+    assert_eq!(result["coverage"]["uncovered"].as_array().unwrap().len(), 0, "{}", result["coverage"]);
+    assert_eq!(
+        result["coverage"]["uncovered_suppressed"][0]["what"],
+        "never handled (suppressed: exercised by a separate integration suite)"
+    );
+    assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--format", "text"]), 0);
+    assert!(!h.stdout.contains("Not covered by the test case:"), "{}", h.stdout);
+    assert!(
+        h.stdout.contains(
+            "Not covered, suppressed:\n  coverage.p:4  Main.S, on ePing: never handled (suppressed: exercised"
+        ),
+        "{}",
+        h.stdout
+    );
+
+    // a suppression before a `while` covers its condition outcomes too
+    h.add_file(
+        "loop.p",
+        "machine Main { var n: int;\n\
+         start state S { entry {\n\
+           // snappea-lint: allow coverage -- the bound only stops a runaway loop\n\
+           while (n < 3 && n < 10) { n = n + 1; }\n\
+           assert n == 3;\n\
+         } } }\n\
+         // snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
+         test tcMain [main=Main]: { Main };\n",
+    );
+    assert_eq!(snappea(&mut h, &["check", "loop.p", "--no-mutation", "--json"]), 0, "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["coverage"]["uncovered"].as_array().unwrap().len(), 0, "{}", result["coverage"]);
+    assert!(result["coverage"]["uncovered_suppressed"][0]["what"]
+        .as_str()
+        .unwrap()
+        .starts_with("condition n < 10 never false (suppressed: the bound"));
 
     h.add_file(
         "helper.p",

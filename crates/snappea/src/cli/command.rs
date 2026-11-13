@@ -1118,6 +1118,7 @@ fn run_check(
     let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
     let required = map.required_summary(&suite, &coverage_suppressions);
     let required_uncovered = map.required_uncovered(&suite, &coverage_suppressions);
+    let (uncovered, uncovered_suppressed) = map.split_uncovered(&suite, &coverage_suppressions);
     let required_missing = required.statements.covered < required.statements.total
         || required.branches.covered < required.branches.total
         || required.handlers.covered < required.handlers.total;
@@ -1136,7 +1137,10 @@ fn run_check(
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
         }
         let heading = if n > 1 { "Not covered by any test case:" } else { "Not covered by the test case:" };
-        for l in uncovered_lines(heading, &suite.uncovered(), " (--json lists all)") {
+        for l in uncovered_lines(heading, &uncovered, " (--json lists all)") {
+            con.inner.out_line(&l);
+        }
+        for l in uncovered_lines("Not covered, suppressed:", &uncovered_suppressed, " (--json lists all)") {
             con.inner.out_line(&l);
         }
         for l in uncovered_lines(
@@ -1296,6 +1300,8 @@ fn run_check(
         return Ok((if failed > 0 || mutation_failed { BUG } else { OK }, result));
     }
     let mut coverage = suite.to_json(false);
+    coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
+    coverage["uncovered_suppressed"] = uncovered_suppressed.iter().map(|u| u.to_json()).collect();
     coverage["excluded_components"] = excluded.iter().map(|u| u.to_json()).collect();
     coverage["partial"] = json!(failed > 0);
     coverage["required"] = required.to_json();

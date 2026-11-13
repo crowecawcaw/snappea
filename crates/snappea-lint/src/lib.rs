@@ -186,8 +186,9 @@ pub fn driver_machines(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
     Ok(suppression::driver_machines(&Context::parse(sources)?))
 }
 
-/// The source scopes intentionally omitted from `snappea check` coverage requirements.
-pub fn coverage_suppressions(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
+/// The source scopes intentionally omitted from `snappea check` coverage requirements,
+/// with the reason each `// snappea-lint: allow coverage -- reason` gives.
+pub fn coverage_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
     let context = Context::parse(sources)?;
     let registry = Registry::builtins();
     Ok(suppression::coverage_suppressions(&context, &registry.rules))
