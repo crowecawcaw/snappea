@@ -7,9 +7,13 @@
 //   - a delete is dropped: the note changed since the user last saw it, and deleting
 //     content the user never saw would lose it.
 // Every attempt carries the edit's id, so a retry after a lost reply is recognised.
+// A timeout does not mean the reply was lost: it may still arrive after the resend, so
+// the client can get two replies for one change. It ignores every reply once the
+// change is resolved, and a conflict that reports no version newer than the attempt's
+// base (a fresh conflict always reports a newer one).
 
 event ePull;
-// The client's request timed out (its reply was lost); it resends the same request.
+// The client's request timed out (its reply is lost or late); it resends the same request.
 event eSyncTimeout;
 // Tells the driver this client has resolved its change and stopped editing.
 event eClientIdle;
@@ -54,6 +58,10 @@ machine SyncClient {
     }
     on eUpdateConflict do (r: (req: int, server: tNote)) {
       var e: int;
+      if (r.server.version <= base) {
+        // A late reply to an earlier attempt: this attempt already uses its version.
+        return;
+      }
       if (isDelete) {
         note = r.server;
         goto Idle, false;
@@ -75,6 +83,8 @@ machine SyncClient {
       announce eOpDone, (client = id, edit = edit, applied = applied, version = note.version);
       send owner, eClientIdle;
     }
+    // Late replies to earlier attempts: the change is already resolved.
+    ignore eUpdateOk, eUpdateConflict;
     on ePull do {
       send server, eFetch, this;
     }
