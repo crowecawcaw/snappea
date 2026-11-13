@@ -150,6 +150,8 @@ pub fn parents(mutants: &[Mutant]) -> Vec<Option<usize>> {
 /// The functions a mutant may change: those of the machines the test cases check (not
 /// spec monitors, a test case's main machine, nor the other machines in `drivers`, see
 /// [`crate::checker::driver_facts::driver_machines`]), and the functions they call.
+/// Functions declared under a `PTst` directory are test scaffolding, even when a
+/// design function calls them. Their callees outside `PTst` are still considered.
 pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<bool> {
     let mut machines = vec![false; prog.machines.len()];
     let mut mains = vec![false; prog.machines.len()];
@@ -190,6 +192,16 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec
     for (i, f) in prog.funs.iter().enumerate() {
         if f.parent.is_some_and(|p| funs[p.idx()]) {
             funs[i] = true;
+        }
+    }
+    for (i, f) in prog.funs.iter().enumerate() {
+        if prog
+            .sources
+            .files()
+            .get(f.span.file.0 as usize)
+            .is_some_and(|source| source.name.split(['/', '\\']).any(|part| part.eq_ignore_ascii_case("PTst")))
+        {
+            funs[i] = false;
         }
     }
     funs
@@ -801,6 +813,32 @@ mod tests {
             .iter()
             .zip(&ms[1..])
             .all(|(p, m)| *p == Some(if m.line == 7 && !m.coarse { 1 } else { 0 })));
+    }
+
+    #[test]
+    fn ptst_global_helpers_are_not_mutated_but_their_design_callees_are() {
+        for path in ["PTst/Network.p", "sample/ptst/Network.p", r"sample\PTst\Network.p"] {
+            let mut sm = crate::syntax::SourceMap::new();
+            sm.add(path, "fun Pick(): int { return DesignHelper() + 1; }");
+            sm.add(
+                "PSrc/Design.p",
+                r#"
+                fun DesignHelper(): int { return 2 + 1; }
+                machine Server { start state S { entry { assert Pick() > 0; } } }
+                machine Main { start state S { entry { new Server(); } } }
+                test tc [main=Main]: { Main, Server };
+            "#,
+            );
+            let prog = crate::sema::compile(&sm, &Default::default()).unwrap().program;
+            let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
+            let selected = |name| funs[prog.funs.iter().position(|f| f.name == name).unwrap()];
+            assert!(!selected("Pick"), "{path}");
+            assert!(selected("DesignHelper"), "a test helper must not hide production callees");
+            let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+            let ms = mutants(&prog, &funs, &probes);
+            assert!(ms.iter().all(|m| m.file != path));
+            assert!(ms.iter().any(|m| m.context == "DesignHelper"));
+        }
     }
 
     #[test]
