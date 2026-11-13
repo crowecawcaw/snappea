@@ -304,6 +304,24 @@ pub(crate) struct Quiet<'a> {
     pub progress: Option<ProgressView>,
 }
 
+/// The most stdout text [`Quiet`] keeps to report a failure with: the end of it. A
+/// `check -v` prints every schedule's log, far too much to hold.
+#[cfg(feature = "cli")]
+const KEPT_OUT: usize = 1 << 20;
+
+/// Appends `text` to `kept`, dropping the start once it holds more than [`KEPT_OUT`] bytes.
+#[cfg(feature = "cli")]
+fn push_tail(kept: &mut String, text: &str) {
+    kept.push_str(text);
+    if kept.len() > 2 * KEPT_OUT {
+        let mut cut = kept.len() - KEPT_OUT;
+        while !kept.is_char_boundary(cut) {
+            cut += 1;
+        }
+        kept.drain(..cut);
+    }
+}
+
 /// How [`Quiet`] shows progress snapshots (`snappea check --progress`).
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -365,10 +383,10 @@ impl Host for Quiet<'_> {
             self.captured_err.push_str(text);
         }
         if let Some(c) = self.captured.as_mut().filter(|_| stream == Stream::Out) {
-            return c.push_str(text);
+            return push_tail(c, text);
         }
         if stream == Stream::Out && self.record_errors {
-            self.shown_out.push_str(text);
+            push_tail(&mut self.shown_out, text);
         }
         if stream == Stream::Err || !self.quiet {
             self.clear_status();

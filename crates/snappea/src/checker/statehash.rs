@@ -7,6 +7,10 @@
 //! counts) and the liveness temperatures, which grow with every step and would make
 //! every state unique.
 //!
+//! With time tracking on, it also covers every clock: each machine's, the stamps of
+//! queued events, `Mark()` handles and the symbol counter. Clocks only grow, so a timed
+//! model revisits few states; the search still finishes when the model terminates.
+//!
 //! Two scheduling points with the same hash therefore have the same futures (up to hash
 //! collisions), which is what the exhaustive search relies on to skip repeated states;
 //! the Q-learning strategy uses the same hash to recognise states it has seen before.
@@ -79,6 +83,16 @@ pub fn program_state(rt: &Runtime) -> u64 {
     h.write_usize(rt.monitors.len());
     for m in &rt.monitors {
         monitor(m, &mut h);
+    }
+    if let Some(t) = &rt.time {
+        // what decides a timed model's future beyond the untimed state
+        t.syms.hash(&mut h);
+        t.marks.hash(&mut h);
+        t.observer_clock.hash(&mut h);
+        // event stamps are hashed with their events
+        for m in &rt.machines {
+            m.clock.hash(&mut h);
+        }
     }
     h.finish()
 }
@@ -246,6 +260,10 @@ fn transition(t: &Transition, h: &mut StableHasher) {
 fn event(e: &Event, h: &mut StableHasher) {
     e.id.hash(h);
     value(&e.payload, h);
+    // only set while time is tracked
+    if let Some(stamp) = &e.stamp {
+        stamp.hash(h);
+    }
 }
 
 fn opt_event(e: Option<&Event>, h: &mut StableHasher) {
