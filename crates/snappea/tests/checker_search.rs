@@ -334,15 +334,157 @@ fn auto_completes_finite_search_and_replays_failures() {
 }
 
 #[test]
-fn auto_does_not_claim_cyclic_hot_monitors_are_exhausted() {
+fn auto_reports_a_fair_hot_cycle_as_a_lasso_that_replays() {
     let src = "event Tick; spec Progress observes Tick { start hot state Waiting { on Tick do {} } }
         machine Main { start state S { entry { send this, Tick; } on Tick do { announce Tick; send this, Tick; } } }
         test tcMain [main=Main]: assert Progress in { Main };";
     let result =
         check(src, &CheckerOptions { liveness_temperature_threshold: Some(50), ..opts(StrategyKind::Auto, 1000) });
     assert_eq!(result.report.num_bugs, 1);
-    assert!(result.report.bug_reports[0].contains("potential liveness bug"));
+    assert!(result.report.bug_reports[0].contains("liveness bug in hot state 'Waiting'"));
+    assert!(result.report.bug_reports[0].contains("repeat"), "{}", result.report.bug_reports[0]);
     assert!(!result.exhaustive.unwrap().finished);
+}
+
+/// A gateway retries a compare-and-swap until it succeeds; `CAS` decides whether it can.
+fn retry_loop(cas: &str) -> String {
+    format!(
+        "event eReq; event eDone; event eCas: machine; event eCasResp: bool;
+         spec Answered observes eReq, eDone {{
+           start cold state Idle {{ on eReq goto Waiting; }}
+           hot state Waiting {{ on eDone goto Idle; }}
+         }}
+         machine Store {{
+           var version: int;
+           start state Serving {{
+             on eCas do (c: machine) {{
+               if ({cas}) {{ version = version + 1; send c, eCasResp, true; }}
+               else {{ send c, eCasResp, false; }}
+             }}
+           }}
+         }}
+         machine Main {{
+           var store: Store;
+           start state Init {{
+             entry {{
+               var done: bool;
+               store = new Store();
+               announce eReq;
+               while (!done) {{
+                 send store, eCas, this;
+                 receive {{ case eCasResp: (ok: bool) {{ done = ok; }} }}
+               }}
+               announce eDone;
+             }}
+           }}
+         }}
+         test tcMain [main=Main]: assert Answered in {{ Main, Store }};"
+    )
+}
+
+#[test]
+fn dfs_reports_a_livelock_on_the_first_cycle_and_its_lasso_replays() {
+    for strategy in [StrategyKind::Dfs, StrategyKind::RandomDfs, StrategyKind::Auto] {
+        let src = retry_loop("false");
+        let r = check(&src, &opts(strategy, 100));
+        assert_eq!(r.report.num_bugs, 1, "{strategy}");
+        let bug = &r.report.bug_reports[0];
+        assert!(bug.contains("detected liveness bug in hot state 'Waiting': the last"), "{bug}");
+        assert!(r.report.explored_unfair_schedules + r.report.explored_fair_schedules <= 2, "{strategy}");
+        let trace = ScheduleTrace::parse(r.schedule_trace.as_ref().unwrap()).unwrap();
+        let start = trace.lasso.expect("a lasso");
+        assert!(start < trace.steps.len());
+        let replay = check(&src, &CheckerOptions { replay: Some(trace.clone()), ..opts(StrategyKind::Replay, 1) });
+        assert!(replay.replay_error.is_none(), "{:?}", replay.replay_error);
+        assert_eq!(&replay.report.bug_reports, &r.report.bug_reports);
+        // the readable trace comes from that replay
+        assert!(r.readable_trace.unwrap().contains("repeat them forever"));
+        // a lasso whose end does not return to its start does not replay as a bug
+        let wrong = ScheduleTrace { lasso: Some(0), ..trace };
+        let replay = check(&src, &CheckerOptions { replay: Some(wrong), ..opts(StrategyKind::Replay, 1) });
+        assert_eq!(replay.report.num_bugs, 0);
+        assert!(replay.replay_error.unwrap().contains("does not return to its state after step 0"));
+    }
+    // the loop ends once the CAS can succeed: every behaviour explored, liveness verified
+    let ok = check(&retry_loop("version == 0"), &opts(StrategyKind::Dfs, 0));
+    assert_eq!(ok.report.num_bugs, 0);
+    assert!(ok.exhaustive.unwrap().complete());
+}
+
+#[test]
+fn dfs_prunes_unfair_cycles_and_cycles_that_leave_the_hot_state() {
+    // Main ticks forever; the worker that would answer is enabled throughout but never
+    // runs in that cycle: unfair, so not a bug. Once it runs, the monitor is cold.
+    let unfair = "event eTick; event eGo; event eReq; event eDone;
+        spec Answered observes eReq, eDone {
+          start cold state Idle { on eReq goto Waiting; }
+          hot state Waiting { on eDone goto Idle; }
+        }
+        machine Worker { start state S { on eGo do { announce eDone; } } }
+        machine Main { start state S {
+          entry { var w: Worker; w = new Worker(); announce eReq; send w, eGo; send this, eTick; }
+          on eTick do { send this, eTick; }
+        } }
+        test tcMain [main=Main]: assert Answered in { Main, Worker };";
+    let r = check(unfair, &opts(StrategyKind::Dfs, 0));
+    assert_eq!(r.report.num_bugs, 0, "{:?}", r.report.bug_reports);
+    let stats = r.exhaustive.unwrap();
+    assert!(stats.finished && stats.live_cycle_prunes > 0);
+    assert!(!stats.complete(), "an unfair hot cycle leaves liveness unverified");
+    assert!(stats.text(1, 10, "..").contains("liveness was not verified"));
+
+    // a monitor that enters a cold state in every cycle
+    let cold = "event eTick;
+        spec Beat observes eTick {
+          start hot state Waiting { on eTick goto Seen; }
+          cold state Seen { on eTick goto Waiting; }
+        }
+        machine Main { start state S { entry { send this, eTick; } on eTick do { announce eTick; send this, eTick; } } }
+        test tcMain [main=Main]: assert Beat in { Main };";
+    let r = check(cold, &opts(StrategyKind::Dfs, 0));
+    assert_eq!(r.report.num_bugs, 0, "{:?}", r.report.bug_reports);
+
+    // a cycle that only repeats while a liveness monitor is cold verifies liveness
+    let idle = "event eTick; event eReq; event eDone;
+        spec Answered observes eReq, eDone {
+          start cold state Idle { on eReq goto Waiting; }
+          hot state Waiting { on eDone goto Idle; }
+        }
+        machine Main { start state S {
+          entry { announce eReq; announce eDone; send this, eTick; }
+          on eTick do { send this, eTick; }
+        } }
+        test tcMain [main=Main]: assert Answered in { Main };";
+    let r = check(idle, &opts(StrategyKind::Dfs, 0));
+    assert_eq!(r.report.num_bugs, 0);
+    let stats = r.exhaustive.unwrap();
+    assert!(stats.cycle_prunes > 0 && stats.live_cycle_prunes == 0);
+    assert!(stats.complete(), "{stats:?}");
+}
+
+#[test]
+fn a_lasso_must_take_fair_choices_both_ways_but_not_plain_ones() {
+    let src = |choice: &str| {
+        format!(
+            "event eTick; event eReq; event eDone;
+             spec Answered observes eReq, eDone {{
+               start cold state Idle {{ on eReq goto Waiting; }}
+               hot state Waiting {{ on eDone goto Idle; }}
+             }}
+             machine Main {{ start state S {{
+               entry {{ announce eReq; send this, eTick; }}
+               on eTick do {{ if ({choice}) {{ announce eDone; }} else {{ send this, eTick; }} }}
+             }} }}
+             test tcMain [main=Main]: assert Answered in {{ Main }};"
+        )
+    };
+    // `$` may lose forever (a lossy network with retries is a liveness bug)
+    let plain = check(&src("$"), &opts(StrategyKind::Dfs, 0));
+    assert_eq!(plain.report.num_bugs, 1);
+    assert!(plain.report.bug_reports[0].contains("repeat"));
+    // `$$` must eventually take each value
+    let fair = check(&src("$$"), &opts(StrategyKind::Dfs, 0));
+    assert_eq!(fair.report.num_bugs, 0, "{:?}", fair.report.bug_reports);
 }
 
 #[test]

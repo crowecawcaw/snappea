@@ -138,6 +138,7 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::Goto { .. }
             | Op::Receive { .. }
             | Op::ChooseBool
+            | Op::ChooseFairBool
             | Op::ChooseInt
             | Op::ChooseSeq
             | Op::ChooseSet
@@ -893,8 +894,11 @@ impl<'a> Compiler<'a> {
                 self.emit(Op::PushNull);
             }
             ExprKind::Str { base, args } => self.format(base, args, false),
-            ExprKind::Nondet | ExprKind::FairNondet => {
+            ExprKind::Nondet => {
                 self.emit(Op::ChooseBool);
+            }
+            ExprKind::FairNondet => {
+                self.emit(Op::ChooseFairBool);
             }
             ExprKind::This => {
                 self.emit(Op::PushThis);
