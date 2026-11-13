@@ -2,11 +2,11 @@
 // membership changes (a consumer shutting down, a session expiring). The coordinator
 // and consumers are the design under test.
 
-// Two partitions with `records` records each, and two consumers.
-fun StartGroup(coordinator: machine, records: int): seq[machine] {
+// `partitions` partitions with `records` records each, and two consumers.
+fun StartGroup(coordinator: machine, partitions: int, records: int): seq[machine] {
   var started: seq[machine];
   var id: int;
-  announce eGroupPlanned, (partitions = 2, records = records);
+  announce eGroupPlanned, (partitions = partitions, records = records);
   while (id < 2) {
     started += (id, new Consumer((coordinator = coordinator, id = id + 1, records = records)));
     id = id + 1;
@@ -18,7 +18,7 @@ fun StartGroup(coordinator: machine, records: int): seq[machine] {
 // is already processing. Its in-flight commits for the partition it loses are fenced.
 machine JoinRebalance {
   start state Run {
-    entry { StartGroup(new Coordinator(2), 2); }
+    entry { StartGroup(new Coordinator(2), 2, 2); }
   }
 }
 
@@ -28,7 +28,7 @@ machine LeaveRebalance {
   start state Run {
     entry {
       var consumers: seq[machine];
-      consumers = StartGroup(new Coordinator(2), 1);
+      consumers = StartGroup(new Coordinator(2), 2, 1);
       send consumers[1], eShutdown;
     }
   }
@@ -40,26 +40,33 @@ machine ZombieExpired {
   start state Run {
     entry {
       var coordinator: Coordinator;
-      coordinator = new Coordinator(2);
-      StartGroup(coordinator, 1);
+      coordinator = new Coordinator(1);
+      StartGroup(coordinator, 1, 1);
       send coordinator, eExpire, (id = 2,);
     }
   }
 }
 
-// Member 2 joined and crashed: it never fetches or commits. The driver stands in for it
-// (its join and then its session expiry, in that order). Consumer 1 must take over its
-// partition once the session expires.
+// Member 2 joined and crashed: it never fetches or commits. The driver stands in for it:
+// it joins as member 2 and gets both partitions, then starts consumer 1 and expires
+// member 2's session at a moment the scheduler picks. Consumer 1 must take over member
+// 2's partitions once the session expires, whether it joined before or after that.
 machine CrashedMember {
-  start state Run {
+  var coordinator: Coordinator;
+
+  start state Joining {
     entry {
-      var coordinator: Coordinator;
       coordinator = new Coordinator(2);
       announce eGroupPlanned, (partitions = 2, records = 1);
-      new Consumer((coordinator = coordinator, id = 1, records = 1));
       send coordinator, eJoin, (consumer = this, id = 2);
+    }
+    on eAssignment goto Crashed with {
+      new Consumer((coordinator = coordinator, id = 1, records = 1));
       send coordinator, eExpire, (id = 2,);
     }
+  }
+
+  state Crashed {
     ignore eAssignment;
   }
 }
@@ -69,7 +76,7 @@ machine BugNoGenerationCheck {
     entry {
       var coordinator: UnfencedCoordinator;
       coordinator = new UnfencedCoordinator(2);
-      StartGroup(coordinator, 2);
+      StartGroup(coordinator, 2, 2);
       send coordinator, eExpire, (id = 2,);
     }
   }

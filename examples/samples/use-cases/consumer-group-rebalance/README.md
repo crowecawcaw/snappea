@@ -22,8 +22,9 @@ processed twice (at-least-once), never skipped.
 - A commit or offset fetch is accepted only from the partition's owner in the current
   generation; one from that owner is never rejected. A consumer is told a commit
   succeeded only if it was accepted.
-- Each generation gives every partition to exactly one member. Within a generation a
-  partition is held by at most one consumer: the one it was assigned to.
+- Each generation lists each member once and gives every partition to exactly one
+  member. Within a generation a partition is held by at most one consumer: the one
+  it was assigned to.
 - A consumer whose commit or fetch was rejected stops working on that assignment.
 - Progress (hot state): every record of every partition is eventually committed, and
   a live consumer that was fenced out of the group eventually rejoins.
@@ -38,7 +39,8 @@ the coordinator talk only through messages, which arrive in order per sender.
   that missed a rebalance still has commits in flight; they are rejected.
 - **Drop stale replies.** A reply tagged with an older generation is ignored: the
   newer assignment always arrives first (in-order delivery), so a consumer that is
-  still a member never rejoins needlessly.
+  still a member never rejoins needlessly (`GroupSafety` fails if a generation lists
+  a member twice).
 - **Fence the offset fetch too.** The checker found that an expelled consumer whose
   new partition was already fully committed never commits again, so it never learned
   it was expelled and never rejoined. Fencing the fetch closes that. (A real client
@@ -58,14 +60,15 @@ the coordinator talk only through messages, which arrive in order per sender.
 
 ## Test cases
 
-All use two partitions and two consumers.
+All use two consumers, and two partitions unless stated. Times are for one worker
+(`-j 1`); an exhaustive result needs that test case's time within `--timeout`.
 
 | Test | Drives | Why it matters | Result |
 | --- | --- | --- | --- |
-| `tcJoinRebalance` | Both consumers start together, 2 records per partition | The core race: consumer 1 is processing partition 1 when it moves to consumer 2; its in-flight commits are fenced | passes, exhaustive (about 6 s alone) |
-| `tcLeaveRebalance` | Consumer 2 shuts down at any moment, 1 record each | Leave: consumer 1 takes over from the last committed offset | passes, sampled |
-| `tcCrashedMember` | Member 2 joins and crashes (the driver stands in for it), then its session expires | Expiry is what frees a dead member's partitions | passes, sampled |
-| `tcZombieExpired` | Consumer 2's session expires while it is still running, 1 record each | The zombie's commits and fetches are fenced, then it rejoins | passes, sampled |
+| `tcJoinRebalance` | Both consumers start together, 2 records per partition | The core race: consumer 1 is processing partition 1 when it moves to consumer 2; its in-flight commits are fenced | passes, exhaustive (about 6 s) |
+| `tcLeaveRebalance` | Consumer 2 shuts down at any moment, 1 record each | Leave: consumer 1 takes over from the last committed offset | passes, exhaustive (about 20 s) |
+| `tcCrashedMember` | Member 2 joins, gets both partitions and crashes (the driver stands in for it); consumer 1 starts while member 2's session expires | Expiry is what frees a dead member's partitions, before or after consumer 1 joins | passes, exhaustive |
+| `tcZombieExpired` | One partition, 1 record; consumer 2's session expires at any moment while it runs | If consumer 2 owned the partition, its fetch or commit is fenced, consumer 1 takes over, and consumer 2 rejoins | passes, exhaustive (about 4 s) |
 | `tcBugNoGenerationCheck` | `UnfencedCoordinator`, a zombie, 2 records each | **Expected to fail**: `commit from generation N accepted in generation M` | fails |
 
 In the negative control the stale commit is accepted after the new owner committed
@@ -78,19 +81,22 @@ followed.
 ## Run
 
 ```sh
-snappea check tcJoinRebalance tcLeaveRebalance tcCrashedMember tcZombieExpired --timeout 20s
+snappea check tcJoinRebalance tcLeaveRebalance tcCrashedMember tcZombieExpired --timeout 30s
 snappea check mutation tcJoinRebalance tcLeaveRebalance tcCrashedMember tcZombieExpired
 snappea check tcBugNoGenerationCheck   # exits 1: commit from generation ... accepted
 ```
 
 ## Bounds and omissions
 
-Two partitions of one or two records, two consumers, one join, leave or expiry
-beyond the initial joins. Not modeled: heartbeats (session expiry is a driver
+One or two partitions of one or two records, two consumers, one join, leave or
+expiry beyond the initial joins. Not modeled: heartbeats (session expiry is a driver
 action), cooperative (incremental) rebalancing, committing before a revoke, consumer
 crashes after processing (the next owner reprocesses; at-least-once covers it),
-coordinator failover, and a group whose members each get no partition (with more
-consumers than partitions, an expelled idle consumer learns only through heartbeats).
+and coordinator failover. A consumer that is expelled while idle (it finished its
+partitions, or got none) sends no fetch or commit, so it never learns and never
+rejoins; a real client learns through heartbeats. The progress spec therefore requires
+a rejoin only from a consumer that was fenced, and `tcZombieExpired` reaches this case
+without failing.
 
 Suppressions: the coordinator's `eCommitRejected`, `eFetchRejected` and `eFetchServed`
 announcements and the consumer's `eCommitAcked` are observation only; removing

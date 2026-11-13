@@ -17,7 +17,8 @@ from old and copying it to new, then asks the router to cut reads over to new.
 **Contract**
 
 - A write that returned is in both stores (no lost writes), and new only ever holds
-  versions old committed for that key (nothing resurrected or invented).
+  versions old committed for that key (nothing resurrected or invented). New never
+  moves a key back to an older version.
 - At cutover every key reads the same from new as from old. This is the verify step:
   the model shows it never finds a difference.
 - A read returns at least the newest write that returned before the read started,
@@ -67,26 +68,26 @@ The backfill reads a row and then writes it: two steps, with writers in between.
 | --- | --- | --- | --- |
 | `tcBackfillRacesWriter` | Key 1 = 10, one writer puts 20 during the backfill | The classic stale copy | passes, exhaustive |
 | `tcDeleteDuringBackfill` | One writer deletes key 1 during the backfill | Resurrection | passes, exhaustive |
-| `tcTwoWritersOneKey` | Two writers put 20 and 30 on key 1 | Dual-writes reach new in the other order than old committed them | passes, exhaustive (about 20 s) |
-| `tcReadsAcrossCutover` | One writer, one reader reading key 1 twice | Reads stay fresh and monotonic across the flip | passes, sampled (exhaustive in about 30 s) |
+| `tcTwoWritersOneKey` | Two writers put 20 and 30 on key 1 | Dual-writes reach new in the other order than old committed them | passes, exhaustive (about 15 s) |
+| `tcReadsAcrossCutover` | One writer, one reader reading key 1 twice | Reads stay fresh and monotonic across the flip | passes, exhaustive (about 27 s; sampled under a shorter `--timeout`) |
 | `tcWriteAfterCutover` | A write and two reads start after cutover | Lifecycle boundary: writes still go old then new; reads come from new | passes, exhaustive |
 | `tcGeneratedMigration` | Two keys, two writers each putting or deleting either key, a reader of key 1, 2 or 3 (never written) | Keys do not leak into each other; reading a missing key | passes, sampled |
-| `tcBugBlindBackfill` | Unconditional copy, as in `tcBackfillRacesWriter` | **Expected to fail**: `new store lost` (a write that returned, or a change at cutover) | fails |
-| `tcBugResurrectedDelete` | Insert-if-absent, hard deletes, as in `tcDeleteDuringBackfill` | **Expected to fail**: `new store lost` (the delete) | fails |
-| `tcBugCutoverWithoutDrain` | A router that flips at once, as in `tcReadsAcrossCutover` | **Expected to fail**: `cutover broken` (either symptom below) | fails |
+| `tcBugBlindBackfill` | Unconditional copy, as in `tcBackfillRacesWriter` | **Expected to fail**: `new store moved key 1 back from version 2 to 1` | fails |
+| `tcBugResurrectedDelete` | Insert-if-absent, hard deletes, as in `tcDeleteDuringBackfill` | **Expected to fail**: `new store moved key 1 back from version 2 to 1` (the delete was version 2) | fails |
+| `tcBugCutoverMidWrite` | A router that flips at once, one writer, no reader | **Expected to fail**: `cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old` | fails |
+| `tcBugCutoverMidRead` | A router that flips at once, one reader, no writer | **Expected to fail**: `cutover broken: old store served a read after cutover` | fails |
 
-The first two negative controls fail with whichever symptom the search reaches first:
-`new store lost write 1: it returned, but new lacks version 2 of key 1`, or
-`cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old`
-(`-1` for the delete). Without the drain the search reports either that same
-cutover-time difference or `cutover broken: old store served a read after cutover`.
+Each negative control fails with exactly one message, whatever schedule the search
+finds first: the stale copy is caught when it lands in new, before a write returns or
+the cutover compares the stores. The router without the drain has two flaws, so each
+gets its own control with only the traffic that exposes it.
 
 ## Run
 
 ```sh
-snappea check tcBackfillRacesWriter tcDeleteDuringBackfill tcTwoWritersOneKey tcReadsAcrossCutover tcWriteAfterCutover tcGeneratedMigration --timeout 20s
+snappea check tcBackfillRacesWriter tcDeleteDuringBackfill tcTwoWritersOneKey tcReadsAcrossCutover tcWriteAfterCutover tcGeneratedMigration --timeout 30s
 snappea check mutation tcBackfillRacesWriter tcDeleteDuringBackfill tcTwoWritersOneKey tcReadsAcrossCutover tcWriteAfterCutover tcGeneratedMigration
-snappea check tcBugBlindBackfill     # exits 1: new store lost ...
+snappea check tcBugBlindBackfill     # exits 1: new store moved key 1 back from version 2 to 1
 ```
 
 ## Bounds and omissions

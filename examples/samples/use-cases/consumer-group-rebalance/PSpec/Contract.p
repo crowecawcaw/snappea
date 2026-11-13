@@ -18,8 +18,8 @@ event eProcessed: (member: int, partition: int, offset: int);
 // - A commit or offset fetch is accepted only from the partition's owner in the
 //   current generation, and one from that owner is never rejected.
 // - Committed offsets never go back, and only cover records someone processed.
-// - Each generation assigns every partition to exactly one member (none if the group
-//   is empty), and nothing else.
+// - Each generation lists each member once (a member never rejoins) and assigns every
+//   partition to exactly one member (none if the group is empty), and nothing else.
 // - Within a generation, a partition is held by at most one consumer, and only by the
 //   one the coordinator assigned it to.
 // - A consumer whose commit or offset fetch was rejected stops working on that
@@ -48,7 +48,13 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
     }
     on eGeneration do (p: (gen: int, members: seq[int], owner: map[int, int])) {
       var part: int;
+      var i: int;
       assert p.gen > gen, format("generation {0} started after generation {1}", p.gen, gen);
+      while (i < sizeof(p.members)) {
+        assert !(p.members[i] in Prefix(p.members, i)),
+          format("generation {0} lists member {1} twice: it rejoined while still a member", p.gen, p.members[i]);
+        i = i + 1;
+      }
       foreach (part in keys(p.owner)) {
         assert part < partitions, format("generation {0} assigns partition {1}, which does not exist", p.gen, part);
         assert p.owner[part] in p.members,
@@ -121,6 +127,15 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
                p.offset, p.member, p.partition);
     }
   }
+}
+
+// The first n entries of a sequence.
+fun Prefix(s: seq[int], n: int): seq[int] {
+  var out: seq[int];
+  while (sizeof(out) < n) {
+    out += (sizeof(out), s[sizeof(out)]);
+  }
+  return out;
 }
 
 // Progress: every record of every partition is eventually processed and committed,

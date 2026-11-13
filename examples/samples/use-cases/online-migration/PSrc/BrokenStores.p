@@ -65,8 +65,9 @@ machine InsertIfAbsentNewStore {
 
 // A router that flips reads to new as soon as the backfill finishes, without draining.
 // A write that committed to old but has not reached new yet is missing from new at
-// the flip, so a reader that saw it in old sees the key go back in time when its next
-// read comes from new. tcBugCutoverWithoutDrain shows it.
+// the flip (a reader that saw it in old would see the key go back in time on its next
+// read), and a read routed to old just before the flip is served by old after it.
+// tcBugCutoverMidWrite and tcBugCutoverMidRead show one each.
 machine EagerRouter {
   var oldStore: OldStore;
   var newStore: machine;

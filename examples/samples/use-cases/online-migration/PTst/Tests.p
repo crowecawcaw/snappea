@@ -180,22 +180,36 @@ machine BugBlindBackfill {
   }
 }
 
-// The writes after cutover race with a read routed before it.
-machine BugCutoverWithoutDrain {
+// Cutover without the drain, with a write in flight: it reached old but not new yet
+// when reads flip, so new differs from old at cutover.
+machine BugCutoverMidWrite {
+  start state Run {
+    entry { Eager(this, OneWriter(Put(1, 1, 20))); }
+    ignore eMigrationDone;
+  }
+}
+
+// Cutover without the drain, with a read in flight: routed to old before the flip and
+// served by old after it.
+machine BugCutoverMidRead {
   start state Run {
     entry {
       var plan: tPlan;
-      var oldStore: OldStore;
-      var newStore: NewStore;
-      plan = OneWriter(Put(1, 1, 20));
+      plan.seed = Seed1();
       plan.readers += (0, (key = 1, reads = 2));
-      Plan(plan);
-      oldStore = new OldStore(plan.seed);
-      newStore = new NewStore();
-      MigrateVia(this, oldStore, new EagerRouter((oldStore = oldStore, newStore = newStore)), newStore, plan);
+      Eager(this, plan);
     }
     ignore eMigrationDone;
   }
+}
+
+fun Eager(owner: machine, plan: tPlan) {
+  var oldStore: OldStore;
+  var newStore: NewStore;
+  Plan(plan);
+  oldStore = new OldStore(plan.seed);
+  newStore = new NewStore();
+  MigrateVia(owner, oldStore, new EagerRouter((oldStore = oldStore, newStore = newStore)), newStore, plan);
 }
 
 machine BugResurrectedDelete {
@@ -229,17 +243,22 @@ test tcGeneratedMigration [main=GeneratedMigration]:
   assert MigrationSafety, MigrationCompletes in
   { GeneratedMigration, OldStore, NewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: new store lost
+// expect-bug: new store moved key 1 back from version 2 to 1
 test tcBugBlindBackfill [main=BugBlindBackfill]:
   assert MigrationSafety, MigrationCompletes in
   { BugBlindBackfill, OldStore, BlindCopyNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: new store lost
+// expect-bug: new store moved key 1 back from version 2 to 1
 test tcBugResurrectedDelete [main=BugResurrectedDelete]:
   assert MigrationSafety, MigrationCompletes in
   { BugResurrectedDelete, OldStore, InsertIfAbsentNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: cutover broken
-test tcBugCutoverWithoutDrain [main=BugCutoverWithoutDrain]:
+// expect-bug: cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old
+test tcBugCutoverMidWrite [main=BugCutoverMidWrite]:
   assert MigrationSafety, MigrationCompletes in
-  { BugCutoverWithoutDrain, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
+  { BugCutoverMidWrite, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
+
+// expect-bug: cutover broken: old store served a read after cutover
+test tcBugCutoverMidRead [main=BugCutoverMidRead]:
+  assert MigrationSafety, MigrationCompletes in
+  { BugCutoverMidRead, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };

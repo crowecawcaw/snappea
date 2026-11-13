@@ -28,7 +28,8 @@ fun Visible(row: tRow): int {
 //   invented, no row from another key).
 // - At cutover, every key reads the same from new as from old: no lost write, no
 //   resurrected delete. (This is the verify step; the model shows it never fails.)
-// - After cutover new never moves a key back to an older version.
+// - New never moves a key back to an older version (a stale copy or a resurrected
+//   delete fails here, at the moment it lands).
 // - A read returns at least the newest write whose call returned before the read
 //   started (no stale reads), and a reader never sees a key go back to an older
 //   version, across the cutover too.
@@ -86,10 +87,8 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
     on eNewApplied do (p: (key: int, row: tRow)) {
       assert Committed(p.key, p.row),
         format("new store holds a version of key {0} that old never committed: {1}", p.key, p.row);
-      if (cutover) {
-        assert !(p.key in newRows) || p.row.lsn > newRows[p.key].lsn,
-          format("after cutover key {0} went back to version {1}", p.key, p.row.lsn);
-      }
+      assert !(p.key in newRows) || p.row.lsn >= newRows[p.key].lsn,
+        format("new store moved key {0} back from version {1} to {2}", p.key, newRows[p.key].lsn, p.row.lsn);
       newRows[p.key] = p.row;
     }
     on eCutover do {
