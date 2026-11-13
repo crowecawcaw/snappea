@@ -1862,6 +1862,13 @@ impl<'p> Runtime<'p> {
                             self.machines[m].stage = Stage::Halt;
                             continue;
                         }
+                        if self.config.snappea_reports {
+                            let decl = self.machines[m].decl;
+                            let (what, at, help) =
+                                crate::checker::report::unhandled_event(self.prog, decl, &name, popped, e.id);
+                            let text = crate::checker::report::render(self.prog, &what, "", at, &help);
+                            return Err(self.report_bug(text));
+                        }
                         let msg = format!(
                             "{} received event '{}' that cannot be handled.",
                             self.machines[m].name,
@@ -2791,8 +2798,18 @@ impl<'p> Runtime<'p> {
     }
 
     fn monitor_handle_event(&mut self, mon: usize, e: Event) -> Result<(), Stop> {
+        // the state that had no handler, for the report
+        let mut popped: Option<StateId> = None;
         loop {
             let Some(s) = self.monitors[mon].state else {
+                if self.config.snappea_reports {
+                    let decl = self.monitors[mon].decl;
+                    let name = self.prog.machine(decl).name.clone();
+                    let (what, at, help) =
+                        crate::checker::report::unhandled_event(self.prog, decl, &name, popped, e.id);
+                    let text = crate::checker::report::render(self.prog, &what, "", at, &help);
+                    return Err(self.report_bug(text));
+                }
                 let msg = format!(
                     "{} received event '{}' that cannot be handled.",
                     self.monitor_full_name(mon),
@@ -2840,6 +2857,7 @@ impl<'p> Runtime<'p> {
                 }
                 None => {
                     self.monitor_state_log(mon, false);
+                    popped = Some(s);
                     self.monitors[mon].state = None;
                 }
             }

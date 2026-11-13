@@ -224,7 +224,10 @@ fn command_line_errors_exit_with_2() {
         (&["check", "--timeout", "5d"], "error: bad duration '5d' (examples: 90, 90s, 5m, 1h)\n"),
         (&["check", "-j", "0"], "error: '--workers' needs at least 1 worker\n"),
         (&["replay"], "error: no .schedule file given\n"),
-        (&["frobnicate"], "error: unknown command 'frobnicate'\n"),
+        (
+            &["frobnicate"],
+            "error: unknown command 'frobnicate'; commands: check, replay, tests, observe, coverage, guide, version\n",
+        ),
     ] {
         assert_eq!(snappea(&mut h, args), 2, "{:?}", args);
         assert!(h.stderr.starts_with(err), "{:?}: {}", args, h.stderr);
@@ -596,6 +599,46 @@ fn observe_reports_a_misspelled_event_name() {
 
     assert_eq!(snappea(&mut h, &args("loud")), 2);
     assert!(h.stderr.contains("ignore, warn or error"), "{}", h.stderr);
+
+    // an unknown event in a key `--key` did not select says so
+    let mut a = args("error");
+    a.extend(["--key", "other"]);
+    assert_eq!(snappea(&mut h, &a), 2);
+    assert!(h.stdout.contains("first at typo.jsonl:2), in key c (not selected)"), "{}", h.stdout);
+    let report: serde_json::Value = serde_json::from_str(&read(&h, "r.json")).unwrap();
+    assert_eq!(report["specs"][0]["unknown_events"][0]["unselected_key"], "c");
+}
+
+#[test]
+fn unhandled_events_name_the_state_and_the_fix() {
+    let mut h = host();
+    h.add_file(
+        "u.p",
+        "event eIncrement;\n\
+         event eReply: int;\n\
+         machine Client {\n\
+           start state S {\n\
+             entry { receive { case eReply: (x: int) { } } }\n\
+           }\n\
+         }\n\
+         machine Main { start state S { entry { var c: Client; c = new Client(); send c, eIncrement; send c, eReply, 1; } } }\n\
+         spec Sp observes eReply { start state W { } }\n\
+         test tc [main=Main]: { Main, Client };\n\
+         test tcSpec [main=Main]: assert Sp in { Main, Client };\n",
+    );
+    let check = |h: &mut MemHost, tc: &str| {
+        let args = ["--format", "text", "check", "u.p", tc, "--no-mutation", "--warn", "lint"];
+        assert_eq!(snappea(h, &args), 1, "{}{}", h.stdout, h.stderr);
+        h.stdout.clone()
+    };
+    let out = check(&mut h, "tc");
+    assert!(out.contains("error: Client(2) in state 'S' received event 'eIncrement' that it cannot handle"), "{out}");
+    assert!(out.contains("--> u.p:4:"), "{out}");
+    assert!(out.contains("`defer eIncrement;` to keep it for a later state, or `ignore eIncrement;`"), "{out}");
+    assert!(out.contains("The `receive` at u.p:5:"), "{out}");
+    let out = check(&mut h, "tcSpec");
+    assert!(out.contains("spec Sp in state 'W' has no handler for observed event 'eReply'"), "{out}");
+    assert!(out.contains("`ignore eReply;`"), "{out}");
 }
 
 const PING: &str = "event ePing: machine;\n\
@@ -1452,4 +1495,18 @@ fn a_passing_check_reports_where_schedules_branch() {
     assert_eq!(case["search_complete"], true, "{}", case);
     assert!(case.get("incomplete_reason").is_none(), "{}", case);
     assert!(case["branching"]["scheduling_points_with_choice"].is_number(), "{}", case);
+}
+
+#[test]
+fn typos_in_commands_options_and_test_names_get_suggestions() {
+    let mut h = host();
+    assert_eq!(snappea(&mut h, &["--format", "text", "chek"]), 2);
+    assert!(h.stderr.contains("unknown command 'chek'; did you mean 'check'?"), "{}", h.stderr);
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "--timout", "5s"]), 2);
+    assert!(h.stderr.contains("unknown option '--timout'; did you mean '--timeout'?"), "{}", h.stderr);
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "coins.p", "tcCoin"]), 2);
+    assert!(h.stdout.contains("did you mean 'tcCoins'?") || h.stderr.contains("did you mean 'tcCoins'?"));
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "coins.p", "src/"]), 2);
+    let out = format!("{}{}", h.stdout, h.stderr);
+    assert!(out.contains("to check files, pass .p or .pproj paths"), "{out}");
 }

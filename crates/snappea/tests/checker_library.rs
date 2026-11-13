@@ -112,9 +112,9 @@ fn unknown_events_in_batch_and_live_observation() {
             Ok(match spec.event_id(entry) {
                 Some(_) => ParsedEntry {
                     events: vec![spec.event("k", Timestamp::default(), entry, Value::Null, None)?],
-                    unknown_events: Vec::new(),
+                    ..ParsedEntry::default()
                 },
-                None => ParsedEntry { events: Vec::new(), unknown_events: vec![entry.to_string()] },
+                None => ParsedEntry { unknown_events: vec![entry.to_string()], ..ParsedEntry::default() },
             })
         }
     }

@@ -251,8 +251,17 @@ impl Model {
         let prog = &*self.program;
         let declared: Vec<&str> =
             prog.machines.iter().filter(|m| m.kind == MachineKind::Spec).map(|m| m.name.as_str()).collect();
-        let unknown =
-            |name: &str| config(format!("there is no spec named {name}; the P files declare: {}", declared.join(", ")));
+        let unknown = |name: &str| {
+            let mut m = format!("there is no spec named {name}");
+            if let Some(s) = crate::sema::errors::closest(name, declared.iter().copied()) {
+                m.push_str(&format!("; did you mean {s}?"));
+            }
+            match declared.is_empty() {
+                true => m.push_str("; the P files declare no specs"),
+                false => m.push_str(&format!("; the P files declare: {}", declared.join(", "))),
+            }
+            config(m)
+        };
         if let Some(names) = &self.options.specs {
             return names.iter().map(|n| Spec::new(prog, n).map_err(|_| unknown(n))).collect();
         }
@@ -267,7 +276,9 @@ impl Model {
             .map(|(i, _)| Spec::from_decl(prog, crate::sema::MachineId(i as u32)))
             .collect();
         if specs.is_empty() {
-            return Err(config("no specs to check: the P files declare none, or all are excluded"));
+            return Err(config(
+                "no specs to check: the P files declare none, or all are excluded; declare a `spec`, or exclude fewer",
+            ));
         }
         Ok(specs)
     }
@@ -309,7 +320,9 @@ fn expand_spec_files(base: &Path, values: &[String]) -> Result<Vec<PathBuf>, Set
         }
     }
     if files.is_empty() {
-        return Err(config("no P spec files given"));
+        return Err(config(
+            "no P spec files given; set spec_files under [package.metadata.snappea], set SNAPPEA_SPEC_FILES, or pass paths to Model::from_files",
+        ));
     }
     Ok(files)
 }
@@ -910,9 +923,21 @@ impl Parser for Lines {
             return Ok(ParsedEntry::default());
         }
         let line: Value = serde_json::from_str(entry).map_err(|e| format!("not a JSON line: {e}"))?;
-        let name = line.get("event").and_then(Value::as_str).ok_or("missing event name")?;
+        let name = line
+            .get("event")
+            .and_then(Value::as_str)
+            .ok_or("missing event name: the line has no string 'event' field")?;
+        let key = match line.get("key") {
+            None | Some(Value::Null) => String::new(),
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+        };
         let Some(id) = spec.event_id(name) else {
-            return Ok(ParsedEntry { events: Vec::new(), unknown_events: vec![name.to_string()] });
+            return Ok(ParsedEntry {
+                unknown_events: vec![name.to_string()],
+                unknown_keys: vec![key],
+                ..Default::default()
+            });
         };
         if !spec.observes_event(id) {
             return Ok(ParsedEntry::default());
@@ -922,13 +947,8 @@ impl Parser for Lines {
             return Err(format!("{name} has no payload, so its payload must be null"));
         }
         let value = crate::checker::observe_json::value_from_json(spec.prog, payload, spec.payload_type(id))?;
-        let key = match line.get("key") {
-            None | Some(Value::Null) => String::new(),
-            Some(Value::String(s)) => s.clone(),
-            Some(other) => other.to_string(),
-        };
         let event = spec.event(key, timestamp(line.get("timestamp"))?, name, value, Some(entry))?;
-        Ok(ParsedEntry { events: vec![event], unknown_events: Vec::new() })
+        Ok(ParsedEntry { events: vec![event], ..Default::default() })
     }
 }
 
@@ -937,11 +957,13 @@ fn timestamp(v: Option<&Value>) -> Result<Timestamp, String> {
     match v {
         Some(Value::String(s)) => match s.parse::<i64>() {
             Ok(ms) => Ok(Timestamp::from_millis(ms)),
-            Err(_) => crate::checker::observe_json::parse_instant(s).ok_or_else(|| format!("invalid timestamp '{s}'")),
+            Err(_) => crate::checker::observe_json::parse_instant(s)
+                .ok_or_else(|| format!("invalid timestamp '{s}'; {}", crate::driver::observe::TIMESTAMP_FORMS)),
         },
-        Some(Value::Number(n)) => {
-            n.as_i64().map(Timestamp::from_millis).ok_or_else(|| format!("invalid timestamp {n}"))
-        }
+        Some(Value::Number(n)) => n
+            .as_i64()
+            .map(Timestamp::from_millis)
+            .ok_or_else(|| format!("invalid timestamp {n}; {}", crate::driver::observe::TIMESTAMP_FORMS)),
         _ => Err("missing timestamp".into()),
     }
 }

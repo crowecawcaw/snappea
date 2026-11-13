@@ -474,7 +474,11 @@ impl ProfileSet {
     /// else the `[tests]` entry.
     pub fn for_test(&self, test: &str, explicit: Option<&str>) -> Result<Option<&Profile>, String> {
         match explicit {
-            Some(p) => self.profiles.get(p).map(Some).ok_or_else(|| format!("unknown latency profile '{}'", p)),
+            Some(p) => self.profiles.get(p).map(Some).ok_or_else(|| {
+                let mut names: Vec<&str> = self.profiles.keys().map(String::as_str).collect();
+                names.sort();
+                format!("unknown latency profile '{}'; the file defines: {}", p, names.join(", "))
+            }),
             None => Ok(self.tests.get(test).and_then(|p| self.profiles.get(p))),
         }
     }
@@ -575,7 +579,7 @@ pub fn parse_range(s: &str) -> Result<Range, String> {
         }
     };
     if lo > hi {
-        return Err(format!("range '{}' has lo > hi", s));
+        return Err(format!("range '{}' has its low end above its high end; write it as low..high, e.g. 1ms..5ms", s));
     }
     if hi > MAX_RANGE {
         return Err(format!("range '{}' is longer than {}us", s, MAX_RANGE));

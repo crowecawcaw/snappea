@@ -665,7 +665,7 @@ The limits are of these kinds, most telling first:
 | Kind | Example |
 | --- | --- |
 | `sequence` | `each Client sends eAcquire, then eRelease, once each` |
-| `order` | `no Client sends eAcquire after eRelease`; `User sends eRegister once, before everything else` |
+| `order` | `no Client sends eAcquire after eRelease`; `User sends eRegister once, before everything else; no schedule runs without it` |
 | `instances` | `creates 1 LockServer and 2 Client, never more` |
 | `count` | `each Client sends eWithdraw at most twice` (only when it is at most twice: every driver stops somewhere, and higher limits rarely matter) |
 | `values` | `Proposer is only created with proposerId = 1 or 2`; `eWithdraw is always sent with amount = 10` |

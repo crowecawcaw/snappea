@@ -10,8 +10,8 @@ mod visit;
 use snappea_syntax::{ast::*, parse, FileId, ParseError, SourceMap, Span};
 
 pub use rules::{
-    NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts, TautologicalAssert, UnobservedHandler,
-    UnselectedSpec, UnusedPayloadField,
+    EnumValueShadowsMachine, NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts,
+    TautologicalAssert, UnobservedHandler, UnselectedSpec, UnusedPayloadField,
 };
 pub use suppression::MUTATIONS;
 
@@ -135,6 +135,7 @@ impl Registry {
         r.register(UnobservedHandler);
         r.register(ScenarioNeverAccepts);
         r.register(ScenarioColdStart);
+        r.register(EnumValueShadowsMachine);
         r
     }
 

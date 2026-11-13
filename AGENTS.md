@@ -72,6 +72,7 @@ built-in guide and runnable examples rather than inventing a separate agent work
 
 ## Error messages
 
+Errors should be clear and, when appropriate, point towards the fix.
 Every error says what went wrong, where, and what to do next.
 
 * **What**: one plain sentence. Name the thing (`could not find event 'eB'`), not the

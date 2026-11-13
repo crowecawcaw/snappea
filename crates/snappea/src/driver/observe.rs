@@ -141,7 +141,7 @@ pub fn compile(
     if style == Style::Snappea
         && crate::driver::lint::run_observation(host, &sm).map_err(|_| "The P specification does not parse.")? > 0
     {
-        return Err("The P specification has lint findings.".into());
+        return Err("The P specification has lint findings. Fix them, or suppress an intended one with `// snappea-lint: allow <rule> -- reason`.".into());
     }
     let program = r.map(|a| a.program).map_err(|_| "The P specification does not type-check.".to_string())?;
     crate::checker::time::declares_time(&program)?;
@@ -399,12 +399,16 @@ pub fn json_result(specs: &[Spec], obs: &Observation) -> Json {
                     .unknown_events
                     .iter()
                     .map(|u| {
-                        serde_json::json!({
+                        let mut j = serde_json::json!({
                             "event": u.name,
                             "count": u.count,
                             "location": u.location,
                             "suggestion": u.suggestion,
-                        })
+                        });
+                        if let Some(k) = &u.unselected_key {
+                            j["unselected_key"] = Json::from(k.clone());
+                        }
+                        j
                     })
                     .collect();
             }
@@ -528,9 +532,9 @@ fn parsed_from_json(
     payload: Option<&Json>,
     log_line: Option<&str>,
 ) -> Result<ParsedEntry, String> {
-    Ok(match event_from_json(spec, key, timestamp, name, payload, log_line)? {
-        Some(e) => ParsedEntry { events: vec![e], unknown_events: Vec::new() },
-        None => ParsedEntry { events: Vec::new(), unknown_events: vec![name.to_string()] },
+    Ok(match event_from_json(spec, key.clone(), timestamp, name, payload, log_line)? {
+        Some(e) => ParsedEntry { events: vec![e], ..ParsedEntry::default() },
+        None => ParsedEntry { events: Vec::new(), unknown_events: vec![name.to_string()], unknown_keys: vec![key] },
     })
 }
 
@@ -577,14 +581,20 @@ fn key_string(j: Option<&Json>) -> String {
     }
 }
 
+/// The timestamp forms the built-in parsers read, for errors.
+pub(crate) const TIMESTAMP_FORMS: &str =
+    "use whole epoch milliseconds or an ISO-8601 instant, e.g. 1714564800000 or 2024-05-01T12:00:00Z";
+
 fn timestamp_of(j: Option<&Json>) -> Result<Timestamp, String> {
     match j {
         None | Some(Json::Null) => Ok(Timestamp::default()),
         Some(Json::String(s)) => match s.parse::<i64>() {
             Ok(ms) => Ok(Timestamp::from_millis(ms)),
-            Err(_) => parse_instant(s).ok_or_else(|| format!("invalid timestamp '{}'", s)),
+            Err(_) => parse_instant(s).ok_or_else(|| format!("invalid timestamp '{}'; {}", s, TIMESTAMP_FORMS)),
         },
-        Some(n) => json_int(n).map(Timestamp::from_millis).ok_or_else(|| format!("invalid timestamp {}", n)),
+        Some(n) => json_int(n)
+            .map(Timestamp::from_millis)
+            .ok_or_else(|| format!("invalid timestamp {}; {}", n, TIMESTAMP_FORMS)),
     }
 }
 
@@ -624,7 +634,12 @@ impl Parser for JsonLinesParser {
             return Ok(ParsedEntry::default());
         }
         let j: Json = serde_json::from_str(entry).map_err(|e| e.to_string())?;
-        let name = lookup(&j, &self.event).and_then(|v| v.as_str()).ok_or("missing event name")?;
+        let name = lookup(&j, &self.event).and_then(|v| v.as_str()).ok_or_else(|| {
+            format!(
+                "missing event name: no string field '{}'; name the field with --parser-config '{{\"event\": \"<field>\"}}'",
+                self.event
+            )
+        })?;
         let ts = timestamp_of(lookup(&j, &self.timestamp))?;
         let key = key_string(lookup(&j, &self.key));
         parsed_from_json(spec, key, ts, name, lookup(&j, &self.payload), Some(entry))

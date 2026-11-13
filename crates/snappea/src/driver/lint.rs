@@ -101,6 +101,7 @@ pub fn help(rule: &str) -> String {
         "no-progress-spec" => "add a spec with a `hot` state the model leaves only by answering (for example, hot while a request is pending), and select it with `assert` in the test",
         "unplanned-driver-stage" => "announce the plan first (e.g. `announce eOpsPlanned, n;` before starting any work) and make a spec observe it and stay `hot` until every planned operation finished",
         "unreachable-statement" => "remove the statement, or move it before the call that leaves the state",
+        "enum-value-shadows-machine" => "rename the enum value, e.g. with a prefix such as `ModeSlowReply`, so each name means one thing",
         "scenario-cold-start" => "mark the start state `hot` (or leave it unmarked) and mark the accepting state `cold`",
         _ => return suppress,
     };

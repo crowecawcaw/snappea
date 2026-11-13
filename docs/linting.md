@@ -53,6 +53,7 @@ model covers every requirement or faithfully represents the implementation.
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
+| `enum-value-shadows-machine` | An enum value has the name of a machine, spec or scenario, so the name means the enum value in expressions and the machine in types. | Rename the enum value, e.g. with a prefix. |
 | `unchecked-state` | A model or spec field is written, but no assertion, condition, spec or sent event depends on it. | Assert on it in a spec or the driver, send it in an observed event, or remove it. |
 | `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
 | `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
