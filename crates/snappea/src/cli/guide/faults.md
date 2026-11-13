@@ -4,6 +4,18 @@ Faults are the environment, not the design. Model them in machines marked
 `// snappea: driver` (on its own line before the machine): drivers are not mutated, so
 mutation testing judges the design's handling of a fault, not the fault itself.
 
+## Reusable building blocks
+
+For bounded loss, duplication, reordering and late replies, import the published
+`BBNetwork` building block instead of writing another courier. Export it with
+`snappea guide example building-blocks --out vendor`, then include
+`vendor/building-blocks/Network.pproj` from your project's `IncludeProject`.
+The bundle's README defines its budgets and delivery contract; its consumer example
+shows the import. These are ordinary P sources that you can pin and review with your
+model, not built-in channel syntax. Couriers still add scheduling choices.
+
+The recipes below explain smaller mechanisms you may need to adapt.
+
 ## Timer with cancel
 
 ```p

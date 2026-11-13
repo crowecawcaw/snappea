@@ -46,6 +46,21 @@ pub(super) struct Example {
 
 pub(super) const EXAMPLES: &[Example] = &[
     Example {
+        name: "building-blocks",
+        main: "Example.p",
+        about: "Importable P building blocks: bounded network faults and per-ID request/reply obligations.",
+        files: &[
+            ("Example.p", include_str!("guide/examples/building-blocks/Example.p")),
+            ("Example.pproj", include_str!("guide/examples/building-blocks/Example.pproj")),
+            ("BuildingBlocks.pproj", include_str!("guide/examples/building-blocks/BuildingBlocks.pproj")),
+            ("Network.p", include_str!("guide/examples/building-blocks/Network.p")),
+            ("Network.pproj", include_str!("guide/examples/building-blocks/Network.pproj")),
+            ("RequestReplies.pproj", include_str!("guide/examples/building-blocks/RequestReplies.pproj")),
+            ("RequestReplies.p", include_str!("guide/examples/building-blocks/RequestReplies.p")),
+            ("README.md", include_str!("guide/examples/building-blocks/README.md")),
+        ],
+    },
+    Example {
         name: "cas-retry",
         main: "Balance.p",
         about: "Compare-and-swap with retries: two clients, generated inputs, an independent oracle.",

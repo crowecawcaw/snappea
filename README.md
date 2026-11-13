@@ -48,6 +48,11 @@ they state what the system must get right. `snappea guide` walks through that wo
 with runnable examples (`snappea guide examples`); telling an agent "use P, snappea is
 installed" is enough for it to find.
 
+Import the reusable [P building blocks](crates/snappea/src/cli/guide/examples/building-blocks/README.md)
+for bounded network faults and per-ID request/reply completion. Export them with
+`snappea guide example building-blocks --out vendor`, then include the needed library
+project from your model's `.pproj`.
+
 ## Get started
 
 Install the prebuilt CLI on Linux or macOS; no Rust or Python required:

@@ -1,0 +1,5 @@
+<Project>
+  <ProjectName>BuildingBlocksExample</ProjectName>
+  <IncludeProject>BuildingBlocks.pproj</IncludeProject>
+  <InputFiles><PFile>Example.p</PFile></InputFiles>
+</Project>

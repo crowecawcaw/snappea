@@ -1,0 +1,4 @@
+<Project>
+  <ProjectName>BBRequestReplies</ProjectName>
+  <InputFiles><PFile>RequestReplies.p</PFile></InputFiles>
+</Project>
