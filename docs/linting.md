@@ -6,6 +6,7 @@ questions:
   - "How do I fix or suppress a finding?"
   - "Which model state and events can no test notice?"
   - "Why does a test need a hot spec?"
+  - "Why must a driver announce its plan before later stages?"
 ---
 
 # Linting P models
@@ -54,7 +55,9 @@ model covers every requirement or faithfully represents the implementation.
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
 | `unchecked-state` | A model or spec field is written, but no assertion, condition, spec or sent event depends on it. | Assert on it in a spec or the driver, send it in an observed event, or remove it. |
 | `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
-| `no-progress-spec` | A test's driver waits for the model's responses, but none of its specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
+| `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
+| `unplanned-driver-stage` | A driver starts more model work only after a model notification, and no driver of the test announces a plan a spec observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
+| `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before the call. |
 
 ### Permissive monitors
 
@@ -157,6 +160,11 @@ resolves tuple type aliases, and reports unused fields separately. A direct writ
 to a field does not count as reading it. Passing or copying the whole payload is
 conservatively treated as using every field; this is not interprocedural dataflow
 analysis. Reading a field also does not prove it contributes to a useful property.
+An index on the left of an assignment is a read: `requested[r.id] = r.amount;` reads
+both fields. A handler whose body is only `assert false` (with or without a message)
+reports an event that must not happen, so it need not read every field. P has no
+partial or `_` binding for payloads; to track one field of an event another spec
+checks fully, suppress the finding with a reason.
 
 ### Unobserved handlers
 
@@ -224,7 +232,8 @@ machine Server {
 that no check depends on, at the field's declaration. `unchecked-event` reports
 an event the model sends or announces that no spec observes and that no machine acts
 on: its handlers (in every machine) neither assert, change state, create machines,
-nor write or send anything a check depends on. An event a machine handles in some states
+nor write or send anything a check depends on. When only a scenario observes the event,
+the finding says so: scenarios measure coverage and check nothing. An event a machine handles in some states
 but not others counts as checked, since it can fail as unhandled; so does `halt`.
 Driver machines (see [mark driver machines](#mark-driver-machines)) and a test's main
 machine are not reported: they are the checks. The analysis over-approximates:
@@ -260,6 +269,19 @@ spec EveryRequestAnswered observes eReq, eResp {
 test tcServe [main=Driver]: assert Safety, EveryRequestAnswered in { Server, Driver };
 ```
 
+The same holds when the waiting client is part of the design rather than the driver:
+a machine that sends a request and then waits for the reply, in a `receive` or in a
+state that handles only replies, passes when the reply never comes. A reply is an event
+another machine of the test sends while handling one of this machine's requests (in the
+handler, the functions it calls, or the entry of the state it goes to). This finding is
+reported once for all tests, at each waiting state or `receive`. A suppression before
+the machine covers all of them, for example for a design that does not promise progress:
+
+```p
+// snappea-lint: allow no-progress-spec -- Paxos does not promise progress with competing proposers
+machine Proposer { ... }
+```
+
 `no-progress-spec` reports such a test at its declaration. A test meant to check only
 safety, for example alongside another test that checks progress, can suppress it:
 
@@ -267,6 +289,57 @@ safety, for example alongside another test that checks progress, can suppress it
 // snappea-lint: allow no-progress-spec -- tcServeLiveness checks progress
 test tcServe [main=Driver]: assert Safety in { Server, Driver };
 ```
+
+### Unplanned driver stages
+
+A driver that starts more work only after the model tells it to (the second doctor
+starts when the first reports done) depends on that notification. If the model never
+sends it, the later stage never starts, nothing is pending, and a spec that is `hot`
+only while a request is open sees nothing wrong:
+
+```p
+machine Main {
+  start state First {
+    entry { new Doctor(this); }
+    on eDone goto Second;
+  }
+  state Second {
+    entry { new Doctor(this); }    // error[unplanned-driver-stage]
+  }
+}
+```
+
+The fix is for the driver to announce its plan before starting any work, and for a spec
+to stay `hot` until every planned operation finished:
+
+```p
+    entry { announce eDoctorsPlanned, 2; new Doctor(this); }
+```
+
+The rule reports the first `new` of a model machine, or `send` of an event a model
+machine handles, that runs only after a driver handles an event a model machine sends:
+in that handler, or in a state it goes to that the driver cannot reach otherwise.
+Replies to the driver's own requests do not count (`no-progress-spec` covers those), and
+neither does forwarding the event received, as a test proxy does. Any driver of the test
+announcing an event one of its specs observes counts as a plan.
+
+### Unreachable statements
+
+A `goto` or `raise` leaves the state, so the rest of the handler does not run. A call
+to a function that always does one leaves it too:
+
+```p
+on eTimeout do {
+  Resolve(false);
+  return;          // error[unreachable-statement]: Resolve always does `goto Done`
+}
+
+fun Resolve(ok: bool) { announce eOutcome, ok; goto Done; }
+```
+
+A function always leaves the state when every path through it reaches a `goto` or
+`raise` before any `return`, `break` or `continue`. Coverage reports the same statement
+as never reached; the lint reports it before checking.
 
 ## Suppress intentional findings
 
@@ -306,8 +379,9 @@ The same comment excludes code from `snappea check`'s mutation testing:
 on eObserved do { validate(payload); }
 ```
 
-The raw coverage report still lists the point; the required coverage counts exclude its
-scope. A misspelled coverage suppression ID is an `invalid-suppression` finding.
+The coverage report lists the point under `Not covered, suppressed:` with its reason
+(`coverage.uncovered_suppressed` in JSON); the required coverage counts exclude its
+scope. Before an `if` or `while`, the suppression also covers its condition outcomes. A misspelled coverage suppression ID is an `invalid-suppression` finding.
 
 The `-- reason` suffix is optional, but explains the abstraction to reviewers.
 Comments must be on their own line. Unknown IDs, malformed directives, and

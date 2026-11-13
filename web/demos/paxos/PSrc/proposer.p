@@ -5,6 +5,7 @@
 
 type ProposerConfig = (acceptors: set[Acceptor], learners: set[Learner], valueToPropose: int, proposerId: int);
 
+// snappea-lint: allow no-progress-spec -- Paxos does not promise progress when proposers compete
 machine Proposer {
   var acceptors: set[Acceptor];
   var learners: set[Learner];

@@ -48,6 +48,11 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
     let TypeKind::NamedTuple(fields) = &ctx.resolve_type(&p.ty).kind else {
         return;
     };
+    // A handler that only fails (`assert false`) reports that the event must not happen;
+    // it has no reason to read every field.
+    if only_fails(&body.stmts) {
+        return;
+    }
     let mut used = HashSet::new();
     let mut direct_bases = HashSet::new();
     let mut writes = HashSet::new();
@@ -55,9 +60,7 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
         &body.stmts,
         &mut |s| {
             if let StmtKind::Assign { lhs, .. } = &s.kind {
-                visit::expr(lhs, &mut |e| {
-                    writes.insert(e.span);
-                });
+                written_place(lhs, &mut writes);
             }
         },
         &mut |_| {},
@@ -98,5 +101,29 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
                 ),
             ));
         }
+    }
+}
+
+/// Marks the place an assignment writes: the target and the bases it is reached through.
+/// Map and sequence indexes (`m[p.id] = ...`) are reads, so they are not marked.
+fn written_place(e: &Expr, writes: &mut HashSet<snappea_syntax::Span>) {
+    writes.insert(e.span);
+    match &e.kind {
+        ExprKind::NamedTupleAccess { base, .. } | ExprKind::TupleAccess { base, .. } | ExprKind::Index { base, .. } => {
+            written_place(base, writes)
+        }
+        _ => {}
+    }
+}
+
+/// Whether a body is only `assert false` (with an optional message), possibly in braces.
+fn only_fails(stmts: &[Stmt]) -> bool {
+    match stmts {
+        [s] => match &s.kind {
+            StmtKind::Assert { cond, .. } => matches!(cond.kind, ExprKind::BoolLit(false)),
+            StmtKind::Compound(inner) => only_fails(inner),
+            _ => false,
+        },
+        _ => false,
     }
 }

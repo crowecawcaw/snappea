@@ -31,6 +31,14 @@ pub const PROGRAM_RULES: &[(&str, &str)] = &[
         "no-progress-spec",
         "A test waits for the model's responses, but none of its specs has a hot state, so a model that stops passes.",
     ),
+    (
+        "unplanned-driver-stage",
+        "A driver starts more work only after a model notification, and announces no plan a spec observes.",
+    ),
+    (
+        "unreachable-statement",
+        "A statement follows a goto, raise, or call that always leaves the state, so it never runs.",
+    ),
 ];
 
 /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
@@ -186,8 +194,9 @@ pub fn driver_machines(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
     Ok(suppression::driver_machines(&Context::parse(sources)?))
 }
 
-/// The source scopes intentionally omitted from `snappea check` coverage requirements.
-pub fn coverage_suppressions(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
+/// The source scopes intentionally omitted from `snappea check` coverage requirements,
+/// with the reason each `// snappea-lint: allow coverage -- reason` gives.
+pub fn coverage_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
     let context = Context::parse(sources)?;
     let registry = Registry::builtins();
     Ok(suppression::coverage_suppressions(&context, &registry.rules))

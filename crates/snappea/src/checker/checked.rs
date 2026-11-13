@@ -511,7 +511,7 @@ pub struct Finding {
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
 /// and their receive cases.
-fn machine_funs(prog: &Program, m: MachineId) -> Vec<FunId> {
+pub(crate) fn machine_funs(prog: &Program, m: MachineId) -> Vec<FunId> {
     let mut seen: FxHashSet<FunId> = FxHashSet::default();
     let mut todo: Vec<FunId> = prog.machine(m).methods.clone();
     for s in &prog.machine(m).states {
@@ -688,7 +688,27 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
     let mut reported: FxHashSet<EventId> = FxHashSet::default();
     for (e, span, m, announce) in sent {
         if !matters.contains(&e) && reported.insert(e) {
-            let message = if announce {
+            // scenarios observe events but check nothing: say so, so the author does not
+            // take the scenario for the check
+            let scenarios: Vec<&str> = prog
+                .machines
+                .iter()
+                .filter(|d| d.is_scenario() && d.observes.contains(&e))
+                .map(|d| d.name.as_str())
+                .collect();
+            let message = if !scenarios.is_empty() {
+                format!(
+                    "machine {} {} '{}', but only scenario{} {} observe{} it, and scenarios check nothing, so the model passes whatever it {}; observe it in a spec{}",
+                    prog.machine(m).name,
+                    if announce { "announces" } else { "sends" },
+                    prog.event(e).name,
+                    if scenarios.len() == 1 { "" } else { "s" },
+                    scenarios.join(", "),
+                    if scenarios.len() == 1 { "s" } else { "" },
+                    if announce { "announces" } else { "sends" },
+                    if announce { ", or let the scenario watch a sent event instead" } else { "" }
+                )
+            } else if announce {
                 format!(
                     "machine {} announces '{}', but no spec observes it, so the model passes whatever it announces",
                     prog.machine(m).name,
@@ -705,6 +725,7 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
         }
     }
     // no-progress-spec
+    let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
     for t in &prog.tests {
         let module = &t.module;
         let hot = module.monitor_map.iter().any(|(m, _)| {
@@ -766,8 +787,27 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
                     t.name
                 ),
             });
+            continue;
+        }
+        // a design machine that sends a request and waits for the reply, reported where
+        // it waits, once for all the tests
+        for (m, e, span) in crate::checker::flow_lints::waiting_machines(prog, t, &is_driver) {
+            if !waiting_reported.insert(span) {
+                continue;
+            }
+            out.push(Finding {
+                rule: "no-progress-spec",
+                span,
+                message: format!(
+                    "machine {} waits for '{}' after sending a request, but no spec of test '{}' has a hot state, so a model that never replies passes",
+                    prog.machine(m).name,
+                    prog.event(e).name,
+                    t.name
+                ),
+            });
         }
     }
+    crate::checker::flow_lints::lints(prog, drivers, &mut out);
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
 }
@@ -922,6 +962,93 @@ mod tests {
             .map(|f| f.message.split('\'').nth(1).unwrap().to_string())
             .collect();
         assert_eq!(found, ["copy", "log", "keyed"]);
+    }
+
+    fn findings(src: &str, rule: &str) -> Vec<String> {
+        let prog = program(src);
+        let tests = prog.test_cases();
+        lints(&prog, &tests, &vec![false; prog.machines.len()])
+            .into_iter()
+            .filter(|f| f.rule == rule)
+            .map(|f| f.message)
+            .collect()
+    }
+
+    #[test]
+    fn an_event_only_a_scenario_observes_is_named_as_such() {
+        let src = "event eConflict;\n\
+            machine Store { start state S { entry { announce eConflict; } } }\n\
+            scenario Conflicted observes eConflict { start state W { on eConflict goto D; } cold state D { } }\n\
+            machine Main { start state S { entry { new Store(); } } }\n\
+            test tc [main=Main]: { Store, Main };\n";
+        assert_eq!(
+            findings(src, "unchecked-event"),
+            ["machine Store announces 'eConflict', but only scenario Conflicted observes it, and scenarios check nothing, so the model passes whatever it announces; observe it in a spec, or let the scenario watch a sent event instead"]
+        );
+    }
+
+    /// A driver that starts a second doctor only once the first says it is done.
+    const STAGES: &str = "event eDone;\n\
+        event eTreat: int;\n\
+        event ePlanned: int;\n\
+        spec Treated observes eTreat, ePlanned { start state S { on eTreat do (n: int) { assert n > 0; } ignore ePlanned; } }\n\
+        machine Doctor { start state S { entry (owner: Main) { announce eTreat, 1; send owner, eDone; } } }\n\
+        machine Main {\n\
+          start state First { entry { PLAN new Doctor(this); } on eDone goto Second; }\n\
+          state Second { entry { new Doctor(this); } ignore eDone; }\n\
+        }\n\
+        test tc [main=Main]: assert Treated in { Doctor, Main };\n";
+
+    #[test]
+    fn a_driver_stage_started_by_a_model_notification_needs_an_announced_plan() {
+        assert_eq!(
+            findings(&STAGES.replace("PLAN", ""), "unplanned-driver-stage"),
+            ["driver Main creates Doctor only after the model sends 'eDone', and announces no plan a spec observes, so if the model never sends it this stage never starts and every spec still passes"]
+        );
+        assert!(findings(&STAGES.replace("PLAN", "announce ePlanned, 2;"), "unplanned-driver-stage").is_empty());
+    }
+
+    #[test]
+    fn a_design_machine_waiting_for_a_reply_needs_a_hot_spec() {
+        let src = "event ePing: Client;\n\
+            event ePong;\n\
+            spec Pongs observes ePong { start state S { on ePong do { assert true; } } }\n\
+            machine Counter { start state S { on ePing do (c: Client) { send c, ePong; } } }\n\
+            machine Client {\n\
+              start state Init { entry (c: Counter) { send c, ePing, this; goto Waiting; } }\n\
+              state Waiting { on ePong goto Done; }\n\
+              state Done { }\n\
+            }\n\
+            machine Main { start state S { entry { new Client(new Counter()); } } }\n\
+            test tc [main=Main]: assert Pongs in { Counter, Client, Main };\n";
+        assert_eq!(
+            findings(src, "no-progress-spec"),
+            ["machine Client waits for 'ePong' after sending a request, but no spec of test 'tc' has a hot state, so a model that never replies passes"]
+        );
+        // a server waiting for requests is not waiting for a reply
+        assert!(findings(
+            &src.replace("state Waiting { on ePong goto Done; }", "state Waiting { }"),
+            "no-progress-spec"
+        )
+        .is_empty());
+        assert!(findings(&src.replace("start state S { on ePong", "start hot state S { on ePong"), "no-progress-spec")
+            .is_empty());
+    }
+
+    #[test]
+    fn statements_after_a_call_that_always_leaves_the_state_are_unreachable() {
+        let src = "event eT;\n\
+            machine Main {\n\
+              start state S { entry { send this, eT; } on eT do { if ($) { Resolve(); return; } Maybe(); return; } }\n\
+              state Done { }\n\
+              fun Resolve() { print \"done\"; goto Done; }\n\
+              fun Maybe() { if ($) { goto Done; } }\n\
+            }\n\
+            test tc [main=Main]: { Main };\n";
+        assert_eq!(
+            findings(src, "unreachable-statement"),
+            ["this statement never runs: the call to Resolve before it always leaves the state (goto Done)"]
+        );
     }
 
     #[test]

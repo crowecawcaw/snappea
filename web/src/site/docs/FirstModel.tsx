@@ -40,7 +40,7 @@ test tcTwoClients [main=Main]: { Main, Counter, Client };
 $ snappea check LostUpdate.p tcTwoClients
 Checking generatedOutput: 1 test case
 FAIL  tcTwoClients (bug found after 9 schedules, 8 workers, 0.00s)
-      Assertion Failed: LostUpdate.p:69:7 expected 2 increments, counter is 1
+      Assertion Failed: LostUpdate.p:85:7 expected 2 increments, counter is 1
       Replay: snappea replay PCheckerOutput/tcTwoClients/bug.schedule LostUpdate.p
 1 of 1 test case failed in 0.01s, peak memory 9 MB. Output: PCheckerOutput/
 `}</Code>

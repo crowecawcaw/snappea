@@ -91,6 +91,9 @@ pub struct CheckerOptions {
     /// Report as `snappea` does (see [`Config::snappea_reports`]); off for
     /// `snappea-compat`, which keeps upstream's text.
     pub snappea_reports: bool,
+    /// See [`Config::scenarios_ignore_unhandled`](crate::checker::runtime::Config::scenarios_ignore_unhandled).
+    /// On by default; `snappea-compat` turns it off, as upstream fails.
+    pub scenarios_ignore_unhandled: bool,
 }
 
 impl Default for CheckerOptions {
@@ -127,6 +130,7 @@ impl Default for CheckerOptions {
             latency_profile: None,
             timed: false,
             snappea_reports: false,
+            scenarios_ignore_unhandled: true,
         }
     }
 }
@@ -1240,6 +1244,7 @@ fn run_config(opts: &CheckerOptions) -> Config {
         assembly_name: opts.assembly_name.clone(),
         timeline: opts.timeline,
         snappea_reports: opts.snappea_reports,
+        scenarios_ignore_unhandled: opts.scenarios_ignore_unhandled,
     }
 }
 

@@ -712,6 +712,41 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert_eq!(result["coverage"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["required"]["handlers"], serde_json::json!({"covered": 0, "total": 0}));
     assert_eq!(result["coverage"]["uncovered_required"].as_array().unwrap().len(), 0);
+    // a suppressed site is listed apart, with its reason, not as plain uncovered
+    assert_eq!(result["coverage"]["uncovered"].as_array().unwrap().len(), 0, "{}", result["coverage"]);
+    assert_eq!(
+        result["coverage"]["uncovered_suppressed"][0]["what"],
+        "never handled (suppressed: exercised by a separate integration suite)"
+    );
+    assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--format", "text"]), 0);
+    assert!(!h.stdout.contains("Not covered by the test case:"), "{}", h.stdout);
+    assert!(
+        h.stdout.contains(
+            "Not covered, suppressed:\n  coverage.p:4  Main.S, on ePing: never handled (suppressed: exercised"
+        ),
+        "{}",
+        h.stdout
+    );
+
+    // a suppression before a `while` covers its condition outcomes too
+    h.add_file(
+        "loop.p",
+        "machine Main { var n: int;\n\
+         start state S { entry {\n\
+           // snappea-lint: allow coverage -- the bound only stops a runaway loop\n\
+           while (n < 3 && n < 10) { n = n + 1; }\n\
+           assert n == 3;\n\
+         } } }\n\
+         // snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
+         test tcMain [main=Main]: { Main };\n",
+    );
+    assert_eq!(snappea(&mut h, &["check", "loop.p", "--no-mutation", "--json"]), 0, "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["coverage"]["uncovered"].as_array().unwrap().len(), 0, "{}", result["coverage"]);
+    assert!(result["coverage"]["uncovered_suppressed"][0]["what"]
+        .as_str()
+        .unwrap()
+        .starts_with("condition n < 10 never false (suppressed: the bound"));
 
     h.add_file(
         "helper.p",
@@ -854,14 +889,60 @@ fn check_includes_scenario_coverage_in_console_and_json() {
         include_str!("../../../tests/upstream/RegressionTests/Feature1SMLevelDecls/Correct/ScenarioCoverageBasic/ScenarioCoverageBasic.p"),
         "\ntest tcScenario [main=Main]: { Main, Server };"
     ));
-    assert_eq!(snappea(&mut h, &["check", "scenario.p", "--json-report=r.json"]), 0, "{}", h.stderr);
+    // a scenario no test case satisfies is a coverage gap, like code no test case ran
+    assert_eq!(
+        snappea(&mut h, &["check", "scenario.p", "--format", "text", "--json-report=r.json"]),
+        1,
+        "{}",
+        h.stderr
+    );
     assert!(h.stdout.contains("1/2 scenarios covered"), "{}", h.stdout);
     assert!(h.stdout.contains("[  GAP  ] NeverCovered"));
+    assert!(h.stdout.contains("NeverCovered: scenario never satisfied in 1 test case\n"), "{}", h.stdout);
+    // scenarios watch every test case without being selected
+    assert!(!h.stdout.contains("Outside the selected tests"), "{}", h.stdout);
+    assert!(h.stdout.contains("Coverage requirements were not met for 1 point."), "{}", h.stdout);
     let result: serde_json::Value = serde_json::from_str(&read(&h, "r.json")).unwrap();
+    assert_eq!(result["summary"]["status"], "coverage_failed");
+    assert_eq!(result["summary"]["coverage_gaps"], 1);
+    assert_eq!(result["summary"]["scenario_gaps"], 1);
+    assert_eq!(result["summary"]["uncovered"][0]["context"], "NeverCovered");
     let artifact: serde_json::Value =
         serde_json::from_str(&read(&h, "PCheckerOutput/tcScenario/scenario_coverage.json")).unwrap();
     assert_eq!(result["scenarios"], serde_json::json!([artifact]));
     assert_eq!(result["test_cases"][0]["scenarios"], result["scenarios"][0]);
+
+    // accepted with a coverage suppression on the scenario
+    let text = read(&h, "scenario.p").replace(
+        "scenario NeverCovered",
+        "// snappea-lint: allow coverage -- eNever is reserved for v2\nscenario NeverCovered",
+    );
+    h.add_file("scenario.p", &text);
+    assert_eq!(snappea(&mut h, &["check", "scenario.p", "--format", "text"]), 0, "{}", h.stdout);
+    assert!(
+        h.stdout
+            .contains("NeverCovered: scenario never satisfied in 1 test case (suppressed: eNever is reserved for v2)"),
+        "{}",
+        h.stdout
+    );
+}
+
+#[test]
+fn scenarios_ignore_observed_events_they_do_not_handle() {
+    let mut h = host();
+    h.add_file(
+        "s.p",
+        "event eA;\n\
+         machine Main { start state S { entry { var s: Server; s = new Server(); send s, eA; send s, eA; } } }\n\
+         machine Server { start state S { on eA do { } } }\n\
+         scenario SawA observes eA { start state Wait { on eA goto Done; } cold state Done { } }\n\
+         test tcA [main=Main]: { Main, Server };\n",
+    );
+    assert_eq!(snappea(&mut h, &["check", "s.p", "--no-mutation", "--warn", "lint"]), 0, "{}{}", h.stdout, h.stderr);
+    // snappea-compat keeps upstream's failure
+    assert_eq!(compat(&mut h, &["check", "-tc", "tcA", "--schedules", "1"]), 1, "{}", h.stdout);
+    let log = read(&h, "PCheckerOutput/tcA/BugFinding/generatedOutput_0_0.txt");
+    assert!(log.contains("received event 'PImplementation.eA' that cannot be handled"), "{}", log);
 }
 
 /// A counter whose spec only checks that the total stays non-negative.
