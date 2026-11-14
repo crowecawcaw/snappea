@@ -13,22 +13,12 @@ A blocking queue hands items from producers to consumers. A consumer that finds 
 queue empty registers as a waiter and parks; a producer that puts an item wakes one
 waiter. This is the condition-variable pattern, modeled as messages to the queue.
 
-**Difficulty: medium.** The code reads correctly line by line; the bug is in where the
+**Difficulty: Medium.** The code reads correctly line by line; the bug is in where the
 lock is released.
 
-**Contract.** Items come out in the order they went in, each once, only to a consumer
-that wants one and is awake. Every item put is eventually taken: a take blocks only
-while the queue is empty.
-
-**Atomic primitives** (one critical section, one handler each): take-if-available,
-register as a waiter, put-and-wake-one. In the fixed design, take-or-register is one
-critical section.
-
-## The flaw
-
-The consumer checks for an item and registers as a waiter in two separate critical
-sections, so a put that runs between them wakes nobody and the consumer then parks
-beside an item.
+**The flaw in one sentence:** the consumer checks for an item and registers as a
+waiter in two separate critical sections, so a put that runs between them wakes nobody
+and the consumer then parks beside an item.
 
 ```text
 if (queue.tryTake() == null) {   // critical section 1: empty
@@ -37,32 +27,70 @@ if (queue.tryTake() == null) {   // critical section 1: empty
 }
 ```
 
+**Contract** (in [`PSpec/BlockingQueue.p`](PSpec/BlockingQueue.p), the same for both designs)
+
+- `TakeBlocksOnlyWhenEmpty` (safety): items come out in the order they went in, each
+  once, only to a consumer that wants one and is awake.
+- `TakeBlocksOnlyWhenEmpty` (progress, hot state `ItemsOutstanding`): every planned
+  item is eventually taken, so a take blocks only while the queue is empty.
+
+**Atomic primitives** (one critical section, one handler each): take-if-available,
+register as a waiter, put-and-wake-one. In the fixed design, take-or-register is one
+critical section.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSpec/BlockingQueue.p`](PSpec/BlockingQueue.p) | `TakeBlocksOnlyWhenEmpty` and the events it observes |
+| [`PSrc/Producer.p`](PSrc/Producer.p) | The producer, shared by both designs |
+| [`PSrc/RacyQueue.p`](PSrc/RacyQueue.p) | Flawed: check and register in separate critical sections |
+| [`PSrc/WaitQueue.p`](PSrc/WaitQueue.p) | Fixed: take-or-register in one critical section |
+| [`PTst/Tests.p`](PTst/Tests.p) | Drivers, the `PutWakesSleeper` scenario, test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugCheckThenWait` | Flawed queue, one consumer, one item | The lost wake-up itself | Expected bug: `Deadlock detected.` (consumer 1 asleep with item 10 queued) |
+| `tcFixedOneConsumerTwoItems` | One consumer takes two items from one producer | Take from a non-empty queue, sleep on an empty one, be woken by a put | Passes |
+| `tcFixedTwoConsumers` | Two consumers, one item each | Both asleep at once, a put wakes only one, a woken consumer finds its item stolen and sleeps again | Passes |
+
+`PutWakesSleeper` confirms the fixed tests reach the interesting history: a consumer
+asleep, then a put, then its wake-up.
+
 ## The counterexample
 
 From `tcBugCheckThenWait` (one consumer, one item):
 
-1. The consumer sends `tryTake`; the queue is empty, so it answers "no item".
+1. The consumer sends `TryTake`; the queue is empty, so it answers "no item".
 2. The producer puts item 10. The queue has no waiters, so it wakes nobody.
 3. The consumer, acting on step 1's answer, registers as a waiter and parks.
 4. Item 10 sits in the queue, the consumer waits for a wake-up that already happened,
    and nothing else can run.
 
-The negative control finds this declared bug:
+`snappea check` reports:
 
 ```text
-Deadlock detected. RacyConsumer(3) is waiting to receive an event, but no other controlled tasks are enabled.
+Deadlock detected. RacyConsumer(3) is waiting to receive an event, but no other controlled tasks are enabled, while spec TakeBlocksOnlyWhenEmpty is in hot state 'ItemsOutstanding' (wants = {1: 1}, queued = [10], sleeping = {1}, outstanding = 1).
 ```
 
-The spec `TakeBlocksOnlyWhenEmpty` is in its hot state `ItemsOutstanding` at that point.
-In a system that keeps running (more producers, timers), the same history would end in
-that hot state instead: an item never taken.
+**How a hang is reported.** The consumer waits in a blocking `receive`. When a
+machine is blocked in `receive` and no other machine can run, the checker reports
+`Deadlock detected`, with or without a spec, and names any spec left in a hot state.
+A machine that waits in a state handler instead is simply idle: the run ends quietly,
+and only a hot-state spec turns the hang into a failure (see
+[lock-order-deadlock](../lock-order-deadlock/)). The expected bug pins the spec's
+state, consumer 1 asleep while item 10 is queued, so a different hang cannot match it.
+In a system that keeps running (more producers, timers), the same history ends in the
+hot state instead: an item never taken.
 
 ## Why ordinary tests miss it
 
 The window is a few instructions wide. In a test with a steady producer, the next put
 wakes the stuck consumer, so the bug shows up as an occasional latency spike, not a
 failure. It hangs for good only when the last item lands in the window, which a load
-test rarely arranges. The checker found it in the first handful of schedules.
+test rarely arranges. The checker tries that order directly.
 
 ## The fix
 
@@ -74,41 +102,16 @@ lock and parks atomically. A woken consumer loops and tries again, because anoth
 consumer may have taken the item first. Re-checking the queue after registering, before
 parking, also fixes it.
 
-## Files
-
-| File | What it holds |
-| --- | --- |
-| [`PSpec/BlockingQueue.p`](PSpec/BlockingQueue.p) | `TakeBlocksOnlyWhenEmpty`: FIFO, once, only to awake consumers that want one (safety); every planned item taken (hot state) |
-| [`PSrc/Producer.p`](PSrc/Producer.p) | The producer, shared by both designs |
-| [`PSrc/RacyQueue.p`](PSrc/RacyQueue.p) | Flawed: check and register in separate critical sections |
-| [`PSrc/WaitQueue.p`](PSrc/WaitQueue.p) | Fixed: take-or-register in one critical section |
-| [`PTst/Tests.p`](PTst/Tests.p) | Drivers, the `PutWakesSleeper` scenario, test cases |
-
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcFixedOneConsumerTwoItems` | One consumer takes two items from one producer | Take from a non-empty queue, sleep on an empty one, be woken by a put | passes |
-| `tcFixedTwoConsumers` | Two consumers, one item each | Both asleep at once, a put wakes only one, a woken consumer finds its item stolen and sleeps again | passes |
-| `tcBugCheckThenWait` | Flawed queue, one consumer, one item | **Expected bug**: consumer remains waiting for `Wake` | Expected bug found |
-
-`PutWakesSleeper` confirms the fixed tests reach the interesting history: a consumer
-asleep, then a put, then its wake-up.
-
 ## Run
 
 ```sh
-snappea check LostWakeup.pproj 'tcFixed*' --deny mutation
-snappea check LostWakeup.pproj tcBugCheckThenWait   # succeeds only when the declared bug is found
+snappea check LostWakeup.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LostWakeup.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
-
-The declaration matches `is waiting to receive an event`, rather than the
-allocation-dependent machine number. This model has one consumer; inspect the
-replay to confirm that it is waiting for `Wake` after the producer has finished.
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 ## Bounds and omissions
 

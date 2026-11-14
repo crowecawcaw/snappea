@@ -47,7 +47,7 @@ machine HalfQuorumNode {
     on RequestVote do (r: VoteReq) { Vote(r); }
     on VoteResp do (v: (granted: bool)) {
       if (v.granted) { grants = grants + 1; }
-    // BUG: n / 2 is not a majority when n is even.
+      // BUG: n / 2 is not a majority when n is even.
       if (grants >= sizeof(peers) / 2) {
         announce ElectionEnded, (term = term, candidate = id, won = true);
         goto Following;

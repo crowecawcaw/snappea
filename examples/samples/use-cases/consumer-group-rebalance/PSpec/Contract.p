@@ -1,15 +1,11 @@
 // The consumer-group contract, over events the coordinator announces when it starts a
-// generation or decides a commit, and events consumers announce when they adopt an
-// assignment or process a record. The specs rebuild ownership and offsets from that
-// history; they never read the coordinator.
+// generation or writes an offset, the replies it sends to consumers (`Fetched`,
+// `CommitResponse`), and events consumers announce when they adopt an assignment or
+// process a record. The specs rebuild ownership and offsets from that history; they
+// never read the coordinator.
 
 event GenerationChanged: (gen: int, members: seq[int], owner: map[int, int]);
 event OffsetCommitted: (partition: int, offset: int, gen: int, member: int);
-event CommitRejected: (partition: int, gen: int, member: int);
-event FetchRejected: (partition: int, gen: int, member: int);
-event FetchServed: (partition: int, gen: int, member: int);
-// A consumer was told its commit was accepted.
-event CommitAcked: (member: int, partition: int, offset: int);
 event Adopted: (member: int, gen: int, partitions: seq[int]);
 event Processed: (member: int, partition: int, offset: int);
 
@@ -22,14 +18,15 @@ event Processed: (member: int, partition: int, offset: int);
 //   partition to exactly one member (none if the group is empty), and nothing else.
 // - Within a generation, a partition is held by at most one consumer, and only by the
 //   one the coordinator assigned it to.
+// - A served offset fetch returns the partition's committed offset.
 // - A consumer whose commit or offset fetch was rejected stops working on that
 //   generation's assignment (it rejoins instead of processing on as a zombie), and a
 //   consumer is told a commit succeeded only if it was accepted.
-spec GroupSafety observes GroupPlanned, GenerationChanged, OffsetCommitted, CommitRejected, FetchRejected, FetchServed,
-    CommitAcked, Adopted, Processed {
+spec GroupSafety observes GroupPlanned, GenerationChanged, OffsetCommitted, Fetched, CommitResponse,
+    Adopted, Processed {
   var accepted: set[(member: int, partition: int, offset: int)];
   var partitions: int;
-  // member -> the generation in which one of its commits was rejected
+  // member -> the generation in which one of its requests was rejected
   var fenced: map[int, int];
   var gen: int;
   var owner: map[int, int];
@@ -105,27 +102,37 @@ spec GroupSafety observes GroupPlanned, GenerationChanged, OffsetCommitted, Comm
       committed[p.partition] = p.offset;
       accepted += ((member = p.member, partition = p.partition, offset = p.offset));
     }
-    on CommitAcked do (p: (member: int, partition: int, offset: int)) {
-      assert p in accepted,
-        format("member {0} was told offset {1} of partition {2} was committed, but it was rejected", p.member, p.offset, p.partition);
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      if (r.ok) {
+        assert (member = r.member, partition = r.partition, offset = r.offset) in accepted,
+          format("member {0} was told offset {1} of partition {2} was committed, but it was not", r.member, r.offset, r.partition);
+        return;
+      }
+      fenced[r.member] = r.gen;
+      assert r.gen != gen || !(r.partition in owner) || owner[r.partition] != r.member,
+        format("commit by member {0}, the current owner of partition {1}, was rejected", r.member, r.partition);
     }
-    on FetchServed do (p: (partition: int, gen: int, member: int)) {
-      assert p.gen == gen && p.partition in owner && owner[p.partition] == p.member,
-        format("offset fetch by member {0} for partition {1} in generation {2} served in generation {3}",
-               p.member, p.partition, p.gen, gen);
-    }
-    on FetchRejected do (p: (partition: int, gen: int, member: int)) {
-      fenced[p.member] = p.gen;
-      assert p.gen != gen || !(p.partition in owner) || owner[p.partition] != p.member,
-        format("offset fetch by member {0}, the current owner of partition {1}, was rejected", p.member, p.partition);
-    }
-    on CommitRejected do (p: (partition: int, gen: int, member: int)) {
-      fenced[p.member] = p.gen;
-      assert p.gen != gen || !(p.partition in owner) || owner[p.partition] != p.member,
-        format("commit by member {0}, the current owner of partition {1}, was rejected",
-               p.member, p.partition);
+    on Fetched do (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
+      if (r.ok) {
+        assert r.gen == gen && r.partition in owner && owner[r.partition] == r.member,
+          format("offset fetch by member {0} for partition {1} in generation {2} served in generation {3}",
+                 r.member, r.partition, r.gen, gen);
+        assert r.offset == Committed(committed, r.partition),
+          format("offset fetch for partition {0} returned offset {1}, but {2} is committed",
+                 r.partition, r.offset, Committed(committed, r.partition));
+        return;
+      }
+      fenced[r.member] = r.gen;
+      assert r.gen != gen || !(r.partition in owner) || owner[r.partition] != r.member,
+        format("offset fetch by member {0}, the current owner of partition {1}, was rejected", r.member, r.partition);
     }
   }
+}
+
+// The committed offset of a partition; 0 before its first commit.
+fun Committed(committed: map[int, int], partition: int): int {
+  if (partition in committed) { return committed[partition]; }
+  return 0;
 }
 
 // The first n entries of a sequence.
@@ -137,21 +144,23 @@ fun Prefix(s: seq[int], n: int): seq[int] {
   return out;
 }
 
-// Progress: every record of every partition is eventually processed and committed,
-// given the bounded membership changes the driver makes, and a live consumer that was
-// fenced out of the group (its commit rejected while it was not a member) eventually
-// rejoins. The driver announces the partitions and records before any consumer
-// starts. (A consumer that shuts down sends its last commit before its leave, so it is
+// Progress: every offset fetch and commit gets a reply; every record of every partition
+// is eventually processed and committed, given the bounded membership changes the
+// driver makes; and a live consumer that was fenced out of the group (a request
+// rejected while it was not a member) eventually rejoins. The driver announces the
+// partitions and records before any consumer starts. (A consumer that shuts down sends its last commit before its leave, so it is
 // never fenced as a non-member.)
 event GroupPlanned: (partitions: int, records: int);
 
-spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, FetchRejected, GenerationChanged {
+spec GroupProgress observes GroupPlanned, OffsetCommitted, Commit, CommitResponse, Fetch, Fetched, GenerationChanged {
   var records: int;
   // partition -> records not yet committed
   var left: map[int, int];
   var members: seq[int];
   // fenced live consumers that have not rejoined yet
   var outside: set[int];
+  // offset fetches and commits sent but not answered yet
+  var unanswered: int;
 
   start state Idle {
     on GroupPlanned do (p: (partitions: int, records: int)) {
@@ -165,8 +174,10 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
       goto Busy;
     }
     on OffsetCommitted do { assert false, "commit with no work planned"; }
-    on CommitRejected do { assert false, "commit with no work planned"; }
-    on FetchRejected do { assert false, "fetch with no work planned"; }
+    on Commit do { assert false, "commit with no work planned"; }
+    on CommitResponse do { assert false, "commit with no work planned"; }
+    on Fetch do { assert false, "fetch with no work planned"; }
+    on Fetched do { assert false, "fetch with no work planned"; }
     on GenerationChanged do { assert false, "generation with no work planned"; }
   }
 
@@ -180,9 +191,14 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
       Check();
     }
 
-    on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
-
-    on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+    on Commit do { Asked(); }
+    on Fetch do { Asked(); }
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      Answered(r.ok, r.member);
+    }
+    on Fetched do (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
+      Answered(r.ok, r.member);
+    }
     on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
 
@@ -192,14 +208,27 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
     on GroupPlanned do { assert false, "work planned twice"; }
     on OffsetCommitted do { assert false, "commit after every partition was fully committed"; }
 
-    on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
-
-    on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+    on Commit do { Asked(); }
+    on Fetch do { Asked(); }
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      assert false, format("member {0} got a commit reply with no request outstanding", r.member);
+    }
+    on Fetched do (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
+      assert false, format("member {0} got a fetch reply with no request outstanding", r.member);
+    }
     on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
 
-  fun Fenced(member: int) {
-    if (!(member in members)) {
+  fun Asked() {
+    unanswered = unanswered + 1;
+    goto Busy;
+  }
+
+  // A rejection from outside the group obliges the consumer to rejoin.
+  fun Answered(ok: bool, member: int) {
+    assert unanswered > 0, format("member {0} got a reply to a request it never sent", member);
+    unanswered = unanswered - 1;
+    if (!ok && !(member in members)) {
       outside += (member);
     }
     Check();
@@ -221,7 +250,7 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
         goto Busy;
       }
     }
-    if (sizeof(outside) > 0) {
+    if (sizeof(outside) > 0 || unanswered > 0) {
       goto Busy;
     }
     goto Done;

@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I use P to design and test a feature with shared state, retries or recovery?
+  - In what order do I model, check, implement and test?
+  - When is a model done?
+---
+
 # Model a design with P, then test the code against it
 
 P finds bugs that only appear in some orderings: two clients read the same version,

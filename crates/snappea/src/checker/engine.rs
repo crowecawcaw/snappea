@@ -520,9 +520,10 @@ fn build_strategy(
         StrategyKind::FeedbackPct => feedback(Box::new(PctScheduler::new(opts.strategy_bound, 0, controlled()))),
         StrategyKind::FeedbackPos => feedback(Box::new(PosScheduler::new(controlled()))),
         StrategyKind::Rl => Box::new(crate::checker::rl::QLearningStrategy::new(opts.max_unfair_steps, rng.clone())),
-        StrategyKind::Dfs => Box::new(crate::checker::exhaustive::ExhaustiveStrategy::new(opts.max_unfair_steps, None)),
-        StrategyKind::RandomDfs => {
-            Box::new(crate::checker::exhaustive::ExhaustiveStrategy::new(opts.max_unfair_steps, Some(rng.clone())))
+        StrategyKind::Dfs | StrategyKind::RandomDfs => {
+            let rng = (opts.strategy == StrategyKind::RandomDfs).then(|| rng.clone());
+            let dfs = crate::checker::exhaustive::ExhaustiveStrategy::new(opts.max_unfair_steps, rng);
+            Box::new(if has_hot { dfs.with_live_graph(crate::checker::fairness::RECORD_BUDGET) } else { dfs })
         }
         StrategyKind::Replay => match &opts.replay {
             Some(t) => {
@@ -654,6 +655,8 @@ pub struct Exploration {
     /// This worker's bug is the one reported.
     won: bool,
     time: Option<crate::checker::time::TimeOptions>,
+    /// This worker's record of the state graph, for the fair-cycle analysis.
+    live_graph: Option<crate::checker::fairness::LiveGraph>,
 }
 
 /// What every schedule of a test case needs, resolved once per worker.
@@ -793,6 +796,90 @@ impl<'p> Checker<'p> {
         }
         debug_assert_eq!(rt.bug, bug.bug, "replaying a buggy schedule must reproduce its bug");
         (std::mem::take(&mut rt.log), rt.json.take().map(|j| j.to_json_text()), rt.xml.take().map(|x| x.finish()))
+    }
+
+    /// Decides liveness for a finished exhaustive search from the record of its state
+    /// graph (see [`crate::checker::fairness`]): notes the verdict in the search
+    /// statistics and adds the liveness bug of a fair cycle that keeps a monitor hot, with
+    /// the lasso schedule that replays it.
+    fn decide_liveness(
+        &self,
+        tc: &TestCase,
+        opts: &CheckerOptions,
+        result: &mut CheckResult,
+        graph: Option<crate::checker::fairness::LiveGraph>,
+        time: Option<&crate::checker::time::TimeOptions>,
+    ) -> Option<BugSchedule> {
+        use crate::checker::fairness::Verdict;
+        let stats = result.exhaustive.as_mut()?;
+        let explored = stats.finished && stats.depth_bound_hits == 0 && stats.unverifiable.is_none();
+        if !stats.hot_monitors || !explored || result.cancelled {
+            return None;
+        }
+        if result.report.num_bugs > 0 && !opts.full_exploration {
+            return None;
+        }
+        let Some(graph) = graph else {
+            stats.liveness_note = Some("the search did not record its state graph".into());
+            return None;
+        };
+        let (steps, lasso) = match graph.analyze() {
+            Verdict::Verified => {
+                stats.liveness_verified = true;
+                return None;
+            }
+            Verdict::Unverified(why) => {
+                stats.liveness_note = Some(why);
+                return None;
+            }
+            Verdict::Livelock { steps, lasso } => (steps, lasso),
+        };
+        drop(graph);
+        let (module, main) = self.prog.test_case_module(tc);
+        let main = main?;
+        let mut config = run_config(opts);
+        config.strategy_description = Some(result.strategy_description.clone());
+        let trace = ScheduleTrace {
+            is_fair: false,
+            liveness_temperature_threshold: Some(config.liveness_temperature_threshold),
+            test_name: opts.record_test_name.then(|| tc.name.clone()),
+            time: time.map(|t| t.schedule_header()),
+            latency: time.and_then(|t| t.profile.as_ref()).map(|p| p.entries()).unwrap_or_default(),
+            lasso: Some(lasso),
+            steps,
+        };
+        let mut strategy = ReplayStrategy::new(trace.clone());
+        let setup = Setup {
+            assignment: self.prog.test_case_assignment(tc),
+            foreign: self.foreign.clone(),
+            time: time.cloned(),
+            ..Setup::default()
+        };
+        let mut rt = Runtime::new(self.prog, &self.code, module, &config, &mut strategy, setup);
+        rt.run_test(main, &tc.name);
+        let (Some(bug), None) = (rt.bug.clone(), rt.strategy.replay_error()) else {
+            stats.liveness_note = Some(
+                "a fair cycle keeps a liveness monitor out of its cold states, but its schedule did not replay".into(),
+            );
+            return None;
+        };
+        let identity = rt.bug_identity.clone();
+        let strategy_description = rt.bug_strategy_description.clone();
+        drop(rt);
+        let report = &mut result.report;
+        report.num_bugs += 1;
+        report.bug_reports.push(bug.clone());
+        report.bug_identities.push(identity);
+        result.schedule_trace.get_or_insert_with(|| trace.to_text());
+        Some(BugSchedule {
+            trace,
+            bound_hit_at: None,
+            strategy_description,
+            bug: Some(bug),
+            report_text: result.report.text(opts, "<StrategyLog>"),
+            // the test task of a first schedule
+            test_task_id: 2,
+        })
     }
 
     /// Runs one test case (`TestingEngine.Run`).
@@ -1202,14 +1289,18 @@ impl<'p> Checker<'p> {
         result.branching = branching;
         result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
-        Ok(Exploration { result, first_bug, samples, won, time })
+        let live_graph = strategy.take_live_graph();
+        Ok(Exploration { result, first_bug, samples, won, time, live_graph })
     }
 
     /// Merges what the workers explored (see [`WorkerPool`]) and replays the reported bug
     /// with logging on to produce its traces: the end of [`Checker::check`].
     pub fn finish(&self, tc: &TestCase, opts: &CheckerOptions, parts: Vec<Exploration>) -> CheckResult {
         let several = parts.len() > 1;
-        let Exploration { mut result, first_bug, mut samples, time, .. } = merge(parts);
+        let Exploration { mut result, mut first_bug, mut samples, time, live_graph, .. } = merge(parts);
+        if let Some(bug) = self.decide_liveness(tc, opts, &mut result, live_graph, time.as_ref()) {
+            first_bug.get_or_insert(bug);
+        }
         if opts.inspection_trace {
             samples.sort_by_key(|s| s.0);
             let (module, main) = self.prog.test_case_module(tc);
@@ -1319,6 +1410,14 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
     let result = &mut merged.result;
     for p in parts {
         merged.samples.extend(p.samples);
+        // the analysis needs every part of the search
+        merged.live_graph = match (merged.live_graph.take(), p.live_graph) {
+            (Some(mut a), Some(b)) => {
+                a.absorb(b);
+                Some(a)
+            }
+            _ => None,
+        };
         let r = p.result;
         result.report.merge(r.report);
         result.cancelled |= r.cancelled;

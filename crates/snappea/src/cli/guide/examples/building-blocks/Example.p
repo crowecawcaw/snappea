@@ -2,10 +2,10 @@
 // Export: snappea guide example building-blocks --out vendor
 // cd vendor/building-blocks
 // Passing: snappea check tcReplies tcNetworkFaults Example.pproj --no-mutation
-// Broken: snappea check tcDuplicate Example.pproj --no-mutation
-//          must fail with "duplicate terminal reply".
-// Broken: snappea check tcMissing Example.pproj --no-mutation
-//          must fail in the hot state RepliesPending.
+// Negative controls: snappea check tcDuplicate tcMissing Example.pproj --no-mutation
+//   passes only when tcDuplicate fails with "duplicate terminal reply for request 1"
+//   and tcMissing fails in the hot state RepliesPending (see expect-bug below).
+// Everything, with mutation testing: snappea check Example.pproj
 // The library-only BuildingBlocks.pproj can be included by your own project.
 
 event eRequest: (client: machine, id: int);
@@ -56,8 +56,10 @@ machine MissingReply {
 
 test tcReplies [main=ReplyClient]: assert BBRequestReplies in { ReplyClient, Service };
 // snappea-lint: allow no-model-machine -- deliberately broken oracle probe
+// snappea: expect-bug "duplicate terminal reply for request 1"
 test tcDuplicate [main=DuplicateReply]: assert BBRequestReplies in { DuplicateReply };
 // snappea-lint: allow no-model-machine -- deliberately broken oracle probe
+// snappea: expect-bug "BBRequestReplies detected liveness bug in hot state 'RepliesPending'"
 test tcMissing [main=MissingReply]: assert BBRequestReplies in { MissingReply };
 
 

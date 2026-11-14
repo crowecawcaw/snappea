@@ -26,11 +26,10 @@ machine BothOffCall {
       announce RosterStarted, (onCall = doctors, requests = 2);
       store = new SnapshotStore(InitialRows(doctors));
       announce OffCallRequested, 1;
-      new Doctor((owner = this, doctor = 1, store = store, doctors = doctors));
+      new Doctor((doctor = 1, store = store, doctors = doctors));
       announce OffCallRequested, 2;
-      new Doctor((owner = this, doctor = 2, store = store, doctors = doctors));
+      new Doctor((doctor = 2, store = store, doctors = doctors));
     }
-    ignore DoctorDone;
   }
 }
 
@@ -47,6 +46,7 @@ machine RosterBothOffCall {
       announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
+    // The spec checks each answer through OffCallAnswered; nothing waits here.
     ignore DoctorDone;
   }
 }
@@ -66,6 +66,7 @@ machine RosterTwoOfThree {
       announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
+    // The spec checks each answer through OffCallAnswered; nothing waits here.
     ignore DoctorDone;
   }
 }
@@ -91,6 +92,7 @@ machine RosterOneAfterAnother {
       announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
+    // The spec checks each answer through OffCallAnswered; nothing waits here.
     ignore DoctorDone;
   }
 }
@@ -110,6 +112,7 @@ machine RosterUnrelatedCommit {
       new RosterDoctor((owner = this, doctor = 1, store = store, doctors = doctors));
       new PhoneUpdate(store);
     }
+    // The spec checks each answer through OffCallAnswered; nothing waits here.
     ignore DoctorDone;
   }
 }
@@ -143,6 +146,7 @@ test tcFixedBothOffCall [main=RosterBothOffCall]:
 test tcFixedTwoOfThree [main=RosterTwoOfThree]:
   assert AlwaysSomeoneOnCall in { RosterTwoOfThree, SnapshotStore, RosterDoctor };
 
-// snappea: expect-bug "nobody is on call"
+// Doctor 1 or doctor 2 commits last, depending on the schedule.
+// snappea: expect-bug "nobody is on call after doctor"
 test tcBugWriteSkew [main=BothOffCall]:
   assert AlwaysSomeoneOnCall in { BothOffCall, SnapshotStore, Doctor };

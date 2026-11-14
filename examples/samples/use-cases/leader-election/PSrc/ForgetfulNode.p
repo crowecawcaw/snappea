@@ -11,7 +11,7 @@ machine ForgetfulNode {
     replies: int, leaderTerm: int);
 
   start state Init {
-    entry (d: Disk) {
+    entry (d: DurableState) {
       id = d.id;
       term = d.term;
       votedTerm = d.votedTerm;

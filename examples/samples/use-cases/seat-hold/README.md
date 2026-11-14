@@ -16,17 +16,19 @@ between payment and confirmation, and another customer can hold the seat meanwhi
 
 **Contract**
 
-- A seat is held by at most one hold at a time and sold at most once, only to the
-  hold that currently has it. Rejections must be justified by the seat's state.
-- Every charge ends in exactly one of a sale or a refund.
-- Every checkout ends with the outcome the store's decisions justify, and every hold
-  is eventually sold, expired or cancelled, even when the customer walks away.
-- A cancel is answered only once its hold no longer has the seat, and a late expiry
-  timer or a late cancel never frees a seat that a later hold has.
+- `SeatsSoldOnce`: a seat is held by at most one hold at a time and sold at most once,
+  only to the hold that currently has it. Rejections must be justified by the seat's
+  state. A cancel is answered only once its hold no longer has the seat, and a late
+  expiry timer or a late cancel never frees a seat that a later hold has.
+- `ChargesResolved` (hot state): every charge ends in exactly one of a sale or a
+  refund.
+- `CheckoutsEnd` (hot state): every checkout ends with the outcome the store's
+  decisions justify, and every hold is eventually sold, expired or cancelled, even
+  when the customer walks away.
 
 **Atomic primitives** (one transaction on the seat's row each): hold (free → held),
-confirm (held by this hold → sold), expire and cancel (held by this hold → free). Payment and
-the timer are separate actors, so everything between them interleaves.
+confirm (held by this hold → sold), expire and cancel (held by this hold → free).
+Payment and the timer are separate actors, so everything between them interleaves.
 
 ## Files
 
@@ -40,13 +42,13 @@ the timer are separate actors, so everything between them interleaves.
 
 ## Test cases
 
-| Test | Drives | Why it matters |
-| --- | --- | --- |
-| `tcTwoCustomersOneSeat` | Two customers, one seat, nobody walks away | The core race: expiry between payment and confirm, then a second hold |
-| `tcGeneratedCheckouts` | Three customers, seats chosen from two, each may abandon | Contended and uncontended seats together; abandoned holds must expire |
-| `tcCancelRacesRehold` | Customer 1 holds and cancels; customer 2 wants the same seat | Stale operations against a successor: hold 1's timer, or its cancel after expiry, lands while hold 2 has the seat. Freeing by seat alone fails here |
-| `tcHoldAfterSale` | Second customer starts only after the first bought | Lifecycle boundary: a store that forgets sold seats re-sells here |
-| `tcBugConfirmIgnoresExpiry` | The unfenced store | **Expected to fail**: `seat 7 sold to hold 1, which does not hold it` |
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoCustomersOneSeat` | Two customers, one seat, nobody walks away | The core race: expiry between payment and confirm, then a second hold. All schedules | Passes |
+| `tcGeneratedCheckouts` | Three customers, seats chosen from two, each may abandon | Contended and uncontended seats together; abandoned holds must expire. Sampled | Passes |
+| `tcCancelRacesRehold` | Customer 1 holds and cancels; customer 2 wants the same seat | Stale operations against a successor: hold 1's timer, or its cancel after expiry, lands while hold 2 has the seat. Freeing by seat alone fails here. All schedules | Passes |
+| `tcHoldAfterSale` | Second customer starts only after the first bought | Lifecycle boundary: a store that forgets sold seats re-sells here. All schedules | Passes |
+| `tcBugConfirmIgnoresExpiry` | The unfenced store | Confirm succeeds after the hold expired | Expected bug: `seat 7 sold to hold 1, which does not hold it` (hold 1 or 2) |
 
 The `ExpiredWhilePaying` scenario confirms the checks reach the interesting history:
 a charge, the hold expiring, the confirmation rejected, the refund.
@@ -54,7 +56,7 @@ a charge, the hold expiring, the confirmation rejected, the refund.
 ## What building it taught
 
 The first version had only `SeatsSoldOnce`. It passed with full coverage, and
-mutation testing still reported 22 changes no test noticed: removing the payment
+mutation testing still reported about twenty changes no test noticed: removing the payment
 reply, the hold reply or the expiry timer left customers stuck, and a stuck customer
 violates no safety rule. Each fix is a pattern worth copying:
 
@@ -72,27 +74,23 @@ violates no safety rule. Each fix is a pattern worth copying:
 ## Run
 
 ```sh
-snappea check tcTwoCustomersOneSeat tcCancelRacesRehold tcGeneratedCheckouts tcHoldAfterSale --timeout 30s --deny mutation
-snappea check tcBugConfirmIgnoresExpiry      # expected bug (exit 0): the oversell above
+snappea check tcTwoCustomersOneSeat tcCancelRacesRehold tcGeneratedCheckouts tcHoldAfterSale --deny mutation
+snappea check tcBugConfirmIgnoresExpiry      # passes only when the declared failure is found
 ```
-
-With `--timeout 30s`, `tcTwoCustomersOneSeat` (about 28,000 schedules, 11s),
-`tcCancelRacesRehold` (about 19,000, 7s) and `tcHoldAfterSale` explore every
-schedule; `tcGeneratedCheckouts` is sampled within its time budget. Without
-`--timeout`, the runs share 10s and stop early, so the large ones are sampled too.
 
 ## Bounds and omissions
 
 Two or three customers, two seats, one hold per checkout, one expiry per hold,
-cancel only right after holding.
-Payment never fails and messages are not lost. Not modeled: payment failures,
+cancel only right after holding. Each customer machine runs one checkout with one
+request in flight, so every store reply it gets is for its own hold. Payment never fails and messages are not lost. Not modeled: payment failures,
 retried confirmations, holds of several seats at once, clock skew between the timer
 and the database.
 
 ## Testing the implementation
 
 Emit `Held`, `HoldRejected`, `Expired`, `HoldReleased`, `Sold` and
-`ConfirmRejected` from the store after each transaction commits, and `Charged`/`Refunded` from the payment
-client. To reach the race in a test, block the payment call until the expiry job has
-run and a second customer holds the seat, then let the first confirmation proceed. For the stale timer, cancel hold 1, let customer 2
+`ConfirmRejected` from the store after each transaction commits, and
+`Charged`/`Refunded` from the payment client. To reach the race in a test, block the
+payment call until the expiry job has run and a second customer holds the seat, then
+let the first confirmation proceed. For the stale timer, cancel hold 1, let customer 2
 hold the seat, then run hold 1's expiry job and check hold 2 still has the seat.

@@ -16,6 +16,4 @@ machine Gateway {
   }
 }
 
-// What every API worker returns to the client that sent the request.
-event ChargeResult: (req: int, charge: int);
 type Request = (req: int, key: int, amount: int);

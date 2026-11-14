@@ -8,13 +8,13 @@ machine Network {
   var drops: int;
   start state Serving {
     entry (budget: int) { drops = budget; }
-    on Connect do (c: (client: machine, server: machine, after: int)) {
+    on Connect do (c: (client: machine, id: int, server: machine, after: int)) {
       var mayDrop: bool;
       if (drops > 0) {
         drops = drops - 1;
         mayDrop = true;
       }
-      new Connection((client = c.client, server = c.server, after = c.after, mayDrop = mayDrop));
+      new Connection((client = c.client, id = c.id, server = c.server, after = c.after, mayDrop = mayDrop));
     }
   }
 }
@@ -23,10 +23,10 @@ machine Connection {
   var client: machine;
   var mayDrop: bool;
   start state Open {
-    entry (c: (client: machine, server: machine, after: int, mayDrop: bool)) {
+    entry (c: (client: machine, id: int, server: machine, after: int, mayDrop: bool)) {
       client = c.client;
       mayDrop = c.mayDrop;
-      send c.server, Subscribe, (conn = this, after = c.after);
+      send c.server, Subscribe, (conn = this, client = c.id, after = c.after);
     }
     on Deliver do (d: (sn: int, msg: int)) {
       if (mayDrop && $) {

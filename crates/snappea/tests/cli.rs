@@ -385,7 +385,7 @@ fn time_tracking() {
     }
     assert_eq!(snappea(&mut h, &["replay", schedule]), 1, "{}{}", h.stdout, h.stderr);
     assert_eq!(snappea(&mut h, &["check", "--latency", "missing.toml"]), 2);
-    assert!(h.stderr.contains("Cannot read latency file 'missing.toml'"), "{}", h.stderr);
+    assert!(h.stderr.contains("error: cannot read latency file 'missing.toml'"), "{}", h.stderr);
 }
 
 #[test]
@@ -806,14 +806,14 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     h.add_file("coverage.p", "event ePing;\n// snappea-lint: allow coverage:nope -- typo\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
          test tcMain [main=Main]: { Main };\n");
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation"]), 2);
-    assert!(h.stderr.contains("unknown or empty lint rule ID"), "{}", h.stderr);
+    assert!(h.stderr.contains("unknown lint rule ID 'coverage:nope'"), "{}", h.stderr);
     h.add_file(
         "coverage.p",
         "// snappea-lint: allow coverage\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
          test tcMain [main=Main]: { Main };\n",
     );
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation"]), 2);
-    assert!(h.stderr.contains("coverage suppression needs a reason"), "{}", h.stderr);
+    assert!(h.stderr.contains("coverage suppression has no reason"), "{}", h.stderr);
 }
 
 #[test]
@@ -1227,7 +1227,12 @@ fn mutants_no_test_case_can_detect_are_skipped_or_reported_as_likely_equivalent(
     assert!(m["likely_equivalent"][0]["reason"].as_str().unwrap().starts_with("fault model: every send of 'eCrash'"));
     assert_eq!(snappea(&mut h, &["check", "crash.p", "--format", "text"]), 0);
     assert!(h.stdout.contains("1 equivalent (not run)"), "{}", h.stdout);
-    assert!(h.stdout.contains("Likely equivalent, not counted as undetected:\n  crash.p:10  "), "{}", h.stdout);
+    assert!(
+        h.stdout
+            .contains("Likely equivalent, not counted as undetected (a heuristic: review each one):\n  crash.p:10  "),
+        "{}",
+        h.stdout
+    );
     // a crash in every run is not optional: the empty handler is a gap
     h.add_file("crash.p", &OPTIONAL_CRASH.replace("if ($) { send s, eCrash; }", "send s, eCrash;"));
     assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 1, "{}", h.stdout);
@@ -1433,7 +1438,7 @@ fn lint_reports_state_events_and_progress_no_check_depends_on() {
     // the fields and events a check reads are not reported
     assert!(!h.stderr.contains("'served'"), "{}", h.stderr);
     assert!(!h.stderr.contains("'eResp'"), "{}", h.stderr);
-    assert!(h.stderr.contains("help: assert on the field in a spec"), "{}", h.stderr);
+    assert!(h.stderr.contains("help: if a wrong value would be a bug, check it"), "{}", h.stderr);
 
     // suppressions name the rule; a field takes one too
     let allowed = WEAK
@@ -1622,8 +1627,8 @@ fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
         assert_eq!(suppressed.iter().any(|m| m["change"] == "removed `total = total + n;`"), nested, "{mutation}");
         assert!(suppressed.iter().all(|m| m["reasons"] == serde_json::json!(["guard scope"])));
         assert_eq!(mutation["stale_suppressions"].as_array().unwrap().len(), 1, "{mutation}");
-        assert!(h.stdout.contains("matches no mutant in the selected model"), "{}", h.stdout);
-        assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
+        assert!(h.stdout.contains("matches no mutant of the selected test cases"), "{}", h.stdout);
+        assert!(h.stdout.contains("blanket `allow mutation` suppressions"), "{}", h.stdout);
     }
 }
 

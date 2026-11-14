@@ -1,8 +1,9 @@
 // A server with a fixed number of session slots. When a new connection arrives and every
-// slot is taken, it evicts the current holder and refuses the newcomer, which may retry.
-// A slot is freed only when its connection says goodbye (Fin).
+// slot is taken, it evicts the holder of slot 0 and refuses the newcomer, which may
+// retry. A slot is freed only when its connection says goodbye (Fin).
 
-enum Reason { ByClient, Evicted, CapacityRefused }
+// Why a connection closed.
+enum Reason { ClientClose, ServerEviction, CapacityRefused }
 
 event Syn: machine;
 event SynAck: (ok: bool, session: int);
@@ -24,8 +25,10 @@ machine Server {
       slot = FreeSlot();
       if (slot < 0) {
         announce Rejected, conn;
-        // Make room for the next attempt: evict the oldest holder.
-        send slots[0], Reset, Evicted;
+        // Make room for the next attempt: evict whoever holds slot 0. Any holder would
+        // do; slot 0 keeps the policy simple and deterministic.
+        announce Evicted, slots[0];
+        send slots[0], Reset, ServerEviction;
         send conn, SynAck, (ok = false, session = -1);
         return;
       }

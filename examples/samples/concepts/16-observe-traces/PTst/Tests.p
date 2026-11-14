@@ -6,24 +6,24 @@ machine Customer {
     entry (service: OrderService) {
       send service, Place, (order = 7, amount = 30);
       if ($) {
-        Cancel(service);
-        Pay(service);
+        SendCancel(service);
+        SendPay(service);
         return;
       }
-      Pay(service);
-      if ($) { Cancel(service); }
+      SendPay(service);
+      if ($) { SendCancel(service); }
     }
   }
 }
 
 // The customer's requests are logged too, so the spec knows what was asked and in
 // which order, not only what the service decided.
-fun Pay(service: OrderService) {
+fun SendPay(service: OrderService) {
   announce PayRequested, 7;
   send service, Pay, 30;
 }
 
-fun Cancel(service: OrderService) {
+fun SendCancel(service: OrderService) {
   announce CancelRequested, 7;
   send service, Cancel;
 }

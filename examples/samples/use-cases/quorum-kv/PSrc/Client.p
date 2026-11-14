@@ -12,18 +12,17 @@ type Quorums = (r: int, w: int);
 
 // Reads every replica and uses the first `r` answers; returns the (version, value)
 // with the highest version among them. Later answers are ignored.
-fun QuorumRead(caller: machine, replicas: seq[machine], r: int): (version: int, value: int) {
+fun QuorumRead(caller: machine, replicas: seq[machine], r: int): (version: Version, value: int) {
   var rep: machine;
-  var best: (version: int, value: int);
+  var best: (version: Version, value: int);
   var answers: int;
   foreach (rep in replicas) {
     send rep, ReplicaRead, (client = caller,);
   }
   while (answers < r) {
     receive {
-      case ReplicaReadResp: (resp: (version: int, value: int)) {
-        // snappea-lint: allow mutation:swap-operator -- equal versions name the same write, so they carry the same value
-        if (resp.version > best.version) { best = resp; }
+      case ReplicaReadResp: (resp: (version: Version, value: int)) {
+        if (Newer(resp.version, best.version)) { best = resp; }
         answers = answers + 1;
       }
     }
@@ -32,7 +31,7 @@ fun QuorumRead(caller: machine, replicas: seq[machine], r: int): (version: int, 
 }
 
 // Sends the write to every replica and returns after `w` acks.
-fun QuorumWrite(caller: machine, replicas: seq[machine], w: int, version: int, value: int) {
+fun QuorumWrite(caller: machine, replicas: seq[machine], w: int, version: Version, value: int) {
   var rep: machine;
   var acks: int;
   foreach (rep in replicas) {
@@ -48,12 +47,12 @@ fun QuorumWrite(caller: machine, replicas: seq[machine], w: int, version: int, v
 machine Writer {
   start state Writing {
     entry (input: (owner: machine, replicas: seq[machine], quorums: Quorums, id: int, value: int)) {
-      var seen: (version: int, value: int);
-      var version: int;
+      var seen: (version: Version, value: int);
+      var version: Version;
       announce WriteStarted, (value = input.value,);
       // Read phase: the next counter is above every version in the read quorum.
       seen = QuorumRead(this, input.replicas, input.quorums.r);
-      version = (seen.version / 10 + 1) * 10 + input.id;
+      version = (counter = seen.version.counter + 1, writer = input.id);
       QuorumWrite(this, input.replicas, input.quorums.w, version, input.value);
       announce WriteDone, (value = input.value,);
       send input.owner, ClientDone;
@@ -66,7 +65,7 @@ machine Writer {
 machine Reader {
   start state Reading {
     entry (input: (owner: machine, replicas: seq[machine], quorums: Quorums, id: int)) {
-      var got: (version: int, value: int);
+      var got: (version: Version, value: int);
       announce ReadStarted, (reader = input.id,);
       got = QuorumRead(this, input.replicas, input.quorums.r);
       announce ReadDone, (reader = input.id, value = got.value);

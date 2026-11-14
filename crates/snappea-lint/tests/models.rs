@@ -361,3 +361,80 @@ fn adjacent_announce_and_send_exposes_duplicate_observation() {
     let global = "event E; fun Report(owner: machine) { announce E; send owner, E; } spec Guard observes E { start state S { on E do { assert false; } } }";
     assert!(has(global, "announce-and-send"));
 }
+
+#[test]
+fn reply_addresses_are_not_unused_payload_fields() {
+    // `client` says where to send the reply; a spec has nothing to check in it
+    for ty in ["machine", "Client", "IClient", "seq[machine]", "set[Client]", "Addr"] {
+        let text = format!(
+            "type Addr = machine; interface IClient() receives;\n\
+             event eReq: (id: int, client: {ty});\n\
+             machine Client {{ start state S {{}} }}\n\
+             spec Safety observes eReq {{ start state S {{ on eReq do (p: (id: int, client: {ty})) {{ assert p.id > 0; }} }} }}"
+        );
+        assert!(!has(&text, "unused-payload-field"), "{ty}");
+    }
+    // data fields are still checked
+    let text = "event eReq: (id: int, amount: int, client: machine);\n\
+        spec Safety observes eReq { start state S { on eReq do (p: (id: int, amount: int, client: machine)) { assert p.id > 0; } } }";
+    let fs = findings(&[text]);
+    assert!(fs.iter().any(|f| f.rule == "unused-payload-field" && f.message.contains("p.amount")), "{fs:?}");
+    assert!(!fs.iter().any(|f| f.message.contains("p.client")), "{fs:?}");
+}
+
+#[test]
+fn bad_suppressions_name_the_id_and_suggest_the_closest_rule() {
+    let text = "// snappea-lint: allow unselected-specs -- typo\nevent E;\nspec P observes E { start state S { on E goto S; } }";
+    let fs = findings(&[text]);
+    let bad = fs.iter().find(|f| f.rule == "invalid-suppression").expect("invalid-suppression");
+    assert!(bad.message.contains("'unselected-specs'"), "{}", bad.message);
+    assert_eq!(bad.help.as_deref(), Some("did you mean `unselected-spec`?"));
+    // the span underlines the whole comment
+    assert_eq!((bad.span.start, bad.span.end), (0, text.find('\n').unwrap() as u32));
+    // the suppression diagnostics cannot themselves be allowed
+    assert!(has(
+        "// snappea-lint: allow invalid-suppression\nmachine Main { start state S {} }",
+        "invalid-suppression"
+    ));
+}
+
+#[test]
+fn block_comment_suppressions_are_reported_as_unread() {
+    let mut sm = SourceMap::new();
+    sm.add(
+        "model0.p".to_string(),
+        "event E;\n/* snappea-lint: allow permissive-monitor */\nspec P observes E { start state S { on E goto S; } }",
+    );
+    let (suppressions, unread) = snappea_lint::lint_suppressions(&sm).unwrap();
+    assert!(suppressions.is_empty());
+    assert_eq!(unread.len(), 1);
+    assert_eq!(unread[0].rule, "unused-suppression");
+    assert!(unread[0].help.as_deref().unwrap().contains("`// snappea-lint: allow permissive-monitor`"));
+    assert!(snappea_lint::is_advisory("unused-suppression"));
+    // a `//` inside a block comment is still not a directive, and not reported
+    let mut sm = SourceMap::new();
+    sm.add("model0.p".to_string(), "/* // snappea-lint: allow typo */ machine Main { start state S {} }");
+    assert!(snappea_lint::lint_suppressions(&sm).unwrap().1.is_empty());
+}
+
+#[test]
+fn suppression_usage_is_reported() {
+    let mut sm = SourceMap::new();
+    sm.add(
+        "model0.p".to_string(),
+        "event E;\n// snappea-lint: allow permissive-monitor, unselected-spec -- trace fixture\nspec P observes E { start state S { on E goto S; } }\n// snappea-lint: allow tautological-assert -- nothing here\nmachine M { start state S {} }",
+    );
+    let (findings, used) = snappea_lint::lint_usage(&sm).unwrap();
+    assert!(findings.is_empty(), "{findings:?}");
+    let mut rules: Vec<_> = used.iter().map(|u| u.rule.as_str()).collect();
+    rules.sort();
+    assert_eq!(rules, ["permissive-monitor", "unselected-spec"]);
+    assert_eq!(snappea_lint::lint_suppressions(&sm).unwrap().0.len(), 3);
+}
+
+#[test]
+fn enum_shadowing_suggests_a_name_from_the_enum() {
+    let fs = findings(&["enum Role { Server, Client }\nmachine Server { start state S {} }"]);
+    let f = fs.iter().find(|f| f.rule == "enum-value-shadows-machine").unwrap();
+    assert!(f.help.as_deref().unwrap().contains("`RoleServer`"), "{:?}", f.help);
+}

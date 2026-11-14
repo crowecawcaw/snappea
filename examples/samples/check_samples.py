@@ -84,9 +84,16 @@ def check_project(snappea: str, project: Path, timeout: str, mutation_timeout: s
                 print(f"note  {rel}: search incomplete within {timeout} for "
                       f"{', '.join(incomplete)}", flush=True)
             for evidence in data.get("expected_bug_seed_checks", []):
-                if evidence.get("status") == "different_failures":
-                    print(f"note  {rel}: expected bug has different failure identities: "
-                          f"{evidence}", flush=True)
+                status = evidence.get("status")
+                if status == "consistent":
+                    continue
+                # Matching text on every seed does not prove every seed hit the same
+                # defect: `different_failures` means the seeds failed at different
+                # sites, `incomplete` that a failure had no identity to compare.
+                identities = [(run.get("seed"), run.get("identity")) for run in evidence.get("runs", [])]
+                print(f"note  {rel}: {evidence.get('test_case')}: expected-bug identity is "
+                      f"'{status}', not 'consistent'; seeds and identities: {identities}; "
+                      f"inspect {report}", flush=True)
     return []
 
 
@@ -103,13 +110,21 @@ def main() -> int:
     if args.jobs < 1:
         ap.error("--jobs must be at least 1")
     roots = [HERE / s for s in args.samples] if args.samples else [HERE]
+    missing = [s for s, r in zip(args.samples, roots) if not r.is_dir()]
+    if missing:
+        # A mistyped path must not pass just because the other paths have samples.
+        for s in missing:
+            print(f"error: no sample folder '{s}' under {HERE}; give a path relative to it, "
+                  f"such as flawed/lost-update", file=sys.stderr)
+        return 2
     projects = sorted(p for r in roots for p in r.rglob("*.pproj")
                       if "PCheckerOutput" not in p.parts)
     if not projects:
         print("no .pproj found", file=sys.stderr)
         return 2
-    failures = 0
-    # A sample folder without exactly one project would be skipped silently.
+    # A sample folder without exactly one project would be skipped silently. Count
+    # these apart from project failures: such a folder has no project to count.
+    layout_failures = 0
     for group in ("use-cases", "concepts", "flawed"):
         for d in sorted((HERE / group).glob("*/")):
             selected = any(d == r or r in d.parents or d in r.parents for r in roots)
@@ -117,8 +132,9 @@ def main() -> int:
                 continue
             found = [p for p in d.glob("*.pproj")]
             if len(found) != 1:
-                failures += 1
+                layout_failures += 1
                 print(f"FAIL  {d.relative_to(HERE)}: expected one .pproj, found {len(found)}")
+    failures = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {pool.submit(check_project, args.snappea, p, args.timeout,
                                args.mutation_timeout, args.workers): p for p in projects}
@@ -133,7 +149,9 @@ def main() -> int:
             else:
                 print(f"ok    {rel}")
     print(f"{len(projects) - failures} of {len(projects)} samples behave as declared")
-    return 1 if failures else 0
+    if layout_failures:
+        print(f"{layout_failures} sample folder(s) without exactly one .pproj")
+    return 1 if failures or layout_failures else 0
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ machine NoReplayServer {
       }
     }
     // BUG: `after` is ignored; nothing is replayed.
-    on Subscribe do (s: (conn: machine, after: int)) {
+    on Subscribe do (s: (conn: machine, client: int, after: int)) {
       conns += (s.conn);
     }
   }

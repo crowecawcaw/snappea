@@ -23,6 +23,10 @@ else.
 - Safety (`InOrderNoGaps`): the server numbers posted messages 1, 2, 3, ... once each;
   each client displays the room's messages in seq order with no gaps and no
   duplicates, each with the message the server gave that seq.
+- Safety (`ResumesAfterLastShown`): a client subscribes with the last seq it
+  displayed, and the server replays from exactly the next seq to the end of its log.
+  Every subscription gets its replay. Without this check, a client that always
+  resumed from 0 would still pass: it skips the duplicates.
 - Progress (`EveryoneCatchesUp`): once the senders stop, every client eventually
   displays every message, including after a dropped connection.
 
@@ -34,7 +38,7 @@ The network (`Connection`, in PTst) is the environment.
 
 | File | What it holds |
 | --- | --- |
-| [`PSpec/Contract.p`](PSpec/Contract.p) | `InOrderNoGaps` (safety), `EveryoneCatchesUp` (progress, hot state) |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | `InOrderNoGaps` and `ResumesAfterLastShown` (safety), `EveryoneCatchesUp` (progress, hot state) |
 | [`PSrc/Server.p`](PSrc/Server.p) | The server: log, live push, subscribe then replay |
 | [`PSrc/Client.p`](PSrc/Client.p) | The client (display by seq, reconnect) and the sender |
 | [`PSrc/NoReplayServer.p`](PSrc/NoReplayServer.p) | Negative control: no log, no replay |
@@ -43,14 +47,23 @@ The network (`Connection`, in PTst) is the environment.
 
 ## Test cases
 
-| Test | Drives | Why it matters |
-| --- | --- | --- |
-| `tcDropAndResume` | Two senders, one client whose first connection may drop | Drop with a message in flight; a post during the resume handshake; duplicates and overtaking live messages after the resume |
-| `tcTwoClients` | Two senders, two clients, one connection may drop | The other client keeps receiving live while one catches up; sampled |
-| `tcBugNoReplay` | `NoReplayServer` in the core race | **Expected bug**: `EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'` (a client never displays a message posted before it subscribed or lost on the dropped connection) |
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcDropAndResume` | Two senders, one client whose first connection may drop | Drop with a message in flight; a post during the resume handshake; duplicates and overtaking live messages after the resume; the resume point after a displayed message. All schedules | Passes |
+| `tcTwoClients` | Two senders, two clients, one connection may drop | The other client keeps receiving live while one catches up. Sampled | Passes |
+| `tcBugNoReplay` | `NoReplayServer` in the core race | A client never displays a message posted before it subscribed or lost on the dropped connection | Expected bug: `EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'` |
 
-`tcDropAndResume` isolates the reconnect race. Inspect `search_complete` for each
-run; a passing run can still have sampled the bounded schedule space.
+## What building it taught
+
+- The first server replayed and subscribed in one step, so duplicates could not happen
+  and the client's "skip" branch was dead code. Real servers often subscribe first
+  and replay from storage after, and that order is what makes ordering by seq on the
+  client necessary.
+- Skipping duplicates hides a wrong resume point: replaying the whole log, or a client
+  that always resumes from 0, displays the same messages. `InOrderNoGaps` cannot tell
+  the difference, so `ResumesAfterLastShown` checks the resume point directly.
+- The progress spec is what fails the negative control: without replay, no safety rule
+  breaks; a client just stops short.
 
 ## Run
 
@@ -67,22 +80,16 @@ of it at once and reconnects. Senders never lose a post. Not modeled: a server r
 (the log would need to be durable), log truncation (a resume older than the log), sender
 retries and their deduplication, client restarts that lose the displayed seq.
 
-One suppression: replaying from the start instead of from the resume point only sends
-duplicates, which the client skips; the contract says nothing about bandwidth.
-
-## What building it taught
-
-- The first server replayed and subscribed in one step, so duplicates could not happen
-  and the client's "skip" branch was dead code. Real servers often subscribe first
-  and replay from storage after, and that order is what makes ordering by seq on the
-  client necessary.
-- The progress spec is what fails the negative control: without replay, no safety rule
-  breaks; a client just stops short.
+The server never removes a dropped connection from its live set; a real server removes
+it when the socket closes. Live messages to a dropped connection are discarded, so
+this changes memory use, not what any client displays.
 
 ## Testing the implementation
 
-Emit `Sequenced` when the server commits a message to the log, `Displayed` from the
-client's render path, and `Posted` from the sender. To force the handshake race,
-hold the server's replay read until a new message has been posted and pushed live on
-the new connection; to force the drop, close the socket right after the server writes
-a message to it.
+Emit `Sequenced` when the server commits a message to the log, `Subscribed` when a
+connection joins the live set, `Replayed` with the range the replay read from the log,
+`Displayed` from the client's render path, and `Posted` from the sender. To force the
+handshake race, hold the server's replay read until a new message has been posted and
+pushed live on the new connection; to force the drop, close the socket right after the
+server writes a message to it. Assert that the replay range starts one past the seq the
+client last displayed.

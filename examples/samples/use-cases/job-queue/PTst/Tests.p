@@ -156,6 +156,6 @@ machine BuggySlowWorker {
   }
 }
 
-// snappea: expect-bug "completed by an ack with stale receipt"
+// snappea: expect-bug "job 1 was completed by an ack with stale receipt 1"
 test tcBugAckByJobId [main=BuggySlowWorker]:
   assert ReceiptsFence, JobsComplete in { BuggySlowWorker, Timers, AckByIdQueue, Sink, Worker };

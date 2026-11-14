@@ -181,6 +181,18 @@ pub enum Pending {
     },
 }
 
+/// A nondeterministic choice of a schedule (see [`Runtime::note_choice`]).
+#[derive(Debug, Clone, Copy)]
+struct FairChoice {
+    /// Its position in the schedule.
+    step: usize,
+    /// Where in the code it was made.
+    site: u64,
+    /// How many values it had.
+    count: u32,
+    value: u32,
+}
+
 /// One active call. Its locals and operand stack live in [`Exec::values`].
 #[derive(Debug, Clone)]
 pub struct Frame {
@@ -513,8 +525,9 @@ pub struct Runtime<'p> {
     spare_execs: Vec<Box<Exec>>,
     /// See [`Buffers::machine_refs`].
     machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
-    /// Fair choices (`$$`) of this schedule: the step, the choice's code site, the value.
-    fair_choices: Vec<(usize, u64, bool)>,
+    /// The nondeterministic choices (`$`, `$$`, `choose`) of this schedule, all of them
+    /// fair for liveness (see [`Runtime::check_lasso`]).
+    fair_choices: Vec<FairChoice>,
 }
 
 impl<'p> Runtime<'p> {
@@ -799,6 +812,16 @@ impl<'p> Runtime<'p> {
         });
     }
 
+    /// Identifies an unhandled-event failure by the state that had no handler; the
+    /// actor's own state is already popped when the event is found unhandled.
+    fn identify_unhandled(&mut self, actor: Actor, popped: Option<StateId>) {
+        let fresh = self.bug_identity.is_none();
+        self.identify_bug("unhandled-event", actor, popped.map(|s| self.prog.state(s).span));
+        if let (true, Some(id), Some(s)) = (fresh, self.bug_identity.as_mut(), popped) {
+            id.state = self.prog.state(s).name.clone();
+        }
+    }
+
     /// `OperationScheduler.NotifyAssertionFailure`.
     pub fn report_bug(&mut self, text: String) -> Stop {
         if self.bug.is_none() {
@@ -1006,17 +1029,14 @@ impl<'p> Runtime<'p> {
     /// Checks the cycle a pruned schedule closed, if it returned to a state on its own
     /// path: a fair cycle through which a hot monitor never enters a cold state can
     /// repeat forever, a liveness bug. The schedule (prefix and cycle) replays it.
+    ///
+    /// A fair cycle runs every operation enabled throughout it (see
+    /// [`crate::checker::exhaustive::ExhaustiveStrategy::closed_cycle`]) and takes every
+    /// value of every choice it makes (`$`, `$$`, `choose`), as upstream P's and the
+    /// sampling search's random choices eventually do: a timer that keeps choosing not
+    /// to fire is not a bug.
     fn check_lasso(&mut self) -> Result<(), Stop> {
-        if !self.config.liveness_enabled {
-            return Ok(());
-        }
-        let liveness_monitor = |m: &Monitor| {
-            let decl = self.prog.machine(m.decl);
-            !decl.is_scenario()
-                && decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot)
-                && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
-        };
-        if !self.monitors.iter().any(liveness_monitor) {
+        if !self.liveness_pending() {
             return Ok(());
         }
         let Some(cycle) = self.strategy.closed_cycle() else { return Ok(()) };
@@ -1026,7 +1046,7 @@ impl<'p> Runtime<'p> {
         }
         let Some(i) = (0..self.monitors.len()).find(|&i| {
             let m = &self.monitors[i];
-            liveness_monitor(m)
+            self.liveness_monitor(m)
                 && m.state.is_some_and(|s| self.prog.state(s).temperature == Temperature::Hot)
                 && m.cold_at <= cycle.start
         }) else {
@@ -1047,18 +1067,76 @@ impl<'p> Runtime<'p> {
         Err(self.report_bug(msg))
     }
 
-    /// Whether every fair choice (`$$`) made since step `start` took both values there.
-    fn fair_choices_vary(&self, start: usize) -> bool {
-        let made: Vec<_> = self.fair_choices.iter().filter(|c| c.0 >= start).collect();
-        made.iter().all(|(_, site, value)| made.iter().any(|(_, s, v)| s == site && v != value))
+    /// Whether `m` checks liveness (has hot states) and is not in a cold state.
+    fn liveness_monitor(&self, m: &Monitor) -> bool {
+        let decl = self.prog.machine(m.decl);
+        !decl.is_scenario()
+            && decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot)
+            && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
     }
 
-    /// `$$`: a choice the cycles of a liveness bug must take both ways (see
-    /// [`Runtime::check_lasso`]). `site` identifies the choice in the code.
-    pub fn choose_fair_bool(&mut self, caller: &str, site: u64) -> Result<bool, Stop> {
-        let b = self.choose_bool(2, caller)?;
-        self.fair_choices.push((self.trace.steps.len() - 1, site, b));
-        Ok(b)
+    /// Whether liveness is checked and some liveness monitor is not in a cold state: a
+    /// cycle through the current state could be a liveness bug.
+    fn liveness_pending(&self) -> bool {
+        self.config.liveness_enabled && self.monitors.iter().any(|m| self.liveness_monitor(m))
+    }
+
+    /// The transition since step `from` and the current state, for the fair-cycle
+    /// analysis (see [`crate::checker::fairness`]); `infos` are the operations offered now.
+    fn live_facts(&self, from: usize, infos: &[OpInfo]) -> crate::checker::fairness::LiveFacts {
+        let steps = &self.trace.steps;
+        let first = self.fair_choices.partition_point(|c| c.step < from);
+        let mut facts = crate::checker::fairness::LiveFacts {
+            steps: steps[from.min(steps.len())..].to_vec(),
+            choices: self.fair_choices[first..].iter().map(|c| (c.site, c.count, c.value)).collect(),
+            enabled: infos.iter().filter(|o| o.enabled).map(|o| o.id).collect(),
+            ..Default::default()
+        };
+        if !self.config.liveness_enabled {
+            return facts;
+        }
+        for (i, m) in self.monitors.iter().enumerate() {
+            let decl = self.prog.machine(m.decl);
+            if decl.is_scenario() || !decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot) {
+                continue;
+            }
+            if i >= 64 {
+                facts.too_many_monitors = true;
+                continue;
+            }
+            let bit = 1u64 << i;
+            let temperature = m.state.map(|s| self.prog.state(s).temperature);
+            if temperature.is_some_and(|t| t != Temperature::Cold) {
+                facts.not_cold |= bit;
+            }
+            if temperature == Some(Temperature::Hot) {
+                facts.hot |= bit;
+            }
+            if m.cold_at > from {
+                facts.cold |= bit;
+            }
+        }
+        facts
+    }
+
+    /// Whether every choice made since step `start` took each of its values there.
+    fn fair_choices_vary(&self, start: usize) -> bool {
+        let made = self.fair_choices.iter().filter(|c| c.step >= start);
+        let mut seen: rustc_hash::FxHashMap<(u64, u32), rustc_hash::FxHashSet<u32>> = Default::default();
+        for c in made {
+            seen.entry((c.site, c.count)).or_default().insert(c.value);
+        }
+        seen.iter().all(|((_, count), values)| values.len() >= *count as usize)
+    }
+
+    /// Records that the choice just made at code site `site`, among `count` values, took
+    /// `value`: the cycles of a liveness bug must take each value (see
+    /// [`Runtime::check_lasso`]).
+    pub(crate) fn note_choice(&mut self, site: u64, count: usize, value: usize) {
+        if count > 1 {
+            let step = self.trace.steps.len() - 1;
+            self.fair_choices.push(FairChoice { step, site, count: count as u32, value: value as u32 });
+        }
     }
 
     pub(crate) fn check_cancelled(&mut self) -> Result<(), Stop> {
@@ -1128,7 +1206,12 @@ impl<'p> Runtime<'p> {
         }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
-            if !self.strategy.observe_state(hash) {
+            let live = self.liveness_pending();
+            if let Some(from) = self.strategy.live_graph_step() {
+                let facts = self.live_facts(from, infos);
+                self.strategy.note_live_facts(facts);
+            }
+            if !self.strategy.observe_state(hash, live) {
                 self.check_lasso()?;
                 self.pruned = true;
                 self.stopped = true;
@@ -1186,6 +1269,15 @@ impl<'p> Runtime<'p> {
         }
         msg.push_str(if n == 1 { " is " } else { " are " });
         msg.push_str("waiting to receive an event, but no other controlled tasks are enabled");
+        // Identify the failure by a blocked machine's declaration and state, chosen by
+        // name so it does not depend on creation order.
+        let stuck =
+            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).filter_map(|o| o.machine).min_by_key(
+                |&m| (self.prog.machine(self.machines[m].decl).name.as_str(), self.state_name(self.machines[m].state)),
+            );
+        if let Some(m) = stuck {
+            self.identify_bug("deadlock", Actor::Machine(m), None);
+        }
         if self.config.snappea_reports {
             // the promise the deadlock breaks, which does not depend on creation order
             let hot: Vec<String> = (0..self.monitors.len())
@@ -1924,6 +2016,7 @@ impl<'p> Runtime<'p> {
                             self.machines[m].stage = Stage::Halt;
                             continue;
                         }
+                        self.identify_unhandled(Actor::Machine(m), popped);
                         if self.config.snappea_reports {
                             let decl = self.machines[m].decl;
                             let (what, at, help) =
@@ -2902,6 +2995,7 @@ impl<'p> Runtime<'p> {
         let mut popped: Option<StateId> = None;
         loop {
             let Some(s) = self.monitors[mon].state else {
+                self.identify_unhandled(Actor::Monitor(mon), popped);
                 if self.config.snappea_reports {
                     let decl = self.monitors[mon].decl;
                     let name = self.prog.machine(decl).name.clone();

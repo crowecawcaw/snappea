@@ -7,9 +7,15 @@
 //! function calls and returns, `new` payloads and event payloads, into any machine,
 //! spec monitors included. Everything is over-approximated: containers count as one
 //! value, every handler of an event receives every payload sent with it, and every
-//! condition counts. So a value that is *not* checked can never change whether a test
-//! case passes, which is what [`lints`] reports and mutation testing relies on to skip
-//! changes that only write such values.
+//! condition counts. So a value that is *not* checked cannot change what any schedule
+//! does next: which steps run, which choices are offered, or whether an assertion, spec
+//! (liveness included) or operation fails. The exhaustive search leaves such values out
+//! of the state it compares ([`crate::checker::compile::Unhashed`]), so they cannot
+//! change which states it sees again or which cycles it closes either. Hence removing a
+//! write to such a value never changes whether a schedule passes, which is what
+//! [`lints`] reports and mutation testing relies on to skip changes that only write such
+//! values. (Search heuristics that steer by code coverage may still explore a little
+//! differently without the write, as with any change to the code.)
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -507,6 +513,8 @@ pub struct Finding {
     pub rule: &'static str,
     pub span: Span,
     pub message: String,
+    /// The likely fix, when more specific than the rule's general one.
+    pub help: Option<String>,
 }
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
@@ -612,6 +620,7 @@ pub fn lints_with_progress_tests(
             }
             let what = if roles[m] == Role::Spec { "spec" } else { "machine" };
             out.push(Finding {
+                help: None,
                 rule: "unchecked-state",
                 span: var.span,
                 message: format!(
@@ -731,7 +740,7 @@ pub fn lints_with_progress_tests(
                     prog.event(e).name
                 )
             };
-            out.push(Finding { rule: "unchecked-event", span, message });
+            out.push(Finding { rule: "unchecked-event", span, message, help: None });
         }
     }
     // no-progress-spec
@@ -793,6 +802,7 @@ pub fn lints_with_progress_tests(
         });
         if waits {
             out.push(Finding {
+                help: None,
                 rule: "no-progress-spec",
                 span: t.span,
                 message: format!(
@@ -809,6 +819,7 @@ pub fn lints_with_progress_tests(
                 continue;
             }
             out.push(Finding {
+                help: None,
                 rule: "no-progress-spec",
                 span,
                 message: format!(
@@ -952,6 +963,7 @@ fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> 
     }
     let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
     shared.into_iter().map(|(f, users)| Finding {
+        help: None,
         rule: "shared-spec-helper",
         span: prog.fun(f).span,
         message: format!(
@@ -1044,9 +1056,12 @@ fn unused_design_payloads(prog: &Program, tests: &[TestCase], drivers: &[bool]) 
         if expressions.iter().any(|(span, index)| index.is_none() && !bases.contains(span) && !writes.contains(span)) {
             continue;
         }
-        for (i, (field, _)) in fields.iter().enumerate() {
-            if !used.contains(&i) {
+        for (i, (field, ty)) in fields.iter().enumerate() {
+            // a reply address routes the event; a receiver that ignores it (counting
+            // votes, say) is not abstracting away data
+            if !used.contains(&i) && !is_address(prog, ty) {
                 out.push(Finding {
+                    help: None,
                     rule: "unused-design-payload-field",
                     span: prog.var(*p).span,
                     message: format!("design machine '{}' handles '{}' without reading payload field '{}.{}' outside diagnostic output; check whether this receiver should act on it", prog.machine(m).name, prog.event(event).name, prog.var(*p).name, field),
@@ -1067,6 +1082,17 @@ fn mark_tuple_write(e: &Expr, writes: &mut FxHashSet<Span>) {
             mark_tuple_write(base, writes);
         }
         _ => {}
+    }
+}
+
+/// Whether values of `ty` are machine references (`machine`, a machine or interface, or
+/// a `seq` or `set` of them): where to send, not data.
+fn is_address(prog: &Program, ty: &crate::sema::PType) -> bool {
+    use crate::sema::{PType, PermissionOrigin};
+    match ty.canonicalize(prog) {
+        PType::Machine | PType::Permission(PermissionOrigin::Machine(_) | PermissionOrigin::Interface(_)) => true,
+        PType::Seq(t) | PType::Set(t) => is_address(prog, &t),
+        _ => false,
     }
 }
 
@@ -1191,7 +1217,55 @@ mod tests {
             findings(&STAGES.replace("PLAN", ""), "unplanned-driver-stage"),
             ["driver Main creates Doctor only after the model sends 'eDone', and announces no plan a spec observes, so if the model never sends it this stage never starts and every spec still passes"]
         );
-        assert!(findings(&STAGES.replace("PLAN", "announce ePlanned, 2;"), "unplanned-driver-stage").is_empty());
+        // a plan counts when a spec that can stay hot observes it
+        let hot = STAGES.replace(
+            "start state S { on eTreat do (n: int) { assert n > 0; } ignore ePlanned; }",
+            "start state S { on eTreat do (n: int) { assert n > 0; } on ePlanned goto Pending; } \
+             hot state Pending { on eTreat do (n: int) { assert n > 0; } }",
+        );
+        assert!(findings(&hot.replace("PLAN", "announce ePlanned, 2;"), "unplanned-driver-stage").is_empty());
+        // ... and the driver announces it before it waits for the model
+        assert_eq!(
+            findings(
+                &hot.replace("PLAN", "")
+                    .replace("state Second { entry {", "state Second { entry { announce ePlanned, 2;"),
+                "unplanned-driver-stage"
+            )
+            .len(),
+            1
+        );
+        // a spec without a hot state cannot hold the driver to its plan
+        assert_eq!(findings(&STAGES.replace("PLAN", "announce ePlanned, 2;"), "unplanned-driver-stage").len(), 1);
+    }
+
+    #[test]
+    fn a_reply_through_a_middle_machine_is_not_an_unplanned_stage() {
+        // two-phase commit: driver -> coordinator -> participant -> coordinator -> driver
+        let src = "event eWrite: (id: int, client: machine);\n\
+            event eWriteResp: (id: int);\n\
+            event ePrepare: (id: int, coord: machine);\n\
+            event eVote: (id: int);\n\
+            spec Live observes eWrite, eWriteResp {\n\
+              var n: int;\n\
+              start cold state Idle { on eWrite goto Busy with { n = n + 1; } }\n\
+              hot state Busy { on eWriteResp do { n = n - 1; if (n == 0) { goto Idle; } } on eWrite do { n = n + 1; } }\n\
+            }\n\
+            machine Participant { start state S { on ePrepare do (p: (id: int, coord: machine)) { send p.coord, eVote, (id = p.id,); } } }\n\
+            machine Coordinator {\n\
+              var part: Participant; var clients: map[int, machine];\n\
+              start state S {\n\
+                entry { part = new Participant(); }\n\
+                on eWrite do (p: (id: int, client: machine)) { clients[p.id] = p.client; send part, ePrepare, (id = p.id, coord = this); }\n\
+                on eVote do (v: (id: int)) { send clients[v.id], eWriteResp, (id = v.id,); }\n\
+              }\n\
+            }\n\
+            machine Main {\n\
+              var c: Coordinator;\n\
+              start state Init { entry { c = new Coordinator(); send c, eWrite, (id = 1, client = this); } on eWriteResp goto Second; }\n\
+              state Second { entry { send c, eWrite, (id = 2, client = this); } ignore eWriteResp; }\n\
+            }\n\
+            test tc [main=Main]: assert Live in { Main, Coordinator, Participant };\n";
+        assert!(findings(src, "unplanned-driver-stage").is_empty());
     }
 
     #[test]

@@ -24,7 +24,9 @@ machine Server {
   var config: int;
 
   start state Initializing {
+    // A client is waiting for this answer: keep the request until Serving.
     defer Request;
+    // "Not healthy yet" is the answer: the probe times out and asks again.
     ignore HealthCheck;
     entry (storage: Storage) {
       send storage, Load, (server = this,);
@@ -52,6 +54,7 @@ machine NoDeferServer {
   var config: int;
 
   start state Initializing {
+    // BUG: no `defer Request;`, so a request that arrives now cannot be handled.
     ignore HealthCheck;
     entry (storage: Storage) {
       send storage, Load, (server = this,);

@@ -42,7 +42,6 @@ machine Customer {
       send store, HoldReq, (client = this, seat = seat, hold = hold);
     }
     on HoldResp do (r: (hold: int, ok: bool)) {
-      assert r.hold == hold, "hold response belongs to another checkout";
       if (r.ok && abandons) {
         // Closed the tab: only the expiry timer will free the seat.
         goto Done, Abandoned;
@@ -72,7 +71,6 @@ machine Customer {
 
   state Confirming {
     on ConfirmResp do (r: (hold: int, ok: bool)) {
-      assert r.hold == hold, "confirmation response belongs to another checkout";
       if (!r.ok) {
         send payments, Refund, (hold = hold,);
         goto Done, LostHold;

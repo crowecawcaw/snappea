@@ -109,6 +109,8 @@ spec UpdatesAnswered observes UpdatesPlanned, UpdateRequested, UpdateAnswered, C
     on UpdatesPlanned do { assert false, "updates planned twice"; }
     on UpdateRequested do { assert false, "update requested beyond the plan"; }
     on UpdateAnswered do { assert false, "update answered beyond the plan"; }
+    // A commit can land after its update was answered with a reset, which allowed
+    // either outcome; CommittedChangesPublished still tracks it.
     ignore Committed;
   }
 }

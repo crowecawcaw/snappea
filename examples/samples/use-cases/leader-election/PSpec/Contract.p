@@ -21,6 +21,9 @@ event ProbeSent;
 // ... and node `id` accepted or refused it, in `term`.
 event ClientAnswered: (id: int, term: int, accepted: bool);
 
+// A term and a node: the key for per-term facts about one node.
+type TermNode = (term: int, node: int);
+
 // Safety:
 //  - a node never votes twice in one term (its own candidacy counts as a vote);
 //  - a node's term never goes back, and it never grants a vote for an older term;
@@ -36,20 +39,20 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
     ClientAnswered, Restarted {
   // Votes needed to win: more than half the cluster.
   var majority: int;
-  // term * 10 + voter -> candidate it voted for
-  var voteOf: map[int, int];
-  // term * 10 + candidate -> votes for it
-  var tally: map[int, int];
+  // (term, voter) -> candidate it voted for
+  var voteOf: map[TermNode, int];
+  // (term, candidate) -> votes for it
+  var tally: map[TermNode, int];
   // term -> leader
   var leaderOf: map[int, int];
   // A restart retires leadership even though its historical election remains valid.
-  var retired: set[int];
+  var retired: set[TermNode];
   // node -> highest term it has announced
   var termOf: map[int, int];
-  // term * 10 + candidate -> its candidacy saw a higher term
-  var disturbed: set[int];
-  // term * 10 + candidate -> highest term in the answers to that candidacy
-  var answeredTerm: map[int, int];
+  // (term, candidate) whose candidacy saw a higher term
+  var disturbed: set[TermNode];
+  // (term, candidate) -> highest term in the answers to that candidacy
+  var answeredTerm: map[TermNode, int];
   // node -> its next candidacy must be above this (set when it reports a loss)
   var floor: map[int, int];
   // node -> term of its latest candidacy
@@ -76,6 +79,8 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
       stoodTerm[s.id] = s.term;
     }
     on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
+      var key: TermNode;
+      key = (term = a.reqTerm, node = a.candidate);
       if (a.granted) {
         assert a.reqTerm == a.term,
           format("node {0} granted a vote for term {1} while in term {2}", a.voter, a.reqTerm, a.term);
@@ -85,24 +90,24 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
       // A voter that stood in an older term has now seen a higher one; so has a
       // candidate whose voter answers with a higher term.
       if (a.voter in stoodTerm && a.reqTerm > stoodTerm[a.voter]) {
-        disturbed += (stoodTerm[a.voter] * 10 + a.voter);
+        disturbed += ((term = stoodTerm[a.voter], node = a.voter));
       }
-      if (a.term > a.reqTerm) { disturbed += (a.reqTerm * 10 + a.candidate); }
-      if (!((a.reqTerm * 10 + a.candidate) in answeredTerm) || answeredTerm[a.reqTerm * 10 + a.candidate] < a.term) {
-        answeredTerm[a.reqTerm * 10 + a.candidate] = a.term;
+      if (a.term > a.reqTerm) { disturbed += (key); }
+      if (!(key in answeredTerm) || answeredTerm[key] < a.term) {
+        answeredTerm[key] = a.term;
       }
     }
     on BecameLeader do (l: (id: int, term: int)) {
       assert !(l.term in leaderOf),
         format("two leaders in term {0}: {1} and {2}", l.term, leaderOf[l.term], l.id);
       assert majority > 0, "a leader was elected before the cluster size was announced";
-      assert (l.term * 10 + l.id) in tally && tally[l.term * 10 + l.id] >= majority,
+      assert (term = l.term, node = l.id) in tally && tally[(term = l.term, node = l.id)] >= majority,
         format("node {0} became leader of term {1} without a majority of votes", l.id, l.term);
       leaderOf[l.term] = l.id;
     }
     on LossReported do (r: (id: int, term: int)) {
-      var key: int;
-      key = r.term * 10 + r.id;
+      var key: TermNode;
+      key = (term = r.term, node = r.id);
       assert !(r.term in leaderOf && leaderOf[r.term] == r.id),
         format("node {0} reported losing term {1}, which it won", r.id, r.term);
       assert (key in disturbed) || !(key in tally) || tally[key] < majority,
@@ -112,16 +117,16 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
     }
     on Restarted do (r: (id: int, term: int)) {
       Advance(r.id, r.term);
-      retired += (r.term * 10 + r.id);
+      retired += ((term = r.term, node = r.id));
     }
     on ClientAnswered do (a: (id: int, term: int, accepted: bool)) {
       // A node that adopted a higher term and kept acting as leader would accept in a
       // term it did not win.
       if (a.accepted) {
-        assert a.term in leaderOf && leaderOf[a.term] == a.id && !(a.term * 10 + a.id in retired),
+        assert a.term in leaderOf && leaderOf[a.term] == a.id && !((term = a.term, node = a.id) in retired),
           format("node {0} accepted a client request as leader of term {1}, which it did not win", a.id, a.term);
       } else {
-        assert !(a.term in leaderOf && leaderOf[a.term] == a.id) || (a.term * 10 + a.id in retired),
+        assert !(a.term in leaderOf && leaderOf[a.term] == a.id) || ((term = a.term, node = a.id) in retired),
           format("node {0} refused a client request while leader of term {1}", a.id, a.term);
       }
       Advance(a.id, a.term);
@@ -129,12 +134,12 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
   }
 
   fun Vote(voter: int, term: int, candidate: int) {
-    var key: int;
-    key = term * 10 + voter;
+    var key: TermNode;
+    key = (term = term, node = voter);
     assert !(key in voteOf),
       format("node {0} voted twice in term {1}: for {2} and for {3}", voter, term, voteOf[key], candidate);
     voteOf[key] = candidate;
-    key = term * 10 + candidate;
+    key = (term = term, node = candidate);
     if (!(key in tally)) { tally[key] = 0; }
     tally[key] = tally[key] + 1;
   }
@@ -166,7 +171,7 @@ spec SomeLeaderElected observes ElectionsStarted, BecameLeader {
   }
 }
 
-// Progress: every candidacy hears back from both peers (each RequestVote is answered,
+// Progress: every candidacy hears back from every peer (each RequestVote is answered,
 // by followers, candidates and leaders alike), unless the same node has since started
 // a newer candidacy or a crash discarded its campaign. Not selected where a peer
 // is deliberately unreachable.
@@ -175,8 +180,8 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
   var peers: int;
   // candidate -> term of its latest candidacy still waiting for replies
   var open: map[int, int];
-  // term * 10 + candidate -> voters that answered it
-  var answers: map[int, set[int]];
+  // (term, candidate) -> voters that answered it
+  var answers: map[TermNode, set[int]];
 
   // No candidacy is open. Requests reach each voter in the order they were sent, so
   // every answer to a superseded candidacy comes before the answers that close the
@@ -185,7 +190,7 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
     on ClusterSize do (n: int) { peers = n - 1; }
     on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
     // Replies already in flight may arrive after a crash canceled the campaign.
-    on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) { Answered(a); }
+    on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) { CountAnswer(a); }
     on Restarted do (r: (id: int, term: int)) { Cancel(r.id); }
     on HeardAll do { assert false, "a candidate heard all replies while no candidacy was open"; }
   }
@@ -194,7 +199,7 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
     on Restarted do (r: (id: int, term: int)) { Cancel(r.id); }
     on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
     on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
-      Answered(a);
+      CountAnswer(a);
     }
     on HeardAll do (h: (id: int, term: int)) { Heard(h.id, h.term); }
   }
@@ -207,14 +212,15 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
   fun Stood(id: int, term: int) {
     // A new candidacy supersedes the node's older one.
     open[id] = term;
-    answers[term * 10 + id] = default(set[int]);
+    answers[(term = term, node = id)] = default(set[int]);
     goto Waiting;
   }
 
-  fun Answered(a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
-    var key: int;
-    key = a.reqTerm * 10 + a.candidate;
-    assert key in answers, "reply to a candidacy that never started";
+  fun CountAnswer(a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
+    var key: TermNode;
+    key = (term = a.reqTerm, node = a.candidate);
+    assert key in answers,
+      format("node {0} answered node {1}'s term-{2} request, which was never sent", a.voter, a.candidate, a.reqTerm);
     assert !(a.voter in answers[key]),
       format("node {0} answered node {1}'s term-{2} request twice", a.voter, a.candidate, a.reqTerm);
     answers[key] += (a.voter);
@@ -223,8 +229,8 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
   fun Heard(id: int, term: int) {
     assert id in open && open[id] == term,
       format("node {0} heard all replies for term {1}, which is not its open candidacy", id, term);
-    assert sizeof(answers[term * 10 + id]) == peers,
-      format("node {0} claims all replies for term {1}, but {2} of {3} were sent", id, term, sizeof(answers[term * 10 + id]), peers);
+    assert sizeof(answers[(term = term, node = id)]) == peers,
+      format("node {0} claims all replies for term {1}, but {2} of {3} were sent", id, term, sizeof(answers[(term = term, node = id)]), peers);
     open -= (id);
     if (sizeof(open) == 0) { goto Quiet; }
   }
@@ -260,7 +266,7 @@ spec LeaderAfterRestart observes RecoveryPlanned, Restarted, BecameLeader {
   }
   hot state Restarting {
     on Restarted do (r: (id: int, term: int)) {
-      assert r.id == target, "another node acknowledged the planned restart";
+      assert r.id == target, format("node {0} acknowledged the restart planned for node {1}", r.id, target);
       previousTerm = r.term;
       goto Electing;
     }

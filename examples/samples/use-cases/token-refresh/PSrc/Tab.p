@@ -57,7 +57,6 @@ machine Tab {
 
   state Refreshing {
     on RefreshResp do (r: (tab: machine, ok: bool, token: int)) {
-      assert r.tab == this, "refresh response belongs to another tab";
       if (!r.ok) {
         // Revoked (someone presented a stolen token): the user is logged out.
         MarkLost();

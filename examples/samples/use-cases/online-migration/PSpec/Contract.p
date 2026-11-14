@@ -9,8 +9,9 @@ event ReadSeen: (reader: int, key: int, row: Row);
 // A writer's call returned: the write is in both stores.
 event WriteAcked: (req: int);
 event ReadStarted: (reader: int, key: int);
-// The old store served a read.
-event OldRead;
+enum Table { OldTable, NewTable }
+// A store served one application read (at the read itself).
+event ReadServed: (table: Table, reader: int, key: int);
 
 // How a key that was never written reads, as the contract defines it.
 fun NoRow(): Row {
@@ -33,22 +34,24 @@ fun Visible(row: Row): int {
 // - A read returns at least the newest write whose call returned before the read
 //   started (no stale reads), and a reader never sees a key go back to an older
 //   version, across the cutover too.
-// - After cutover the old store serves no reads.
+// - Every read is served by exactly one store read: old before cutover, new after.
 spec MigrationSafety observes OldCommitted, NewApplied, Cutover, ReadSeen, WriteAcked,
-    ReadStarted, OldRead {
+    ReadStarted, ReadServed {
   // lsn -> the key and row old committed at that version
   var history: map[int, (key: int, row: Row)];
   var lastLsn: int;
   var oldRows: map[int, Row];
   var newRows: map[int, Row];
   var cutover: bool;
-  // reader * 100 + key -> newest lsn that reader has seen for that key
-  var seen: map[int, int];
+  // (reader, key) -> newest lsn that reader has seen for that key
+  var seen: map[(reader: int, key: int), int];
   // req -> (key, lsn) it committed at; key -> newest lsn of a returned write
   var commits: map[int, (key: int, lsn: int)];
   var acked: map[int, int];
-  // reader * 100 + key -> the lsn its current read must reach
-  var floor: map[int, int];
+  // (reader, key) -> the lsn its current read must reach
+  var floor: map[(reader: int, key: int), int];
+  // reads a store has served whose result the reader has not reported yet
+  var served: set[(reader: int, key: int)];
 
   start state Watching {
     on OldCommitted do (p: (key: int, row: Row, req: int)) {
@@ -74,15 +77,24 @@ spec MigrationSafety observes OldCommitted, NewApplied, Cutover, ReadSeen, Write
       }
     }
     on ReadStarted do (p: (reader: int, key: int)) {
-      var slot: int;
-      slot = p.reader * 100 + p.key;
+      var slot: (reader: int, key: int);
+      slot = (reader = p.reader, key = p.key);
+      assert !(slot in floor), format("reader {0} started a read of key {1} while one is in flight", p.reader, p.key);
       floor[slot] = 0;
       if (p.key in acked) {
         floor[slot] = acked[p.key];
       }
     }
-    on OldRead do {
-      assert !cutover, "cutover broken: old store served a read after cutover";
+    on ReadServed do (p: (table: Table, reader: int, key: int)) {
+      var slot: (reader: int, key: int);
+      slot = (reader = p.reader, key = p.key);
+      assert slot in floor && !(slot in served),
+        format("a store served reader {0}'s read of key {1}, which is not waiting for one", p.reader, p.key);
+      served += (slot);
+      assert !cutover || p.table == NewTable,
+        format("cutover broken: old store served reader {0}'s read of key {1} after cutover", p.reader, p.key);
+      assert cutover || p.table == OldTable,
+        format("new store served reader {0}'s read of key {1} before cutover", p.reader, p.key);
     }
     on NewApplied do (p: (key: int, row: Row)) {
       assert Committed(p.key, p.row),
@@ -103,11 +115,13 @@ spec MigrationSafety observes OldCommitted, NewApplied, Cutover, ReadSeen, Write
       }
     }
     on ReadSeen do (p: (reader: int, key: int, row: Row)) {
-      var slot: int;
+      var slot: (reader: int, key: int);
       assert Committed(p.key, p.row),
         format("reader {0} got a version of key {1} that old never committed: {2}", p.reader, p.key, p.row);
-      slot = p.reader * 100 + p.key;
+      slot = (reader = p.reader, key = p.key);
       assert slot in floor, format("reader {0} got key {1} without asking for it", p.reader, p.key);
+      assert slot in served, format("reader {0} got key {1}, but no store served that read", p.reader, p.key);
+      served -= (slot);
       assert p.row.lsn >= floor[slot],
         format("reader {0} read key {1} at version {2}, older than version {3} written before the read",
                p.reader, p.key, p.row.lsn, floor[slot]);
@@ -128,8 +142,8 @@ spec MigrationSafety observes OldCommitted, NewApplied, Cutover, ReadSeen, Write
 }
 
 // Progress. The driver announces the old table's contents, how many writes and reads
-// it plans, and each write it requests. The spec stays hot until every requested write has returned, every
-// planned read was answered, and reads were cut over to new. A backfill that stops, a
+// it plans, and each write it requests. The spec stays hot until every requested write
+// has returned, every planned read was answered, and reads were cut over to new. A backfill that stops, a
 // drain that never ends or a dual-write that never lands fails here.
 event MigrationPlanned: (writes: int, seed: map[int, int]);
 event WriteRequested: Op;

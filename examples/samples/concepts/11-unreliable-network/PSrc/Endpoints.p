@@ -3,8 +3,8 @@
 // id and acknowledges every copy, so a lost acknowledgement is repaired too.
 
 // A data message carries its return address; an acknowledgement needs only the id.
-type Msg = (from: machine, id: int);
-event Data: Msg;
+type DataMessage = (from: machine, id: int);
+event Data: DataMessage;
 event Ack: int;
 
 machine Sender {
@@ -34,12 +34,14 @@ machine Sender {
     on Timeout do { SendHead(); }
   }
 
+  // Duplicate acknowledgements and a timeout for a loss already repaired can still
+  // arrive; every message is acknowledged, so there is nothing left to do.
   state Done {
     ignore Ack, Timeout;
   }
 
   fun SendHead() {
-    send net, NetSend, (dest = receiver, ev = Data, msg = (from = this, id = queue[0]));
+    send net, NetSend, (destination = receiver, message = Data, payload = (from = this, id = queue[0]));
   }
 }
 
@@ -51,13 +53,13 @@ machine Receiver {
     entry (n: Network) {
       net = n;
     }
-    on Data do (d: Msg) {
+    on Data do (d: DataMessage) {
       if (!(d.id in delivered)) {
         delivered += (d.id);
         announce Delivered, d.id;
       }
       // Acknowledge every copy: the first acknowledgement may have been lost.
-      send net, NetSend, (dest = d.from, ev = Ack, msg = d.id);
+      send net, NetSend, (destination = d.from, message = Ack, payload = d.id);
     }
   }
 }

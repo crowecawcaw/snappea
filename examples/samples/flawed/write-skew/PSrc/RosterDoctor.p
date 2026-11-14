@@ -13,6 +13,9 @@
 // The roster row's id; doctor ids are 1 and up.
 fun RosterRow() : int { return 0; }
 
+// Tells whoever started the client (the test driver) that the request is over.
+event DoctorDone;
+
 machine RosterDoctor {
   start state Run {
     entry (p: (owner: machine, doctor: int, store: machine, doctors: set[int])) {

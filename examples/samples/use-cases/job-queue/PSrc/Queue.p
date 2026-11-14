@@ -74,9 +74,8 @@ machine Queue {
 
   fun Deliver(worker: machine) {
     var job: int;
-    var j: int;
     // Any visible job will do.
-    foreach (j in visible) { job = j; }
+    job = choose(visible);
     // snappea-lint: allow mutation:swap-operator -- receipts only need to be distinct; counting down keeps them so
     lastReceipt = lastReceipt + 1;
     visible -= (job);

@@ -3,7 +3,8 @@
 // delete has a version too.
 //
 // Real atomic primitives, one per handler:
-//   old store: write a row (assigns the next lsn), read a row
+//   old store: write a row (assigns the next lsn), read a row (a client read or a
+//              backfill scan)
 //   new store: put a row only if its lsn is newer than the stored one
 //              (UPDATE ... WHERE lsn < :lsn, or INSERT if absent), read a row
 // The backfill reads a row from old and then writes it to new: two steps, with
@@ -13,8 +14,11 @@ type Row = (value: int, deleted: bool, lsn: int);
 
 event OldWrite: (client: machine, req: int, key: int, value: int, deleted: bool);
 event OldWritten: (req: int, lsn: int);
-event ReadRow: (client: machine, key: int);
-event Row: (key: int, row: Row);
+// An application read, routed to one store.
+event ReadRow: (client: machine, reader: int, key: int);
+// The backfill's read of one row from old.
+event ScanRow: (client: machine, key: int);
+event RowRead: (key: int, row: Row);
 // A writer's second write, carrying the lsn the old store assigned.
 event NewWrite: (client: machine, key: int, row: Row);
 // The backfill's copy of a row it read from old.
@@ -51,10 +55,13 @@ machine OldStore {
       announce OldCommitted, (key = w.key, row = rows[w.key], req = w.req);
       send w.client, OldWritten, (req = w.req, lsn = lsn);
     }
-    on ReadRow do (r: (client: machine, key: int)) {
-      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce OldRead;
-      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, reader: int, key: int)) {
+      // commit point: the read
+      announce ReadServed, (table = OldTable, reader = r.reader, key = r.key);
+      send r.client, RowRead, (key = r.key, row = RowOf(rows, r.key));
+    }
+    on ScanRow do (r: (client: machine, key: int)) {
+      send r.client, RowRead, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 }
@@ -73,8 +80,10 @@ machine NewStore {
       PutIfNewer(w.key, w.row);
       send w.client, NewWritten, (key = w.key,);
     }
-    on ReadRow do (r: (client: machine, key: int)) {
-      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, reader: int, key: int)) {
+      // commit point: the read
+      announce ReadServed, (table = NewTable, reader = r.reader, key = r.key);
+      send r.client, RowRead, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 

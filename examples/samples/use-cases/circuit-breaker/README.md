@@ -17,15 +17,17 @@ trial failure reopens it. The breaker state is an `enum BreakerState`.
 
 **Contract**
 
-- While open, no call reaches the dependency. While half-open, at most one trial is
-  in flight. Calls are rejected only while open or while the trial is in flight.
-- The breaker opens exactly when K consecutive results of the current closed period
-  failed. A result for a call sent before the last transition (a late result) counts
-  for nothing.
-- Half-open only after the cooldown of the current open period; the trial's result
-  decides closed or open.
-- Progress: every call gets exactly one answer (Rejected only if short-circuited,
-  otherwise the dependency's answer), and the breaker does not stay open.
+- `BreakerContract`: while open, no call reaches the dependency. While half-open, at
+  most one trial is in flight. Calls are rejected only while open or while the trial
+  is in flight.
+- `BreakerContract`: the breaker opens exactly when K consecutive results of the
+  current closed period failed. A result for a call sent before the last transition
+  (a late result) counts for nothing.
+- `BreakerContract`: half-open only after the cooldown of the current open period;
+  the trial's result decides closed or open. Its `Opened` state is hot: the breaker
+  does not stay open.
+- `CallsAnswered` (hot state): every call gets exactly one answer (Rejected only if
+  short-circuited, otherwise the dependency's answer).
 
 **Atomic primitive**: the breaker handles one event at a time (one lock in code).
 Calls, dependency answers and timer firings interleave freely. Each call is tagged
@@ -45,12 +47,12 @@ cooldown carries the period that started it; both make stale events harmless.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcConcurrentCallers` | Two callers, three calls, two failures then success, K=2 | Calls in flight when the breaker opens; rejections; the trial | pass |
-| `tcHalfOpenRace` | One failure opens (K=1); then two callers race | Two callers in half-open: exactly one trial | pass |
-| `tcLateFailure` | Three failures, one answer slow; then a successful trial and one failure | The slow failure lands after the breaker reclosed and must not count | pass, sampled |
-| `tcSuccessResetsCount` | One caller: F, T, F, F, trial T, F, F | A success resets the count; the count restarts after reclosing | pass |
-| `tcDuplicateCooldown` | Every cooldown delivered twice, arbitrarily late; first trial fails | A stale cooldown during the trial or the next open period must not open a window | pass |
-| `tcBugHalfOpenAdmitsAll` | `AdmitAllBreaker` in the half-open race | **Expected bug**: `call 30 sent while a half-open trial was in flight` | expected bug |
+| `tcConcurrentCallers` | Two callers, three calls, two failures then success, K=2 | Calls in flight when the breaker opens; rejections; the trial. All schedules | Passes |
+| `tcHalfOpenRace` | One failure opens (K=1); then two callers race | Two callers in half-open: exactly one trial. All schedules | Passes |
+| `tcLateFailure` | Three failures, one answer slow; then a successful trial and one failure | The slow failure lands after the breaker reclosed and must not count. Sampled | Passes |
+| `tcSuccessResetsCount` | One caller: F, T, F, F, trial T, F, F | A success resets the count; the count restarts after reclosing. All schedules | Passes |
+| `tcDuplicateCooldown` | Every cooldown delivered twice, arbitrarily late; first trial fails | A stale cooldown during the trial or the next open period must not open a window. All schedules | Passes |
+| `tcBugHalfOpenAdmitsAll` | `AdmitAllBreaker` in the half-open race | Both callers go through as trials | Expected bug: `call 20 sent while a half-open trial was in flight` (call 20 or 30) |
 
 The `LateResultAfterReclose` scenario confirms `tcLateFailure` reaches a result sent
 before the breaker opened arriving after it closed again.
@@ -75,13 +77,9 @@ before the breaker opened arriving after it closed again.
 ## Run
 
 ```sh
-snappea check tcConcurrentCallers tcHalfOpenRace tcLateFailure tcSuccessResetsCount tcDuplicateCooldown --timeout 30s --deny mutation
+snappea check tcConcurrentCallers tcHalfOpenRace tcLateFailure tcSuccessResetsCount tcDuplicateCooldown --deny mutation
 snappea check tcBugHalfOpenAdmitsAll      # passes only when the declared failure is found
 ```
-
-Search is automatic. `--timeout` sets the budget per test; it is not a proof of
-completion. Inspect `search_complete` in JSON or the `all N schedules` text before
-claiming every schedule was checked.
 
 ## Bounds and omissions
 
@@ -92,9 +90,9 @@ call keeps the trial in flight forever), real time, sliding-window failure rates
 half-open with more than one trial. "At most one in flight while half-open" counts the
 trial only: calls sent while closed can still be in flight after the breaker opened.
 
-Suppressed mutants: removing `callers -= (r.call)` and `sentIn -= (r.call)` in
-`Breaker.p`. They only free memory; call ids are never reused, so keeping the entries
-is unobservable.
+Two suppressions, both equivalent mutants: removing `callers -= (r.call)` and
+`sentIn -= (r.call)` in `Breaker.p`. Call ids are never reused, so a finished call's
+entry is never read again.
 
 ## Testing the implementation
 

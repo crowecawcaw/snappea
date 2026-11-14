@@ -13,11 +13,11 @@
 // A connection can drop at any moment; whatever it was carrying is lost.
 
 event Post: (msg: int);
-event Subscribe: (conn: machine, after: int);
+event Subscribe: (conn: machine, client: int, after: int);
 // Server -> connection -> client.
 event Deliver: (sn: int, msg: int);
 // Server to itself: the replay step of a subscription.
-event Replay: (conn: machine, after: int);
+event Replay: (conn: machine, client: int, after: int);
 
 machine Server {
   var log: seq[int];
@@ -26,21 +26,25 @@ machine Server {
   start state Serving {
     on Post do (p: (msg: int)) {
       var c: machine;
+      // commit point: the append to the room log
       log += (sizeof(log), p.msg);
       announce Sequenced, (sn = sizeof(log), msg = p.msg);
       foreach (c in conns) {
         send c, Deliver, (sn = sizeof(log), msg = p.msg);
       }
     }
-    on Subscribe do (s: (conn: machine, after: int)) {
+    on Subscribe do (s: (conn: machine, client: int, after: int)) {
+      // commit point: the connection joins the live set
       conns += (s.conn);
+      announce Subscribed, (client = s.client, after = s.after);
       send this, Replay, s;
     }
-    on Replay do (r: (conn: machine, after: int)) {
+    on Replay do (r: (conn: machine, client: int, after: int)) {
       var i: int;
       // Sequence numbers start at 1: log[i] has seq i + 1.
-      // snappea-lint: allow mutation:remove-statement -- replaying from the start only adds duplicates, which the client skips by seq; the contract does not cover bandwidth
       i = r.after;
+      // commit point: the log read that starts the replay
+      announce Replayed, (client = r.client, after = r.after, first = i + 1, last = sizeof(log));
       while (i < sizeof(log)) {
         send r.conn, Deliver, (sn = i + 1, msg = log[i]);
         i = i + 1;

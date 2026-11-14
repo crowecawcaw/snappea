@@ -78,12 +78,14 @@ machine CycleOfThreeFlawed {
   }
 }
 
-// snappea: expect-bug "liveness bug in hot state 'TransferPending'"
+// Any hang leaves TransfersComplete in TransferPending. Pin its fields too: both
+// transfers outstanding and neither applied a side, which is the lock cycle.
+// snappea: expect-bug "TransfersComplete's fields: pending = {1: 0, 2: 0}, unfinished = 2"
 test tcBugOppositeTransfers [main=OppositeTransfersFlawed]:
   assert TransfersIsolated, TransfersComplete in
   { OppositeTransfersFlawed, Database, ArgumentOrderWorker };
 
-// snappea: expect-bug "liveness bug in hot state 'TransferPending'"
+// snappea: expect-bug "TransfersComplete's fields: pending = {1: 0, 2: 0, 3: 0}, unfinished = 3"
 test tcBugCycleOfThree [main=CycleOfThreeFlawed]:
   assert TransfersIsolated, TransfersComplete in
   { CycleOfThreeFlawed, Database, ArgumentOrderWorker };

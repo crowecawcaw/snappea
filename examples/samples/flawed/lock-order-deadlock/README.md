@@ -9,7 +9,7 @@ questions:
 
 # Lock-order deadlock: transfers that lock accounts in argument order
 
-**Difficulty: medium.**
+**Difficulty: Easy.**
 
 A bank moves money between accounts with transactions on one database. A transfer
 locks its two account rows (`SELECT ... FOR UPDATE`) one statement at a time, then
@@ -25,22 +25,12 @@ and then wait forever for the other's.
 - `TransfersIsolated` (safety): a row lock has one holder at a time; a balance
   changes only under the lock of the transfer changing it; each transfer debits its
   source and credits its destination once; every balance matches.
-- `TransfersComplete` (progress): while any requested transfer has not returned, the
-  spec is in the hot state `TransferPending`.
+- `TransfersComplete` (progress, hot state `TransferPending`): every requested
+  transfer returns after both sides were applied.
 
-## How P reports a deadlock
-
-P has no deadlock detector as such. A deadlock is an execution where every machine
-is waiting for a message nobody will send: no machine can take a step, so the
-execution ends. If a spec is in a hot state at that moment, the promise it tracks
-was never kept, and the checker reports a **liveness bug**:
-
-```text
-PImplementation.TransfersComplete detected liveness bug in hot state 'TransferPending' at the end of program execution.
-```
-
-Without a hot-state spec, the same deadlock passes silently: every safety assertion
-held, the program just stopped. Every "this eventually finishes" promise needs one.
+**Atomic primitives** (one handler each in `Database`): lock one row (grant or queue
+the request), and commit (apply both sides, release both locks, grant each lock to
+its next waiter). Between a transfer's two lock statements, other transactions run.
 
 ## Files
 
@@ -52,19 +42,49 @@ held, the program just stopped. Every "this eventually finishes" promise needs o
 | [`PSrc/GlobalOrder.p`](PSrc/GlobalOrder.p) | The fix: locks the lower account id first |
 | [`PTst/Tests.p`](PTst/Tests.p) | Drivers and test cases |
 
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugOppositeTransfers` | 1 to 2 and 2 to 1, argument order | The classic two-lock deadlock | Expected bug: `TransfersComplete detected liveness bug in hot state 'TransferPending'` (both transfers pending) |
+| `tcBugCycleOfThree` | 1 to 2, 2 to 3, 3 to 1, argument order | A deadlock with no opposite pair | Expected bug: same message (all three transfers pending) |
+| `tcFixedOppositeTransfers` | The opposite pair, global order | The fix for the classic case | Passes |
+| `tcFixedCycleOfThree` | The three-way cycle, global order | A fix that only special-cases reversed pairs fails here | Passes |
+
 ## The counterexample
 
-From `PCheckerOutput/tcBugOppositeTransfers/bug.txt`, with accounts 1 and 2:
+From `tcBugOppositeTransfers`, with accounts 1 and 2:
 
 1. Transfer 1 (1 to 2) requests the lock on account 1. Granted.
 2. Transfer 2 (2 to 1) requests the lock on account 2. Granted.
 3. Transfer 1 requests account 2. Transfer 2 holds it, so transfer 1 waits.
 4. Transfer 2 requests account 1. Transfer 1 holds it, so transfer 2 waits.
 5. No machine has anything to do. The execution ends with both transfers pending,
-   and `TransfersComplete` is still in `TransferPending`: liveness bug.
+   and `TransfersComplete` is still in `TransferPending`: a liveness bug.
+
+`snappea check` reports:
+
+```text
+TransfersComplete detected liveness bug in hot state 'TransferPending' at the end of program execution.
+TransfersComplete's fields: pending = {1: 0, 2: 0}, unfinished = 2
+```
 
 `tcBugCycleOfThree` shows the same with three transfers 1 to 2, 2 to 3, 3 to 1: no
-two of them are opposite, yet each holds one account and waits for the next.
+two of them are opposite, yet each holds one account and waits for the next. Its
+fields line is `pending = {1: 0, 2: 0, 3: 0}, unfinished = 3`.
+
+**How a hang is reported.** The workers here wait in state handlers (`on Locked`),
+not in a blocking `receive`. A machine waiting in a state handler is simply idle:
+when nothing can run, the execution ends quietly, every safety assertion held, and
+the deadlock is visible only because `TransfersComplete` is still in its hot state.
+Without a hot-state spec the same deadlock passes, so every "this eventually
+finishes" promise needs one. A machine blocked in `receive` with nothing else able
+to run is different: the checker reports `Deadlock detected` for it directly (see
+[lost-wakeup](../lost-wakeup/)).
+
+Any hang leaves `TransfersComplete` in `TransferPending`, so the expected bug pins the
+fields line as well: every transfer outstanding, none with a side applied. A lost
+reply after the commit, for example, would show `pending = {1: 2, ...}` instead.
 
 ## Why ordinary tests miss it
 
@@ -83,28 +103,19 @@ than the one it waits for, so a cycle of waiting workers would need a lock to be
 lower than itself. No cycle, no deadlock. The same rule covers cycles of any length,
 which is what `tcFixedCycleOfThree` checks.
 
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcBugOppositeTransfers` | 1 to 2 and 2 to 1, argument order | The classic two-lock deadlock | **Expected bug**: `liveness bug in hot state 'TransferPending'` |
-| `tcBugCycleOfThree` | 1 to 2, 2 to 3, 3 to 1, argument order | A deadlock with no opposite pair | **Expected bug**: same message |
-| `tcFixedOppositeTransfers` | The opposite pair, global order | The fix for the classic case | Passes |
-| `tcFixedCycleOfThree` | The three-way cycle, global order | A fix that only special-cases reversed pairs fails here | Passes |
-
 ## Run
 
 ```sh
-snappea check tcFixedOppositeTransfers tcFixedCycleOfThree --deny mutation --timeout 20s
-snappea check tcBugOppositeTransfers   # succeeds only when the declared bug is found
+snappea check LockOrderDeadlock.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LockOrderDeadlock.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
+
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 One mutant is suppressed: `t.dst < t.src` → `t.dst <= t.src` in `OrderedWorker`,
 because a transfer's two accounts always differ (the spec asserts it).
-
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 

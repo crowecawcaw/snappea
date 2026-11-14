@@ -58,7 +58,6 @@ machine LookupThenRecordWorker {
   }
 
   fun Reply(charge: int) {
-    announce Replied, (req = request.req, charge = charge);
     send client, ChargeResult, (req = request.req, charge = charge);
   }
 }

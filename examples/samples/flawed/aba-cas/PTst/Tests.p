@@ -45,6 +45,7 @@ machine ConcurrentAba {
       mem = new TaggedStackMemory(AbaStack());
       TaggedThreads(this, mem, mem, AbaPlans(), true);
     }
+    // The spec checks each operation through OpDone; nothing waits for the threads.
     ignore ThreadDone;
   }
 }
@@ -79,6 +80,7 @@ machine ForcedTaggedAba {
     }
   }
   state Released {
+    // The spec checks each operation through OpDone; nothing waits for the threads.
     ignore ThreadDone;
   }
 }
@@ -107,6 +109,7 @@ machine ForcedPointerAba {
     }
   }
   state Released {
+    // The spec checks each operation through OpDone; nothing waits for the threads.
     ignore ThreadDone;
   }
 }
@@ -173,6 +176,7 @@ machine PushPopContention {
       mem = new TaggedStackMemory(Nodes(none, 1));
       TaggedThreads(this, mem, mem, plans, true);
     }
+    // The spec checks each operation through OpDone; nothing waits for the threads.
     ignore ThreadDone;
   }
 }
@@ -186,6 +190,6 @@ test tcFixedForcedAba [main=ForcedTaggedAba]:
 test tcFixedPushPopContention [main=PushPopContention]:
   assert StackIsLinearizable in { PushPopContention, TaggedStackMemory, TaggedStackThread };
 
-// snappea: expect-bug "but the committed operations give"
+// snappea: expect-bug "after thread 1 committed node 1, memory links up the stack (2, 3), but the committed operations give (3)"
 test tcBugPointerOnlyCas [main=ForcedPointerAba]:
   assert StackIsLinearizable in { ForcedPointerAba, SwapHolder, StackMemory, StackThread };

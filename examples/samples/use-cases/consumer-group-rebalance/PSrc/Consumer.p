@@ -36,7 +36,7 @@ machine Consumer {
   state Idle {
     on Assignment do (a: (gen: int, partitions: seq[int])) { Adopt(a); }
     ignore Fetched, CommitResponse;
-    on Shutdown goto Stopped with { Leave(); }
+    on Shutdown goto Stopped with Leave;
   }
 
   state Working {
@@ -47,7 +47,7 @@ machine Consumer {
       send coordinator, Fetch, (consumer = this, id = id, gen = gen, partition = partition);
     }
     on Assignment do (a: (gen: int, partitions: seq[int])) { Adopt(a); }
-    on Fetched do (r: (gen: int, partition: int, ok: bool, offset: int)) {
+    on Fetched do (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
       if (r.gen != gen) { return; }
       if (!r.ok) {
         Rejoin();
@@ -56,18 +56,16 @@ machine Consumer {
         Process();
       }
     }
-    on CommitResponse do (r: (gen: int, partition: int, ok: bool)) {
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
       if (r.gen != gen) { return; }
       if (!r.ok) {
         Rejoin();
       } else {
-        // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-        announce CommitAcked, (member = id, partition = partition, offset = offset + 1);
-        offset = offset + 1;
+        offset = r.offset;
         Process();
       }
     }
-    on Shutdown goto Stopped with { Leave(); }
+    on Shutdown goto Stopped with Leave;
   }
 
   state Stopped {

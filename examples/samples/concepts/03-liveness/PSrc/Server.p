@@ -1,12 +1,13 @@
 // The design: a server that hands one request at a time to a worker. While the worker
 // is busy, new requests wait in the server's queue (defer) until it is idle again.
 
-type Request = (client: machine, id: int);
+// One unit of work: the request id and who to answer.
+type Task = (client: machine, id: int);
 
-event Request: Request;
+event Request: Task;
 event Response: (id: int);
-event Job: Request;
-event JobDone: Request;
+event Job: Task;
+event JobDone: Task;
 
 machine Server {
   var worker: Worker;
@@ -19,7 +20,7 @@ machine Server {
   }
 
   state Idle {
-    on Request do (r: Request) {
+    on Request do (r: Task) {
       send worker, Job, r;
       goto Busy;
     }
@@ -28,7 +29,7 @@ machine Server {
   state Busy {
     // Keep new requests queued until the worker is free.
     defer Request;
-    on JobDone do (r: Request) {
+    on JobDone do (r: Task) {
       send r.client, Response, (id = r.id,);
       goto Idle;
     }
@@ -43,7 +44,7 @@ machine Worker {
     entry (s: machine) {
       server = s;
     }
-    on Job do (r: Request) {
+    on Job do (r: Task) {
       send server, JobDone, r;
     }
   }

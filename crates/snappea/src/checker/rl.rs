@@ -210,7 +210,7 @@ impl Strategy for QLearningStrategy {
         true
     }
 
-    fn observe_state(&mut self, hash: u64) -> bool {
+    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
         self.last_state = hash;
         self.choices_since = 0;
         true

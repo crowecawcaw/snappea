@@ -14,7 +14,8 @@ use rustc_hash::FxHashSet;
 
 use crate::checker::checked::{each_expr, machine_funs, visit_stmts, Finding};
 use crate::sema::{
-    Block, EventId, ExprKind, FunId, HandlerAction, MachineId, MachineKind, Program, StateId, Stmt, StmtKind, TestDecl,
+    Block, EventId, ExprKind, FunId, HandlerAction, MachineId, MachineKind, Program, StateId, Stmt, StmtKind,
+    Temperature, TestDecl,
 };
 use crate::syntax::Span;
 
@@ -111,6 +112,51 @@ fn replies(prog: &Program, machines: &[MachineId], x: MachineId) -> FxHashSet<Ev
     out
 }
 
+/// The events other machines of `machines` send, directly or through a chain of
+/// handlers, while handling an event `x` sends: the replies to `x`'s requests, also
+/// when they pass through a middle machine (`x` -> coordinator -> participant ->
+/// coordinator -> `x`). Over-approximates: any handler of a downstream event counts.
+fn downstream_replies(prog: &Program, machines: &[MachineId], x: MachineId) -> FxHashSet<EventId> {
+    let others: Vec<MachineId> = machines.iter().copied().filter(|y| *y != x).collect();
+    let mut seen: FxHashSet<EventId> = FxHashSet::default();
+    let mut todo: Vec<EventId> = sends(prog, &machine_funs(prog, x)).into_iter().collect();
+    let mut out = FxHashSet::default();
+    while let Some(e) = todo.pop() {
+        if !seen.insert(e) {
+            continue;
+        }
+        for y in &others {
+            for f in handlers_of(prog, *y, e) {
+                for reply in sends(prog, &reach(prog, f)) {
+                    out.insert(reply);
+                    todo.push(reply);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The functions machine `m` runs on receiving `event`: its handlers, the entry of the
+/// state a `goto` handler enters, and `receive` cases.
+fn handlers_of(prog: &Program, m: MachineId, event: EventId) -> Vec<FunId> {
+    let mut out = Vec::new();
+    for s in &prog.machine(m).states {
+        for h in prog.state(*s).handlers.iter().filter(|h| h.event == event) {
+            out.extend(handler_fun(&h.action));
+            if let HandlerAction::Goto { target, .. } = h.action {
+                out.extend(prog.state(target).entry);
+            }
+        }
+    }
+    each_stmt(prog, &machine_funs(prog, m), &mut |s| {
+        if let StmtKind::Receive { cases } = &s.kind {
+            out.extend(cases.iter().filter(|(e, _)| *e == event).map(|(_, f)| *f));
+        }
+    });
+    out
+}
+
 /// The machines of test `t` that send a request and then wait for its reply: in a
 /// `receive`, or in a state whose only handlers are for replies. Each wait comes with the
 /// reply it waits for and where (the `receive` or the state).
@@ -159,6 +205,10 @@ pub fn lints_for_tests(prog: &Program, tests: &[crate::sema::TestCase], drivers:
     unreachable_statements(prog, out);
 }
 
+/// A driver, the replies to its own requests, and the states it enters and the
+/// functions it runs before any notification from the model.
+type DriverStart = (MachineId, FxHashSet<EventId>, Vec<StateId>, Vec<FunId>);
+
 fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drivers: &[bool], out: &mut Vec<Finding>) {
     let mut reported: FxHashSet<Span> = FxHashSet::default();
     for (i, t) in prog.tests.iter().enumerate() {
@@ -191,51 +241,48 @@ fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drive
         });
         let model_ifaces: FxHashSet<_> =
             t.module.interface_def.iter().filter(|(_, m)| model.contains(m)).map(|(i, _)| *i).collect();
+        // events a spec with a progress obligation observes: a plan announced with one
+        // keeps that spec `hot` until the planned work is done
         let observed: FxHashSet<EventId> = t
             .module
             .monitor_map
             .iter()
-            .filter(|(m, _)| prog.machine(*m).kind == MachineKind::Spec)
+            .filter(|(m, _)| {
+                let spec = prog.machine(*m);
+                spec.kind == MachineKind::Spec
+                    && spec.states.iter().any(|s| prog.state(*s).temperature == Temperature::Hot)
+            })
             .flat_map(|(m, _)| prog.machine(*m).observes.iter().copied())
             .collect();
-        // a driver that announces something a spec observes has told the specs its plan
-        let driver_funs: Vec<FunId> =
-            machines.iter().filter(|m| is_driver(**m)).flat_map(|m| machine_funs(prog, *m)).collect();
-        let mut planned = false;
-        each_stmt(prog, &driver_funs, &mut |s| {
-            if let StmtKind::Announce { event, .. } = &s.kind {
-                planned |= matches!(event.kind, ExprKind::EventRef(e) if observed.contains(&e));
-            }
-        });
-        if planned {
-            continue;
-        }
+        let mut stages: Vec<DriverStart> = Vec::new();
         for d in machines.iter().copied().filter(|m| is_driver(*m)) {
-            // a reply to the driver's own request: a hot spec on pending requests sees it
-            // missing (and `no-progress-spec` reports a test without one)
-            let replies = replies(prog, &machines, d);
-            let notifications = |e: EventId| from_model.contains(&e) && !replies.contains(&e);
-            let decl = prog.machine(d);
-            // the states the driver enters without any notification from the model
-            let mut early: Vec<StateId> = decl.start_state.into_iter().collect();
+            // a reply to the driver's own request, through any chain of model handlers: a
+            // hot spec on pending requests sees it missing (and `no-progress-spec`
+            // reports a test without one)
+            let replies = downstream_replies(prog, &machines, d);
+            let notification = |e: EventId| from_model.contains(&e) && !replies.contains(&e);
+            let mut early: Vec<StateId> = prog.machine(d).start_state.into_iter().collect();
+            let mut early_funs: Vec<FunId> = Vec::new();
             let mut i = 0;
             while i < early.len() {
                 let st = prog.state(early[i]);
                 i += 1;
                 let mut next: Vec<StateId> = Vec::new();
                 let mut funs: Vec<FunId> = st.entry.into_iter().collect();
-                for h in st.handlers.iter().filter(|h| !notifications(h.event)) {
+                for h in st.handlers.iter().filter(|h| !notification(h.event)) {
                     funs.extend(handler_fun(&h.action));
                     if let HandlerAction::Goto { target, .. } = h.action {
                         next.push(target);
                     }
                 }
                 for f in funs {
-                    each_stmt(prog, &reach(prog, f), &mut |s| {
+                    let reached = reach(prog, f);
+                    each_stmt(prog, &reached, &mut |s| {
                         if let StmtKind::Goto { state, .. } = s.kind {
                             next.push(state);
                         }
                     });
+                    early_funs.extend(reached);
                 }
                 for s in next {
                     if !early.contains(&s) {
@@ -243,6 +290,24 @@ fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drive
                     }
                 }
             }
+            stages.push((d, replies, early, early_funs));
+        }
+        // a driver that announces, before waiting on the model, an event a spec with a
+        // hot state observes has told the specs its plan
+        let mut planned = false;
+        for (_, _, _, funs) in &stages {
+            each_stmt(prog, funs, &mut |s| {
+                if let StmtKind::Announce { event, .. } = &s.kind {
+                    planned |= matches!(event.kind, ExprKind::EventRef(e) if observed.contains(&e));
+                }
+            });
+        }
+        if planned {
+            continue;
+        }
+        for (d, replies, early, _) in stages {
+            let notifications = |e: EventId| from_model.contains(&e) && !replies.contains(&e);
+            let decl = prog.machine(d);
             // what runs only after a notification: its handlers, and the states it leads to
             let mut later: Vec<(FunId, EventId)> = Vec::new();
             for s in &decl.states {
@@ -296,6 +361,7 @@ fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drive
                     continue;
                 }
                 out.push(Finding {
+                    help: None,
                     rule: "unplanned-driver-stage",
                     span,
                     message: format!(
@@ -380,11 +446,26 @@ fn unreachable_statements(prog: &Program, out: &mut Vec<Finding>) {
                 continue;
             }
             if let Some(how) = leaves(prog, s, &mut Vec::new()) {
-                let before = match &s.kind {
-                    StmtKind::FunCall { fun, .. } => format!("the call to {} before it", prog.fun(*fun).name),
-                    _ => "the statement before it".to_string(),
+                let (before, help) = match &s.kind {
+                    StmtKind::FunCall { fun, .. } => {
+                        let name = &prog.fun(*fun).name;
+                        (
+                            format!("the call to {} before it", name),
+                            format!("remove it, or move it before the call to {} if it should run", name),
+                        )
+                    }
+                    StmtKind::If { .. } => (
+                        "every branch of the `if` before it".to_string(),
+                        "remove it, or move it into the branches before they leave the state if it should run"
+                            .to_string(),
+                    ),
+                    _ => (
+                        "the statement before it".to_string(),
+                        format!("remove it, or move it before the `{}` if it should run", how),
+                    ),
                 };
                 out.push(Finding {
+                    help: Some(help),
                     rule: "unreachable-statement",
                     span: next.span,
                     message: format!("this statement never runs: {} always leaves the state ({})", before, how),

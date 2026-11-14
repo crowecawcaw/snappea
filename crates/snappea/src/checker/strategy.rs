@@ -189,10 +189,25 @@ pub trait Strategy {
         false
     }
     /// The program-state hash (see [`crate::checker::statehash`]) at the scheduling point about to
-    /// be decided by [`Strategy::next_operation`]. Returning `false` ends the schedule
+    /// be decided by [`Strategy::next_operation`]; `live` when a liveness monitor (a spec
+    /// with hot states) is not in a cold state there. Returning `false` ends the schedule
     /// there, without a deadlock or liveness check (the state was explored before).
-    fn observe_state(&mut self, _hash: u64) -> bool {
+    fn observe_state(&mut self, _hash: u64, _live: bool) -> bool {
         true
+    }
+    /// Whether the search records the state graph for the fair-cycle analysis (see
+    /// [`crate::checker::fairness`]): the step at which this schedule reached the last
+    /// state it recorded (0 when none). The runtime then describes the next observed
+    /// state with [`Strategy::note_live_facts`] before [`Strategy::observe_state`].
+    fn live_graph_step(&self) -> Option<usize> {
+        None
+    }
+    /// The transition to, and the state of, the next [`Strategy::observe_state`].
+    fn note_live_facts(&mut self, _facts: crate::checker::fairness::LiveFacts) {}
+    /// The record of the state graph, once the search is over (see
+    /// [`Strategy::live_graph_step`]).
+    fn take_live_graph(&mut self) -> Option<crate::checker::fairness::LiveGraph> {
+        None
     }
     /// After [`Strategy::observe_state`] ended a schedule at a state where a liveness
     /// monitor was not cold: the cycle, if that state is one the schedule passed before
@@ -572,7 +587,7 @@ impl Strategy for ComboStrategy {
 // ---------------------------------------------------------------------------
 
 /// One recorded decision of a schedule.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ScheduleStep {
     Operation(u64),
     Bool(bool),
@@ -767,7 +782,7 @@ impl Strategy for ReplayStrategy {
     fn wants_state_hash(&self) -> bool {
         self.trace.lasso.is_some_and(|start| self.index == start || self.index == self.trace.steps.len())
     }
-    fn observe_state(&mut self, hash: u64) -> bool {
+    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
         let Some(start) = self.trace.lasso else { return true };
         if self.index == start && self.lasso_start.is_none() {
             self.lasso_start = Some(hash);

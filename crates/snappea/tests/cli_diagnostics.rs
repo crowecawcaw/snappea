@@ -285,6 +285,11 @@ fn deadlock_reports_name_the_hot_spec() {
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let report = v["test_cases"][0]["bug"]["report"].as_str().unwrap_or_default().to_string();
     assert!(report.contains("while spec Finishes is in hot state 'Busy'"), "{}", h.stdout);
+    // A deadlock has a failure identity, so expected-bug seeds can be compared.
+    let identity = &v["test_cases"][0]["bug"]["identity"];
+    assert_eq!(identity["kind"], "deadlock", "{}", h.stdout);
+    assert_eq!(identity["machine"], "Main", "{}", h.stdout);
+    assert_eq!(identity["state"], "S", "{}", h.stdout);
 
     let (_, log) = compat_check(DEADLOCK);
     assert!(
@@ -293,4 +298,23 @@ fn deadlock_reports_name_the_hot_spec() {
         ),
         "{log}"
     );
+}
+
+const UNHANDLED: &str = "event eA;\n\
+     event eB;\n\
+     machine W { start state S { on eA do { } } }\n\
+     machine Main { start state I { entry { var w: machine; w = new W(); send w, eB; } } }\n\
+     // snappea-lint: allow no-model-machine -- unhandled-event report fixture\n\
+     test tcUnhandled [main=Main]: { Main, W };\n";
+
+#[test]
+fn unhandled_events_have_a_failure_identity() {
+    // Expected-bug seeds compare identities, so an unhandled event needs one too.
+    let mut h = host(UNHANDLED);
+    snappea(&mut h, &["check", "a.p", "--format", "json", "--no-mutation", "--warn", "lint"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let identity = &v["test_cases"][0]["bug"]["identity"];
+    assert_eq!(identity["kind"], "unhandled-event", "{}", h.stdout);
+    assert_eq!(identity["machine"], "W", "{}", h.stdout);
+    assert_eq!(identity["state"], "S", "{}", h.stdout);
 }

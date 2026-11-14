@@ -45,10 +45,10 @@ machine TwoClients {
 }
 
 test tcDropAndResume [main=DropAndResume]:
-  assert InOrderNoGaps, EveryoneCatchesUp in { DropAndResume, Room, Server, Network, Connection, Client, Sender };
+  assert InOrderNoGaps, ResumesAfterLastShown, EveryoneCatchesUp in { DropAndResume, Room, Server, Network, Connection, Client, Sender };
 
 test tcTwoClients [main=TwoClients]:
-  assert InOrderNoGaps, EveryoneCatchesUp in { TwoClients, Room, Server, Network, Connection, Client, Sender };
+  assert InOrderNoGaps, ResumesAfterLastShown, EveryoneCatchesUp in { TwoClients, Room, Server, Network, Connection, Client, Sender };
 
 machine BuggyDropAndResume {
   start state Init {

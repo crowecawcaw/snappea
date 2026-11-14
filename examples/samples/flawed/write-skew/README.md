@@ -15,25 +15,14 @@ the rule inside a transaction, on a database running snapshot isolation (Postgre
 `REPEATABLE READ`, Oracle's `SERIALIZABLE`, most MVCC databases' default "strong"
 level).
 
-**Difficulty: hard.** The check runs inside a transaction, so it looks safe; the
+**Difficulty: Hard.** The check runs inside a transaction, so it looks safe; the
 database prevents lost updates; the bug needs knowledge of what snapshot isolation does
 *not* promise.
 
-**Contract.** After every commit at least one doctor is on call. A doctor goes off call
-only if they asked; "granted" means their row committed as off call; "refused" happens
-only when they are the last doctor on call. Every request gets an answer.
-
-**The database (`SnapshotStore`), modeled explicitly:** a transaction reads a snapshot
-(the committed state at its start), buffers its writes, and commits them all at once.
-First committer wins: a commit aborts if another transaction committed a write to a row
-it writes since its snapshot. Rows it only read are not checked. Atomic primitives:
-take a snapshot and read from it; commit with the conflict check.
-
-## The flaw
-
-Each transaction reads both doctors' rows but writes only its own, so two concurrent
-off-call transactions have disjoint write sets and snapshot isolation commits both,
-although each one's decision depended on the row the other changed.
+**The flaw in one sentence:** each transaction reads both doctors' rows but writes only
+its own, so two concurrent off-call transactions have disjoint write sets and snapshot
+isolation commits both, although each one's decision depended on the row the other
+changed.
 
 ```sql
 BEGIN;  -- snapshot isolation
@@ -41,6 +30,40 @@ SELECT count(*) FROM doctors WHERE on_call;          -- 2
 UPDATE doctors SET on_call = false WHERE id = :me;   -- writes only my row
 COMMIT;
 ```
+
+**Contract** (in [`PSpec/OnCall.p`](PSpec/OnCall.p), the same for both designs)
+
+- `AlwaysSomeoneOnCall` (safety): after every commit at least one doctor is on call. A
+  doctor goes off call only if they asked; "granted" means their row committed as off
+  call; "refused" happens only when they are the last doctor on call.
+- `AlwaysSomeoneOnCall` (progress, hot state `Pending`): every request gets an answer.
+
+**Atomic primitives**: the database (`SnapshotStore`) is modeled explicitly. A
+transaction reads a snapshot (the committed state at its start), buffers its writes,
+and commits them all at once. First committer wins: a commit aborts if another
+transaction committed a write to a row it writes since its snapshot. Rows it only read
+are not checked. One handler each: take a snapshot and read from it; commit with the
+conflict check.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSpec/OnCall.p`](PSpec/OnCall.p) | `AlwaysSomeoneOnCall` and the events it observes |
+| [`PSrc/SnapshotStore.p`](PSrc/SnapshotStore.p) | The database: snapshot reads, buffered writes, first committer wins. Shared |
+| [`PSrc/Doctor.p`](PSrc/Doctor.p) | Flawed: check the count, write only my row |
+| [`PSrc/RosterDoctor.p`](PSrc/RosterDoctor.p) | Fixed: also write the roster row, retry on conflict |
+| [`PTst/Tests.p`](PTst/Tests.p) | Drivers, `PhoneUpdate` (an unrelated transaction), test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugWriteSkew` | Flawed client, two on call, both ask | The write-skew race against the flawed client | Expected bug: `nobody is on call after doctor` |
+| `tcFixedBothOffCall` | Two on call, both ask at once | The write-skew race: one granted, one aborted, retried and refused | Passes |
+| `tcFixedTwoOfThree` | Three on call, two ask at once | Both must be granted after the conflict and retry; a fix that refuses on contention fails | Passes |
+| `tcFixedOneAfterAnother` | Doctor 1 goes off call, then doctor 2 asks | Lifecycle: the last doctor on call is refused | Passes |
+| `tcFixedUnrelatedCommit` | A doctor goes off call while another transaction writes row 100 | Disjoint writes do not conflict: the store's conflict check is per row | Passes |
 
 ## The counterexample
 
@@ -54,8 +77,10 @@ From `tcBugWriteSkew` (doctors 1 and 2 on call, both ask at once):
 5. Nobody is on call:
 
 ```text
-Assertion Failed: nobody is on call: the last on-call doctors went off call together
+Assertion Failed: PSpec/OnCall.p:79:5 nobody is on call after doctor 2 went off call
 ```
+
+The message names whichever doctor committed last, 1 or 2, depending on the schedule.
 
 ## Why ordinary tests miss it
 
@@ -63,8 +88,8 @@ Tests run requests one at a time, and every sequential order is correct. Even a
 concurrency test needs both transactions to take their snapshots before either commits,
 a window of a few milliseconds. Unit tests against an in-memory store or SQLite (which
 serializes writers) cannot show it at all. And reviewers trust "it's in a transaction".
-The checker found it in the first schedule, because the model states what snapshot
-isolation actually does.
+The checker finds it quickly, because the model states what snapshot isolation
+actually does instead of assuming serializable transactions.
 
 ## The fix
 
@@ -78,36 +103,16 @@ Other fixes: lock the rows you read (`SELECT ... FOR UPDATE`), or run at true
 `SERIALIZABLE` (PostgreSQL's SSI validates read sets). All make the transactions
 conflict on what they read, not only on what they write.
 
-## Files
-
-| File | What it holds |
-| --- | --- |
-| [`PSpec/OnCall.p`](PSpec/OnCall.p) | `AlwaysSomeoneOnCall`: the rule after every commit, justified answers, every request answered (hot state) |
-| [`PSrc/SnapshotStore.p`](PSrc/SnapshotStore.p) | The database: snapshot reads, buffered writes, first committer wins. Shared |
-| [`PSrc/Doctor.p`](PSrc/Doctor.p) | Flawed: check the count, write only my row |
-| [`PSrc/RosterDoctor.p`](PSrc/RosterDoctor.p) | Fixed: also write the roster row, retry on conflict |
-| [`PTst/Tests.p`](PTst/Tests.p) | Drivers, `PhoneUpdate` (an unrelated transaction), test cases |
-
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcFixedBothOffCall` | Two on call, both ask at once | The write-skew race: one granted, one aborted, retried and refused | passes |
-| `tcFixedTwoOfThree` | Three on call, two ask at once | Both must be granted after the conflict and retry; a fix that refuses on contention fails | passes |
-| `tcFixedOneAfterAnother` | Doctor 1 goes off call, then doctor 2 asks | Lifecycle: the last doctor on call is refused | passes |
-| `tcFixedUnrelatedCommit` | A doctor goes off call while another transaction writes row 100 | Disjoint writes do not conflict: the store's conflict check is per row | passes |
-| `tcBugWriteSkew` | Flawed client, two on call, both ask | **Expected bug**: `nobody is on call` | Expected bug found |
-
 ## Run
 
 ```sh
-snappea check WriteSkew.pproj 'tcFixed*' --deny mutation
-snappea check WriteSkew.pproj tcBugWriteSkew   # succeeds only when the declared bug is found
+snappea check WriteSkew.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check WriteSkew.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 ## Bounds and omissions
 

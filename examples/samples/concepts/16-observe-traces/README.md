@@ -7,20 +7,61 @@ questions:
   - How do I write a spec that works for both the model and real logs?
 ---
 
-# Observe: the same spec on the model and on real logs
+# Observe: one order-lifecycle spec for the model and for real logs
 
 Model checking explores a model's schedules. It says nothing about whether the real
 service behaves like the model. `snappea observe` closes that gap: it runs the **same
-spec monitor** over events your application logged. This sample has one order-lifecycle
-spec, a small model that is checked with it, and JSON-lines logs, one valid and three
-broken.
+spec monitor** over events your application logged. Here an order can be paid,
+shipped or cancelled, and a cancel races the warehouse's shipping; one spec checks the
+model and four JSON-lines logs, one valid and three broken.
+
+**Contract:**
+
+- An order is paid only after it was placed and a payment was requested, for its full
+  amount, and never if a cancel was requested before any payment (`OrderLifecycle`).
+- A paid order ends shipped or refunded in full; an unpaid order can only be cancelled,
+  with nothing to refund (`OrderLifecycle`).
+- A placed order ends paid or cancelled, and a paid order ends shipped or refunded
+  (`OrderLifecycle` is hot in `Placed` and `Paid`).
+
+**Atomic primitives:** each order-service handler decides one request (place, pay,
+cancel, ship) for the order, like one database transaction on the order row.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSpec/OrderLifecycle.p`](PSpec/OrderLifecycle.p) | The spec, used by `snappea check` and `snappea observe` |
+| [`PSrc/OrderService.p`](PSrc/OrderService.p) | The modeled service and warehouse; cancel races shipping |
+| [`PTst/Tests.p`](PTst/Tests.p) | A customer that cancels before paying, or pays and may cancel |
+| [`logs/valid.jsonl`](logs/valid.jsonl) | Three orders: shipped; paid then refunded; cancelled before payment |
+| [`logs/paid-after-cancel.jsonl`](logs/paid-after-cancel.jsonl) | Cancel requested before payment, but the order was paid and shipped |
+| [`logs/never-shipped.jsonl`](logs/never-shipped.jsonl) | An order paid and never shipped or refunded |
+| [`logs/misspelled.jsonl`](logs/misspelled.jsonl) | `OrderShiped` instead of `OrderShipped` |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcCancelRacesShipping` | One customer: cancel then pay (a second browser tab), or pay and maybe cancel while the warehouse ships | The cancel must win before payment; after payment exactly one of ship or refund happens | Passes |
+
+The observe commands below are checked by hand, not by `check_samples.py`:
+
+| Command | Expected |
+| --- | --- |
+| `snappea observe --spec OrderLifecycle --check-hot --strict logs/valid.jsonl` | exit 0 |
+| `snappea observe --spec OrderLifecycle --check-hot --strict logs/paid-after-cancel.jsonl` | exit 1: `order 21 paid although it was cancelled before payment was requested` |
+| `snappea observe --spec OrderLifecycle logs/never-shipped.jsonl` | exit 0: without `--check-hot` the open order is not a failure |
+| `snappea observe --spec OrderLifecycle --check-hot logs/never-shipped.jsonl` | exit 1: `OrderLifecycle detected liveness bug in hot state 'Paid'` |
+| `snappea observe --spec OrderLifecycle --check-hot --strict logs/misspelled.jsonl` | exit 2: `Unknown event 'OrderShiped'` |
+| `snappea observe --spec OrderLifecycle --strict --key 99 logs/valid.jsonl` | exit 2: nothing checked |
 
 ## The concept
 
-- **One spec, two uses.** [`PSpec/OrderLifecycle.p`](PSpec/OrderLifecycle.p) observes
-  `OrderPlaced`, `OrderPaid`, `OrderShipped`, `OrderCancelled` and the client's
-  `PayRequested`/`CancelRequested`. The model announces them; the application logs them
-  with the same names and payloads.
+- **One spec, two uses.** `OrderLifecycle` observes `OrderPlaced`, `OrderPaid`,
+  `OrderShipped`, `OrderCancelled` and the client's `PayRequested` and
+  `CancelRequested`. The model announces them; the application logs them with the
+  same names and payloads.
 - **Keys give each entity its own monitor.** Every log line has a `key`; observe creates
   a fresh spec instance per key. Write the spec about *one* order, and log the order id
   as the key. (The model drives one order, so one instance is right there too.)
@@ -34,7 +75,7 @@ broken.
 Model checking finds design bugs in schedules you could not test; observation checks
 real executions, one at a time, with whatever happened in them. Use both.
 
-## Key lines
+## The key lines
 
 A log line ([`logs/valid.jsonl`](logs/valid.jsonl)):
 
@@ -46,49 +87,25 @@ The spec learns its order from the first event, because a client may log its req
 before the service logs the order:
 
 ```p
-fun Same(o: int) {
+fun MatchOrder(o: int) {
   if (!known) { order = o; known = true; }
   assert o == order, format("event for order {0} reached the monitor of order {1}", o, order);
 }
 ```
 
-## Files
+Helper functions get their own names: the spec's `NotePayRequest` and
+`NoteCancelRequest` handle the `PayRequested` and `CancelRequested` events, and the
+driver's `SendPay` and `SendCancel` send `Pay` and `Cancel`. A function never shares a
+name with an event.
 
-| File | What it holds |
-| --- | --- |
-| `PSpec/OrderLifecycle.p` | The spec, used by `snappea check` and `snappea observe` |
-| `PSrc/OrderService.p` | The modeled service and warehouse; cancel races shipping |
-| `PTst/Tests.p` | A customer that cancels before paying, or pays and may cancel |
-| `logs/valid.jsonl` | Three orders: shipped; paid then refunded; cancelled before payment |
-| `logs/paid-after-cancel.jsonl` | Cancel requested before payment, but the order was paid and shipped |
-| `logs/never-shipped.jsonl` | An order paid and never shipped or refunded |
-| `logs/misspelled.jsonl` | `OrderShiped` instead of `OrderShipped` |
-
-## Test cases and commands
-
-| Command | Expected |
-| --- | --- |
-| `snappea check --deny mutation` | `tcCancelRacesShipping` passes, all 156 schedules |
-| `snappea observe --spec OrderLifecycle --check-hot --strict logs/valid.jsonl` | exit 0 |
-| `snappea observe --spec OrderLifecycle --check-hot --strict logs/paid-after-cancel.jsonl` | exit 1: `order 21 paid although it was cancelled before payment was requested` |
-| `snappea observe --spec OrderLifecycle logs/never-shipped.jsonl` | exit 0: without `--check-hot` the open order is not a failure |
-| `snappea observe --spec OrderLifecycle --check-hot logs/never-shipped.jsonl` | exit 1: `liveness bug in hot state 'Paid'` |
-| `snappea observe --spec OrderLifecycle --check-hot --strict logs/misspelled.jsonl` | exit 2: unknown event |
-| `snappea observe --spec OrderLifecycle --strict --key 99 logs/valid.jsonl` | exit 2: nothing checked |
-
-`check_samples.py` checks the model only; the observe commands above were run by hand.
-
-## What the checker shows
-
-Output excerpts illustrate the report; counts, timings and source lines vary with
-the checker version and run budget. Read the current result before claiming exhaustiveness.
+## Reading the output
 
 The valid log covers the whole spec, so the logs exercised every rule:
 
 ```text
 $ snappea observe --spec OrderLifecycle --check-hot --strict logs/valid.jsonl
 ok    OrderLifecycle (12 events, 3 keys)
-      Coverage: 4/4 states, 25/25 statements, 4/4 branches, 9/9 event handlers, 4/4 condition outcomes, 3/3 transition pairs
+      Coverage: 4/4 states, 25/25 statements, 4/4 branches, 9/9 event handlers, 4/4 condition outcomes
 ```
 
 A violation names the key and the assertion:
@@ -96,7 +113,7 @@ A violation names the key and the assertion:
 ```text
 $ snappea observe --spec OrderLifecycle --check-hot --strict logs/paid-after-cancel.jsonl
 FAIL  OrderLifecycle (1 error; 5 events, 1 key)
-      key 21: Assertion failure: PSpec/OrderLifecycle.p:49:7 order 21 paid although it was cancelled before payment was requested
+      key 21: Assertion failure: PSpec/OrderLifecycle.p:57:7 order 21 paid although it was cancelled before payment was requested
 ```
 
 The open order, with `--check-hot`:
@@ -130,9 +147,19 @@ log never exercised: a log of only happy paths leaves the cancel handlers uncove
 ## Try this
 
 In `logs/valid.jsonl`, change order 8's refund from `"refunded": 12` to
-`"refunded": 10`. Observation fails with
-`key 8: Assertion failure: PSpec/OrderLifecycle.p:68:7 order 8 refunded 10 of 12` and
-exit 1.
+`"refunded": 10`. Observation fails with exit 1:
+
+```text
+key 8: Assertion failure: PSpec/OrderLifecycle.p:80:7 order 8 refunded 10 of 12
+```
+
+## Run
+
+```sh
+cd examples/samples/concepts/16-observe-traces
+snappea check --deny mutation
+snappea observe --spec OrderLifecycle --check-hot --strict logs/valid.jsonl
+```
 
 ## Bounds and omissions
 
@@ -146,3 +173,5 @@ give each key one writer or a logical clock (see docs/observe.md).
 Emit the six events from the service and client with the order id as the key (the
 language helpers in docs/language-support.md write this format), run the integration
 tests, then run `snappea observe --all-specs --check-hot --strict` on the events folder.
+To force the race, hold the warehouse's ship call until the customer's cancel has been
+sent.

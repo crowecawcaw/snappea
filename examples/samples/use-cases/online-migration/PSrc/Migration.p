@@ -6,7 +6,7 @@
 event BeginWrite: machine;
 event WriteGranted;
 event EndWrite;
-event Route: (client: machine, key: int);
+event Route: (client: machine, reader: int, key: int);
 event ReadDone;
 event CutoverReq: machine;
 event CutoverDone;
@@ -35,7 +35,7 @@ machine Router {
       send writer, WriteGranted;
     }
     on EndWrite do { writes = writes - 1; }
-    on Route do (r: (client: machine, key: int)) {
+    on Route do (r: (client: machine, reader: int, key: int)) {
       reads = reads + 1;
       if (readsFromNew) {
         send newStore, ReadRow, r;
@@ -85,7 +85,7 @@ machine Writer {
   var ops: seq[Op];
   var op: Op;
 
-  start state Next {
+  start state Starting {
     entry (input: (router: machine, oldStore: OldStore, newStore: machine, ops: seq[Op])) {
       router = input.router;
       oldStore = input.oldStore;
@@ -135,7 +135,7 @@ machine Reader {
       left = input.reads;
       Next();
     }
-    on Row do (r: (key: int, row: Row)) {
+    on RowRead do (r: (key: int, row: Row)) {
       announce ReadSeen, (reader = id, key = r.key, row = r.row);
       send router, ReadDone;
       Next();
@@ -146,7 +146,7 @@ machine Reader {
     if (left > 0) {
       left = left - 1;
       announce ReadStarted, (reader = id, key = key);
-      send router, Route, (client = this, key = key);
+      send router, Route, (client = this, reader = id, key = key);
     }
   }
 }
@@ -168,7 +168,7 @@ machine Migrator {
       todo = input.scan;
       Next();
     }
-    on Row do (r: (key: int, row: Row)) {
+    on RowRead do (r: (key: int, row: Row)) {
       send newStore, Copy, (client = this, key = r.key, row = r.row);
     }
     on NewWritten do { Next(); }
@@ -182,7 +182,7 @@ machine Migrator {
       send router, CutoverReq, this;
       return;
     }
-    send oldStore, ReadRow, (client = this, key = todo[0]);
+    send oldStore, ScanRow, (client = this, key = todo[0]);
     todo -= (0);
   }
 }

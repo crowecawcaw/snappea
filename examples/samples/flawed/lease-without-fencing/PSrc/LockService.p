@@ -65,7 +65,10 @@ machine LockService {
 }
 
 // The lease's expiry. It fires once, at a moment the scheduler picks: before the
-// holder writes, between its writes, or after it released the lease.
+// holder writes, between its writes, or after it released the lease. When it fires is
+// the environment's choice, so it is a driver (not mutated); it stays next to the
+// lock service, which arms one per grant.
+// snappea: driver
 machine LeaseTimer {
   start state Armed {
     entry (t: (service: LockService, token: int)) {

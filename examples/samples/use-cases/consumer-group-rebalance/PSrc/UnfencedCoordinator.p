@@ -1,7 +1,7 @@
 // A plausible broken coordinator, kept as a negative control: it accepts every commit,
-// whatever its generation (offset fetches are still fenced). A consumer that was expelled keeps processing its old
-// partition; its late commit is accepted after the new owner committed further, and
-// moves the offset back. tcBugNoGenerationCheck shows the contract catching it.
+// whatever its generation (offset fetches are still fenced). A consumer that was
+// expelled keeps processing its old partition; its late commit is accepted after the
+// new owner committed further, and moves the offset back. tcBugNoGenerationCheck shows the contract catching it.
 machine UnfencedCoordinator {
   var partitions: int;
   var gen: int;
@@ -15,6 +15,7 @@ machine UnfencedCoordinator {
       partitions = n;
     }
     on Join do (j: (consumer: machine, id: int)) {
+      if (j.id in order) { return; }
       members[j.id] = j.consumer;
       order += (sizeof(order), j.id);
       Rebalance();
@@ -26,18 +27,16 @@ machine UnfencedCoordinator {
       var offset: int;
       if (f.partition in committed) { offset = committed[f.partition]; }
       if (f.gen == gen && f.partition in owner && owner[f.partition] == f.id) {
-        announce FetchServed, (partition = f.partition, gen = f.gen, member = f.id);
-        send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = true, offset = offset);
+        send f.consumer, Fetched, (member = f.id, gen = f.gen, partition = f.partition, ok = true, offset = offset);
         return;
       }
-      announce FetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
-      send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
+      send f.consumer, Fetched, (member = f.id, gen = f.gen, partition = f.partition, ok = false, offset = 0);
     }
     on Commit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
       // BUG: no generation or ownership check.
       committed[c.partition] = c.offset;
       announce OffsetCommitted, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
-      send c.consumer, CommitResponse, (gen = c.gen, partition = c.partition, ok = true);
+      send c.consumer, CommitResponse, (member = c.id, gen = c.gen, partition = c.partition, offset = c.offset, ok = true);
     }
   }
 

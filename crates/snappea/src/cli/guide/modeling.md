@@ -1,3 +1,12 @@
+---
+diataxis: explanation
+personas: [application-developer, coding-agent]
+questions:
+  - What part of a design should I model, and at what level of detail?
+  - Which atomic steps and interference must the model keep?
+  - How do I keep the search small without hiding the bug?
+---
+
 # Model the risky boundary
 
 ## Scope
@@ -30,6 +39,7 @@
 - Split fault classes (loss, duplication, crash) into separate tests unless the bug needs them together.
 - To force one rare order, add a test-only holder machine that keeps one message until another actor finishes, then releases it. That test runs a few schedules instead of thousands.
 - When a search does not finish, `snappea check` says where schedules branch: the machines ready at scheduling points, and the `$`/`choose` choices made, per schedule. Reduce the top ones first. `snappea check -v` prints this for every test case.
+- Read the sampled collection-size ranges alongside the branching counts (`-v` also shows them for completed tests; JSON uses `collection_sizes`). They name the top-level map, set and sequence fields, including spec history, whose sampled contents were largest. A range combines instances and schedules: it shows observed sizes, not unbounded growth or a cause. Summarize completed operations where that keeps every property the spec checks; keep the IDs and history the contract needs.
 
 ## Compare with implementation
 
@@ -37,12 +47,3 @@
 - An atomic commit-pointer model alone does not validate candidate construction or CAS retry logic; model those stages if risky.
 - For bounded records and larger logical operations, represent splitting plus publication. Separately test actual encoded sizes in the implementation.
 - Replay and reduce counterexamples before adding realism. A passing finite search covers only represented transitions and bounds.
-
-
-When a search is incomplete, inspect the sampled collection-size ranges alongside
-branching counts (`-v` also shows them for completed tests; JSON uses
-`collection_sizes`). They identify top-level map/set/sequence fields, including spec
-history, whose sampled contents were largest. A range combines different instances
-and schedules: it is evidence of observed sizes, not proof of unbounded growth or a
-causal ranking. Check whether completed operations can be summarized without losing
-a property the spec checks. Retain IDs or history that the contract actually needs.

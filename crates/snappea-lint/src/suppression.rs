@@ -1,4 +1,4 @@
-use crate::{visit, Context, Finding, Rule};
+use crate::{visit, Context, Finding, LintSuppression, Rule, SuppressionUse, UNUSED_SUPPRESSION};
 use snappea_syntax::{ast::*, lexer, FileId, Span};
 
 /// Mutation kinds a `mutation:<kind>` suppression may name (see `snappea check`).
@@ -22,10 +22,86 @@ fn is_program_rule(id: &str) -> bool {
     crate::PROGRAM_RULES.iter().any(|(r, _)| *r == id)
 }
 
-/// The scopes `// snappea-lint: allow` comments give rules of [`crate::PROGRAM_RULES`],
-/// with the rule each allows.
-pub fn program_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
-    allowed_ids(directives(ctx, &|_| true).0).filter(|(_, id)| is_program_rule(id)).collect()
+/// The `// snappea-lint: allow` suppressions of rules of [`crate::PROGRAM_RULES`].
+pub fn program_suppressions(ctx: &Context<'_>) -> Vec<LintSuppression> {
+    commented_directives(ctx, &|_| true)
+        .0
+        .into_iter()
+        .filter(|((_, id, _), _)| is_program_rule(id))
+        .map(|((scope, rule, _), comment)| LintSuppression { comment, scope, rule })
+        .collect()
+}
+
+/// The `// snappea-lint: allow` suppressions of lint rules: `rules` and
+/// [`crate::PROGRAM_RULES`], not coverage or mutation testing.
+pub fn lint_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<LintSuppression> {
+    commented_directives(ctx, &|_| true)
+        .0
+        .into_iter()
+        .filter(|((_, id, _), _)| is_program_rule(id) || rules.iter().any(|r| r.id() == id))
+        .map(|((scope, rule, _), comment)| LintSuppression { comment, scope, rule })
+        .collect()
+}
+
+/// [`UNUSED_SUPPRESSION`] advisories for `/* snappea-lint: ... */` and `/* snappea: ... */`
+/// block comments: only `//` line comments are read, so these do nothing.
+pub fn block_comment_suppressions(ctx: &Context<'_>) -> Vec<Finding> {
+    let mut out = Vec::new();
+    for (i, file) in ctx.sources.files().iter().enumerate() {
+        let id = FileId(i as u32);
+        let Ok(tokens) = lexer::lex(id, &file.text) else {
+            continue;
+        };
+        let mut gap = |from: usize, to: usize| {
+            block_comments(&file.text, from, to, &mut |start, len, body| {
+                let body = body.trim();
+                if !body.starts_with("snappea-lint:") && !body.starts_with("snappea:") {
+                    return;
+                }
+                out.push(
+                    Finding::new(
+                        UNUSED_SUPPRESSION,
+                        Span::new(id, start as u32, (start + len) as u32),
+                        "this block comment is not read as a lint directive; only `//` line comments are",
+                    )
+                    .with_help(format!("write it as a line comment on its own line: `// {}`", body)),
+                );
+            })
+        };
+        let mut end = 0;
+        for token in &tokens {
+            if token.span.start > end {
+                gap(end as usize, token.span.start as usize);
+            }
+            end = token.span.end;
+        }
+        gap(end as usize, file.text.len());
+    }
+    out
+}
+
+/// Calls `f(start, length, body)` for every `/* ... */` comment between `start` and `end`.
+fn block_comments(text: &str, start: usize, end: usize, f: &mut impl FnMut(usize, usize, &str)) {
+    let bytes = text.as_bytes();
+    let mut i = start;
+    while i + 1 < end {
+        if &bytes[i..i + 2] == b"//" {
+            while i < end && !matches!(bytes[i], b'\n' | b'\r') {
+                i += 1;
+            }
+        } else if &bytes[i..i + 2] == b"/*" {
+            let a = i;
+            i += 2;
+            while i + 1 < end && &bytes[i..i + 2] != b"*/" {
+                i += 1;
+            }
+            let body_end = i.min(end);
+            i = (i + 2).min(end);
+            f(a, i - a, &text[a + 2..body_end]);
+        } else {
+            i += 1;
+        }
+    }
 }
 
 fn is_mutation(id: &str) -> bool {
@@ -37,17 +113,21 @@ fn is_mutation(id: &str) -> bool {
             .is_some_and(|k| MUTATIONS.contains(&k))
 }
 
-pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) {
-    let (allowed, invalid) = directives(ctx, &|id| {
+/// Removes the findings a suppression covers and adds the malformed suppressions and
+/// directives. Returns the suppressions that removed a finding.
+pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) -> Vec<SuppressionUse> {
+    let (allowed, invalid) = commented_directives(ctx, &|id| {
         rules.iter().any(|r| r.id() == id) || id == "coverage" || is_mutation(id) || is_program_rule(id)
     });
+    let mut used = Vec::new();
     findings.retain(|f| {
-        !allowed
-            .iter()
-            .any(|(s, id, _)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
+        let by: Vec<_> = allowed.iter().filter(|((s, id, _), _)| id == f.rule && s.contains(f.span)).collect();
+        used.extend(by.iter().map(|((_, id, _), comment)| SuppressionUse { comment: *comment, rule: id.clone() }));
+        by.is_empty()
     });
     findings.extend(invalid);
     findings.extend(snappea_directives(ctx).1);
+    used
 }
 
 /// The machines marked `// snappea: driver`: test code that drives the model, as the
@@ -93,7 +173,10 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>, Vec<TestIn
             let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
             let target = tests.iter().find(|t| t.file == id && Some(t.start) == next);
             let Some(target) = target.filter(|_| text[line_start..start].trim().is_empty()) else {
-                invalid.push(bad("put the test intent directive on its own line directly before a test declaration"));
+                invalid.push(
+                    bad("test intent directive is not on its own line directly before a test declaration")
+                        .with_help("move it to its own line directly above the `test` it describes"),
+                );
                 return;
             };
             let value = if word == "expect-bug" {
@@ -107,7 +190,9 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>, Vec<TestIn
                     .map(str::to_owned)
             };
             let Some(value) = value else {
-                invalid.push(bad("use '// snappea: expect-bug \"failure text\"' or '// snappea: boundary -- reason', with nonempty text"));
+                invalid.push(bad("test intent directive has no text").with_help(
+                    "write `// snappea: expect-bug \"failure text\"` (a JSON-quoted string) or `// snappea: boundary -- reason`",
+                ));
                 return;
             };
             let i = intents.iter().position(|t| t.span == *target).unwrap_or_else(|| {
@@ -116,7 +201,10 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>, Vec<TestIn
             });
             let slot = if word == "expect-bug" { &mut intents[i].expected_bug } else { &mut intents[i].boundary };
             if slot.is_some() {
-                invalid.push(bad("duplicate test intent directive; declare each intent once"));
+                invalid.push(
+                    bad("duplicate test intent directive")
+                        .with_help("declare each intent once per test; remove this one"),
+                );
             } else {
                 *slot = Some(value);
             }
@@ -124,16 +212,22 @@ fn snappea_directives(ctx: &Context<'_>) -> (Vec<Span>, Vec<Finding>, Vec<TestIn
         }
         let directive = directive.split_once("--").map_or(directive, |(d, _)| d).trim();
         if directive != "driver" {
-            invalid.push(bad(
-                "unknown snappea directive; use driver before a machine, or expect-bug/boundary before a test",
-            ));
+            let finding = bad(&format!("unknown snappea directive '{}'", word));
+            invalid.push(match snappea_syntax::closest(word, ["driver", "expect-bug", "boundary"]) {
+                Some(near) => finding.with_help(format!("did you mean `{}`?", near)),
+                None => finding
+                    .with_help("use `// snappea: driver` before a machine, or `expect-bug`/`boundary` before a test"),
+            });
             return;
         }
         let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
         let target = machines.iter().find(|m| m.file == id && Some(m.start) == next);
         match target {
             Some(m) if text[line_start..start].trim().is_empty() => marked.push(*m),
-            _ => invalid.push(bad("put '// snappea: driver' on its own line directly before a machine declaration")),
+            _ => invalid.push(
+                bad("driver directive is not on its own line directly before a machine declaration")
+                    .with_help("move `// snappea: driver` to its own line directly above the `machine` it marks"),
+            ),
         }
     });
     (marked, invalid, intents)
@@ -269,6 +363,12 @@ fn scopes(ctx: &Context<'_>) -> Vec<Span> {
 }
 
 fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>, Vec<Finding>) {
+    let (allowed, invalid) = commented_directives(ctx, known);
+    (allowed.into_iter().map(|(a, _)| a).collect(), invalid)
+}
+
+/// [`directives`], with the span of the comment each suppression comes from.
+fn commented_directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<(Allowed, Span)>, Vec<Finding>) {
     let scopes = scopes(ctx);
     let mut allowed = Vec::new();
     let mut invalid = Vec::new();
@@ -281,44 +381,67 @@ fn directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec<Allowed>,
         let mut end = 0;
         for token in &tokens {
             if token.span.start > end {
-                comments(&file.text, end as usize, token.span.start as usize, &mut |start, text| {
-                    let Some(text) = text.trim().strip_prefix("snappea-lint:") else {
+                comments(&file.text, end as usize, token.span.start as usize, &mut |start, comment| {
+                    let Some(text) = comment.trim().strip_prefix("snappea-lint:") else {
                         return;
                     };
-                    let span = Span::new(id, start as u32, (start + text.len()) as u32);
+                    // the whole comment, from `//`
+                    let span = Span::new(id, start as u32, (start + 2 + comment.trim_end().len()) as u32);
                     let bad = |message: &str| Finding::new("invalid-suppression", span, message);
                     let Some(ids) = text.trim().strip_prefix("allow ") else {
-                        invalid.push(bad("expected '// snappea-lint: allow rule-id[, rule-id] -- reason'"));
+                        invalid.push(
+                            bad("malformed lint suppression")
+                                .with_help("write `// snappea-lint: allow rule-id[, rule-id] -- reason`"),
+                        );
                         return;
                     };
                     let (ids, reason) =
                         ids.split_once("--").map_or((ids, None), |(ids, reason)| (ids, Some(reason.trim())));
                     let ids = expand_mutation_kinds(ids.trim().split(',').map(str::trim));
                     let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-                    if ids.iter().any(|id| !known(id)) {
-                        invalid.push(bad("unknown or empty lint rule ID in suppression"));
+                    if let Some(unknown) = ids.iter().find(|id| !known(id)) {
+                        let finding = if unknown.is_empty() {
+                            bad("empty lint rule ID in suppression").with_help(
+                                "name each rule to allow, separated by commas: `allow rule-a, rule-b -- reason`",
+                            )
+                        } else {
+                            let mut candidates: Vec<&str> = crate::rule_ids();
+                            candidates.extend(["coverage", "mutation", "mutation-nested"]);
+                            let kinds: Vec<String> = MUTATIONS.iter().map(|k| format!("mutation:{k}")).collect();
+                            candidates.extend(kinds.iter().map(String::as_str));
+                            let finding = bad(&format!("unknown lint rule ID '{}' in suppression", unknown));
+                            match snappea_syntax::closest(unknown, candidates) {
+                                Some(near) => finding.with_help(format!("did you mean `{}`?", near)),
+                                None => finding,
+                            }
+                        };
+                        invalid.push(finding);
                         return;
                     }
                     if ids.contains(&"coverage") && !reason.is_some_and(|reason| !reason.is_empty()) {
-                        invalid.push(bad("coverage suppression needs a reason after '--'"));
+                        invalid.push(bad("coverage suppression has no reason after '--'").with_help(
+                            "say why the code need not be covered, e.g. `// snappea-lint: allow coverage -- exercised by the Python suite`",
+                        ));
                         return;
                     }
                     // Suppression must be a standalone comment before the node.
                     let line_start = file.text[..start].rfind('\n').map_or(0, |n| n + 1);
                     if !file.text[line_start..start].trim().is_empty() {
-                        invalid
-                            .push(bad("put the lint suppression on its own line before the declaration or statement"));
+                        invalid.push(
+                            bad("lint suppression shares its line with code, so it covers nothing")
+                                .with_help("move the comment to its own line directly above the code it covers"),
+                        );
                         return;
                     }
                     let target =
                         scopes.iter().filter(|s| s.file == id && s.start == token.span.start).max_by_key(|s| s.end);
                     if let Some(target) = target {
                         for rule in ids {
-                            allowed.push((*target, rule.to_string(), reason.unwrap_or_default().to_string()));
+                            allowed.push(((*target, rule.to_string(), reason.unwrap_or_default().to_string()), span));
                         }
                     } else {
-                        invalid.push(bad(
-                            "lint suppression must precede a machine, test, implementation, enum, state, handler, field, function, or statement",
+                        invalid.push(bad("lint suppression is not followed by code it can cover").with_help(
+                            "put it directly above a machine, test, implementation, enum, state, handler, field, function or statement",
                         ));
                     }
                 });

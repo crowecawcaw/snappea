@@ -64,13 +64,13 @@ spec ChargesResolved observes Charged, Sold, Refunded {
   var resolved: set[int];
 
   start state Settled {
-    on Charged do (p: (hold: int)) { Charge(p.hold); goto Owing; }
+    on Charged do (p: (hold: int)) { OpenCharge(p.hold); goto Owing; }
     on Sold do { assert false, "seat sold with no open charge"; }
     on Refunded do { assert false, "refund with no open charge"; }
   }
 
   hot state Owing {
-    on Charged do (p: (hold: int)) { Charge(p.hold); }
+    on Charged do (p: (hold: int)) { OpenCharge(p.hold); }
     on Sold do (p: (seat: int, hold: int)) {
       Resolve(p.hold);
       if (sizeof(open) == 0) { goto Settled; }
@@ -81,7 +81,7 @@ spec ChargesResolved observes Charged, Sold, Refunded {
     }
   }
 
-  fun Charge(hold: int) {
+  fun OpenCharge(hold: int) {
     assert !(hold in open) && !(hold in resolved), format("hold {0} charged twice", hold);
     open += (hold);
   }

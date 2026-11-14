@@ -83,7 +83,7 @@ machine Instance {
       announce Accepted, (id = w.id, inst = id);
       send this, Finish, w.id;
     }
-    on Finish do (r: int) { Finish(r); }
+    on Finish do (r: int) { Complete(r); }
     on Drain do (from: machine) {
       autoscaler = from;
       announce DrainStarted, (inst = id,);
@@ -93,27 +93,27 @@ machine Instance {
   }
 
   state Draining {
-    on Work do (w: WorkRequest) { Bounce(w); }
+    on Work do (w: WorkRequest) { Refuse(w); }
     on Finish do (r: int) {
-      Finish(r);
+      Complete(r);
       ReportIfDrained();
     }
     on Terminate do {
       announce Terminated, (inst = id,);
-      goto Terminated;
+      goto Gone;
     }
   }
 
   // The process is gone and says nothing. A request still in transit gets
   // "connection refused", which the load balancer treats as a bounce: modeled as the
   // bounce reaching the load balancer without the instance announcing anything.
-  state Terminated {
+  state Gone {
     on Work do (w: WorkRequest) {
       send lb, Bounce, w;
     }
   }
 
-  fun Finish(r: int) {
+  fun Complete(r: int) {
     var client: machine;
     client = inFlight[r];
     inFlight -= (r);
@@ -121,7 +121,7 @@ machine Instance {
     send client, Response, (id = r,);
   }
 
-  fun Bounce(w: WorkRequest) {
+  fun Refuse(w: WorkRequest) {
     announce Bounced, (id = w.id, inst = id);
     send lb, Bounce, w;
   }

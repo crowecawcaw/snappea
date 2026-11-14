@@ -14,8 +14,14 @@ impl Rule for PermissiveMonitor {
     fn check(&self, ctx: &Context<'_>, out: &mut Vec<Finding>) {
         for m in ctx.machines().filter(|m| m.kind == MachineKind::Spec) {
             if permissive(m) {
-                out.push(Finding::new(self.id(), m.name.span, format!(
-                    "spec '{}' accepts every sequence of its observed events; add a safety check or progress obligation", m.name.name)));
+                out.push(Finding::new(
+                    self.id(),
+                    m.name.span,
+                    format!(
+                        "spec '{}' accepts every sequence of its observed events, so it can never fail",
+                        m.name.name
+                    ),
+                ));
             }
         }
     }

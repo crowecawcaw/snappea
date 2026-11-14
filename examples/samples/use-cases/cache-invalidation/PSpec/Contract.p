@@ -71,12 +71,12 @@ spec CacheFresh observes DatabaseCommitted, Invalidated, CacheMiss, CacheFilled,
       assert p.value in committed, format("write of {0} completed but was never committed", p.value);
       written = p.value;
     }
-    on Quiesced goto Quiesced;
+    on Quiesced goto Probing;
     on ProbeDone do { assert false, "probe finished before the clients quiesced"; }
   }
 
   // No writer is running any more: the cache must agree with the database.
-  state Quiesced {
+  state Probing {
     on DatabaseCommitted do { assert false, "write committed after quiescence"; }
     on Invalidated do { assert false, "invalidation after quiescence"; }
     on CacheMiss do { Missed(); }

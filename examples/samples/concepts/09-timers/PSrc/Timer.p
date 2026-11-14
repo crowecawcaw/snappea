@@ -27,8 +27,9 @@ machine Timer {
 
   state Fired {
     entry {
-      send holder, Timeout, tag;
+      // Announce before the send, like the server's Replied.
       announce TimerFired, tag;
+      send holder, Timeout, tag;
     }
     // The holder cancelled after we fired: too late.
     ignore Cancel;

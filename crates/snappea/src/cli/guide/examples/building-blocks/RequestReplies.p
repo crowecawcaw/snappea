@@ -12,23 +12,23 @@ spec BBRequestReplies observes BBPlan, BBRequested, BBReplied {
 
   start hot state AwaitingPlan {
     on BBPlan goto RepliesPending with (count: int) {
-      assert count > 0, "plan must contain at least one request";
+      assert count > 0, format("plan of {0} requests must contain at least one request", count);
       planned = count;
     }
-    on BBRequested do { assert false, "request before plan"; }
-    on BBReplied do { assert false, "reply before plan"; }
+    on BBRequested do (id: int) { assert false, format("request {0} before plan", id); }
+    on BBReplied do (id: int) { assert false, format("reply for request {0} before plan", id); }
   }
 
   hot state RepliesPending {
     on BBPlan do { assert false, "plan announced twice"; }
     on BBRequested do (id: int) {
-      assert !(id in requested), "logical request ID reused";
-      assert sizeof(requested) < planned, "more requests than planned";
+      assert !(id in requested), format("logical request ID {0} reused", id);
+      assert sizeof(requested) < planned, format("request {0} is more requests than the {1} planned", id, planned);
       requested += (id);
     }
     on BBReplied do (id: int) {
-      assert id in requested, "reply for an unknown request";
-      assert !(id in replied), "duplicate terminal reply";
+      assert id in requested, format("reply for an unknown request {0}", id);
+      assert !(id in replied), format("duplicate terminal reply for request {0}", id);
       replied += (id);
       if (sizeof(replied) == planned) { goto Settled; }
     }
@@ -36,7 +36,7 @@ spec BBRequestReplies observes BBPlan, BBRequested, BBReplied {
 
   cold state Settled {
     on BBPlan do { assert false, "plan announced twice"; }
-    on BBRequested do { assert false, "request after plan settled"; }
-    on BBReplied do { assert false, "duplicate terminal reply"; }
+    on BBRequested do (id: int) { assert false, format("request {0} after plan settled", id); }
+    on BBReplied do (id: int) { assert false, format("duplicate terminal reply for request {0}", id); }
   }
 }

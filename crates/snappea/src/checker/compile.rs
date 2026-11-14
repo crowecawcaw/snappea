@@ -35,6 +35,55 @@ pub struct Code {
     /// The default values of each machine's fields, indexed by `MachineId`. Values are
     /// copy-on-write, so new machines share them.
     pub field_defaults: Vec<Vec<crate::checker::value::Value>>,
+    /// What the program-state hash leaves out.
+    pub unhashed: Unhashed,
+}
+
+/// Values no check depends on (see [`crate::checker::checked`]), which the
+/// program-state hash ([`crate::checker::statehash`]) leaves out: they cannot change how
+/// the program continues, so two states that differ only in them have the same futures.
+/// Without this, a write-only counter would make every state new, so the exhaustive
+/// search could neither finish nor close the cycle of a liveness bug.
+#[derive(Debug, Clone, Default)]
+pub struct Unhashed {
+    /// Per machine (spec monitors included), per field: whether it is left out. Empty
+    /// when every field of the machine is hashed.
+    pub fields: Vec<Vec<bool>>,
+    /// Per event: whether its payloads are left out.
+    pub payloads: Vec<bool>,
+    /// Per root function, per frame slot: whether every variable in the slot is left
+    /// out. Empty when every slot is hashed.
+    pub locals: Vec<Vec<bool>>,
+}
+
+impl Unhashed {
+    pub fn new(prog: &Program) -> Unhashed {
+        use crate::checker::checked::Node;
+        let checked = crate::checker::checked::analyze(prog);
+        let unchecked = |v: VarId| !checked.checked(Node::Var(v));
+        let nonempty = |mask: Vec<bool>| if mask.contains(&true) { mask } else { Vec::new() };
+        let fields = prog.machines.iter().map(|m| nonempty(m.fields.iter().map(|v| unchecked(*v)).collect())).collect();
+        let payloads =
+            (0..prog.events.len()).map(|e| !checked.checked(Node::Payload(crate::sema::EventId(e as u32)))).collect();
+        // receive-case handlers keep their variables in the frame of their root function
+        let mut slots: Vec<Vec<Option<bool>>> = vec![Vec::new(); prog.funs.len()];
+        for (i, f) in prog.funs.iter().enumerate() {
+            let mut root = FunId(i as u32);
+            while let Some(parent) = prog.fun(root).parent {
+                root = parent;
+            }
+            let mask = &mut slots[root.idx()];
+            for v in f.params.iter().chain(&f.locals) {
+                let slot = prog.var(*v).slot as usize;
+                if mask.len() <= slot {
+                    mask.resize(slot + 1, None);
+                }
+                mask[slot] = Some(mask[slot].unwrap_or(true) && unchecked(*v));
+            }
+        }
+        let locals = slots.into_iter().map(|m| nonempty(m.into_iter().map(|u| u == Some(true)).collect())).collect();
+        Unhashed { fields, payloads, locals }
+    }
 }
 
 impl Code {
@@ -92,7 +141,7 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         .iter()
         .map(|m| m.fields.iter().map(|v| crate::checker::value::default_value(&prog.var(*v).ty, prog)).collect())
         .collect();
-    Code { funs, permissions, probes, action_names, field_defaults }
+    Code { funs, permissions, probes, action_names, field_defaults, unhashed: Unhashed::new(prog) }
 }
 
 /// Rewrites calls of functions whose code is just `ReturnNull` to `CallEmpty`.

@@ -13,9 +13,10 @@ event LeaveGroup: (id: int);
 event Expire: (id: int);
 event Assignment: (gen: int, partitions: seq[int]);
 event Fetch: (consumer: machine, id: int, gen: int, partition: int);
-event Fetched: (gen: int, partition: int, ok: bool, offset: int);
+// Replies echo the member, generation and partition of the request.
+event Fetched: (member: int, gen: int, partition: int, ok: bool, offset: int);
 event Commit: (consumer: machine, id: int, gen: int, partition: int, offset: int);
-event CommitResponse: (gen: int, partition: int, ok: bool);
+event CommitResponse: (member: int, gen: int, partition: int, offset: int, ok: bool);
 
 machine Coordinator {
   var partitions: int;
@@ -32,9 +33,9 @@ machine Coordinator {
       partitions = n;
     }
     on Join do (j: (consumer: machine, id: int)) {
-      // Only a non-member rejoins. A member fenced by a newer generation got that
-      // generation's assignment before the rejection (messages from the coordinator
-      // arrive in order), so it drops the stale rejection instead of rejoining.
+      // A retried join from a current member changes nothing: every generation's
+      // assignment was already sent to every member, so its assignment is on its way.
+      if (j.id in order) { return; }
       members[j.id] = j.consumer;
       order += (sizeof(order), j.id);
       Rebalance();
@@ -45,25 +46,20 @@ machine Coordinator {
     // expelled while it had nothing left to commit still finds out and rejoins.
     on Fetch do (f: (consumer: machine, id: int, gen: int, partition: int)) {
       if (Owns(f.id, f.gen, f.partition)) {
-        // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-        announce FetchServed, (partition = f.partition, gen = f.gen, member = f.id);
-        send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = true, offset = Committed(f.partition));
+        send f.consumer, Fetched, (member = f.id, gen = f.gen, partition = f.partition, ok = true, offset = Committed(f.partition));
         return;
       }
-      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce FetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
-      send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
+      send f.consumer, Fetched, (member = f.id, gen = f.gen, partition = f.partition, ok = false, offset = 0);
     }
     on Commit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
       if (Owns(c.id, c.gen, c.partition)) {
+        // commit point: the offset write
         committed[c.partition] = c.offset;
         announce OffsetCommitted, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
-        send c.consumer, CommitResponse, (gen = c.gen, partition = c.partition, ok = true);
+        send c.consumer, CommitResponse, (member = c.id, gen = c.gen, partition = c.partition, offset = c.offset, ok = true);
         return;
       }
-      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce CommitRejected, (partition = c.partition, gen = c.gen, member = c.id);
-      send c.consumer, CommitResponse, (gen = c.gen, partition = c.partition, ok = false);
+      send c.consumer, CommitResponse, (member = c.id, gen = c.gen, partition = c.partition, offset = c.offset, ok = false);
     }
   }
 

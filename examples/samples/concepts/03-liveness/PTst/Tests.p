@@ -37,6 +37,6 @@ machine TwoClientsDroppingServer {
 test tcTwoClients [main=TwoClients]:
   assert RequestsAnswered in { TwoClients, Client, Server, Worker };
 
-// snappea: expect-bug "liveness bug in hot state 'Waiting'"
+// snappea: expect-bug "RequestsAnswered detected liveness bug in hot state 'Waiting'"
 test tcBugDropsWhileBusy [main=TwoClientsDroppingServer]:
   assert RequestsAnswered in { TwoClientsDroppingServer, Client, DroppingServer, Worker };

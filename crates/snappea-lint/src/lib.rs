@@ -58,22 +58,50 @@ pub const PROGRAM_RULES: &[(&str, &str)] = &[
     ),
 ];
 
+/// The findings about `snappea-lint:` and `snappea:` comments themselves, with their
+/// descriptions. They cannot be suppressed: fix or remove the comment.
+pub const COMMENT_RULES: &[(&str, &str)] = &[
+    (
+        "invalid-suppression",
+        "A `// snappea-lint: allow` comment is malformed, names an unknown rule, or covers no code.",
+    ),
+    ("invalid-directive", "A `// snappea:` directive is unknown, malformed, or not before the declaration it marks."),
+    (
+        UNUSED_SUPPRESSION,
+        "Advisory: a lint suppression matches no finding in the code it covers, or is a block comment, which is not read.",
+    ),
+];
+
 /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
-/// comment covers.
-pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding>) -> Result<(), ParseError> {
+/// comment covers. Returns the suppressions that covered at least one finding.
+pub fn suppress_program_findings(
+    sources: &SourceMap,
+    findings: &mut Vec<Finding>,
+) -> Result<Vec<SuppressionUse>, ParseError> {
     let allowed = suppression::program_suppressions(&Context::parse(sources)?);
+    let mut used = Vec::new();
     findings.retain(|f| {
-        !allowed
-            .iter()
-            .any(|(s, id)| id == f.rule && s.file == f.span.file && s.start <= f.span.start && s.end >= f.span.end)
+        let by: Vec<_> = allowed.iter().filter(|s| s.rule == f.rule && s.scope.contains(f.span)).collect();
+        used.extend(by.iter().map(|s| SuppressionUse { comment: s.comment, rule: s.rule.clone() }));
+        by.is_empty()
     });
-    Ok(())
+    Ok(used)
 }
+
+/// The rule of the advisory about a lint suppression that has no effect: it matches no
+/// finding, or it is written in a form linting does not read.
+pub const UNUSED_SUPPRESSION: &str = "unused-suppression";
 
 /// Whether a rule reports an advisory rather than blocking a check. Advisory findings
 /// remain warnings even with `--deny lint`; source suppressions work as usual.
 pub fn is_advisory(rule: &str) -> bool {
-    matches!(rule, "shared-spec-helper" | "unused-design-payload-field" | "payload-field-checked-by-other-spec")
+    matches!(
+        rule,
+        "shared-spec-helper"
+            | "unused-design-payload-field"
+            | "payload-field-checked-by-other-spec"
+            | UNUSED_SUPPRESSION
+    )
 }
 
 /// An actionable diagnostic; advisory rules do not fail CLI linting.
@@ -82,12 +110,53 @@ pub struct Finding {
     pub rule: &'static str,
     pub span: Span,
     pub message: String,
+    /// The likely fix for this finding, when it is more specific than the rule's general
+    /// one (for example a suggested name).
+    pub help: Option<String>,
 }
 
 impl Finding {
     pub fn new(rule: &'static str, span: Span, message: impl Into<String>) -> Self {
-        Self { rule, span, message: message.into() }
+        Self { rule, span, message: message.into(), help: None }
     }
+
+    /// This finding with a specific likely fix (see [`Finding::help`]).
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+}
+
+/// A `// snappea-lint: allow` suppression of one lint rule: the comment, the code it
+/// covers, and the rule. Coverage and mutation suppressions are not lint suppressions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LintSuppression {
+    pub comment: Span,
+    pub scope: Span,
+    pub rule: String,
+}
+
+/// A suppression comment that removed a finding of `rule`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SuppressionUse {
+    pub comment: Span,
+    pub rule: String,
+}
+
+/// Every well-formed lint suppression of the sources (see [`LintSuppression`]), and the
+/// [`UNUSED_SUPPRESSION`] advisories for `/* snappea-lint: ... */` block comments, which
+/// linting does not read.
+pub fn lint_suppressions(sources: &SourceMap) -> Result<(Vec<LintSuppression>, Vec<Finding>), ParseError> {
+    let ctx = Context::parse(sources)?;
+    let registry = Registry::builtins();
+    Ok((suppression::lint_suppressions(&ctx, &registry.rules), suppression::block_comment_suppressions(&ctx)))
+}
+
+/// Every lint rule ID a suppression may name: the built-in source rules and
+/// [`PROGRAM_RULES`].
+pub fn rule_ids() -> Vec<&'static str> {
+    let registry = Registry::builtins();
+    registry.rules().map(|r| r.id()).chain(PROGRAM_RULES.iter().map(|(id, _)| *id)).collect()
 }
 
 /// Parsed files share the source map's file IDs. All project files must be included.
@@ -166,7 +235,7 @@ impl Registry {
     /// Rule IDs must be unique and may not use the reserved suppression diagnostic ID.
     pub fn register(&mut self, rule: impl Rule + 'static) {
         assert!(
-            !["invalid-suppression", "invalid-directive"].contains(&rule.id())
+            !["invalid-suppression", "invalid-directive", UNUSED_SUPPRESSION].contains(&rule.id())
                 && !self.rules.iter().any(|r| r.id() == rule.id()),
             "duplicate or reserved lint rule ID"
         );
@@ -182,6 +251,15 @@ impl Registry {
     }
 
     fn check_selected(&self, context: &Context<'_>, selections: Option<&[SpecSelection]>) -> Vec<Finding> {
+        self.check_selected_usage(context, selections).0
+    }
+
+    /// [`Registry::check_selected`], with the suppressions that removed a finding.
+    fn check_selected_usage(
+        &self,
+        context: &Context<'_>,
+        selections: Option<&[SpecSelection]>,
+    ) -> (Vec<Finding>, Vec<SuppressionUse>) {
         let mut findings = Vec::new();
         for rule in &self.rules {
             if rule.id() == "unused-payload-field" && selections.is_some() {
@@ -190,10 +268,10 @@ impl Registry {
                 rule.check(context, &mut findings);
             }
         }
-        suppression::apply(context, &self.rules, &mut findings);
+        let used = suppression::apply(context, &self.rules, &mut findings);
         findings.sort_by(|a, b| (a.span, a.rule, &a.message).cmp(&(b.span, b.rule, &b.message)));
         findings.dedup();
-        findings
+        (findings, used)
     }
 }
 
@@ -215,6 +293,20 @@ pub fn lint_with_spec_selections(
     selections: &[SpecSelection],
 ) -> Result<Vec<Finding>, ParseError> {
     Ok(Registry::builtins().check_selected(&Context::parse(sources)?, Some(selections)))
+}
+
+/// [`lint_with_spec_selections`], with the suppressions that removed a finding, for
+/// reporting suppressions that match nothing.
+pub fn lint_with_spec_selections_usage(
+    sources: &SourceMap,
+    selections: &[SpecSelection],
+) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
+    Ok(Registry::builtins().check_selected_usage(&Context::parse(sources)?, Some(selections)))
+}
+
+/// [`lint`], with the suppressions that removed a finding.
+pub fn lint_usage(sources: &SourceMap) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
+    Ok(Registry::builtins().check_selected_usage(&Context::parse(sources)?, None))
 }
 
 /// The rules checking logs against specs enforces (`snappea observe`, test libraries):

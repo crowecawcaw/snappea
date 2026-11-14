@@ -39,6 +39,8 @@ spec ExactlyOnce observes MessagesPlanned, Delivered, Acked {
 spec MessagesAcknowledged observes MessagesPlanned, Acked {
   var remaining: int;
 
+  // ExactlyOnce rejects an acknowledgement before the plan and a second plan, so this
+  // monitor drops them instead of repeating those checks.
   start state Idle {
     on MessagesPlanned goto Awaiting with (ids: set[int]) {
       remaining = sizeof(ids);

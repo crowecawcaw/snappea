@@ -8,21 +8,13 @@ fun startTimer(timer: Timer) {
   send timer, StartTimer;
 }
 
-fun cancelTimer(timer: Timer) {
-  send timer, CancelTimer;
-}
-
-fun restartTimer(timer: Timer) {
-  cancelTimer(timer);
-  startTimer(timer);
-}
-
 fun lastLogIndex(log: seq[ServerLog]): LogIndex {
   return sizeof(log) - 1;
 }
 
 fun getLogTerm(log: seq[ServerLog], index: int): int {
-  // get the term of the log entry at index.
+  // get the term of the log entry at index; 0 before the first entry
+  // snappea-lint: allow mutation:swap-operator -- `>` is equivalent: callers pass nextIndex - 1, and nextIndex never passes the end of the leader's log, because a follower's success reply reports a log it has just cut to the leader's entries
   if (index < 0 || index >= sizeof(log)) {
     return 0;
   }
@@ -41,6 +33,7 @@ fun lastLogTerm(log: seq[ServerLog]): int {
 }
 
 fun Max(a: int, b: int): int {
+  // snappea-lint: allow coverage -- callers pass a follower's newer matchedIndex as b, and one follower's replies arrive in order; the guard is for networks that reorder
   if (a > b) {
     return a;
   }
@@ -67,14 +60,4 @@ fun fillMap(self: machine, m: map[Server, int], servers: set[Server], value: int
   }
 
   return m;
-}
-
-fun broadcastRequest(self: Server, peers: set[Server], e: event, payload: any) {
-  // broadcast a message to nodes except for itself.
-  var peer: Server;
-  foreach(peer in peers) {
-    if (peer != self) {
-      send peer, e, payload;
-    }
-  }
 }

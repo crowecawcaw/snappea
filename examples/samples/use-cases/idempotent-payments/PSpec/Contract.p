@@ -16,9 +16,14 @@ event AttemptsPlanned: int;
 // processor gave that key, including a decline. Keys are independent: an answer for
 // one key never carries another key's result, because each key's answer is checked
 // against its own charge.
-spec ChargedOnce observes Attempted, ProcessorCharged, Answered {
+//
+// A "retry later" answer is justified only when another attempt with the same key was
+// made, since only that attempt can hold the key in progress.
+spec ChargedOnce observes Attempted, ProcessorCharged, Answered, ChargeConflict {
   // key -> amount the client asked for
   var amounts: map[int, int];
+  // key -> attempts the clients made with it
+  var attempts: map[int, int];
   // key -> what the processor decided
   var charged: map[int, ChargeResult];
 
@@ -28,6 +33,12 @@ spec ChargedOnce observes Attempted, ProcessorCharged, Answered {
         assert amounts[p.key] == p.amount, format("key {0} reused with another amount", p.key);
       }
       amounts[p.key] = p.amount;
+      if (!(p.key in attempts)) { attempts[p.key] = 0; }
+      attempts[p.key] = attempts[p.key] + 1;
+    }
+    on ChargeConflict do (c: (key: int)) {
+      assert c.key in attempts && attempts[c.key] >= 2,
+        format("key {0} answered 'retry later', but no other attempt with that key was made", c.key);
     }
     on ProcessorCharged do (p: (key: int, amount: int, result: ChargeResult)) {
       assert p.key in amounts, format("key {0} charged but never requested", p.key);
@@ -45,7 +56,7 @@ spec ChargedOnce observes Attempted, ProcessorCharged, Answered {
 }
 
 // Progress: every attempt the driver plans gets an answer for its own key. Hot while
-// any is outstanding, so a request that waits forever on an in-progress key fails,
+// any is outstanding, so a client stuck retrying an in-progress key fails,
 // even if some other key got an extra answer.
 spec EveryAttemptAnswered observes AttemptsPlanned, Attempted, Answered {
   var unsent: int;

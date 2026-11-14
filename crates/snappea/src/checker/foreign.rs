@@ -87,13 +87,24 @@ impl ForeignCx<'_, '_> {
             ));
         }
         let caller = self.machine_name().unwrap_or_default();
-        Ok(self.rt.choose_int(max, &caller)?)
+        let i = self.rt.choose_int(max, &caller)?;
+        self.rt.note_choice(self.choice_site(0), max as usize, i as usize);
+        Ok(i)
     }
 
     /// `machine.TryRandomBool()`: a checker-controlled boolean choice.
     pub fn random_bool(&mut self) -> Result<bool, ForeignError> {
         let caller = self.machine_name().unwrap_or_default();
-        Ok(self.rt.choose_bool(2, &caller)?)
+        let b = self.rt.choose_bool(2, &caller)?;
+        self.rt.note_choice(self.choice_site(1), 2, usize::from(b));
+        Ok(b)
+    }
+
+    /// Identifies a foreign choice of kind `kind` for fairness (see
+    /// [`Runtime::note_choice`]): by the calling machine, as the code is not known.
+    fn choice_site(&self, kind: u64) -> u64 {
+        // far from the code sites of P choices, which mix a code address and an offset
+        u64::MAX - 2 * self.machine.map_or(0, |m| m as u64 + 1) - kind
     }
 }
 

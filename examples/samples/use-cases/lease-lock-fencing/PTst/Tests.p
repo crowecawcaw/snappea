@@ -108,7 +108,7 @@ test tcHolderCrashes [main=HolderCrashes]:
 test tcPausedHolderWritesLate [main=MainPausedHolder]:
   assert FencedWrites, ClientsFinish in (union Locking, { MainPausedHolder, PausedHolder, Storage });
 
-// snappea: expect-bug "write with token 1 accepted after token 2"
+// snappea: expect-bug "write with token 1 accepted after token 2: superseded holder wrote"
 test tcBugStorageIgnoresTokens [main=MainBugStorageIgnoresTokens]:
   assert FencedWrites, ClientsFinish in
   (union Locking, { MainBugStorageIgnoresTokens, PausedHolder, UnfencedStorage });

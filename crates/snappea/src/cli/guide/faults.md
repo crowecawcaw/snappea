@@ -1,8 +1,23 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I model timers, crashes and lossy networks?
+  - Where do fault injectors go so mutation testing judges the design?
+  - How do I bound faults so liveness checks stay meaningful?
+---
+
 # Timers, crashes and lossy networks
 
 Faults are the environment, not the design. Model them in machines marked
 `// snappea: driver` (on its own line before the machine): drivers are not mutated, so
 mutation testing judges the design's handling of a fault, not the fault itself.
+
+The marker is what matters, not the folder. Put fault injectors in `PTst/` with the
+other drivers. A timer that the design itself creates (a lease timer the lock service
+starts for each grant) can stay in `PSrc/` next to the code that arms it, but mark
+the timer machine as a driver: when it fires is the environment's choice. The code
+that creates, cancels or reacts to it is design and stays unmarked.
 
 ## Reusable building blocks
 
@@ -42,14 +57,17 @@ machine Timer {
 
 ## Crash and restart with an epoch
 
-Keep durable fields; reset volatile ones in the crash handler. Bump an epoch so work
-queued before the crash is recognised and dropped.
+Keep the fields that stand in for persisted state; reset volatile ones in the crash
+handler. Bump an epoch so work queued before the crash is recognised and dropped.
+This in-machine shortcut fits a process that restarts in place. When the restarted
+process is a new machine, keep durable state in a separate storage machine
+(`snappea guide recovery`).
 
 ```p
 event eCrash; event eReq: machine; event eResp; event eWork: int;
 
 machine Server {
-  var epoch: int;               // durable: survives a crash
+  var epoch: int;               // stands in for a persisted counter: survives a crash
   var pending: seq[machine];    // volatile: lost in a crash
   start state Serving {
     on eReq do (c: machine) { pending += (sizeof(pending), c); send this, eWork, epoch; }
@@ -91,20 +109,22 @@ machine Network {
 }
 ```
 
-- Bound the losses. Upstream P's `UnReliableSend` may lose every message: with a
-  client that retries, "every retry is lost" is a cycle the model can repeat forever,
-  and a liveness spec reports it. That is a liveness trap in the model, not a bug in
-  the design. Bound losses with a counter, or use `$$` for a loss the network must
-  eventually stop choosing.
+- Bound the losses. Upstream P's `UnReliableSend` decides each loss with `$`. The
+  checker treats such choices as fair, so "every retry is lost" is not a liveness bug:
+  the exhaustive search verifies progress assuming the network eventually delivers. A
+  loss counter states the bound explicitly and keeps the search small.
 - Bound duplicates and crashes the same way: once each is usually enough to find bugs.
 
 ## Mutation testing and faults
 
-- Removing an `if` on a bare `$` or `choose()` with no `else` is not run: the checker
-  already explores the run where the branch is skipped.
-- Emptying the handler of an event that every test case sends only under `$` (a crash
-  injected with `if ($) { send s, eCrash; }`) is reported as likely equivalent: a
-  handler that does nothing is the history where the fault never happened.
+- Removing an `if` on a bare `$` or `choose()` with an empty branch, or the only
+  statement of its other branch, is not run: the checker already explores the run
+  where the branch is skipped.
+- Emptying the handler of an event that every test case sends only as the whole branch
+  of `if ($)` (a crash injected with `if ($) { send s, eCrash; }`), and no spec observes,
+  is reported as likely equivalent: a handler that does nothing is the history where the
+  fault never happened. The report gives the suppression line to add if you agree. An
+  event sent in both branches of a choice is always delivered, so it does not qualify.
 - A surviving mutant under a `$` condition in a machine that stands in for the
   environment means the machine needs `// snappea: driver`.
 - Best-effort operations (cancelling a timer, warming a cache, sending a hint) are

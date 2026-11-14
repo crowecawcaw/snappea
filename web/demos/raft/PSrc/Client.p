@@ -41,8 +41,6 @@ machine Client {
       worklist = config.requests;
       servers = config.servers;
       view = config.viewService;
-      ptr = 0;
-      Id = 0;
       timer = new Timer((user=this, timeoutEvent=HeartbeatTimeout));
       goto SendOne;
     }

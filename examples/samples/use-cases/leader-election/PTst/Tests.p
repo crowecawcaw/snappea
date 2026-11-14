@@ -5,11 +5,14 @@
 type ElectionSetup = (nodes: seq[machine], timeouts: seq[int], crash: int);
 
 // Fires the contested round's timeouts and crashes one voter at a moment the scheduler
-// picks. When every candidate has heard back from the whole cluster and none won, one node's timer fires alone: the "eventually one candidate
-// runs uncontested" assumption that Raft's randomized timeouts provide.
+// picks. When every candidate has heard back from the whole cluster and none won, one
+// node's timer fires alone: the "eventually one candidate runs uncontested" assumption
+// that Raft's randomized timeouts provide.
 machine Election {
   var nodes: seq[machine];
   var waiting: int;
+  // index of the node whose timer fires alone
+  var lone: int;
 
   start state Contested {
     entry (e: ElectionSetup) {
@@ -35,13 +38,17 @@ machine Election {
     }
   }
 
-  // If the lone candidate still loses (it was behind on terms), it has now learned
-  // the highest term, and so has everyone else: fire one timer alone again.
+  // Any node may be the one whose timer fires alone. If it still loses (it was behind
+  // on terms), its replies told it the highest term in the cluster, so the same node
+  // stands again above every term and wins.
   state Uncontested {
-    entry { Timeout(this, nodes, choose(3)); }
+    entry {
+      lone = choose(sizeof(nodes));
+      Timeout(this, nodes, lone);
+    }
     on RoundLost do (r: (id: int, term: int)) {
       announce LossReported, r;
-      goto Uncontested;
+      Timeout(this, nodes, lone);
     }
   }
 }
@@ -58,7 +65,7 @@ fun Timeout(driver: machine, nodes: seq[machine], i: int) {
 }
 
 // Starts a node from durable state, telling the specs what that state is.
-fun NewNode(d: Disk): machine {
+fun NewNode(d: DurableState): machine {
   announce Disk, d;
   return new Node(d);
 }
@@ -482,7 +489,7 @@ test tcStaleVoteReply [main=StaleVoteReply]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { StaleVoteReply, Node };
 
-// snappea: expect-bug "voted twice in term"
+// snappea: expect-bug "node 3 voted twice in term 1"
 test tcBugVoteNotPersisted [main=BuggyTwoCandidatesVoterCrash]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { BuggyTwoCandidatesVoterCrash, Election, ForgetfulNode };

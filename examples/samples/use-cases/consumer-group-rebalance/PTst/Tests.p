@@ -34,6 +34,21 @@ machine LeaveRebalance {
   }
 }
 
+// Consumer 1's JoinGroup is retried (its first attempt timed out but was delivered):
+// the coordinator sees the same join twice, in any order with consumer 2's join. A
+// retry from a current member must not list it twice or start a new generation.
+machine RetriedJoin {
+  start state Run {
+    entry {
+      var coordinator: Coordinator;
+      var consumers: seq[machine];
+      coordinator = new Coordinator(2);
+      consumers = StartGroup(coordinator, 2, 1);
+      send coordinator, Join, (consumer = consumers[0], id = 1);
+    }
+  }
+}
+
 // The session timer expires consumer 2 while it is still running: it becomes a zombie
 // whose commits must be rejected, after which it rejoins (a third generation).
 machine ZombieExpired {
@@ -83,12 +98,12 @@ machine InvalidAssignmentRequests {
     }
     on Assignment do (a: (gen: int, partitions: seq[int])) {
       send coordinator, Fetch, (consumer = this, id = 1, gen = a.gen, partition = 0);
-      receive { case Fetched: (r: (gen: int, partition: int, ok: bool, offset: int)) {
-        assert !r.ok, "a non-owner fetched the partition";
+      receive { case Fetched: (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
+        assert !r.ok, format("member {0}, not the owner, fetched partition {1}", r.member, r.partition);
       } }
       send coordinator, Fetch, (consumer = this, id = 2, gen = a.gen, partition = 1);
-      receive { case Fetched: (r: (gen: int, partition: int, ok: bool, offset: int)) {
-        assert !r.ok, "a fetch of an unknown partition was accepted";
+      receive { case Fetched: (r: (member: int, gen: int, partition: int, ok: bool, offset: int)) {
+        assert !r.ok, format("member {0} fetched partition {1}, which does not exist", r.member, r.partition);
       } }
       send coordinator, LeaveGroup, (id = 2,);
       // The legitimate member joins and completes the planned record. Its join
@@ -116,15 +131,15 @@ machine BugNoGenerationCheck {
 
 // Covered: an expelled consumer's commit was rejected, then that same consumer
 // appeared in a later generation. An unrelated rebalance does not satisfy this.
-scenario ZombieFenced observes CommitRejected, GenerationChanged {
+scenario ZombieFenced observes CommitResponse, GenerationChanged {
   var members: seq[int];
   var fencedMember: int;
   start hot state Running {
     on GenerationChanged do (g: (gen: int, members: seq[int], owner: map[int, int])) {
       members = g.members;
     }
-    on CommitRejected do (c: (partition: int, gen: int, member: int)) {
-      if (!(c.member in members)) {
+    on CommitResponse do (c: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      if (!c.ok && !(c.member in members)) {
         fencedMember = c.member;
         goto Fenced;
       }
@@ -140,6 +155,9 @@ scenario ZombieFenced observes CommitRejected, GenerationChanged {
 
 test tcJoinRebalance [main=JoinRebalance]:
   assert GroupSafety, GroupProgress in { JoinRebalance, Coordinator, Consumer };
+
+test tcRetriedJoin [main=RetriedJoin]:
+  assert GroupSafety, GroupProgress in { RetriedJoin, Coordinator, Consumer };
 
 test tcLeaveRebalance [main=LeaveRebalance]:
   assert GroupSafety, GroupProgress in { LeaveRebalance, Coordinator, Consumer };

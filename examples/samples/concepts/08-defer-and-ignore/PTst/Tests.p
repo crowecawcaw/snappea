@@ -19,6 +19,7 @@ machine Client {
         send server, HealthCheck, (probe = this,);
       }
     }
+    // The spec checks the answer; this client has nothing more to do with it.
     ignore Healthy;
   }
 }
@@ -29,6 +30,7 @@ machine Probe {
     entry (server: machine) {
       send server, HealthCheck, (probe = this,);
     }
+    // Fire and forget: a late "healthy" changes nothing for this probe.
     ignore Healthy;
   }
 }
@@ -54,6 +56,6 @@ machine StartupRaceNoDefer {
 test tcStartupRace [main=StartupRace]:
   assert ServedAfterInit in { StartupRace, Client, Probe, Server, Storage };
 
-// snappea: expect-bug "Request' that it cannot handle"
+// snappea: expect-bug "in state 'Initializing' received event 'Request' that it cannot handle"
 test tcBugNoDefer [main=StartupRaceNoDefer]:
   assert ServedAfterInit in { StartupRaceNoDefer, Client, Probe, NoDeferServer, Storage };

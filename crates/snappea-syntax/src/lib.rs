@@ -5,7 +5,9 @@ pub mod ast;
 pub mod lexer;
 mod parser;
 mod span;
+mod suggest;
 pub mod token;
 
 pub use parser::{parse, ParseError, MAX_NESTING};
 pub use span::{FileId, LineCol, Location, SourceFile, SourceMap, Span};
+pub use suggest::{closest, edit_distance};

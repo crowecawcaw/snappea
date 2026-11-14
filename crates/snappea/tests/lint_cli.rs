@@ -18,11 +18,13 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
         let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
         assert_eq!(result["exit_code"], 2);
-        assert!(result["error"].as_str().unwrap().contains("permissive-monitor"));
+        assert!(result["error"].as_str().unwrap().starts_with("Lint failed"), "{}", h.stdout);
+        let findings = if command == ["check"] { &result["lint"]["findings"] } else { &result["findings"] };
+        assert!(findings.as_array().unwrap().iter().any(|f| f["rule"] == "permissive-monitor"), "{}", h.stdout);
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 18);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 21);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -180,7 +182,8 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 18);
+    assert_eq!(h.stdout.lines().count(), 21);
+    assert!(h.stdout.contains("invalid-suppression") && h.stdout.contains("unused-suppression"));
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("announce-and-send"));
     assert!(h.stdout.contains("unchecked-state"));
@@ -241,7 +244,12 @@ fn unobserved_handler_fails_check_before_execution_and_the_fix_passes() {
     assert_eq!(run(&mut h, &["check", "lint", "model.p", "--json"]), 2);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["exit_code"], 2);
-    assert!(result["error"].as_str().unwrap().contains("error[unobserved-handler]"), "{}", h.stdout);
+    // the findings themselves, not the report printed on stderr again
+    assert!(result["error"].as_str().unwrap().starts_with("Lint failed: 1 finding(s)."), "{}", h.stdout);
+    assert_eq!(result["findings"][0]["rule"], "unobserved-handler", "{}", h.stdout);
+    assert_eq!(result["findings"][0]["severity"], "error");
+    assert_eq!(result["findings"][0]["line"], 6);
+    assert!(result["findings"][0]["help"].as_str().unwrap().starts_with("add the event"), "{}", h.stdout);
 
     h.add_file("model.p", &DEAD_HANDLER.replace("observes eA {", "observes eA, eB {"));
     assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
@@ -615,4 +623,120 @@ fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
         assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2, "{}{}", h.stdout, h.stderr);
         assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
     }
+}
+
+#[test]
+fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
+    let model = "event eReq: (id: int, amount: int, client: machine);\n\
+        event eResp: (id: int);\n\
+        spec Safety observes eReq, eResp {\n\
+          start state S {\n\
+            on eReq do (p: (id: int, amount: int, client: machine)) { assert p.id > 0; }\n\
+            on eResp do (p: (id: int)) { assert p.id > 0; }\n\
+          }\n\
+        }\n\
+        machine Server { start state S { on eReq do (p: (id: int, amount: int, client: machine)) { send p.client, eResp, (id = p.id,); } } }\n\
+        machine Main { start state S { entry { send new Server(), eReq, (id = 1, amount = 2, client = this); } ignore eResp; } }\n\
+        // snappea-lint: allow unused-payload-field -- misplaced\n\
+        test tc [main=Main]: assert Safety in { Main, Server };\n";
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", model);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    // the misplaced suppression does not hide the finding, and says where it must go
+    assert!(
+        h.stderr.contains("error[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
+        "{}",
+        h.stderr
+    );
+    assert!(!h.stderr.contains("payload field 'p.client'"), "{}", h.stderr);
+    assert!(
+        h.stderr.contains("warning[unused-suppression]: suppression of 'unused-payload-field' matches no finding"),
+        "{}",
+        h.stderr
+    );
+    assert!(h.stderr.contains("if it is meant for the `unused-payload-field` finding at model.p:5:"), "{}", h.stderr);
+    assert!(h.stderr.contains("not the test that selects the spec"), "{}", h.stderr);
+    // the likely fix first, then how to suppress, and never an empty assertion
+    assert!(h.stderr.contains("= help: if the contract depends on the field, check it"), "{}", h.stderr);
+    assert!(h.stderr.contains("do not add an assertion that cannot fail"), "{}", h.stderr);
+
+    // in place, the suppression works and nothing is unused
+    let fixed = model.replace("// snappea-lint: allow unused-payload-field -- misplaced\n", "").replace(
+        "on eReq do (p: (id: int, amount: int, client: machine)) { assert",
+        "// snappea-lint: allow unused-payload-field -- amounts are not part of this contract\non eReq do (p: (id: int, amount: int, client: machine)) { assert",
+    );
+    h.add_file("model.p", &fixed);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+
+    // a block comment is not read, and says so
+    h.add_file(
+        "model.p",
+        &fixed.replace(
+            "// snappea-lint: allow unused-payload-field -- amounts are not part of this contract",
+            "/* snappea-lint: allow unused-payload-field -- amounts */",
+        ),
+    );
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert!(h.stderr.contains("warning[unused-suppression]: this block comment is not read"), "{}", h.stderr);
+}
+
+#[test]
+fn check_with_selected_tests_notes_the_findings_it_skipped() {
+    let model = "event eReq: (id: int, client: machine);\n\
+        event eResp: (id: int);\n\
+        spec Safety observes eReq, eResp { start state S { on eReq do (p: (id: int, client: machine)) { assert p.id > 0; } on eResp do (p: (id: int)) { assert p.id > 0; } } }\n\
+        spec Live observes eReq, eResp { start cold state Idle { on eReq goto Busy; ignore eResp; } hot state Busy { on eResp goto Idle; ignore eReq; } }\n\
+        machine Server { start state S { on eReq do (p: (id: int, client: machine)) { send p.client, eResp, (id = p.id,); } } }\n\
+        machine Main { start state S { entry { send new Server(), eReq, (id = 1, client = this); } on eResp goto Done; } state Done { ignore eResp; } }\n\
+        test tcGood [main=Main]: assert Safety, Live in { Main, Server };\n\
+        test tcWeak [main=Main]: assert Safety in { Main, Server };\n";
+    let mut h = MemHost::new("/w");
+    h.terminal = true;
+    h.add_file("model.p", model);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert!(h.stderr.contains("error[no-progress-spec]: test 'tcWeak'"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "tcGood", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(
+        h.stderr.contains(
+            "note: 1 lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them"
+        ),
+        "{}",
+        h.stderr
+    );
+}
+
+#[test]
+fn invalid_suppression_names_the_id_and_the_closest_rule() {
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", &format!("// snappea-lint: allow permissive-monitr -- typo\n{}", MODEL));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert!(
+        h.stderr.contains("error[invalid-suppression]: unknown lint rule ID 'permissive-monitr' in suppression"),
+        "{}",
+        h.stderr
+    );
+    assert!(h.stderr.contains("= help: did you mean `permissive-monitor`? Otherwise write"), "{}", h.stderr);
+    // the whole comment is underlined, and the fix is never to allow the diagnostic itself
+    assert!(
+        h.stderr.contains(&format!("| {}\n", "^".repeat("// snappea-lint: allow permissive-monitr -- typo".len()))),
+        "{}",
+        h.stderr
+    );
+    assert!(!h.stderr.contains("allow invalid-suppression"), "{}", h.stderr);
+}
+
+#[test]
+fn design_receivers_may_ignore_reply_addresses() {
+    let mut h = MemHost::new("/w");
+    h.add_file(
+        "votes.p",
+        "event eVote: (id: int, from: machine, voters: seq[Participant]);\n\
+         machine Participant { start state S {} }\n\
+         machine Coordinator { var n: int; start state S { on eVote do (v: (id: int, from: machine, voters: seq[Participant])) { n = n + v.id; assert n > 0; } } }\n\
+         machine Main { start state S { entry { new Coordinator(); } } }\n\
+         test tc [main=Main]: { Main, Coordinator, Participant };\n",
+    );
+    assert_eq!(run(&mut h, &["check", "lint", "votes.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stdout.contains("unused-design-payload-field"), "{}", h.stdout);
 }

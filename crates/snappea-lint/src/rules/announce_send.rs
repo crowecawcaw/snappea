@@ -58,7 +58,7 @@ fn adjacent(stmts: &[Stmt], observed: &HashSet<&str>, out: &mut Vec<Finding>) {
             && same_args(a, b)
         {
             out.push(Finding::new("announce-and-send", pair[1].span, format!(
-                "event '{}' is both announced and sent with the same payload in adjacent statements; specs observe sends too, so remove the redundant announce or suppress an intentional duplicate",
+                "event '{}' is both announced and sent with the same payload in adjacent statements; specs observe sends too, so they see it twice",
                 event.name
             )));
         }

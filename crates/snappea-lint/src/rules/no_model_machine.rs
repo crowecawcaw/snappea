@@ -90,7 +90,7 @@ fn report_if_empty(
             rule,
             span,
             format!(
-                "test configuration has no implementation machine besides entry machine '{}'; split modeled behavior into another implementation machine and select it with the entry driver",
+                "test configuration has no implementation machine besides entry machine '{}', so nothing separate from the driver is modeled",
                 main_name
             ),
         ));

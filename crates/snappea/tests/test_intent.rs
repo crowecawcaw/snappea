@@ -270,7 +270,7 @@ fn a_budget_stop_is_not_reported_as_an_unreachable_expected_bug() {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     let mut h = MemHost::new("/w");
     h.clock = || START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
-    h.add_file("model.p", "event E; machine M { var n: int; start state S { entry { send this, E; } on E do { n = n + 1; send this, E; } } }\n// snappea: expect-bug \"known\"\ntest tc [main=M]: {M};");
+    h.add_file("model.p", "event E; machine M { var n: int; start state S { entry { send this, E; } on E do { n = n + 1; assert n != -1; send this, E; } } }\n// snappea: expect-bug \"known\"\ntest tc [main=M]: {M};");
     let args = ["check", "model.p", "--no-mutation", "--warn", "lint", "--timeout", "1s", "--json"];
     let code = snappea::cli::run(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &mut h);
     let report: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();

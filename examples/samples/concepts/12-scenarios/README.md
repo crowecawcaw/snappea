@@ -7,13 +7,43 @@ questions:
   - How do I read scenario coverage and its gaps?
 ---
 
-# Scenarios: prove the test reached the race
+# Scenarios: prove the CAS counter test reached the conflict
 
 A passing check says no explored schedule broke a spec. It does not say the schedules
 contained the interesting race. A **scenario** is a monitor that asserts nothing: it
-records whether some schedule went through a sequence of events you name. This sample
-uses two scenarios on a compare-and-swap counter, one covered and one that two clients
-can never reach.
+records whether some schedule went through a sequence of events you name. Here clients
+increment the compare-and-swap counter from [07-receive](../07-receive/README.md) (same
+store, same event names); one scenario proves a CAS was refused and then retried, and a
+second needs a refusal twice in one run, which two clients can never produce.
+
+**Contract:**
+
+- The committed values go 1, 2, 3, ...: no increment is lost or applied twice
+  (`IncrementsApplied`).
+- Every planned increment commits and every client finishes (`IncrementsApplied`
+  stays hot until then).
+- Reached in testing: a refused CAS followed by a commit (`ConflictThenRetry`), and two
+  refusals in one run (`RefusedTwice`).
+
+**Atomic primitives:** the store's `Get` handler reads the value and its version
+together; its `Cas` handler writes only if the version is unchanged.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSrc/Counter.p`](PSrc/Counter.p) | The store (as in 07-receive) and a state-machine client |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | `IncrementsApplied` |
+| [`PTst/Tests.p`](PTst/Tests.p) | Two drivers, the two scenarios, two test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoClients` | Two clients, one increment each | The basic conflict: covers `ConflictThenRetry` | Passes (with `tcThreeClients`; alone it reports `RefusedTwice` as a gap) |
+| `tcThreeClients` | Three clients, one increment each | One client can be refused twice: covers both scenarios | Passes |
+
+There is no `tcBug*` test: the contrast here is a scenario gap.
 
 ## The concept
 
@@ -21,68 +51,54 @@ A scenario looks like a spec, with `scenario` instead of `spec`:
 
 - **hot** states are steps still to happen; the start state is hot;
 - a **cold** state is the goal: a schedule that enters it *covers* the scenario;
-- an unhandled observed event leaves the scenario in its current state. Ordinary
-  design machines and specs still require an explicit event policy.
+- an observed event the current state does not handle leaves the scenario where it
+  is. Ordinary design machines and specs still require an explicit event policy.
 
 Scenarios observe sent events as well as announced ones, so they can watch the
-design's own messages (`CasResponse` here) without extra announcements.
+design's own messages (`CasResult` here) without extra announcements.
 
 Write one for each race your design discussion names ("both read the same version",
-"the timer fires after the reply", "the crash lands mid-write"), and check it is covered.
-The spec ([`PSpec/Contract.p`](PSpec/Contract.p)) checks correctness; the scenario
-only proves the checker went there.
+"the timer fires after the reply", "the crash lands mid-write"), and check it is
+covered. The spec checks correctness; the scenario only proves the checker went there.
 
-## Key lines
+## The key lines
 
 [`PTst/Tests.p`](PTst/Tests.p):
 
 ```p
-scenario ConflictThenRetry observes CasResponse, Written {
+scenario ConflictThenRetry observes CasResult, Committed {
   start hot state WaitConflict {
-    on CasResponse do (ok: bool) { if (!ok) { goto WaitRetry; } }
+    on CasResult do (r: (ok: bool)) { if (!r.ok) { goto WaitRetry; } }
   }
   hot state WaitRetry {
-    on Written goto Retried; // with two clients, this is the loser's retry
+    on Committed goto Retried; // with two clients, this is the loser's retry
   }
   cold state Retried { }
 }
 ```
 
 `RefusedTwice` waits for two refusals in one run, which needs three clients.
-The stronger interpretation of `ConflictThenRetry` as the losing client's retry depends
-on the two-client bound. With three clients, its witness proves a refusal followed by
-a commit, without identifying which client committed.
+Reading `ConflictThenRetry` as "the losing client's retry" depends on the two-client
+bound. With three clients, its witness proves a refusal followed by a commit, without
+identifying which client committed.
 
-## Test cases
+## Reading scenario coverage
 
-| Test | Drives | Covers |
-| --- | --- | --- |
-| `tcTwoClients` | Two clients, one increment each | `ConflictThenRetry`; all schedules (about 200) |
-| `tcThreeClients` | Three clients, one increment each | Both scenarios; all schedules (about 7,500) |
-
-Both pass. There is no `tcBug*` test: the contrast here is a scenario gap.
-
-```sh
-snappea check --deny mutation
-snappea check tcTwoClients           # shows RefusedTwice as a gap
-```
-
-## What the checker shows
-
-Output excerpts illustrate the report; counts, timings and source lines vary with
-the checker version and run budget. Read the current result before claiming exhaustiveness.
-
-With only the two-client test selected:
+Selecting only the two-client test:
 
 ```text
+Not covered by the test case:
+  PTst/Tests.p:47  RefusedTwice: scenario never satisfied in 1 test case
+...
 Unified scenario coverage across 1 test case:
   1/2 scenarios covered in >=1 test case; 1 coverage gap.
-  [covered] ConflictThenRetry: covered in 1/1 test cases (tcTwoClients); 36 total triggers, 5 satisfying timelines (summed per test case)
+  [covered] ConflictThenRetry: covered in 1/1 test cases (tcTwoClients); 81 total triggers, 6 satisfying timelines (summed per test case)
   [  GAP  ] RefusedTwice: never covered in any of 1 test case; best progress anywhere 2/3 states
 ```
 
-How to read it:
-
+- **A gap fails the check.** A scenario never satisfied is a coverage gap like an
+  unreached branch, so `snappea check tcTwoClients` exits 1. Selecting both tests
+  covers both scenarios and passes.
 - **covered in 1/1 test cases** names the tests that reached the cold state.
 - **total triggers** counts schedules that covered it; **satisfying timelines** counts
   distinct event orders among them. One timeline means the race happens in exactly one
@@ -92,14 +108,8 @@ How to read it:
   clients only one can lose a round, so the fix is a test with more clients, not a
   longer timeout.
 
-Selecting both tests covers both scenarios. The lines `ConflictThenRetry: not included
-in selected test cases` under "Outside the selected tests" are about *code* coverage
-totals: scenarios are not part of them, but they still run in every test.
-
 ## Common mistakes
 
-- **A gap does not fail the check.** `snappea check tcTwoClients` exits 0 with the gap
-  above. Read the scenario summary, or look for `"satisfied": false` in the JSON.
 - **Mistaking a prefix for the race.** Reaching `WaitRetry` is partial progress; only
   reaching `Retried` establishes that the later write occurred.
 - **A scenario with no cold state, or a cold start state**, can never be meaningful;
@@ -109,10 +119,18 @@ totals: scenarios are not part of them, but they still run in every test.
 
 ## Try this
 
-Run only `tcTwoClients`, then run both tests. Compare the missing
-`RefusedTwice` goal with its best partial-progress trace and the satisfying witness
-from `tcThreeClients`. Each witness shows the event sequence that moved the monitor;
-use it to check that the scenario means the race you intended.
+Run only `tcTwoClients`, then run both tests. Compare the missing `RefusedTwice` goal
+with its best partial progress and the satisfying witness from `tcThreeClients`. Each
+witness shows the event sequence that moved the monitor; use it to check that the
+scenario means the race you intended.
+
+## Run
+
+```sh
+cd examples/samples/concepts/12-scenarios
+snappea check --deny mutation        # both tests: both scenarios covered
+snappea check tcTwoClients           # exits 1: RefusedTwice is a gap
+```
 
 ## Bounds and omissions
 
@@ -121,6 +139,7 @@ messages, crashes, clients giving up after a retry limit.
 
 ## Testing the implementation
 
-Emit `Written` from the store after each committed compare-and-swap and `ClientDone`
+Emit `Committed` from the store after each committed compare-and-swap and `ClientDone`
 when a client finishes. To reproduce `ConflictThenRetry`, pause one client between its
-read and its compare-and-swap until another client has written.
+get and its compare-and-swap until another client has written; for `RefusedTwice`,
+let two other clients commit in turn while the third keeps retrying.

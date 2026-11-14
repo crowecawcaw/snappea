@@ -135,7 +135,7 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
 ];
 
-const HELP: &str = "\
+const HELP_HEAD: &str = "\
 Usage: snappea guide [TOPIC]
        snappea guide examples
        snappea guide example NAME [FILE | --out DIR]
@@ -143,17 +143,9 @@ Usage: snappea guide [TOPIC]
 Prints a short guide, as Markdown. Start with `snappea guide`.
 
 Topics:
-  workflow   (default) Model the design, check it, then test the code against it
-  testing    Force the model's interleavings in implementation tests; check real calls
-  modeling   What to model: boundaries, atomic steps, interference
-  scenarios  Choose scenarios and independent oracles that can fail
-  recovery   Crashes, retries and durable state
-  scenario-monitors  Prove a test reached a race
-  spec-patterns  Pin down inputs, replies and progress; test timeouts and convergence
-  faults     Model timers, crashes and lossy networks as drivers
-  python     Capture real Python calls and check them against P specs
-  syntax     P syntax and a complete small model
+";
 
+const HELP_TAIL: &str = "
 Examples are complete, checked models, some with Python tests. `example NAME` prints
 its main file, whose header explains it and how to run it; `example NAME FILE` prints
 another of its files; `--out DIR` writes them all to DIR/NAME so you can run them.
@@ -163,6 +155,28 @@ Examples:
   snappea guide example cas-retry --out /tmp && cd /tmp/cas-retry && snappea check
 ";
 
+/// `snappea guide --help`: the topic list comes from [`TOPICS`], with the description
+/// column wide enough for the longest topic name.
+fn help() -> String {
+    let width = TOPICS.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0) + 2;
+    let mut s = String::from(HELP_HEAD);
+    for (name, about, _) in TOPICS {
+        s.push_str(&format!("  {name:<width$}{about}\n"));
+    }
+    s.push_str(HELP_TAIL);
+    s
+}
+
+/// A guide page without its YAML front matter, which is authoring metadata (Diátaxis
+/// type, personas, questions) and not part of the printed guide.
+fn page(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("---\n") else { return text };
+    match rest.find("\n---\n") {
+        Some(end) => rest[end + 5..].trim_start_matches('\n'),
+        None => text,
+    }
+}
+
 /// `snappea guide ...`. Guides are Markdown whatever the output format, so the output
 /// options are accepted and ignored.
 pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
@@ -171,11 +185,11 @@ pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
         Err(m) => return usage_error(host, &m, Some("guide")),
     };
     if parsed.help {
-        return print(host, HELP);
+        return print(host, &help());
     }
     let words: Vec<&str> = parsed.positional.iter().map(String::as_str).collect();
     match (words.as_slice(), parsed.get("out")) {
-        ([], None) => print(host, TOPICS[0].2),
+        ([], None) => print(host, page(TOPICS[0].2)),
         (["examples"], None) => print(host, &list()),
         (["example", name], out) => match (find(name), out) {
             (Some(e), None) => print(host, &show(e)),
@@ -197,7 +211,7 @@ pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
             None => unknown_example(host, name),
         },
         ([topic], None) => match TOPICS.iter().find(|(n, _, _)| n == topic) {
-            Some((_, _, text)) => print(host, text),
+            Some((_, _, text)) => print(host, page(text)),
             None => {
                 let names: Vec<&str> = TOPICS.iter().map(|(n, _, _)| *n).collect();
                 usage_error(
@@ -275,4 +289,32 @@ fn write(host: &mut dyn Host, e: &Example, dir: &str) -> i32 {
         e.main
     ));
     OK
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn front_matter_is_stripped_from_printed_pages() {
+        assert_eq!(page("---\ndiataxis: how-to\nquestions:\n  - Why?\n---\n\n# Title\n"), "# Title\n");
+        assert_eq!(page("# Title\n---\n"), "# Title\n---\n");
+        for (name, _, text) in TOPICS {
+            assert!(text.starts_with("---\n"), "guide page '{name}' has no front matter");
+            assert!(page(text).starts_with("# "), "guide page '{name}' does not start with a heading");
+        }
+    }
+
+    #[test]
+    fn help_aligns_every_topic_description() {
+        let help = help();
+        let columns: Vec<Option<usize>> = TOPICS
+            .iter()
+            .map(|(name, about, _)| {
+                let row = help.lines().find(|l| l.starts_with(&format!("  {name} ")))?;
+                row.find(about)
+            })
+            .collect();
+        assert!(columns[0].is_some() && columns.iter().all(|c| *c == columns[0]), "{help}");
+    }
 }

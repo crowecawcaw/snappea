@@ -34,10 +34,13 @@ spec OrderSafety observes OrderCreated, StatusChanged, TransitionResp, PaymentAu
     }
     on TransitionResp do (reply: (order: int, next: Status, ok: bool, prior: Status)) {
       if (reply.ok) {
-        assert status[reply.order] == reply.next, "successful transition did not reach its target";
+        assert status[reply.order] == reply.next,
+          format("order {0}: transition to {1} reported done, but the order is {2}", reply.order, reply.next, status[reply.order]);
       } else {
-        assert reply.prior == status[reply.order], "refusal reported the wrong current status";
-        assert !Allowed(reply.prior, reply.next), "a legal transition was refused";
+        assert reply.prior == status[reply.order],
+          format("order {0}: refusal reported status {1}, but the order is {2}", reply.order, reply.prior, status[reply.order]);
+        assert !Allowed(reply.prior, reply.next),
+          format("order {0}: legal transition from {1} to {2} was refused", reply.order, reply.prior, reply.next);
       }
     }
     on PaymentAuthorized do (p: (order: int)) {

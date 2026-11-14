@@ -23,6 +23,7 @@ machine DoubleClickFlawed {
       SendFlawed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFlawed(this, table, gateway, (req = 2, key = 7, amount = 10));
     }
+    // The specs check each answer as it is sent; the client needs nothing more.
     ignore ChargeResult;
   }
 }
@@ -39,6 +40,7 @@ machine DoubleClick {
       SendFixed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
     }
+    // The specs check each answer as it is sent; the client needs nothing more.
     ignore ChargeResult;
   }
 }
@@ -57,6 +59,7 @@ machine MixedKeys {
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 8, amount = 20));
     }
+    // The specs check each answer as it is sent; the client needs nothing more.
     ignore ChargeResult;
   }
 }
@@ -75,13 +78,15 @@ machine TripleClick {
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 7, amount = 10));
     }
+    // The specs check each answer as it is sent; the client needs nothing more.
     ignore ChargeResult;
   }
 }
 
 // Lifecycle boundary: the retry arrives after the first request has returned, so it
 // must be answered from the stored result, while a new key is charged normally.
-// (The flawed design passes this one too: sequential retries are the easy case.)
+// Sequential retries are the easy case: the flawed design records the key before
+// the retry arrives, too.
 machine RetryAfterDone {
   var table: ClaimTable;
   var gateway: Gateway;
@@ -99,11 +104,12 @@ machine RetryAfterDone {
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 8, amount = 20));
     }
+    // The specs check each answer as it is sent; the client needs nothing more.
     ignore ChargeResult;
   }
 }
 
-// snappea: expect-bug "double charge: key 7 charged twice"
+// snappea: expect-bug "double charge: key 7 charged twice (charges 1 and 2)"
 test tcBugDoubleClick [main=DoubleClickFlawed]:
   assert ChargedOnce, EveryRequestAnswered in
   { DoubleClickFlawed, KeyTable, Gateway, LookupThenRecordWorker };

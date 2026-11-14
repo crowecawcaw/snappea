@@ -101,9 +101,9 @@ machine AfterRollover {
   }
   state Fill2 {
     entry { Send(this, sys.b, 2); }
-    on Decision goto Tick with (d: AdmissionDecision) { announce Answered, d; }
+    on Decision goto Ticking with (d: AdmissionDecision) { announce Answered, d; }
   }
-  state Tick {
+  state Ticking {
     entry { send sys.clock, Tick, this; }
     on TickDone goto Race;
   }
@@ -140,10 +140,10 @@ machine MainBugLoadThenStore {
 
 // Covered: a gateway lost its CAS, reloaded, and rejected that same request (the
 // window filled between its load and its CAS).
-scenario LostCasThenReject observes CasResp, Rejected {
+scenario LostCasThenReject observes CasResult, Rejected {
   var loser: int;
   start hot state WaitLost {
-    on CasResp do (r: (req: int, ok: bool)) {
+    on CasResult do (r: (req: int, ok: bool)) {
       if (!r.ok) { loser = r.req; goto WaitReject; }
     }
   }

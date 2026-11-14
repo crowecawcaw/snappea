@@ -288,6 +288,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
         }
         // changes that cannot be detected
         let guards = crate::checker::equivalent::self_assigning_guards(&body);
+        let sole_choice = crate::checker::equivalent::sole_choice_statements(&body);
         let mut choices: Vec<Span> = Vec::new();
         crate::checker::checked::visit_stmts(&body, &mut |s| match &s.kind {
             StmtKind::If { cond, .. } | StmtKind::While { cond, .. } if has_choice(cond) => choices.push(s.span),
@@ -330,9 +331,11 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             };
             let (watched, unchanged) = watched.map_or((None, ""), |(at, why)| (Some(at), why));
             let equivalent = match &target {
-                Target::Stmt(s, Change::Remove) => {
-                    crate::checker::equivalent::removed_choice_branch(s).map(str::to_string)
-                }
+                Target::Stmt(s, Change::Remove) => crate::checker::equivalent::removed_choice_branch(s)
+                    .or_else(|| {
+                        sole_choice.contains(&s.span).then_some(crate::checker::equivalent::SOLE_CHOICE_STATEMENT)
+                    })
+                    .map(str::to_string),
                 Target::Expr(e, Change::Operator(BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge)) => {
                     guards.get(&e.span).map(|why| why.to_string())
                 }

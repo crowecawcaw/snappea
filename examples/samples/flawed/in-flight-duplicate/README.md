@@ -9,7 +9,7 @@ questions:
 
 # In-flight duplicate: idempotency key recorded after the side effect
 
-**Difficulty: medium.**
+**Difficulty: Easy.**
 
 A payment API takes an idempotency key with each charge request, so a client can
 retry safely. Each request is handled by its own API worker. The workers share an
@@ -27,6 +27,11 @@ charges again.
 - `EveryRequestAnswered` (progress, hot state): every request returns, and returns
   the one charge made for its key, so a duplicate sees the original's result.
 
+**Atomic primitives** (one handler each): a table lookup, a table write, and one
+gateway charge in the flawed design; an insert-if-absent `claim` and a `complete`
+that stores the result in the fix. Each worker's steps interleave with the other
+workers'.
+
 ## Files
 
 | File | What it holds |
@@ -37,12 +42,22 @@ charges again.
 | [`PSrc/ClaimFirst.p`](PSrc/ClaimFirst.p) | The fix: `ClaimTable` (claim, complete) and `ClaimingWorker` |
 | [`PTst/Tests.p`](PTst/Tests.p) | Drivers and test cases |
 
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugDoubleClick` | Two concurrent requests, same key, flawed design | The race itself | Expected bug: `double charge: key 7 charged twice (charges 1 and 2)` |
+| `tcFixedDoubleClick` | Same, fixed design | The duplicate waits and returns charge 1 | Passes |
+| `tcFixedTripleClick` | Three concurrent requests, same key | Two waiters on one in-progress key must both be released | Passes |
+| `tcFixedMixedKeys` | Two duplicates and one other key, concurrent | Another key must not wait or share a result | Passes |
+| `tcFixedRetryAfterDone` | A retry after the first request returned, with a new key | Lifecycle boundary: answer from the stored result | Passes |
+
 ## The counterexample
 
 `snappea check tcBugDoubleClick` finds the declared bug:
 
 ```text
-Assertion Failed: double charge: key 7 charged twice (charges 1 and 2)
+Assertion Failed: PSpec/Contract.p:31:7 double charge: key 7 charged twice (charges 1 and 2)
 ```
 
 From `PCheckerOutput/tcBugDoubleClick/bug.txt`:
@@ -60,8 +75,9 @@ From `PCheckerOutput/tcBugDoubleClick/bug.txt`:
 ## Why ordinary tests miss it
 
 The usual idempotency test sends a request, waits for the response, and retries:
-the retry finds the key and returns the stored result. That passes here too
-(`tcFixedRetryAfterDone` is that test, and the flawed design passes it). The bug
+the retry finds the key and returns the stored result. The flawed design handles
+that case too: by the time the retry arrives, the first worker has recorded the key
+(`tcFixedRetryAfterDone` runs that history against the fix). The bug
 needs the duplicate to arrive inside the window between lookup and record, which is
 as long as the gateway call. That window is wide in production (hundreds of
 milliseconds) and nearly zero against a mocked gateway in a unit test.
@@ -80,29 +96,19 @@ succeeds, so there is one charge per key. Instead of waiting, the store may answ
 "in progress" (HTTP 409) and let the client retry later; the safety argument is the
 same.
 
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcBugDoubleClick` | Two concurrent requests, same key, flawed design | The race itself | **Expected bug**: `double charge: key 7 charged twice (charges 1 and 2)` |
-| `tcFixedDoubleClick` | Same, fixed design | The duplicate waits and returns charge 1 | Passes |
-| `tcFixedTripleClick` | Three concurrent requests, same key | Two waiters on one in-progress key must both be released | Passes |
-| `tcFixedMixedKeys` | Two duplicates and one other key, concurrent | Another key must not wait or share a result | Passes |
-| `tcFixedRetryAfterDone` | A retry after the first request returned, with a new key | Lifecycle boundary: answer from the stored result | Passes |
-
 ## Run
 
 ```sh
-snappea check tcFixedDoubleClick tcFixedTripleClick tcFixedMixedKeys tcFixedRetryAfterDone --deny mutation --timeout 20s
-snappea check tcBugDoubleClick        # succeeds only when the declared bug is found
+snappea check InFlightDuplicate.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check InFlightDuplicate.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
+
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 One mutant is suppressed: `nextCharge + 1` → `nextCharge - 1` in `Gateway`, because
 charge ids are only compared for equality and counting down keeps them unique.
-
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -114,7 +120,7 @@ different amount (the spec rejects it as a driver error).
 
 ## Testing the implementation
 
-Emit `Charged` from the gateway client after the gateway confirms, and `Replied`
-when the API returns. To force the race, block the gateway stub on a latch, send the
-duplicate request, then release the latch: the flawed code calls the stub twice;
+Emit `Charged` from the gateway client after the gateway confirms, and
+`ChargeResult` when the API returns. To force the race, block the gateway stub on a
+latch, send the duplicate request, then release the latch: the flawed code calls the stub twice;
 the fixed code calls it once and both responses carry the same charge id.
