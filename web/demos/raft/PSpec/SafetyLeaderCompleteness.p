@@ -4,28 +4,36 @@
 // eventual progress.
 
 spec SafetyLeaderCompleteness observes BecomeLeader {
-  var committedLogs: set[ServerLog];
+  // Raft's Leader Completeness: an entry committed in a term is in the log of every
+  // leader of a later term. Each committed entry maps to the term of the first leader
+  // seen to have committed it: it was committed in that term or earlier. A leader of an
+  // earlier term (elected late, from delayed votes) need not have it.
+  var committedLogs: map[ServerLog, int];
 
   start state Init {
     entry {
-      committedLogs = default(set[ServerLog]);
+      committedLogs = default(map[ServerLog, int]);
       goto MonitoringLeaderChange;
     }
   }
 
   state MonitoringLeaderChange {
     on BecomeLeader do (payload: (term:int, leader:Server, log: seq[ServerLog], commitIndex: int)) {
-      // check all already-committed logs is remain committed in the new leader's log
       var i: int;
       var e: ServerLog;
-      foreach (e in committedLogs) {
-        assert e in payload.log, format("{0} was committed before but not in the new leader's log", e);
+      // every entry committed by an earlier term must be in the new leader's log
+      foreach (e in keys(committedLogs)) {
+        if (committedLogs[e] < payload.term) {
+          assert e in payload.log, format("{0} was committed by term {1} but is not in the log of the leader of term {2}", e, committedLogs[e], payload.term);
+        }
       }
 
-      // add the committed logs
+      // record the entries this leader has committed, by the earliest term seen
       i = 0;
       while (i <= payload.commitIndex) {
-        committedLogs += (payload.log[i]);
+        if (!(payload.log[i] in committedLogs) || payload.term < committedLogs[payload.log[i]]) {
+          committedLogs[payload.log[i]] = payload.term;
+        }
         i = i + 1;
       }
     }

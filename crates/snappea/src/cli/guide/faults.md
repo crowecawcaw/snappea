@@ -109,11 +109,11 @@ machine Network {
 }
 ```
 
-- Bound the losses. Upstream P's `UnReliableSend` may lose every message: with a
-  client that retries, "every retry is lost" is a cycle the model can repeat forever,
-  and a liveness spec reports it. That is a liveness trap in the model, not a bug in
-  the design. Bound losses with a counter, or use `$$` for a loss the network must
-  eventually stop choosing.
+- Bound the losses. Upstream P's `UnReliableSend` decides each loss with `$`. The
+  checker treats such choices as fair, so "every retry is lost" is not reported as a
+  liveness bug, but it is a cycle the exhaustive search cannot rule out: liveness then
+  stays unverified and the search incomplete. A loss counter keeps the search finite
+  and lets it verify progress.
 - Bound duplicates and crashes the same way: once each is usually enough to find bugs.
 
 ## Mutation testing and faults

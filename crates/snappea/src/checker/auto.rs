@@ -213,7 +213,7 @@ impl Strategy for AutoStrategy {
             } else if self.dfs_bounds > 0 {
                 "a schedule reached the depth bound"
             } else {
-                "state exploration finished but liveness remains unverified"
+                "state exploration finished, but liveness remains unverified: a cycle through a state where a liveness spec was not cold was unfair or left its hot state, and another cycle there could stay hot"
             });
             return true;
         }
@@ -330,7 +330,7 @@ impl Strategy for AutoStrategy {
     fn wants_state_hash(&self) -> bool {
         !self.interrupted && self.active().wants_state_hash()
     }
-    fn observe_state(&mut self, hash: u64) -> bool {
+    fn observe_state(&mut self, hash: u64, live: bool) -> bool {
         if self.probing {
             return true;
         }
@@ -342,7 +342,7 @@ impl Strategy for AutoStrategy {
             self.interruption_reason = Some("distinct state limit reached");
             return false;
         }
-        dfs.observe_state(hash)
+        dfs.observe_state(hash, live)
     }
     fn closed_cycle(&mut self) -> Option<super::exhaustive::Cycle> {
         if self.probing || self.interrupted {

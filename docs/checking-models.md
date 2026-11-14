@@ -111,7 +111,8 @@ Exhaustive search checks liveness on cycles. When a schedule returns to a state 
 on its own path while a liveness monitor is hot, the steps since that state form a
 cycle the model can repeat forever. If the monitor stayed out of cold states through
 the cycle, and the cycle is fair (every machine that could run at every step of it ran,
-and every `$$` choice made in it took both values), the check fails at once:
+and every choice made in it, `$`, `$$` or `choose`, took each of its values there), the
+check fails at once:
 
 ```
 Answered detected liveness bug in hot state 'Waiting': the last 6 steps return to an
@@ -120,15 +121,23 @@ cold state.
 ```
 
 A retry loop that never succeeds is then found on the first schedule that closes it,
-as cheaply as a deadlock. Plain `$` and `choose` choices need not vary: a network that
-may lose every retry is a real livelock. The saved schedule ends with the cycle and
-names its start in a `--snappea-lasso:<step>` header; `snappea replay` checks that the
-end returns to that state. Other cycles are pruned. A search that pruned a cycle
-through a state where a liveness monitor was not cold (an unfair cycle, or one through
-a cold state) has not verified liveness, since another cycle through that state could
-be a bug: it continues with fair feedback search. With several workers, any pruned
-cycle counts, since the shared state cache can hide a cycle from the worker that closes
-it.
+as cheaply as a deadlock. Choices are fair, as in upstream P and in sampled schedules: a
+timer whose `if ($)` keeps choosing not to fire, or a network that keeps choosing to
+lose the retry, is not a liveness bug, because a fair run eventually takes the other
+branch. `$` and `$$` behave the same here. To check progress when losses can go on
+forever, bound them with a counter (see `snappea guide faults`). The saved schedule
+ends with the cycle and names its start in a `--snappea-lasso:<step>` header;
+`snappea replay` checks that the end returns to that state. Other cycles are pruned.
+A search that pruned a cycle through a state where a liveness monitor was not cold (an
+unfair cycle, or one that leaves the hot state) has not verified liveness, since another
+cycle through that state could be a bug: it continues with fair feedback search, and the
+test case is reported incomplete. Cycles through states where every liveness monitor is
+cold do not count, with any number of workers.
+
+The state cache leaves out fields, locals and event payloads that no assertion,
+condition, send or spec depends on (the values the `unchecked-state` lint reports): such
+a value cannot change what happens next, so a write-only counter neither keeps the
+search from finishing nor hides a cycle.
 
 By default the selected test cases **share 10 seconds**: each gets the time left divided
 by the test cases left. A test case stops early, marked `stopped: coverage stopped

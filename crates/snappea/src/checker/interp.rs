@@ -42,6 +42,12 @@ enum Flow {
 
 // ---- .NET exceptions ----------------------------------------------------------
 
+/// Identifies the choice instruction that frame `frame` runs, within a schedule.
+fn choice_site(frames: &[crate::checker::runtime::Frame], frame: usize) -> u64 {
+    let f = &frames[frame];
+    (Rc::as_ptr(&f.code) as usize as u64).rotate_left(20) ^ f.pc as u64
+}
+
 fn nre() -> Exception {
     Exception::new("System.NullReferenceException", "Object reference not set to an instance of an object.")
 }
@@ -1535,16 +1541,11 @@ impl<'p> Runtime<'p> {
                 };
                 stack.push(v);
             }
-            Op::ChooseBool => {
+            // `$` and `$$` are both fair for liveness (see `Runtime::check_lasso`)
+            Op::ChooseBool | Op::ChooseFairBool => {
                 let name = self.actor_name(actor);
                 let b = self.choose_bool(2, &name)?;
-                stack.push(Value::Bool(b));
-            }
-            Op::ChooseFairBool => {
-                let name = self.actor_name(actor);
-                let f = &exec.frames[frame_idx];
-                let site = (Rc::as_ptr(&f.code) as usize as u64).rotate_left(20) ^ f.pc as u64;
-                let b = self.choose_fair_bool(&name, site)?;
+                self.note_choice(choice_site(&exec.frames, frame_idx), 2, usize::from(b));
                 stack.push(Value::Bool(b));
             }
             Op::ChooseInt => {
@@ -1562,24 +1563,28 @@ impl<'p> Runtime<'p> {
                 }
                 let name = self.actor_name(actor);
                 let i = self.choose_int(max.max(0) as i32, &name)?;
+                self.note_choice(choice_site(&exec.frames, frame_idx), max.max(0) as usize, i as usize);
                 stack.push(Value::Int(i as i64));
             }
             Op::ChooseSeq => {
                 let v = pop(stack);
                 let Value::Seq(s) = &v else { return Err(nre().into()) };
                 let i = self.pick(actor, s.len(), "sequence")?;
+                self.note_choice(choice_site(&exec.frames, frame_idx), s.len(), i);
                 stack.push(s[i].clone());
             }
             Op::ChooseSet => {
                 let v = pop(stack);
                 let Value::Set(s) = &v else { return Err(nre().into()) };
                 let i = self.pick(actor, s.len(), "set")?;
+                self.note_choice(choice_site(&exec.frames, frame_idx), s.len(), i);
                 stack.push(s.element_at(i).expect("choice in range").clone());
             }
             Op::ChooseMap => {
                 let v = pop(stack);
                 let Value::Map(m) = &v else { return Err(nre().into()) };
                 let i = self.pick(actor, m.len(), "map")?;
+                self.note_choice(choice_site(&exec.frames, frame_idx), m.len(), i);
                 stack.push(m.key_at(i).expect("choice in range").clone());
             }
             Op::Insert { root, path } => {
