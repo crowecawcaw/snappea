@@ -38,7 +38,6 @@ spec NoLostUpdates observes SyncPlanned, Accepted, Conflicted, Replayed {
   var applied: map[int, int];
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- SyncCompletes checks the client count
     on SyncPlanned do (p: (clients: int, initial: Note)) {
       current = p.initial;
       goto Watching;
@@ -50,7 +49,6 @@ spec NoLostUpdates observes SyncPlanned, Accepted, Conflicted, Replayed {
 
   state Watching {
     on SyncPlanned do { assert false, "sync planned twice"; }
-    // snappea-lint: allow unused-payload-field -- SyncCompletes associates the client with its planned operation
     on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       var e: int;
       assert !(a.req in applied), format("request {0} applied twice", a.req);
@@ -70,13 +68,11 @@ spec NoLostUpdates observes SyncPlanned, Accepted, Conflicted, Replayed {
       applied[a.req] = a.version;
       current = (version = a.version, content = a.content, deleted = a.deleted);
     }
-    // snappea-lint: allow unused-payload-field -- SyncCompletes checks the client and base
     on Replayed do (r: (client: int, req: int, base: int, version: int)) {
       assert r.req in applied, format("request {0} replayed but never applied", r.req);
       assert r.version == applied[r.req],
         format("request {0} replayed as version {1}, it produced version {2}", r.req, r.version, applied[r.req]);
     }
-    // snappea-lint: allow unused-payload-field -- SyncCompletes checks which client receives the conflict
     on Conflicted do (c: (client: int, req: int, base: int, current: int)) {
       assert !(c.req in applied),
         format("request {0} conflicted with itself: it was already applied", c.req);
@@ -136,18 +132,15 @@ spec SyncCompletes observes SyncPlanned, OpPlanned, Accepted, Conflicted, Replay
       reported[p.client] = default(set[int]);
       resends[p.client] = 0;
     }
-    // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids
     on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       CheckBase(a.client, a.base);
       current = (version = a.version, content = a.content, deleted = a.deleted);
       accepted[a.client] = current;
     }
-    // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids
     on Conflicted do (c: (client: int, req: int, base: int, current: int)) {
       CheckBase(c.client, c.base);
       reported[c.client] += (c.current);
     }
-    // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids and versions
     on Replayed do (r: (client: int, req: int, base: int, version: int)) {
       CheckBase(r.client, r.base);
     }

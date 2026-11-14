@@ -36,7 +36,6 @@ spec RolloutSafety observes RolloutPlanned, NodeStarted, Issued, PushSent, Appli
   var latest: int;
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- RolloutCompletes counts the issues
     on RolloutPlanned do (p: (nodes: int, version: int, content: int, issues: int)) {
       var n: int;
       while (n < p.nodes) {
@@ -110,7 +109,6 @@ spec RolloutCompletes observes RolloutPlanned, Issued, Applied, RolloutDone {
   var done: bool;
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- RolloutSafety checks contents
     on RolloutPlanned do (p: (nodes: int, version: int, content: int, issues: int)) {
       assert p.issues > 0, "planned no new versions";
       nodes = p.nodes;
@@ -126,7 +124,6 @@ spec RolloutCompletes observes RolloutPlanned, Issued, Applied, RolloutDone {
   hot state Rolling {
     on RolloutPlanned do { assert false, "rollout planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- RolloutSafety checks contents
     on Issued do (i: (version: int, content: int)) {
       assert issuesLeft > 0, "more versions issued than planned";
       issuesLeft = issuesLeft - 1;
@@ -140,7 +137,6 @@ spec RolloutCompletes observes RolloutPlanned, Issued, Applied, RolloutDone {
       Check();
     }
 
-    // snappea-lint: allow unused-payload-field -- RolloutSafety checks contents
     on Applied do (a: (node: int, version: int, content: int)) {
       if (a.version == latest) { current += (a.node); }
       Check();

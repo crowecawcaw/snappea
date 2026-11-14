@@ -42,7 +42,6 @@ spec DrainSafety observes FleetPlanned, Routed, Deregistered, Accepted, Served, 
   var routedTo: map[int, int];
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- RequestsAndScaleInsFinish counts requests and scale-ins
     on FleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
       var i: int;
       while (i < p.instances) {
@@ -84,7 +83,6 @@ spec DrainSafety observes FleetPlanned, Routed, Deregistered, Accepted, Served, 
       Delivered(a.id, a.inst);
       inFlight[a.inst] += (a.id);
     }
-    // snappea-lint: allow unused-payload-field -- DrainSafety checks which instance served it
     on Served do (s: (id: int, inst: int)) {
       assert s.id in inFlight[s.inst], format("instance {0} served request {1} it never accepted", s.inst, s.id);
       inFlight[s.inst] -= (s.id);
@@ -133,7 +131,6 @@ spec RequestsAndScaleInsFinish observes FleetPlanned, RequestSent, GotResponse, 
   var asked: set[int];
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- RequestsAndScaleInsFinish counts requests and scale-ins
     on FleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
       assert p.instances > 0 && p.requests > 0, "planned no instances or no requests";
       requestsLeft = p.requests;
@@ -154,7 +151,6 @@ spec RequestsAndScaleInsFinish observes FleetPlanned, RequestSent, GotResponse, 
       assert !(r.id in outstanding), format("request {0} outstanding twice", r.id);
       outstanding += (r.id);
     }
-    // snappea-lint: allow unused-payload-field -- DrainSafety checks which instance served it
     on Served do (s: (id: int, inst: int)) {
       assert s.id in outstanding, format("request {0} served but never outstanding", s.id);
       assert !(s.id in served), format("request {0} served twice", s.id);

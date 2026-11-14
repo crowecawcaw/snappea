@@ -62,14 +62,12 @@ spec EveryoneCatchesUp observes Planned, Sequenced, Displayed {
   hot state CatchingUp {
     on Planned do { assert false, "run planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- InOrderNoGaps checks seq and message; this spec counts
     on Sequenced do (s: (sn: int, msg: int)) {
       sequenced = sequenced + 1;
       assert sequenced <= msgs, format("more messages sequenced than the {0} planned", msgs);
       Settle();
     }
 
-    // snappea-lint: allow unused-payload-field -- InOrderNoGaps checks seq and message; this spec counts
     on Displayed do (d: (client: int, sn: int, msg: int)) {
       assert d.client >= 1 && d.client <= clients, format("client {0} was not planned", d.client);
       if (!(d.client in shown)) { shown[d.client] = 0; }

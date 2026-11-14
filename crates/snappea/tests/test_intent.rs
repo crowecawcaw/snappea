@@ -90,6 +90,94 @@ fn negative_driver_coverage_cannot_fill_positive_design_or_shared_helper_gaps() 
 }
 
 #[test]
+fn negative_only_driver_gaps_are_reported_without_failing_coverage() {
+    let source = r#"
+        event Fail;
+        event LateReply;
+        machine Negative {
+            start state S {
+                entry { send this, Fail; }
+                on Fail do { assert false, "known flaw"; }
+                on LateReply do { print "late reply arrived"; }
+            }
+        }
+        // snappea: expect-bug "known flaw"
+        test tcNegative [main=Negative]: { Negative };
+    "#;
+    let (code, report, _) = run(source, &["--deny", "coverage"]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["coverage_failed"], false);
+    assert!(report["coverage"]["uncovered_required"].as_array().unwrap().is_empty(), "{report}");
+    let separate = &report["coverage"]["expected_bug_driver_only"];
+    assert_eq!(separate["required"], false);
+    assert!(!separate["uncovered"].as_array().unwrap().is_empty(), "{report}");
+    assert!(separate["handlers"]["covered"].as_u64() < separate["handlers"]["total"].as_u64());
+    assert!(!report["test_cases"][0]["expected_bug_driver_coverage"]["uncovered"].as_array().unwrap().is_empty());
+    assert_eq!(report["test_cases"][0]["expected_bug_driver_coverage"]["included"], true);
+    let (code, mismatch, _) =
+        run(&source.replace("assert false, \"known flaw\"", "assert false, \"different flaw\""), &[]);
+    assert_eq!(code, 1, "{mismatch}");
+    assert_eq!(mismatch["test_cases"][0]["expected_bug"]["outcome"], "wrong_failure");
+
+    let mut host = MemHost::new("/w");
+    host.add_file("model.p", source);
+    assert_eq!(
+        snappea::cli::run(&["check", "model.p", "--no-mutation", "--warn", "lint"].map(String::from), &mut host),
+        0
+    );
+    assert!(host.stdout.contains("Expected-bug-only driver gaps (report-only"), "{}", host.stdout);
+    assert!(!host.stdout.contains("No schedule of the selected tests reaches these gaps"), "{}", host.stdout);
+}
+
+#[test]
+fn negative_driver_exemption_follows_selection_and_never_exempts_shared_drivers_or_helpers() {
+    let source = r#"
+        event Fail;
+        event LateReply;
+        fun SharedWork(b: bool) { if (b) { print "late"; } else { print "initial"; } }
+        // snappea: driver
+        machine Environment {
+            start state S {
+                on LateReply do { SharedWork(true); }
+            }
+        }
+        machine Positive { start state S { entry { new Environment(); SharedWork(false); } } }
+        machine Negative {
+            start state S {
+                entry { new Environment(); send this, Fail; }
+                on Fail do { assert false, "known flaw"; }
+                on LateReply do { SharedWork(true); }
+            }
+        }
+        test tcPositive [main=Positive]: { Positive, Environment };
+        // snappea: expect-bug "known flaw"
+        test tcNegative [main=Negative]: { Negative, Environment };
+    "#;
+    let (code, negative, _) = run(source, &["tcNegative"]);
+    assert_eq!(code, 0, "{negative}");
+    let negative_gaps = negative["coverage"]["expected_bug_driver_only"]["uncovered"].as_array().unwrap();
+    assert!(negative_gaps.iter().any(|g| g["context"].as_str().unwrap().contains("Environment")), "{negative}");
+    assert!(negative_gaps.iter().any(|g| g["context"].as_str().unwrap().contains("SharedWork")), "{negative}");
+
+    let (code, both, _) = run(source, &[]);
+    assert_eq!(code, 1, "{both}");
+    assert_eq!(both["summary"]["status"], "coverage_failed");
+    let required = both["coverage"]["uncovered_required"].as_array().unwrap();
+    for shared in ["Environment", "SharedWork"] {
+        assert!(required.iter().any(|g| g["context"].as_str().unwrap().contains(shared)), "{both}");
+        assert!(
+            !both["coverage"]["expected_bug_driver_only"]["uncovered"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|g| g["context"].as_str().unwrap().contains(shared)),
+            "{both}"
+        );
+    }
+    assert!(!required.iter().any(|g| g["context"].as_str().unwrap().contains("Negative")), "{both}");
+}
+
+#[test]
 fn intent_directives_validate_values_and_bind_to_test_declarations() {
     use snappea::syntax::SourceMap;
     let parse = |directives: &str| {

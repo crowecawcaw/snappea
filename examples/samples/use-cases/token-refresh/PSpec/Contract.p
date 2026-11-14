@@ -36,7 +36,6 @@ spec TokenSafety observes LoggedIn, TokenStolen, Rotated, FamilyRevoked, TokenOb
       assert t <= current, format("attacker stole token {0}, which was never issued", t);
       stolen = true;
     }
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks the new token
     on Rotated do (p: (from: int, next: int)) {
       assert !revoked, format("server accepted refresh token {0} after the family was revoked", p.from);
       assert p.from == current, format("server accepted rotated-out refresh token {0}; the current one is {1}", p.from, current);
@@ -85,8 +84,6 @@ spec TabsServed observes LoggedIn, TabPlanned, TokenObtained, SessionLost, Respo
     on SessionLost do { assert false, "session given up by a tab that needs no token"; }
     on ResponseLost do { assert false, "refresh while no tab needs a token"; }
     // An attacker can present the stolen token after the tabs are done.
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks which token caused it
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks which token caused it
     on FamilyRevoked do (p: (refresh: int)) { excuse = true; }
   }
 
@@ -106,7 +103,6 @@ spec TabsServed observes LoggedIn, TabPlanned, TokenObtained, SessionLost, Respo
       Check();
     }
     on ResponseLost do { excuse = true; }
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks the new token
     on Rotated do (p: (from: int, next: int)) {
       var tab: int;
       var justified: bool;
@@ -115,8 +111,6 @@ spec TabsServed observes LoggedIn, TabPlanned, TokenObtained, SessionLost, Respo
       }
       assert justified, format("token {0} was refreshed, but no waiting tab held it: a tab ignored the newer stored token", p.from);
     }
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks which token caused it
-    // snappea-lint: allow unused-payload-field -- TokenSafety checks which token caused it
     on FamilyRevoked do (p: (refresh: int)) { excuse = true; }
   }
 

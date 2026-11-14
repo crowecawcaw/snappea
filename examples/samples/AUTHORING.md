@@ -42,9 +42,10 @@ The script runs native checks over every declared test, then mutation testing:
 - Negative controls use `// snappea: expect-bug "distinctive failure message"`
   immediately before the test declaration. Every run on seeds 1, 2 and 3 must find
   the matching failure. A different failure or no failure fails the check.
-- Expected failures contribute driver coverage, but cannot fill gaps in the passing
-  design's coverage or detect mutants. The checker reports their design coverage
-  separately. Ordinary `snappea check` commands honor the same declarations.
+- Matching expected failures contribute driver evidence, but cannot fill gaps in the
+  passing design's coverage or detect mutants. Gaps exclusive to negative drivers
+  are reported without failing coverage; positive and shared code stays required.
+  Ordinary `snappea check` commands honor the same declarations.
 
 The harness saves native JSON reports and replay artifacts under each sample's
 `PCheckerOutput/samples/`. Read failure-identity advisories: matching a broad message
@@ -77,7 +78,14 @@ Keep bounds grounded in the application contract, not in a desire for a green ch
   (before and after expiry, sale, crash).
 - **Negative control.** Where cheap, include a plausible broken variant as separate
   machines (so its code is excluded from the passing tests' coverage) and a
-  `tcBug*` test with a native `expect-bug` declaration.
+  `tcBug*` test with a native `expect-bug` declaration. Keep normal completion paths
+  intact on schedules that do not expose the flaw; report-only negative coverage
+  is not a reason to remove protocol obligations.
+- **Specs can divide responsibilities.** A safety spec and a progress spec may check
+  different fields of the same event. Select them together in every test that relies
+  on both: the payload lint validates meaningful reads across that test's selected
+  specs, never across unrelated tests or scenario monitors. A per-spec advisory
+  explains that another selected spec checks the field; no suppression is needed.
 - **Suppressions carry reasons** and are rare. An undetected mutant is usually a
   missing assertion or scenario; suppress only equivalent mutants.
 - **New lints** (`unchecked-state`, `unchecked-event`, `no-progress-spec`) flag fields

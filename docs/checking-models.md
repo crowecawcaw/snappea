@@ -401,8 +401,18 @@ A matching expected-bug run contributes driver coverage. Its design/spec coverag
 is reported separately in `expected_bug_design_coverage`; it cannot fill coverage
 gaps in passing positive tests. Shared helpers used by a positive design are also
 excluded from the negative driver's contribution. `expected_bug_driver_coverage`
-reports the contributing scope and whether it was included. The per-test `coverage`
-field remains the raw coverage of that execution. Negative controls cannot satisfy
+reports the contributing scope, raw gaps and whether it was included. Driver code
+used only by selected expected-bug tests is report-only: the expected failure may
+stop it before a late reply or completion handler runs. Aggregate JSON exposes
+those counts and gaps in `coverage.expected_bug_driver_only`, with `required: false`;
+the console lists them separately. The ordinary raw totals still include this
+matched negative-driver evidence. `coverage.required` and `uncovered_required`
+include only components used by selected positive tests, so shared drivers and
+helpers remain subject to the coverage gate. Meaningful negative-driver work must
+still be modeled: on schedules that do not expose its flaw, a negative control
+should complete normally rather than fail for an unrelated reason.
+
+The per-test `coverage` field remains the raw coverage of that execution. Negative controls cannot satisfy
 required scenario coverage for positive tests, and they never detect mutants:
 mutation testing uses passing positive tests only.
 

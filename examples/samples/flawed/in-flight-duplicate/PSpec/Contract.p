@@ -20,15 +20,12 @@ spec ChargedOnce observes Requested, Charged {
 
   start state Watching {
 
-    // snappea-lint: allow unused-payload-field -- replies per request are checked by EveryRequestAnswered
-    // snappea-lint: allow unused-payload-field -- amounts are checked by ChargedOnce
     on Requested do (p: (req: int, key: int, amount: int)) {
       if (p.key in amounts) {
         assert amounts[p.key] == p.amount, format("key {0} reused with a different amount", p.key);
       }
       amounts[p.key] = p.amount;
     }
-    // snappea-lint: allow unused-payload-field -- amounts are checked by ChargedOnce
     on Charged do (p: (key: int, amount: int, charge: int)) {
       assert p.key in amounts, format("charge {0} for key {1}, which nobody requested", p.charge, p.key);
       assert !(p.key in charged),
@@ -65,14 +62,11 @@ spec EveryRequestAnswered observes RequestsPlanned, Requested, Charged, Replied 
   hot state Busy {
     on RequestsPlanned do { assert false, "requests planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- replies per request are checked by EveryRequestAnswered
-    // snappea-lint: allow unused-payload-field -- amounts are checked by ChargedOnce
     on Requested do (p: (req: int, key: int, amount: int)) {
       assert !(p.req in pending), format("request {0} sent twice", p.req);
       pending[p.req] = p.key;
     }
 
-    // snappea-lint: allow unused-payload-field -- amounts are checked by ChargedOnce
     on Charged do (p: (key: int, amount: int, charge: int)) {
       charged[p.key] = p.charge;
     }

@@ -57,7 +57,8 @@ model covers every requirement or faithfully represents the implementation.
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
 | `announce-and-send` | Adjacent `announce` and `send` expose the same event and payload to a spec twice. | Remove the redundant `announce`, or suppress an intentional duplicate. |
-| `unused-payload-field` | An event handler in a spec declares a named payload field but never reads it outside assertion messages. Formatting a field in an error message does not check it. | Validate or use the field, or suppress an intentional abstraction. |
+| `unused-payload-field` | A spec handler omits a named payload field, and at least one selected test has no companion spec that reads that event field outside diagnostic output. | Validate the field in a selected spec, or suppress an intentional abstraction. |
+| `payload-field-checked-by-other-spec` | Advisory: this handler omits a field that a companion spec reads in every selected test using the monitor. | Keep each spec focused; review whether the division matches the contract. |
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
@@ -191,17 +192,33 @@ send owner, eClientDone, id;
 
 ### Unused payload fields
 
-A handler that receives `(revision, digest)` but checks only `revision` does not
-validate digest binding. The rule checks anonymous and named event handlers,
-resolves tuple type aliases, and reports unused fields separately. A direct write
-to a field does not count as reading it. Passing or copying the whole payload is
-conservatively treated as using every field; this is not interprocedural dataflow
-analysis. Reading a field also does not prove it contributes to a useful property.
-An index on the left of an assignment is a read: `requested[r.id] = r.amount;` reads
-both fields. A handler that unconditionally reaches `assert false` (with an optional message
-and preceding literal or formatted diagnostic prints without helper calls) reports an event that must not happen, so it need not read every field. P has no
-partial or `_` binding for payloads; to track one field of an event another spec
-checks fully, suppress the finding with a reason.
+Safety and progress specs can check different fields of the same event. `check` and
+`check lint` combine meaningful reads across the spec monitors selected **within
+each test**, rather than forcing every handler to read every field. A local omission
+still produces the advisory `payload-field-checked-by-other-spec` when a companion
+checks it in every selected test that uses that monitor. This remains nonblocking
+with `--deny lint`; no suppression is needed just to divide responsibilities.
+
+A field with no reader in any one of those test configurations remains a blocking
+`unused-payload-field`, naming the affected tests. Selecting a companion in another
+test does not help. Scenarios, unselected specs, handlers for other events, and
+handlers outside a spec's `observes` list cannot provide evidence. Printing a field
+or using it only in an assertion message does not count. Whole-tuple forwarding or
+aliasing conservatively counts as reading every field, as before. This is syntactic
+usage evidence, not proof that the specs check the right contract or track every
+request's completion.
+
+Standalone `check lint` evaluates every resolved test/implementation. The source-only
+`snappea_lint::lint` library API has no resolved module selection and retains strict
+per-handler checks; callers with resolved configurations can use
+`lint_with_spec_selections`.
+
+The rule checks anonymous and named event handlers and resolves tuple type aliases.
+A direct write to a field does not count as a read. An index on the left of an
+assignment does: `requested[r.id] = r.amount;` reads both fields. A handler that
+unconditionally reaches `assert false` (with an optional message and preceding
+literal or formatted diagnostic prints without helper calls) reports an event that
+must not happen, so it need not read every field.
 
 ### Unobserved handlers
 

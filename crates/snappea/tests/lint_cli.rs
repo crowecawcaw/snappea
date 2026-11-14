@@ -22,7 +22,7 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 17);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 18);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -180,7 +180,7 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 17);
+    assert_eq!(h.stdout.lines().count(), 18);
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("announce-and-send"));
     assert!(h.stdout.contains("unchecked-state"));
@@ -553,4 +553,66 @@ fn design_payload_advisories_do_not_fail_checks_and_skip_goto_plumbing() {
     h.add_file("payload.p", &source.replace("on Reply do Handle;", "on Reply goto S with Handle;"));
     assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(!h.stderr.contains("unused-design-payload-field"), "{}", h.stderr);
+}
+
+const COMPLEMENTARY_PAYLOAD_SPECS: &str = r#"
+event Reading: (request: int, value: int);
+spec RequestKnown observes Reading {
+  start state Watching { on Reading do (p: (request: int, value: int)) { assert p.request > 0; } }
+}
+spec ValueValid observes Reading {
+  start state Watching { on Reading do Check; }
+  fun Check(p: (request: int, value: int)) { assert p.value > 0; }
+}
+machine Main { start state Start { entry { new Sensor(); } } }
+machine Sensor { start state Ready { entry { announce Reading, (request=1, value=2); } } }
+test together [main=Main]: assert RequestKnown, ValueValid in { Main, Sensor };
+"#;
+
+#[test]
+fn complementary_specs_share_payload_checks_without_blocking_deny_lint() {
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", COMPLEMENTARY_PAYLOAD_SPECS);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(h.stderr.contains("warning[payload-field-checked-by-other-spec]"), "{}", h.stderr);
+    assert!(!h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
+    h.terminal = false;
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
+    let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(json["findings"].as_array().unwrap().len(), 2, "{json}");
+    assert!(json["findings"].as_array().unwrap().iter().all(|f| f["severity"] == "advisory"), "{json}");
+    assert_eq!(run(&mut h, &["check", "model.p", "--deny", "lint", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+}
+
+#[test]
+fn companion_reads_cannot_leak_across_tests_or_selections() {
+    let mut h = MemHost::new("/w");
+    h.add_file(
+        "model.p",
+        &format!("{COMPLEMENTARY_PAYLOAD_SPECS}\ntest alone [main=Main]: assert RequestKnown in {{ Main, Sensor }};"),
+    );
+    assert_eq!(run(&mut h, &["check", "model.p", "together", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    for args in [vec!["check", "lint", "model.p"], vec!["check", "model.p", "alone"], vec!["check", "model.p"]] {
+        assert_eq!(run(&mut h, &args), 2, "{args:?}: {}{}", h.stdout, h.stderr);
+        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("test(s) alone"), "{}", h.stderr);
+    }
+}
+
+#[test]
+fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
+    for source in [
+        COMPLEMENTARY_PAYLOAD_SPECS.replace("assert p.value > 0;", "assert p.request > 0, format(\"value {0}\", p.value);"),
+        COMPLEMENTARY_PAYLOAD_SPECS.replace("assert p.value > 0;", "print format(\"value {0}\", p.value); assert p.request > 0;"),
+        COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
+            .replace("on Reading do Check", "on Other do Check"),
+        COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
+            .replace("on Reading do Check", "// snappea-lint: allow unobserved-handler -- intentionally unreachable reader fixture\n on Reading do Check"),
+        COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "scenario ValueValid observes Reading")
+            .replace("start state Watching { on Reading do Check; }", "start state Watching { on Reading do Check; } cold state Seen {}"),
+    ] {
+        let mut h = MemHost::new("/w");
+        h.add_file("model.p", &source);
+        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2, "{}{}", h.stdout, h.stderr);
+        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
+    }
 }

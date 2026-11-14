@@ -94,9 +94,7 @@ machine SlowCarService {
     on Reserve do (r: (saga: machine, step: BookingStep)) {
       send driver, CarRequested;
       receive { case CarGo: { } }
-      // snappea-lint: allow coverage -- expected failure stops the negative control before this late reservation commits
       announce Reserved, r.step;
-      // snappea-lint: allow coverage -- expected failure stops the negative control before its late reply
       send r.saga, ReserveResp, (step = r.step, ok = true);
     }
   }
@@ -118,7 +116,6 @@ machine BugForgetsInFlightStep {
       saga = new ForgetfulSaga((owner = this, services = services));
     }
     on CarRequested do { new CancellingUser(saga); }
-    // snappea-lint: allow coverage -- the spec rejects SagaEnded before the broken saga can send SagaDone
     on SagaDone do { send car, CarGo; }
   }
 }

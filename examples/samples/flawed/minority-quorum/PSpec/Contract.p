@@ -41,7 +41,6 @@ spec OneLeaderPerTerm observes Candidacy, VoteGranted, VoteDenied, ElectionEnded
         format("node {0} voted in term {1} after voting in term {2}", p.voter, p.term, lastVoted[p.voter]);
       lastVoted[p.voter] = p.term;
     }
-    // snappea-lint: allow unused-payload-field -- ElectionsEnd checks the candidate and response correlation; this spec checks the voter term
     on VoteDenied do (p: (term: int, voter: int, candidate: int)) {
       assert p.voter in lastVoted && p.term <= lastVoted[p.voter],
         format("node {0} denied node {1} in term {2}, although it had not voted in that term",

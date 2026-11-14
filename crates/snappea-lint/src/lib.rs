@@ -25,6 +25,10 @@ pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> 
 /// `--list-rules` know them.
 pub const PROGRAM_RULES: &[(&str, &str)] = &[
     (
+        "payload-field-checked-by-other-spec",
+        "Advisory: this spec omits a payload field that companion specs read in every selected test using it.",
+    ),
+    (
         "unused-design-payload-field",
         "Advisory: a design event handler never reads a named payload field outside diagnostic output.",
     ),
@@ -69,7 +73,7 @@ pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding
 /// Whether a rule reports an advisory rather than blocking a check. Advisory findings
 /// remain warnings even with `--deny lint`; source suppressions work as usual.
 pub fn is_advisory(rule: &str) -> bool {
-    matches!(rule, "shared-spec-helper" | "unused-design-payload-field")
+    matches!(rule, "shared-spec-helper" | "unused-design-payload-field" | "payload-field-checked-by-other-spec")
 }
 
 /// An actionable diagnostic; advisory rules do not fail CLI linting.
@@ -174,9 +178,17 @@ impl Registry {
     }
 
     pub fn check(&self, context: &Context<'_>) -> Vec<Finding> {
+        self.check_selected(context, None)
+    }
+
+    fn check_selected(&self, context: &Context<'_>, selections: Option<&[SpecSelection]>) -> Vec<Finding> {
         let mut findings = Vec::new();
         for rule in &self.rules {
-            rule.check(context, &mut findings);
+            if rule.id() == "unused-payload-field" && selections.is_some() {
+                UnusedPayloadField.check_selected(context, selections, &mut findings);
+            } else {
+                rule.check(context, &mut findings);
+            }
         }
         suppression::apply(context, &self.rules, &mut findings);
         findings.sort_by(|a, b| (a.span, a.rule, &a.message).cmp(&(b.span, b.rule, &b.message)));
@@ -187,6 +199,22 @@ impl Registry {
 
 pub fn lint(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
     Ok(Registry::builtins().check(&Context::parse(sources)?))
+}
+
+/// Resolved spec monitors selected together by one concrete test configuration.
+/// Scenarios must not appear here: they describe evidence, not correctness checks.
+pub struct SpecSelection {
+    pub name: String,
+    pub specs: Vec<String>,
+}
+
+/// Lint with resolved test selection, allowing complementary specs to share payload
+/// validation only within each test. Source-only callers can continue using [`lint`].
+pub fn lint_with_spec_selections(
+    sources: &SourceMap,
+    selections: &[SpecSelection],
+) -> Result<Vec<Finding>, ParseError> {
+    Ok(Registry::builtins().check_selected(&Context::parse(sources)?, Some(selections)))
 }
 
 /// The rules checking logs against specs enforces (`snappea observe`, test libraries):

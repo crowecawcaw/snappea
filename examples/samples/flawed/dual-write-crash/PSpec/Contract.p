@@ -119,7 +119,6 @@ spec UpdatesAnswered observes UpdatesPlanned, UpdateRequested, UpdateAnswered, C
 spec DeliveredOnceWithoutRelayCrash observes Delivered {
   var delivered: set[int];
   start state Watching {
-    // snappea-lint: allow unused-payload-field -- CommittedChangesPublished checks values; this spec checks duplicate delivery by id
     on Delivered do (c: Change) {
       assert !(c.id in delivered), format("change {0} = {1} delivered twice although the relay never crashed", c.id, c.value);
       delivered += (c.id);

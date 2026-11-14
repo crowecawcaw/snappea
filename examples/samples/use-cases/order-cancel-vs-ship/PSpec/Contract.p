@@ -133,7 +133,6 @@ spec OrdersSettle observes OrdersPlanned, OrderRequested, CancelRequested, Order
       assert p.order in cancelsDue, format("order {0} created but never requested", p.order);
       status[p.order] = Placed;
     }
-    // snappea-lint: allow unused-payload-field -- OrderSafety checks the transition; this spec needs the new status
     on StatusChanged do (p: (order: int, from: Status, next: Status)) {
       status[p.order] = p.next;
       if (p.next == Cancelled) {

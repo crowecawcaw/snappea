@@ -163,7 +163,6 @@ scenario ReopenedForLatePress observes ElevatorPlanned, Requested, MotorStarted,
   var floor: int;
   var opened: bool;
   start hot state Watching {
-    // snappea-lint: allow unused-payload-field -- only the start floor matters here
     on ElevatorPlanned do (p: (floor: int, floors: int, requests: int)) { floor = p.floor; }
     on MotorStarted do { opened = false; }
     on MotorStopped do (m: (floor: int)) { floor = m.floor; }

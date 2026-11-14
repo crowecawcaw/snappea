@@ -1150,6 +1150,7 @@ fn run_check(
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
     let (mut scope, mut hits) = (Scope::default(), Hits::default());
     let mut selected_scope = Scope::default();
+    let mut positive_scope = Scope::default();
     let mut cases = Vec::new();
     let mut scenarios = Vec::new();
     let mut incomplete = 0;
@@ -1160,6 +1161,7 @@ fn run_check(
         (Scope::default(), Hits::default(), Scope::default());
     for tc in &selected_tests {
         if crate::driver::lint::intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()) {
+            positive_scope.add(&Scope::test_case(prog, tc));
             positive_design.add(&Scope::partition_drivers(prog, tc, &drivers).1);
         }
     }
@@ -1263,8 +1265,8 @@ fn run_check(
             if expected.is_some() {
                 let (mut driver_scope, design_scope) = Scope::partition_drivers(prog, tc, &drivers);
                 driver_scope.exclude(&positive_design);
-                let driver_summary = CodeMap::new(prog, &probes, &driver_scope).coverage(h).summary();
-                result["expected_bug_driver_coverage"] = driver_summary.to_json();
+                let driver_coverage = CodeMap::new(prog, &probes, &driver_scope).coverage(h);
+                result["expected_bug_driver_coverage"] = driver_coverage.to_json(false);
                 result["expected_bug_driver_coverage"]["included"] = json!(matched);
                 let design_map = CodeMap::new(prog, &probes, &design_scope);
                 let design_coverage = design_map.coverage(h);
@@ -1328,8 +1330,17 @@ fn run_check(
     let map = CodeMap::new(prog, &probes, &scope);
     let suite = map.coverage(&hits);
     let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
-    let required = map.required_summary(&suite, &coverage_suppressions);
-    let mut required_uncovered = map.required_uncovered(&suite, &coverage_suppressions);
+    // A declared failure can stop a negative-only driver before its remaining
+    // work runs. Preserve that evidence, but require coverage only for components
+    // selected by a positive test (including shared drivers and their helpers).
+    let required_map = CodeMap::new(prog, &probes, &positive_scope);
+    let required_suite = required_map.coverage(&hits);
+    let required = required_map.required_summary(&required_suite, &coverage_suppressions);
+    let mut required_uncovered = required_map.required_uncovered(&required_suite, &coverage_suppressions);
+    let mut negative_only_scope = negative_driver_scope.clone();
+    negative_only_scope.exclude(&positive_scope);
+    let negative_only = CodeMap::new(prog, &probes, &negative_only_scope).coverage(&negative_hits);
+    let negative_only_gaps = negative_only.uncovered();
     let (mut uncovered, mut uncovered_suppressed) = map.split_uncovered(&suite, &coverage_suppressions);
     // a scenario no test case satisfied is a gap like code no test case ran
     let (scenario_gaps, scenario_accepted) = scenario::gaps(prog, &scenarios, &coverage_suppressions);
@@ -1371,8 +1382,11 @@ fn run_check(
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
         }
         let heading = if n > 1 { "Not covered by any test case:" } else { "Not covered by the test case:" };
-        let (conditions, pairs) = map.advisory_uncovered(&suite, &coverage_suppressions);
-        let actionable: Vec<_> = uncovered
+        let (conditions, pairs) = required_map.advisory_uncovered(&required_suite, &coverage_suppressions);
+        let (mut positive_uncovered, _) = required_map.split_uncovered(&required_suite, &coverage_suppressions);
+        positive_uncovered.extend(scenario_gaps.iter().cloned());
+        positive_uncovered.sort();
+        let actionable: Vec<_> = positive_uncovered
             .iter()
             .filter(|gap| conditions.binary_search(gap).is_err() && pairs.binary_search(gap).is_err())
             .cloned()
@@ -1403,6 +1417,13 @@ fn run_check(
                     con.inner.out_line(&l);
                 }
             }
+        }
+        for l in uncovered_lines(
+            "Expected-bug-only driver gaps (report-only; the expected failure can stop the driver):",
+            &negative_only_gaps,
+            " (--json lists all)",
+        ) {
+            con.inner.out_line(&l);
         }
         for l in uncovered_lines("Not covered, suppressed:", &uncovered_suppressed, " (--json lists all)") {
             con.inner.out_line(&l);
@@ -1619,6 +1640,8 @@ fn run_check(
     coverage["excluded_components"] = excluded.iter().map(|u| u.to_json()).collect();
     coverage["partial"] = json!(failed > 0);
     coverage["required"] = required.to_json();
+    coverage["expected_bug_driver_only"] = negative_only.to_json(false);
+    coverage["expected_bug_driver_only"]["required"] = json!(false);
     coverage["uncovered_required"] = required_uncovered.iter().map(|u| u.to_json()).collect();
     coverage["gate_bypassed"] = json!(!only && gates.coverage == Gate::Warn);
     coverage["failure"] = if coverage_failed {
