@@ -93,9 +93,7 @@ spec RequestsAnswered observes RequestsPlanned, Admitted, Rejected, Answered {
 
   hot state Waiting {
     on RequestsPlanned do { assert false, "requests planned twice"; }
-    // snappea-lint: allow unused-payload-field -- windows and counts are WindowLimit's job
     on Admitted do (p: (req: int, window: int, count: int)) { decisions[p.req] = true; }
-    // snappea-lint: allow unused-payload-field -- windows are WindowLimit's job
     on Rejected do (p: (req: int, window: int)) { decisions[p.req] = false; }
     on Answered do (p: (req: int, admitted: bool)) {
       assert p.req in decisions, format("request {0} answered before it was decided", p.req);

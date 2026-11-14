@@ -1,20 +1,14 @@
-// A plausible broken design, kept as a negative control: identical to Node except
-// that the vote is not persisted. A voter that granted its vote in a term, crashed and
-// restarted can grant it again to another candidate in the same term, so two leaders
-// win that term. tcBugVoteNotPersisted shows the spec catching it.
+// Focused negative control: the same restart/voting protocol as Node, but a vote
+// kept only in memory is lost on restart. Its test crashes a non-candidate voter
+// between two requests in the same term, exposing a second vote.
 machine ForgetfulNode {
   // Durable.
   var id: int;
   var term: int;
   var votedTerm: int;
-  // Volatile: the candidacy in progress.
-  var peers: seq[machine];
-  var driver: machine;
-  var electionTerm: int;
-  var votes: int;
-  var replies: int;
-  // The last term this node won; a candidacy in any other term is lost.
-  var leaderTerm: int;
+  // One record makes the crash boundary explicit: no campaign bookkeeping survives.
+  var campaign: (peers: seq[machine], driver: machine, term: int, votes: int,
+    replies: int, leaderTerm: int);
 
   start state Init {
     entry (d: Disk) {
@@ -31,22 +25,18 @@ machine ForgetfulNode {
     on VoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
     on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
     on ClientReq do { Answer(false); }
-    // BUG: the vote was kept only in memory, so a crash and restart forgets it.
-    on Crash do { votedTerm = 0; }
+    on Crash do Restart;
   }
 
   state Candidate {
     entry (t: (peers: seq[machine], driver: machine)) {
       var p: machine;
-      peers = t.peers;
-      driver = t.driver;
       term = term + 1;
       votedTerm = term;
       announce ElectionStarted, (id = id, term = term);
-      electionTerm = term;
-      votes = 1;
-      replies = 0;
-      foreach (p in peers) {
+      campaign = (peers = t.peers, driver = t.driver, term = term,
+        votes = 1, replies = 0, leaderTerm = 0);
+      foreach (p in campaign.peers) {
         send p, VoteReq, (term = term, candidate = this, cid = id);
       }
     }
@@ -62,16 +52,17 @@ machine ForgetfulNode {
       // be the winning one. Only grants for the current term count: a reply to an
       // older candidacy is stale.
       if (p.granted && p.reqTerm == term) {
-        votes = votes + 1;
+        campaign.votes = campaign.votes + 1;
         // A majority of the cluster (the peers and this node), counting its own vote.
-        if (votes * 2 > sizeof(peers) + 1) { leaderTerm = term; }
+        if (campaign.votes * 2 > sizeof(campaign.peers) + 1) { campaign.leaderTerm = term; }
       }
       if (HandleReply(p)) {
         goto Follower;
       }
-      if (leaderTerm == term) { goto Leader; }
+      if (campaign.leaderTerm == term) { goto Leader; }
     }
     on ClientReq do { Answer(false); }
+    on Crash do Restart;
   }
 
   state Leader {
@@ -83,6 +74,7 @@ machine ForgetfulNode {
     // Only the leader accepts client requests. A leader that missed a step-down would
     // accept them in a term it did not win.
     on ClientReq do { Answer(true); }
+    on Crash do Restart;
     on VoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
         goto Follower;
@@ -93,6 +85,14 @@ machine ForgetfulNode {
         goto Follower;
       }
     }
+  }
+
+  fun Restart(injector: machine) {
+    votedTerm = 0; // BUG: this vote should have been durable.
+    campaign = default((peers: seq[machine], driver: machine, term: int, votes: int,
+      replies: int, leaderTerm: int));
+    send injector, Restarted, (id = id, term = term);
+    goto Follower;
   }
 
   // Accept a client request as leader, or refuse it (a real node would redirect to
@@ -118,14 +118,14 @@ machine ForgetfulNode {
     return stepDown;
   }
 
-  // Every reply, in any role, counts toward hearing back from the whole cluster.
+  // Replies to an intact campaign count in any role. Pre-crash replies are stale.
   // A higher term in a reply means another election moved on: step down.
   fun HandleReply(p: (reqTerm: int, term: int, granted: bool)): bool {
-    if (p.reqTerm == electionTerm) {
-      replies = replies + 1;
-      if (replies == sizeof(peers)) {
-        announce HeardAll, (id = id, term = electionTerm);
-        if (leaderTerm != electionTerm) { send driver, RoundLost, (id = id, term = electionTerm); }
+    if (p.reqTerm == campaign.term) {
+      campaign.replies = campaign.replies + 1;
+      if (campaign.replies == sizeof(campaign.peers)) {
+        announce HeardAll, (id = id, term = campaign.term);
+        if (campaign.leaderTerm != campaign.term) { send campaign.driver, RoundLost, (id = id, term = campaign.term); }
       }
     }
     if (p.term > term) {

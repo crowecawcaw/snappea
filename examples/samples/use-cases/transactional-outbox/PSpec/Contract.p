@@ -37,7 +37,6 @@ spec AppliedOnce observes OrderPlaced, OrderCommitted, OrderAborted, BrokerRecei
       assert placed[id], format("order {0} committed, but its transaction was meant to fail", id);
       committed += (id);
     }
-    // snappea-lint: allow unused-payload-field -- AppliedOnce checks which orders abort
     on OrderAborted do (id: int) {
       Decided(id);
       assert !placed[id], format("order {0} aborted, but its transaction was meant to commit", id);
@@ -98,7 +97,6 @@ spec CommittedOrdersDelivered observes OrdersPlanned, OrderCommitted, OrderAbort
       undecided = undecided - 1;
       undelivered += (id);
     }
-    // snappea-lint: allow unused-payload-field -- AppliedOnce checks which orders abort
     on OrderAborted do (id: int) {
       undecided = undecided - 1;
       Settle();

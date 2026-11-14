@@ -67,7 +67,6 @@ spec EveryAttemptAnswered observes AttemptsPlanned, Attempted, Answered {
   hot state Waiting {
     on AttemptsPlanned do { assert false, "attempts planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- ChargedOnce checks amounts
     on Attempted do (p: (key: int, amount: int)) {
       assert unsent > 0, "more attempts than planned";
       unsent = unsent - 1;
@@ -75,7 +74,6 @@ spec EveryAttemptAnswered observes AttemptsPlanned, Attempted, Answered {
       outstanding[p.key] = outstanding[p.key] + 1;
     }
 
-    // snappea-lint: allow unused-payload-field -- ChargedOnce checks the results
     on Answered do (p: (key: int, result: ChargeResult)) {
       assert p.key in outstanding && outstanding[p.key] > 0,
         format("key {0} got more answers than attempts", p.key);

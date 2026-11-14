@@ -56,7 +56,6 @@ spec DepositsReturn observes DepositsPlanned, DepositRequested, BalanceWritten, 
   hot state Busy {
     on DepositsPlanned do { assert false, "deposits planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- amounts are checked by NoLostUpdate
     on DepositRequested do (p: (id: int, amount: int)) { pending += (p.id); }
     on BalanceWritten do (p: (id: int, balance: int)) {
       assert p.id in pending, format("deposit {0} written but not in progress", p.id);

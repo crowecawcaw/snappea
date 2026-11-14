@@ -68,7 +68,6 @@ spec NoOrphans observes StepStarted, Reserved, ReserveFailed, Released, CancelRe
       assert cancelRequested, "cancel refused that nobody requested";
       assert ended && outcome == TripBooked, "cancel refused while the saga could still roll back";
     }
-    // snappea-lint: allow unused-payload-field -- NoOrphans checks the outcome
     on SagaEnded do (o: SagaOutcome) {
       assert !ended, "saga ended twice";
       assert !inFlight, format("saga ended with the {0} reservation still in flight", started[sizeof(started) - 1]);
@@ -118,7 +117,6 @@ spec SagaEnds observes SagaPlanned, SagaEnded, CancelAccepted, CancelRefused, Ca
 
   hot state Running {
     on SagaPlanned do { assert false, "saga planned twice"; }
-    // snappea-lint: allow unused-payload-field -- NoOrphans checks the outcome
     on SagaEnded do (o: SagaOutcome) {
       ended = true;
       Check();

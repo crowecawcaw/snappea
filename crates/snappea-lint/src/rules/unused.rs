@@ -9,50 +9,114 @@ impl Rule for UnusedPayloadField {
         "unused-payload-field"
     }
     fn description(&self) -> &'static str {
-        "A monitor handler never reads a named event payload field"
+        "A spec handler omits a named event payload field that no companion spec reads in at least one selected test"
     }
     fn check(&self, ctx: &Context<'_>, out: &mut Vec<Finding>) {
-        for m in ctx.machines().filter(|m| m.kind == MachineKind::Spec) {
-            // Named handlers are functions with declared parameters. Check each body
-            // once, and only when it is actually used as an event handler.
-            let mut named = HashSet::new();
-            for item in m.states.iter().flat_map(|s| &s.items) {
-                let handler = match &item.kind {
-                    StateItemKind::OnDo { handler, .. } => Some(handler),
-                    StateItemKind::OnGoto { with, .. } => with.as_ref(),
-                    _ => None,
+        self.check_selected(ctx, None, out);
+    }
+}
+
+struct PayloadUse<'a> {
+    spec: &'a str,
+    event: &'a str,
+    observed: bool,
+    param: &'a Param,
+    fields: Vec<String>,
+    used: HashSet<String>,
+}
+
+impl UnusedPayloadField {
+    pub(crate) fn check_selected(
+        &self,
+        ctx: &Context<'_>,
+        selections: Option<&[crate::SpecSelection]>,
+        out: &mut Vec<Finding>,
+    ) {
+        let mut payloads = Vec::new();
+        for machine in ctx.machines().filter(|m| m.kind == MachineKind::Spec) {
+            for item in machine.states.iter().flat_map(|s| &s.items) {
+                let (events, handler) = match &item.kind {
+                    StateItemKind::OnDo { events, handler } => (events, Some(handler)),
+                    StateItemKind::OnGoto { events, with, .. } => (events, with.as_ref()),
+                    _ => continue,
                 };
-                match handler {
-                    Some(Handler::Anon(h)) => {
-                        if let Some(p) = &h.param {
-                            check(ctx, p, &h.body, out);
-                        }
+                let parameters: Vec<_> = match handler {
+                    Some(Handler::Anon(h)) => h.param.iter().map(|p| (p, &h.body)).collect(),
+                    Some(Handler::Named(n)) => machine
+                        .funs
+                        .iter()
+                        .filter(|f| f.name.name == n.name)
+                        .flat_map(|f| f.body.iter().flat_map(|b| f.params.iter().map(move |p| (p, b))))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                for (param, body) in parameters {
+                    let TypeKind::NamedTuple(fields) = &ctx.resolve_type(&param.ty).kind else { continue };
+                    if only_fails(&body.stmts) {
+                        continue;
                     }
-                    Some(Handler::Named(n)) if named.insert(&n.name) => {
-                        if let Some(f) = m.funs.iter().find(|f| f.name.name == n.name) {
-                            if let Some(b) = &f.body {
-                                for p in &f.params {
-                                    check(ctx, p, b, out);
-                                }
-                            }
-                        }
+                    let used = reads(param, body, fields);
+                    for event in events {
+                        payloads.push(PayloadUse {
+                            spec: &machine.name.name,
+                            event: &event.name,
+                            param,
+                            observed: machine.observes.iter().any(|name| name.name == event.name),
+                            fields: fields.iter().map(|(name, _)| name.name.clone()).collect(),
+                            used: used.clone(),
+                        });
                     }
-                    _ => {}
+                }
+            }
+        }
+        for payload in &payloads {
+            let groups: Vec<_> =
+                selections.into_iter().flatten().filter(|s| s.specs.iter().any(|name| name == payload.spec)).collect();
+            // A spec outside this test selection cannot fail its payload gate or
+            // provide evidence to discharge another spec's obligations.
+            if selections.is_some() && groups.is_empty() {
+                continue;
+            }
+            for field in payload.fields.iter().filter(|field| !payload.used.contains(*field)) {
+                let mut missing = Vec::new();
+                let mut companions = std::collections::BTreeSet::new();
+                for group in &groups {
+                    let readers: Vec<_> = payloads
+                        .iter()
+                        .filter(|other| {
+                            other.observed
+                                && other.spec != payload.spec
+                                && other.event == payload.event
+                                && other.used.contains(field)
+                                && group.specs.iter().any(|name| name == other.spec)
+                        })
+                        .collect();
+                    if readers.is_empty() {
+                        missing.push(group.name.as_str());
+                    }
+                    companions.extend(readers.iter().map(|p| p.spec));
+                }
+                if selections.is_some() && missing.is_empty() {
+                    out.push(Finding::new("payload-field-checked-by-other-spec", payload.param.name.span,
+                        format!("monitor '{}': payload field '{}.{}' of event '{}' is not read here; selected companion spec(s) {} read it in every selected test using this monitor",
+                            payload.spec, payload.param.name.name, field, payload.event,
+                            companions.into_iter().collect::<Vec<_>>().join(", "))));
+                } else {
+                    let scope = if missing.is_empty() {
+                        String::new()
+                    } else {
+                        format!("; no selected companion spec reads this event field in test(s) {}", missing.join(", "))
+                    };
+                    out.push(Finding::new("unused-payload-field", payload.param.name.span,
+                        format!("monitor payload field '{}.{}' is never read outside diagnostic output{}; check it or suppress this intentional abstraction",
+                            payload.param.name.name, field, scope)));
                 }
             }
         }
     }
 }
 
-fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
-    let TypeKind::NamedTuple(fields) = &ctx.resolve_type(&p.ty).kind else {
-        return;
-    };
-    // A handler that only fails (`assert false`) reports that the event must not happen;
-    // it has no reason to read every field.
-    if only_fails(&body.stmts) {
-        return;
-    }
+fn reads(p: &Param, body: &FunBody, fields: &[(Ident, Type)]) -> HashSet<String> {
     let mut used = HashSet::new();
     let mut direct_bases = HashSet::new();
     let mut writes = HashSet::new();
@@ -63,7 +127,7 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
             if let StmtKind::Assign { lhs, .. } = &s.kind {
                 written_place(lhs, &mut writes);
             }
-            if let StmtKind::Assert { message: Some(message), .. } = &s.kind {
+            if let StmtKind::Assert { message: Some(message), .. } | StmtKind::Print(message) = &s.kind {
                 visit::expr(message, &mut |e| {
                     messages.insert(e.span);
                 });
@@ -98,19 +162,9 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
         }
     });
     if whole {
-        return;
-    }
-    for (field, _) in fields {
-        if !used.contains(field.name.as_str()) {
-            out.push(Finding::new(
-                "unused-payload-field",
-                p.name.span,
-                format!(
-                    "monitor payload field '{}.{}' is never read outside assertion messages; check it or suppress this intentional abstraction",
-                    p.name.name, field.name
-                ),
-            ));
-        }
+        fields.iter().map(|(name, _)| name.name.clone()).collect()
+    } else {
+        used
     }
 }
 

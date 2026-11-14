@@ -42,7 +42,6 @@ spec GroupSafety observes GroupPlanned, GenerationChanged, OffsetCommitted, Comm
   var held: map[int, (gen: int, partitions: seq[int])];
 
   start state Watching {
-    // snappea-lint: allow unused-payload-field -- GroupProgress checks the record count
     on GroupPlanned do (p: (partitions: int, records: int)) {
       partitions = p.partitions;
     }
@@ -174,7 +173,6 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
   hot state Busy {
     on GroupPlanned do { assert false, "work planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks generations and members
     on OffsetCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
       assert p.partition in left, format("commit to unknown partition {0}", p.partition);
       assert p.offset <= records, format("partition {0} committed offset {1} past its end", p.partition, p.offset);
@@ -182,10 +180,8 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
       Check();
     }
 
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
     on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
 
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
     on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
     on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
@@ -196,10 +192,8 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
     on GroupPlanned do { assert false, "work planned twice"; }
     on OffsetCommitted do { assert false, "commit after every partition was fully committed"; }
 
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
     on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
 
-    // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
     on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
     on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
@@ -211,7 +205,6 @@ spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, Fetch
     Check();
   }
 
-  // snappea-lint: allow unused-payload-field -- GroupSafety checks the assignment
   fun Generation(p: (gen: int, members: seq[int], owner: map[int, int])) {
     var m: int;
     members = p.members;

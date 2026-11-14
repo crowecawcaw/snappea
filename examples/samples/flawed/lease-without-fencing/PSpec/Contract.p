@@ -40,7 +40,6 @@ spec NoStaleWrites observes LeaseGranted, LeaseEnded, WriteAccepted, WriteReject
       assert held && holder == p.node, format("lease of node {0} ended, but it does not hold the lease", p.node);
       held = false;
     }
-    // snappea-lint: allow unused-payload-field -- NodesFinish checks the planned value; this spec checks lease ordering
     on WriteAccepted do (p: (node: int, value: int)) {
       assert p.node in leaseOf, format("write {0} accepted from node {1}, which never held the lease", p.value, p.node);
       assert leaseOf[p.node] >= newestWritten,
@@ -48,7 +47,6 @@ spec NoStaleWrites observes LeaseGranted, LeaseEnded, WriteAccepted, WriteReject
           p.value, p.node, leaseOf[p.node], newestWritten);
       newestWritten = leaseOf[p.node];
     }
-    // snappea-lint: allow unused-payload-field -- NodesFinish checks the planned value; this spec checks whether fencing is justified
     on WriteRejected do (p: (node: int, value: int)) {
       assert p.node in leaseOf, format("write {0} from node {1}, which never held the lease", p.value, p.node);
       assert leaseOf[p.node] < newestWritten,

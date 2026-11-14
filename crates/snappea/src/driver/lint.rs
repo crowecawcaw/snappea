@@ -18,10 +18,38 @@ pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usi
 /// The unsuppressed findings of the source rules and of the rules on the type-checked
 /// program `prog` ([`snappea_lint::PROGRAM_RULES`]), in source order.
 pub fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<Finding>, Exit> {
-    let mut findings = snappea_lint::lint(sm).map_err(|e| syntax_error(host, sm, e))?;
+    let mut findings = source_findings(sm, prog, &prog.test_cases()).map_err(|e| syntax_error(host, sm, e))?;
     findings.extend(program_findings(sm, prog));
     findings.sort_by(|a, b| (a.span.file, a.span.start, a.rule).cmp(&(b.span.file, b.span.start, b.rule)));
     Ok(findings)
+}
+
+fn source_findings(
+    sm: &SourceMap,
+    prog: &Program,
+    tests: &[crate::sema::TestCase],
+) -> Result<Vec<Finding>, crate::syntax::ParseError> {
+    if tests.is_empty() {
+        return snappea_lint::lint(sm);
+    }
+    let selections: Vec<_> = tests
+        .iter()
+        .map(|test| {
+            let (module, _) = prog.test_case_module(test);
+            snappea_lint::SpecSelection {
+                name: test.name.clone(),
+                specs: module
+                    .monitor_map
+                    .iter()
+                    .filter_map(|(id, _)| {
+                        let machine = prog.machine(*id);
+                        (machine.is_spec() && !machine.is_scenario()).then(|| machine.name.clone())
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+    snappea_lint::lint_with_spec_selections(sm, &selections)
 }
 
 /// The unsuppressed findings of [`snappea_lint::PROGRAM_RULES`] on `prog`.
@@ -63,7 +91,7 @@ pub fn gate_selected(
     intents: &[snappea_lint::TestIntent],
 ) -> Result<usize, Exit> {
     let sm = sources.source_map();
-    let mut findings = snappea_lint::lint(&sm).map_err(|e| syntax_error(host, &sm, e))?;
+    let mut findings = source_findings(&sm, prog, tests).map_err(|e| syntax_error(host, &sm, e))?;
     findings.retain(|f| {
         !prog.tests.iter().enumerate().any(|(i, t)| {
             t.span.file == f.span.file
@@ -141,6 +169,7 @@ pub fn help(rule: &str) -> String {
         rule
     );
     let fix = match rule {
+        "payload-field-checked-by-other-spec" => "keep each spec focused on its own obligation; review whether this division of payload checks matches the contract",
         "unused-design-payload-field" => "use the field in this receiver when its value affects the contract, remove it from the event when unnecessary, or suppress the intentional omission",
         "shared-spec-helper" => "compute expected results independently in the spec; sharing a proven representation or formatting utility may be intentional",
         "no-model-machine" => return "put modeled behavior in a separate `machine` and include it with the entry driver in the test module; for an intentional trace-only configuration, suppress this rule immediately before its test or implementation declaration, or before `machine Main` for the implicit default configuration".to_string(),

@@ -26,7 +26,6 @@ spec SeatsSoldOnce observes Held, HoldRejected, Expired, HoldReleased, Sold, Con
       assert !(p.seat in soldTo), format("seat {0} held after it was sold", p.seat);
       heldBy[p.seat] = p.hold;
     }
-    // snappea-lint: allow unused-payload-field -- this spec checks seat availability; CheckoutsEnd correlates the rejected hold
     on HoldRejected do (p: (seat: int, hold: int)) {
       assert p.seat in heldBy || p.seat in soldTo,
         format("hold {0} rejected although seat {1} was free", p.hold, p.seat);
@@ -42,7 +41,6 @@ spec SeatsSoldOnce observes Held, HoldRejected, Expired, HoldReleased, Sold, Con
         format("hold {0} released but did not hold seat {1}", p.hold, p.seat);
       heldBy -= (p.seat);
     }
-    // snappea-lint: allow unused-payload-field -- money is tracked per hold; SeatsSoldOnce checks seats
     on Sold do (p: (seat: int, hold: int)) {
       assert !(p.seat in soldTo), format("seat {0} sold twice", p.seat);
       assert p.seat in heldBy && heldBy[p.seat] == p.hold,
@@ -50,7 +48,6 @@ spec SeatsSoldOnce observes Held, HoldRejected, Expired, HoldReleased, Sold, Con
       heldBy -= (p.seat);
       soldTo[p.seat] = p.hold;
     }
-    // snappea-lint: allow unused-payload-field -- this spec checks expiry; CheckoutsEnd checks the requested seat
     on ConfirmRejected do (p: (seat: int, hold: int)) {
       // The only legitimate reason to refuse a confirmation is that the hold expired.
       assert p.hold in expired,
@@ -74,7 +71,6 @@ spec ChargesResolved observes Charged, Sold, Refunded {
 
   hot state Owing {
     on Charged do (p: (hold: int)) { Charge(p.hold); }
-    // snappea-lint: allow unused-payload-field -- money is tracked per hold; SeatsSoldOnce checks seats
     on Sold do (p: (seat: int, hold: int)) {
       Resolve(p.hold);
       if (sizeof(open) == 0) { goto Settled; }
@@ -147,20 +143,17 @@ spec CheckoutsEnd observes CheckoutsPlanned, CheckoutStarted, Held, HoldRejected
       Requested(p.seat, p.hold);
       due[p.hold] = HoldUnavailable;
     }
-    // snappea-lint: allow unused-payload-field -- money is tracked per hold; SeatsSoldOnce checks seats
     on Sold do (p: (seat: int, hold: int)) {
       assert p.hold in liveHolds, format("seat {0} sold to hold {1}, which is not live", p.seat, p.hold);
       liveHolds -= (p.hold);
       due[p.hold] = Bought;
       Settle();
     }
-    // snappea-lint: allow unused-payload-field -- SeatsSoldOnce checks seat ownership; this monitor tracks hold completion
     on Expired do (p: (seat: int, hold: int)) {
       assert p.hold in liveHolds, format("seat {0} freed for hold {1}, which is not live", p.seat, p.hold);
       liveHolds -= (p.hold);
       Settle();
     }
-    // snappea-lint: allow unused-payload-field -- SeatsSoldOnce checks seat ownership; this monitor tracks hold completion
     on HoldReleased do (p: (seat: int, hold: int)) {
       assert p.hold in liveHolds, format("seat {0} released for hold {1}, which is not live", p.seat, p.hold);
       assert p.hold in cancelling, format("hold {0} released, but its customer never cancelled", p.hold);

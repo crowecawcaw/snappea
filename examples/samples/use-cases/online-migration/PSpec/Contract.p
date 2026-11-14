@@ -200,7 +200,6 @@ spec MigrationCompletes observes MigrationPlanned, WriteRequested, ReadsPlanned,
       cutover = true;
       Check();
     }
-    // snappea-lint: allow unused-payload-field -- MigrationSafety checks the row; this spec counts reads
     on ReadSeen do (p: (reader: int, key: int, row: Row)) {
       assert p.reader in readerKey && readerKey[p.reader] == p.key,
         format("reader {0} read key {1}, which it was not asked to read", p.reader, p.key);

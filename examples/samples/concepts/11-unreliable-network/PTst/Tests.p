@@ -43,11 +43,11 @@ machine DuplicatedPacketNoDedup {
 }
 
 test tcLostPackets [main=LostPackets]:
-  assert ExactlyOnce in { LostPackets, Network, Sender, Receiver };
+  assert ExactlyOnce, MessagesAcknowledged in { LostPackets, Network, Sender, Receiver };
 
 test tcDuplicatedPacket [main=DuplicatedPacket]:
-  assert ExactlyOnce in { DuplicatedPacket, Network, Sender, Receiver };
+  assert ExactlyOnce, MessagesAcknowledged in { DuplicatedPacket, Network, Sender, Receiver };
 
 // snappea: expect-bug "delivered twice"
 test tcBugNoDedup [main=DuplicatedPacketNoDedup]:
-  assert ExactlyOnce in { DuplicatedPacketNoDedup, Network, Sender, NoDedupReceiver };
+  assert ExactlyOnce, MessagesAcknowledged in { DuplicatedPacketNoDedup, Network, Sender, NoDedupReceiver };

@@ -30,7 +30,6 @@ spec TransfersIsolated observes AccountOpened, TransferRequested, LockGranted, A
       assert !(p.account in balances), format("account {0} opened twice", p.account);
       balances[p.account] = p.balance;
     }
-    // snappea-lint: allow unused-payload-field -- accounts and amounts are checked by TransfersIsolated
     on TransferRequested do (p: (transfer: int, src: int, dst: int, amount: int)) {
       assert p.src in balances && p.dst in balances && p.src != p.dst,
         format("transfer {0} names accounts that were not opened", p.transfer);
@@ -46,7 +45,6 @@ spec TransfersIsolated observes AccountOpened, TransferRequested, LockGranted, A
         format("transfer {0} locked account {1}, which it does not touch", p.transfer, p.account);
       holder[p.account] = p.transfer;
     }
-    // snappea-lint: allow unused-payload-field -- balances are checked by TransfersIsolated
     on Applied do (p: (account: int, transfer: int, balance: int)) {
       var t: (src: int, dst: int, amount: int);
       assert p.account in holder && holder[p.account] == p.transfer,
@@ -95,12 +93,10 @@ spec TransfersComplete observes TransfersPlanned, TransferRequested, Applied, Tr
   hot state TransferPending {
     on TransfersPlanned do { assert false, "transfers planned twice"; }
 
-    // snappea-lint: allow unused-payload-field -- accounts and amounts are checked by TransfersIsolated
     on TransferRequested do (p: (transfer: int, src: int, dst: int, amount: int)) {
       pending[p.transfer] = 0;
     }
 
-    // snappea-lint: allow unused-payload-field -- balances are checked by TransfersIsolated
     on Applied do (p: (account: int, transfer: int, balance: int)) {
       pending[p.transfer] = pending[p.transfer] + 1;
     }

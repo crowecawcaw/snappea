@@ -33,7 +33,7 @@ event ClientAnswered: (id: int, term: int, accepted: bool);
 //  - a node accepts a client request only as leader of its current term (a deposed
 //    leader must stop), and refuses it otherwise.
 spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, BecameLeader, LossReported,
-    ClientAnswered {
+    ClientAnswered, Restarted {
   // Votes needed to win: more than half the cluster.
   var majority: int;
   // term * 10 + voter -> candidate it voted for
@@ -42,6 +42,8 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
   var tally: map[int, int];
   // term -> leader
   var leaderOf: map[int, int];
+  // A restart retires leadership even though its historical election remains valid.
+  var retired: set[int];
   // node -> highest term it has announced
   var termOf: map[int, int];
   // term * 10 + candidate -> its candidacy saw a higher term
@@ -108,14 +110,18 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
       floor[r.id] = termOf[r.id];
       if (answeredTerm[key] > floor[r.id]) { floor[r.id] = answeredTerm[key]; }
     }
+    on Restarted do (r: (id: int, term: int)) {
+      Advance(r.id, r.term);
+      retired += (r.term * 10 + r.id);
+    }
     on ClientAnswered do (a: (id: int, term: int, accepted: bool)) {
       // A node that adopted a higher term and kept acting as leader would accept in a
       // term it did not win.
       if (a.accepted) {
-        assert a.term in leaderOf && leaderOf[a.term] == a.id,
+        assert a.term in leaderOf && leaderOf[a.term] == a.id && !(a.term * 10 + a.id in retired),
           format("node {0} accepted a client request as leader of term {1}, which it did not win", a.id, a.term);
       } else {
-        assert !(a.term in leaderOf && leaderOf[a.term] == a.id),
+        assert !(a.term in leaderOf && leaderOf[a.term] == a.id) || (a.term * 10 + a.id in retired),
           format("node {0} refused a client request while leader of term {1}", a.id, a.term);
       }
       Advance(a.id, a.term);
@@ -141,7 +147,7 @@ spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, B
 
 // Progress (bounded): once the driver starts the elections, some node becomes leader.
 // This holds because the driver keeps its promise: at most one crash, every request is
-// eventually answered, and if every candidate of the contested round loses, one
+// delayed rather than lost, and if every candidate of the contested round loses, one
 // node's timer fires alone after every earlier message was handled.
 event ElectionsStarted;
 
@@ -162,8 +168,9 @@ spec SomeLeaderElected observes ElectionsStarted, BecameLeader {
 
 // Progress: every candidacy hears back from both peers (each RequestVote is answered,
 // by followers, candidates and leaders alike), unless the same node has since started
-// a newer candidacy. Not selected where a peer is deliberately unreachable.
-spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, HeardAll {
+// a newer candidacy or a crash discarded its campaign. Not selected where a peer
+// is deliberately unreachable.
+spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, HeardAll, Restarted {
   // Replies a candidacy waits for: one per peer.
   var peers: int;
   // candidate -> term of its latest candidacy still waiting for replies
@@ -177,16 +184,24 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
   start state Quiet {
     on ClusterSize do (n: int) { peers = n - 1; }
     on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
-    on VoteAnswered do { assert false, "a request was answered while no candidacy was open"; }
+    // Replies already in flight may arrive after a crash canceled the campaign.
+    on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) { Answered(a); }
+    on Restarted do (r: (id: int, term: int)) { Cancel(r.id); }
     on HeardAll do { assert false, "a candidate heard all replies while no candidacy was open"; }
   }
 
   hot state Waiting {
+    on Restarted do (r: (id: int, term: int)) { Cancel(r.id); }
     on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
     on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
       Answered(a);
     }
     on HeardAll do (h: (id: int, term: int)) { Heard(h.id, h.term); }
+  }
+
+  fun Cancel(id: int) {
+    if (id in open) { open -= (id); }
+    if (sizeof(open) == 0) { goto Quiet; }
   }
 
   fun Stood(id: int, term: int) {
@@ -199,6 +214,7 @@ spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, He
   fun Answered(a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
     var key: int;
     key = a.reqTerm * 10 + a.candidate;
+    assert key in answers, "reply to a candidacy that never started";
     assert !(a.voter in answers[key]),
       format("node {0} answered node {1}'s term-{2} request twice", a.voter, a.candidate, a.reqTerm);
     answers[key] += (a.voter);
@@ -230,4 +246,32 @@ spec ProbeAnswered observes ProbeSent, ClientAnswered {
     on ProbeSent do { assert false, "more than one client request sent"; }
     on ClientAnswered do { assert false, "more answers than client requests"; }
   }
+}
+
+// Recovery is a new obligation, not satisfied by a leader elected before the crash.
+event RecoveryPlanned: int;
+
+spec LeaderAfterRestart observes RecoveryPlanned, Restarted, BecameLeader {
+  var target: int;
+  var previousTerm: int;
+  start state Idle {
+    on RecoveryPlanned do (id: int) { target = id; goto Restarting; }
+    ignore BecameLeader;
+  }
+  hot state Restarting {
+    on Restarted do (r: (id: int, term: int)) {
+      assert r.id == target, "another node acknowledged the planned restart";
+      previousTerm = r.term;
+      goto Electing;
+    }
+    ignore BecameLeader;
+  }
+  hot state Electing {
+    on BecameLeader do (l: (id: int, term: int)) {
+      assert l.id == target && l.term > previousTerm,
+        "restarted node must win a fresh term";
+      goto Recovered;
+    }
+  }
+  state Recovered { }
 }

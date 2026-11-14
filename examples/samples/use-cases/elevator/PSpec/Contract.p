@@ -25,7 +25,6 @@ spec DoorsAndMotion observes ElevatorPlanned, MotorStarted, MotorStopped, DoorOp
   var doorsOpen: bool;
 
   start state Init {
-    // snappea-lint: allow unused-payload-field -- RequestsServed checks the request count
     on ElevatorPlanned do (p: (floor: int, floors: int, requests: int)) {
       floors = p.floors;
       floor = p.floor;
