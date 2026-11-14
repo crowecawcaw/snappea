@@ -2,9 +2,9 @@
 // Its database sometimes times out; the account then answers "unavailable" and changes
 // nothing. The model does not decide when that happens, so it is a choice ($).
 
-event Withdraw: (client: machine, amount: int);
-event WithdrawResponse: (ok: bool, balance: int);
-event Unavailable;
+event Withdraw: (client: machine, id: int, amount: int);
+event WithdrawResponse: (id: int, ok: bool, balance: int);
+event Unavailable: (id: int);
 
 machine Account {
   var balance: int;
@@ -13,16 +13,17 @@ machine Account {
     entry (initial: int) {
       balance = initial;
     }
-    on Withdraw do (w: (client: machine, amount: int)) {
+    // One atomic check-and-debit, answered in the same step.
+    on Withdraw do (w: (client: machine, id: int, amount: int)) {
       // Environment choice: the database call times out, or it does not. The checker
       // tries both, every time this handler runs.
       if ($) {
-        send w.client, Unavailable;
+        send w.client, Unavailable, (id = w.id,);
       } else if (w.amount <= balance) {
         balance = balance - w.amount;
-        send w.client, WithdrawResponse, (ok = true, balance = balance);
+        send w.client, WithdrawResponse, (id = w.id, ok = true, balance = balance);
       } else {
-        send w.client, WithdrawResponse, (ok = false, balance = balance);
+        send w.client, WithdrawResponse, (id = w.id, ok = false, balance = balance);
       }
     }
   }

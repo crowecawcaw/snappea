@@ -2,13 +2,13 @@
 
 // Enums: a fixed set of named values. Each has an integer value (Apple = 0, Pear = 1).
 enum Sku { Apple, Pear }
-enum Result { Paid, OutOfStock, EmptyCart }
+enum CheckoutOutcome { Paid, OutOfStock, EmptyCart }
 
 // Type aliases name a type once. A named tuple has fields; a map has keys and values.
 type Line = (sku: Sku, qty: int);
 // sku -> quantity
 type Cart = map[Sku, int];
-type Receipt = (cart: int, result: Result, total: int, lines: seq[Line]);
+type Receipt = (cart: int, result: CheckoutOutcome, total: int, lines: seq[Line]);
 
 // Price in cents. `sku to int` converts the enum to its integer value to index a sequence.
 fun Price(sku: Sku): int {

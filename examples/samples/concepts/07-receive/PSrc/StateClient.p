@@ -21,7 +21,7 @@ machine StateClient {
     entry {
       send store, Get, (client = this,);
     }
-    on GetResponse do (r: (version: int, value: int)) {
+    on Got do (r: (version: int, value: int)) {
       current = r;
       goto Writing;
     }
@@ -32,7 +32,7 @@ machine StateClient {
     entry {
       send store, Cas, (client = this, version = current.version, value = current.value + 1);
     }
-    on CasResponse do (r: (ok: bool)) {
+    on CasResult do (r: (ok: bool)) {
       if (r.ok) {
         goto Idle;
       } else {

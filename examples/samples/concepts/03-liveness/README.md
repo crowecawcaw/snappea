@@ -7,19 +7,22 @@ questions:
   - What does a hot state not guarantee (fairness, cycles, time)?
 ---
 
-# Liveness: every request is eventually answered
+# Liveness: a busy server must not lose requests
 
 A safety spec checks that every answer is right. It cannot notice an answer that never
 comes: no event, no assertion. **Liveness** ("something good eventually happens") needs
-a spec with a **hot state**: a state the run must not end in. Enter it when an
-obligation starts (a request is made), leave it when the obligation is met (the last
-pending request is answered).
+a spec with a **hot state**, a state the run must not end in. Here a server hands one
+request at a time to a worker; a request that arrives while it is busy must wait, not
+vanish, and no wrong reply ever shows the difference.
 
-Add one for every promise of the form "every request gets an answer" or "every job
-completes". This sample has a server that hands one request at a time to a worker;
-requests that arrive while it is busy must wait, not vanish.
+**Contract:**
 
-**Contract:** every request a client makes is eventually answered, exactly once.
+- Every request a client makes is eventually answered, exactly once
+  (`RequestsAnswered`).
+
+**Atomic primitives:** each server handler is one step of a single-threaded dispatcher:
+take a request off the queue and hand it to the worker, or take the worker's result and
+reply.
 
 ## Files
 
@@ -30,9 +33,17 @@ requests that arrive while it is busy must wait, not vanish.
 | [`PSpec/RequestsAnswered.p`](PSpec/RequestsAnswered.p) | The progress spec, with a cold and a hot state |
 | [`PTst/Tests.p`](PTst/Tests.p) | Two clients against each server, two test cases |
 
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoClients` | Two clients request at once; one request arrives while the server is busy | The second request must wait and still be answered | Passes |
+| `tcBugDropsWhileBusy` | Same clients, `DroppingServer` | A liveness bug no safety assertion sees | Expected bug: `RequestsAnswered detected liveness bug in hot state 'Waiting'` |
+
 ## The key lines
 
-The spec is cold while nothing is owed and hot while any request is pending:
+The spec is cold while nothing is owed and hot while any request is pending. Enter the
+hot state when an obligation starts, leave it when the last one is met:
 
 ```p
 spec RequestsAnswered observes Requested, Response {
@@ -63,40 +74,20 @@ them. Both look harmless, and neither ever sends a wrong reply:
 state Busy {
   defer Request;      // Server: handle it after returning to Idle
   // ignore Request;  // DroppingServer: gone for good
-  on JobDone do (r: Request) { send r.client, Response, (id = r.id,); goto Idle; }
+  on JobDone do (r: Task) { send r.client, Response, (id = r.id,); goto Idle; }
 }
 ```
 
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcTwoClients` | Two clients request at once; one arrives while the server is busy | The second request must wait and still be answered | passes, all 769 schedules |
-| `tcBugDropsWhileBusy` | Same clients, `DroppingServer` | Shows a liveness bug no safety assertion sees | **expected bug**: `liveness bug in hot state 'Waiting'` |
-
-Schedule counts, timings and report excerpts below are illustrative. Use the current
-run's completion status to decide whether it explored all schedules.
-
-## Run it
-
-```sh
-cd examples/samples/concepts/03-liveness
-snappea check tcTwoClients --deny mutation
-snappea check tcBugDropsWhileBusy       # exits 0 when the declared bug matches
-```
+The failure names the spec, the hot state and the spec's fields, so you can see which
+request was dropped:
 
 ```text
-ok    tcTwoClients (all 769 schedules, 0.25s)
-Mutation testing: 11 of 11 mutants detected (0.0s)
-
-expected bug  tcBugDropsWhileBusy (matching declared failure)
-      PImplementation.RequestsAnswered detected liveness bug in hot state 'Waiting' at the end of program execution.
-      Replay: snappea replay PCheckerOutput/tcBugDropsWhileBusy/bug.schedule
+RequestsAnswered detected liveness bug in hot state 'Waiting' at the end of program execution.
+RequestsAnswered's fields: pending = {2}
 ```
 
-The report names the spec and the hot state, not the request. Replay the schedule
-(`snappea replay ...`) to see which request was dropped: client 2's request reached
-the server while it was `Busy`.
+Replay the schedule (`snappea replay PCheckerOutput/.../bug.schedule`) to see client 2's
+request reach the server while it was `Busy`.
 
 ## What a hot state guarantees, and what it does not
 
@@ -104,21 +95,20 @@ the server while it was `Busy`.
   every queue is empty or holds only deferred events. If a spec is in a hot state then,
   the check fails. That is what caught `DroppingServer`.
 - **"Eventually" has no deadline.** A hot state says the answer comes, not how soon.
-  Time and timeouts need a timer machine or `--timed`.
+  Time and timeouts need a timer machine ([09-timers](../09-timers/README.md)) or time
+  budgets ([17-time-budgets](../17-time-budgets/README.md)).
 - **The scheduler is assumed fair.** The checker does not count it as a bug that one
   machine could be starved forever while others keep running; real liveness can fail
   that way under an unfair scheduler or lossy network that the model does not have.
   Messages are never lost in P unless you model the loss.
 - **Runs that never end are only sampled.** If the model can loop forever (a client
-  retrying a request the server keeps refusing), there is no end of run to check. Only
-  the fair random part of the search looks for a monitor that stays hot for very long;
-  an exhaustive search that revisits states proves nothing about such cycles. Bound
+  retrying a request the server keeps refusing), there is no end of run to check. Bound
   retries in the model, or add a retry budget, so every run ends.
 
 ## Common mistake: a safety spec alone
 
 Without `hot`, `RequestsAnswered` still asserts that every response matches a pending
-request, and `DroppingServer` passes. The linter catches the missing progress spec
+request, and `DroppingServer` would pass. The linter catches the missing progress spec
 when a driver waits for replies; remove `hot` from `Waiting` and `snappea check` stops
 before exploring:
 
@@ -132,19 +122,30 @@ In `Server`, replace `defer Request;` with `ignore Request;`. `tcTwoClients` the
 fails the same way as the negative control:
 
 ```text
-FAIL  tcTwoClients (bug found after 1 schedule, 0.00s)
-      PImplementation.RequestsAnswered detected liveness bug in hot state 'Waiting' at the end of program execution.
+RequestsAnswered detected liveness bug in hot state 'Waiting' at the end of program execution.
 ```
 
-(Deleting the line instead gives a different error: an event the state does not
-handle. See [08-defer-and-ignore](../08-defer-and-ignore/README.md).)
+Deleting the line instead gives a different error, an event the state does not handle:
+`Server(2) in state 'Busy' received event 'Request' that it cannot handle`. See
+[08-defer-and-ignore](../08-defer-and-ignore/README.md).
 
-## Bounds
+## Run
+
+```sh
+cd examples/samples/concepts/03-liveness
+snappea check --deny mutation
+```
+
+`tcBugDropsWhileBusy` counts as passing when it fails with the declared message.
+
+## Bounds and omissions
 
 Two clients, one request each, one worker, no message loss and no timeouts.
 
-## In your implementation
+## Testing the implementation
 
-Emit `Requested` when a client sends a request and `Response` when the server
-replies. In an observation test, check the recorded events against `RequestsAnswered`
-at the end of the test: a request still pending then is the same failure.
+Emit `Requested` when a client sends a request and `Response` when the server replies.
+In an observation test, check the recorded events against `RequestsAnswered` at the
+end of the test (`snappea observe --check-hot`): a request still pending then is the
+same failure. To force the race, hold the worker on the first job until the second
+request has arrived.

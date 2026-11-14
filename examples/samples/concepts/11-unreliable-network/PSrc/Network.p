@@ -4,7 +4,7 @@
 //
 // The network is the environment, not the design under test: its faults are test input.
 
-type Packet = (dest: machine, ev: event, msg: any);
+type Packet = (destination: machine, message: event, payload: any);
 event NetSend: Packet;
 // From the sender: where to deliver timeouts.
 event SetTimer: machine;
@@ -51,10 +51,10 @@ machine Network {
     } else if (duplicatesLeft > 0 && $) {
       // Deliver a copy and keep the packet in flight: it arrives twice.
       duplicatesLeft = duplicatesLeft - 1;
-      send p.dest, p.ev, p.msg;
+      send p.destination, p.message, p.payload;
     } else {
       bag -= (p);
-      send p.dest, p.ev, p.msg;
+      send p.destination, p.message, p.payload;
     }
     if (sizeof(bag) > 0) {
       send this, Step;

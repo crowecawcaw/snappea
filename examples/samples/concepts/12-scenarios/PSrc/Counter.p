@@ -1,54 +1,67 @@
-// A shared counter updated with compare-and-swap. Each client reads (version, value),
-// computes value + 1 and writes it only if the version is unchanged; on a conflict it
-// reads again and retries. The store's handlers are the real atomic primitives.
+// The compare-and-swap counter from 07-receive, with the same names. Each client gets
+// (version, value), then CASes value + 1 at that version; on a conflict it gets again
+// and retries. The store's two handlers are the real atomic primitives.
 
-event Read: machine;
-event ReadResponse: (version: int, value: int);
+event Get: (client: machine);
+event Got: (version: int, value: int);
 event Cas: (client: machine, version: int, value: int);
-event CasResponse: bool;
+event CasResult: (ok: bool);
 
 machine Store {
   var version: int;
   var value: int;
 
   start state Serving {
-    on Read do (client: machine) {
-      send client, ReadResponse, (version = version, value = value);
+    // Atomic primitive: read the value and its version together.
+    on Get do (g: (client: machine)) {
+      send g.client, Got, (version = version, value = value);
     }
+    // Atomic primitive: write only if nobody wrote since the caller's get.
     on Cas do (c: (client: machine, version: int, value: int)) {
-      if (c.version != version) {
-        send c.client, CasResponse, false;
-        return;
+      if (c.version == version) {
+        // commit point: the value changes and the reply says so
+        value = c.value;
+        // snappea-lint: allow mutation:swap-operator -- equivalent: versions are only compared for equality, so counting down works as well
+        version = version + 1;
+        announce Committed, (value = value,);
+        send c.client, CasResult, (ok = true,);
+      } else {
+        send c.client, CasResult, (ok = false,);
       }
-      version = version + 1;
-      value = c.value;
-      announce Written, (client = c.client, version = version, value = value);
-      send c.client, CasResponse, true;
     }
   }
 }
 
+// Increments the counter once.
 machine Client {
   var store: Store;
 
-  start state Reading {
+  start state Init {
     entry (s: Store) {
       store = s;
-      send store, Read, this;
+      goto Reading;
     }
-    on ReadResponse do (r: (version: int, value: int)) {
+  }
+
+  state Reading {
+    entry {
+      send store, Get, (client = this,);
+    }
+    on Got do (r: (version: int, value: int)) {
       send store, Cas, (client = this, version = r.version, value = r.value + 1);
     }
-    on CasResponse do (ok: bool) {
-      if (ok) {
+    on CasResult do (r: (ok: bool)) {
+      if (r.ok) {
         goto Done;
       }
-      // Someone else wrote first: read the new value and try again.
-      send store, Read, this;
+      // Someone else wrote first: get the new value and try again.
+      goto Reading;
     }
   }
 
   state Done {
-    entry { announce ClientDone, this; }
+    entry {
+      announce ClientDone, (client = this,);
+    }
   }
 }

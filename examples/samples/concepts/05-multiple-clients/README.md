@@ -7,19 +7,24 @@ questions:
   - How many clients does a test need?
 ---
 
-# Multiple clients: contention on a shared server
+# Multiple clients: more clients than permits
 
 Most bugs worth modeling need two actors that touch the same state at the same time.
-Start several clients in a loop, give each an **id**, and let the spec keep
-**per-client state in a map keyed by that id**: with interleaved clients, one shared
-"current request" variable in the spec would be overwritten by the next client.
+Here a permit server (a semaphore) lets at most `capacity` clients hold a permit at
+once; each client asks for one and, if it gets it, gives it back. With one more client
+than permits, someone is refused unless a holder released first, and the spec has to
+follow each client separately while their requests interleave.
 
-This sample is a permit server (a semaphore): at most `capacity` clients hold a permit
-at once. Each client asks for one, and if it gets it, gives it back.
+**Contract:**
 
-**Contract:** at most `capacity` clients hold a permit at once; a client is refused
-only when all permits are held; only a holder releases; every client finishes, says
-truthfully whether it got a permit, and gives back any permit it got.
+- At most `capacity` clients hold a permit at once (`PermitsRespected`).
+- A client is refused only when all permits are held (`PermitsRespected`).
+- Only a holder releases (`PermitsRespected`).
+- Every client finishes, says truthfully whether it got a permit, and gives back any
+  permit it got (`PermitsRespected`, hot until then).
+
+**Atomic primitives:** the server's `Acquire` handler checks and updates its holder set
+in one step (one critical section), and so does `Release`.
 
 ## Files
 
@@ -28,6 +33,13 @@ truthfully whether it got a permit, and gives back any permit it got.
 | [`PSrc/Permits.p`](PSrc/Permits.p) | The design: `PermitServer` and `Client` |
 | [`PSpec/PermitsRespected.p`](PSpec/PermitsRespected.p) | The contract, with a `map[int, Phase]` of clients |
 | [`PTst/Tests.p`](PTst/Tests.p) | `StartClients(capacity, clients)` and two test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcThreeClientsTwoPermits` | 3 clients, 2 permits | Refusal when full; a permit released before the third client asks must be reusable | Passes |
+| `tcTwoClientsOnePermit` | 2 clients, 1 permit | Boundary: the capacity-1 case, mutual exclusion | Passes |
 
 ## The key lines
 
@@ -50,11 +62,12 @@ fun StartClients(capacity: int, clients: int) {
 }
 ```
 
-The spec keeps one entry per client and checks each event against that client's own
-phase. A shared counter (`holding`) carries the cross-client rule:
+The spec keeps **per-client state in a map keyed by the client id**. With interleaved
+clients, one shared "current request" variable would be overwritten by the next
+client. A shared counter (`holding`) carries the cross-client rule:
 
 ```p
-var phase: map[int, Phase];   // Asking, Holding, Released, Refused
+var phase: map[int, Phase];   // Asking, Holding, Returned, Refused
 ...
 on Granted do (g: (id: int)) {
   InPhase(g.id, Asking);
@@ -76,59 +89,25 @@ exceeds capacity.
 
 ## How many clients?
 
-Use the **smallest number that crosses each limit, plus nothing**: one more client than
-permits. Two permits need three clients for anyone to be refused; a lock (one permit)
-needs two. Each extra client multiplies the orders the checker must try:
-
-| Test | Clients | Schedules (exhaustive) |
-| --- | --- | --- |
-| `tcTwoClientsOnePermit` | 2 | 75 |
-| `tcThreeClientsTwoPermits` | 3 | 2,493 |
-| same, with a 4th client | 4 | 44,585 (12 s) |
-
-Here the 4th client only repeats situations three clients already reach (full,
-refused, freed and reused), at 18 times the cost. Add clients only when the design has a new
-limit to cross, not for "more realism".
-
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcThreeClientsTwoPermits` | 3 clients, 2 permits | Refusal when full; a permit released before the third client asks must be reusable | passes, all 2,493 schedules |
-| `tcTwoClientsOnePermit` | 2 clients, 1 permit | Boundary: the capacity-1 case, mutual exclusion | passes, all 75 schedules |
-
-Schedule counts, timings and report excerpts below are illustrative. Use the current
-run's completion status to decide whether it explored all schedules.
-
-## Run it
-
-```sh
-cd examples/samples/concepts/05-multiple-clients
-snappea check --deny mutation
-```
-
-```text
-ok    tcThreeClientsTwoPermits (all 2493 schedules, 0.57s)
-      Driver limits (held in all 2493 schedules):
-        creates 1 PermitServer and 3 Client, never more
-        PermitServer is always created with 2
-        Client is only created with id = 1, 2 or 3
-ok    tcTwoClientsOnePermit (all 75 schedules, 0.01s)
-Coverage of all test cases: 3/3 states, 48/48 statements, 6/6 branches, 9/9 event handlers, ...
-Mutation testing: 25 of 25 mutants detected (0.1s)
-```
+Use the **smallest number that crosses each limit**: one more client than permits. Two
+permits need three clients for anyone to be refused; a lock (one permit) needs two.
+Each extra client multiplies the orders the checker must try. On one machine, the
+three-client test explores a few thousand schedules in well under a second; a fourth
+client takes it to about forty thousand and several seconds, and only repeats
+situations three clients already reach (full, refused, freed and reused). Add clients
+only when the design has a new limit to cross, not for "more realism".
 
 ## Common mistake: forgetting the end of each client's story
 
-The first version of the spec left its hot state once every client had *finished*,
-and ignored releases after that. A server that never frees a permit, and a client
-that never gives one back, both passed:
+A first version of the spec left its hot state once every client had *finished*, and
+ignored releases after that. A server that never frees a permit, and a client that
+never gives one back, both passed:
 
 ```text
-Mutation testing: 21 of 25 mutants detected (0.9s)
+Mutation testing: 21 of 25 mutants detected (0.8s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Permits.p:27  PermitServer.Serving, on Release: removed the whole body (2 statements)
-  PSrc/Permits.p:45  Client.Acquiring, on AcquireResponse: removed the whole `if (r.ok)` ...
+  PSrc/Permits.p:45  Client.Acquiring, on AcquireResponse: removed the whole `if (r.ok)` (and 2 more undetected inside it; -v lists them)
 ```
 
 The fix is in `Settle()`: stay hot until every client finished **and** `holding == 0`.
@@ -138,19 +117,25 @@ not only that it reported something.
 ## Try this
 
 Off by one in the server: change `sizeof(holders) < capacity` to `<=`. Both tests fail
-on their first schedule:
+on their first schedule, for example:
 
 ```text
-FAIL  tcThreeClientsTwoPermits (bug found after 1 schedule, 0.00s)
-      Assertion Failed: PSpec/PermitsRespected.p:39:7 client 2 got a permit: 3 clients now hold one, capacity 2
+Assertion Failed: PSpec/PermitsRespected.p:39:7 client 3 got a permit: 3 clients now hold one, capacity 2
 ```
 
-## Bounds
+## Run
+
+```sh
+cd examples/samples/concepts/05-multiple-clients
+snappea check --deny mutation
+```
+
+## Bounds and omissions
 
 Up to three clients, one acquire per client, no retries after a refusal, no client
 crashes while holding a permit (a real semaphore needs leases or timeouts for that).
 
-## In your implementation
+## Testing the implementation
 
 Emit `Granted`, `Denied` and `Released` from the server where it updates its holder
 set (inside the lock or transaction), with the client id. Start the clients in a test

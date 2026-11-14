@@ -7,18 +7,22 @@ questions:
   - Why does a spec fed by reply-receipt events report false bugs?
 ---
 
-# Safety specs: rebuild the expected state from events
+# Safety specs: two writers race on a register
 
 A **safety spec** says "nothing bad ever happens": a read never returns a stale value,
-a seat is never sold twice. In P it is a `spec` monitor that observes events, keeps
-its own copy of what the system *should* look like, and asserts every result against
-that copy. It never reads the design's variables, so a wrong design cannot talk it
-into agreeing.
+a seat is never sold twice. In P it is a `spec` monitor that observes events, keeps its
+own copy of what the system *should* look like, and asserts every result against that
+copy. Here two writers race to write a register, then a reader reads it; either write
+can land last, and the spec must know which one did without reading the register.
 
-Write one for every promise about results. This sample has two writers racing to
-write a register, then a read.
+**Contract:**
 
-**Contract:** a read returns the value of the last write that committed before it.
+- A read returns the value of the last write that committed before it
+  (`LastWriteWins`).
+- The read is answered (`LastWriteWins` stays hot until it is).
+
+**Atomic primitives:** the register's `Write` handler is one atomic write (a row update
+or a put), and its `Read` handler is one atomic read.
 
 ## Files
 
@@ -27,6 +31,13 @@ write a register, then a read.
 | [`PSrc/Register.p`](PSrc/Register.p) | The design: one register; write and read are each one atomic step |
 | [`PSpec/LastWriteWins.p`](PSpec/LastWriteWins.p) | `LastWriteWins` (correct) and `LastAckWins` (wrong on purpose) |
 | [`PTst/Tests.p`](PTst/Tests.p) | Two `Writer`s, the driver that reads after both finish, two test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoWritersThenRead` | Writers of 1 and 2 race; the driver reads after both are acknowledged | Either write can land last; the read must match whichever did | Passes |
+| `tcBugSpecUsesAckOrder` | Same driver, checked by `LastAckWins` | Shows that reply-receipt order is not commit order: a correct register fails a badly instrumented spec | Expected bug: `but the last acknowledged write was` |
 
 ## The key lines
 
@@ -53,7 +64,7 @@ spec LastWriteWins observes WriteCommitted, ReadResponse {
     on ReadResponse do (r: (value: int)) {
       assert r.value == expected,
         format("read returned {0}, but the last committed write was {1}", r.value, expected);
-      goto Read;
+      goto ReadAnswered;
     }
   }
   ...
@@ -69,38 +80,15 @@ The `hot` start state is not the point of this sample. It makes "the read is ans
 checkable, so a register that drops an acknowledgement fails too
 (see [03-liveness](../03-liveness/README.md)).
 
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcTwoWritersThenRead` | Writers of 1 and 2 race; the driver reads after both are acknowledged | Either write can land last; the read must match whichever did | passes, all 134 schedules |
-| `tcBugSpecUsesAckOrder` | Same driver, but checked by `LastAckWins` | Shows that reply-receipt order is not commit order | **expected bug**: `read returned 2, but the last acknowledged write was 1` |
-
-Schedule counts, timings and report excerpts below are illustrative. Use the current
-run's completion status to decide whether it explored all schedules.
-
-## Run it
-
-```sh
-cd examples/samples/concepts/02-safety-spec
-snappea check tcTwoWritersThenRead --deny mutation
-snappea check tcBugSpecUsesAckOrder        # exits 0 when the declared bug matches: the false alarm below
-```
-
-```text
-ok    tcTwoWritersThenRead (all 134 schedules, 0.04s)
-      Coverage: 2/2 states, 18/18 statements, 2/2 branches, 6/6 event handlers, ...
-Mutation testing: 5 of 5 mutants detected (0.0s)
-
-expected bug  tcBugSpecUsesAckOrder (matching declared failure)
-      Assertion Failed: PSpec/LastWriteWins.p:44:7 read returned 2, but the last acknowledged write was 1
-```
-
 ## Common mistake: announcing where the reply arrives
 
 It is tempting to instrument the client: "when my write is acknowledged, tell the
 spec". `LastAckWins` does exactly that, through `WriteAckReceived` announced by each
 `Writer`. The register is correct, yet `tcBugSpecUsesAckOrder` fails:
+
+```text
+Assertion Failed: PSpec/LastWriteWins.p:44:7 read returned 2, but the last acknowledged write was 1
+```
 
 1. The register commits 1, then 2, and sends both acknowledgements.
 2. Writer 2 handles its acknowledgement first, then writer 1 handles its own.
@@ -114,21 +102,31 @@ commits (or with the store's version number), not where the client gets its repl
 ## Try this
 
 Make the register keep the first write: replace `value = w.value;` with
-`if (value == 0) { value = w.value; }`. Then:
+`if (value == 0) { value = w.value; }`. `tcTwoWritersThenRead` then fails with a
+message such as:
 
 ```text
-FAIL  tcTwoWritersThenRead (bug found after 1 schedule, 0.00s)
-      Assertion Failed: PSpec/LastWriteWins.p:19:7 read returned 1, but the last committed write was 2
+Assertion Failed: PSpec/LastWriteWins.p:19:7 read returned 2, but the last committed write was 1
 ```
 
-## Bounds
+## Run
+
+```sh
+cd examples/samples/concepts/02-safety-spec
+snappea check --deny mutation
+```
+
+`tcBugSpecUsesAckOrder` counts as passing when it fails with the declared message.
+
+## Bounds and omissions
 
 Two writers, one write each, one read after both finish. Reads concurrent with writes
 are not modeled; with them, the spec would accept any value committed before the read
 was served, which is exactly what `expected` holds at that moment.
 
-## In your implementation
+## Testing the implementation
 
 Emit `WriteCommitted` from the store right after the write transaction commits (or
 attach the store's version to the reply and order by it), and `ReadResponse` with the
-value a read returned. Check those events against `LastWriteWins`.
+value a read returned. Check those events against `LastWriteWins`. To force the race,
+hold the first writer's acknowledgement until the second write has committed.

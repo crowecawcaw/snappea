@@ -18,11 +18,11 @@ spec LastWriteWins observes WriteCommitted, ReadResponse {
     on ReadResponse do (r: (value: int)) {
       assert r.value == expected,
         format("read returned {0}, but the last committed write was {1}", r.value, expected);
-      goto Read;
+      goto ReadAnswered;
     }
   }
 
-  state Read {
+  state ReadAnswered {
     on WriteCommitted do { assert false, "the driver writes nothing after its read"; }
     on ReadResponse do { assert false, "the driver reads once"; }
   }
@@ -43,11 +43,11 @@ spec LastAckWins observes WriteAckReceived, ReadResponse {
     on ReadResponse do (r: (value: int)) {
       assert r.value == expected,
         format("read returned {0}, but the last acknowledged write was {1}", r.value, expected);
-      goto Read;
+      goto ReadAnswered;
     }
   }
 
-  state Read {
+  state ReadAnswered {
     on WriteAckReceived do { assert false, "the driver writes nothing after its read"; }
     on ReadResponse do { assert false, "the driver reads once"; }
   }

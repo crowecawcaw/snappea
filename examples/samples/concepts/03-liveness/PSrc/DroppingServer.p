@@ -12,7 +12,7 @@ machine DroppingServer {
   }
 
   state Idle {
-    on Request do (r: Request) {
+    on Request do (r: Task) {
       send worker, Job, r;
       goto Busy;
     }
@@ -21,7 +21,7 @@ machine DroppingServer {
   state Busy {
     // BUG: should be `defer Request;`.
     ignore Request;
-    on JobDone do (r: Request) {
+    on JobDone do (r: Task) {
       send r.client, Response, (id = r.id,);
       goto Idle;
     }

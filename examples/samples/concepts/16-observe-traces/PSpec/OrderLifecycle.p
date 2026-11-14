@@ -26,32 +26,40 @@ spec OrderLifecycle observes OrderPlaced, OrderPaid, OrderShipped, OrderCancelle
   var cancelledBeforePay: bool;
 
   start state New {
-    on PayRequested do (o: int) { PayRequested(o); }
-    on CancelRequested do (o: int) { CancelRequested(o); }
+    on PayRequested do (o: int) { NotePayRequest(o); }
+    on CancelRequested do (o: int) { NoteCancelRequest(o); }
     on OrderPlaced goto Placed with (p: (order: int, amount: int)) {
-      Same(p.order);
+      MatchOrder(p.order);
       assert p.amount > 0, format("order {0} placed for {1}", p.order, p.amount);
       amount = p.amount;
     }
-    on OrderPaid do { assert false, "order paid before it was placed"; }
-    on OrderShipped do { assert false, "order shipped before it was placed"; }
-    on OrderCancelled do { assert false, "order cancelled before it was placed"; }
+    on OrderPaid do (p: (order: int, amount: int)) {
+      assert false, format("order {0} paid before it was placed", p.order);
+    }
+    on OrderShipped do (o: int) {
+      assert false, format("order {0} shipped before it was placed", o);
+    }
+    on OrderCancelled do (c: (order: int, refunded: int)) {
+      assert false, format("order {0} cancelled before it was placed", c.order);
+    }
   }
 
   // Hot: an order must end up paid or cancelled.
   hot state Placed {
-    on PayRequested do (o: int) { PayRequested(o); }
-    on CancelRequested do (o: int) { CancelRequested(o); }
-    on OrderPlaced do { assert false, "order placed twice"; }
+    on PayRequested do (o: int) { NotePayRequest(o); }
+    on CancelRequested do (o: int) { NoteCancelRequest(o); }
+    on OrderPlaced do (p: (order: int, amount: int)) {
+      assert false, format("order {0} placed twice", p.order);
+    }
     on OrderPaid goto Paid with (p: (order: int, amount: int)) {
-      Same(p.order);
+      MatchOrder(p.order);
       assert payRequested, format("order {0} paid without a payment request", order);
       assert !cancelledBeforePay, format("order {0} paid although it was cancelled before payment was requested", order);
       assert p.amount == amount, format("order {0} paid {1}, but it costs {2}", order, p.amount, amount);
     }
-    on OrderShipped do { assert false, "order shipped before it was paid"; }
+    on OrderShipped do (o: int) { assert false, format("order {0} shipped before it was paid", o); }
     on OrderCancelled goto Closed with (c: (order: int, refunded: int)) {
-      Same(c.order);
+      MatchOrder(c.order);
       assert c.refunded == 0, format("order {0} refunded {1}, but it was never paid", order, c.refunded);
     }
   }
@@ -60,11 +68,15 @@ spec OrderLifecycle observes OrderPlaced, OrderPaid, OrderShipped, OrderCancelle
   hot state Paid {
     // Once paid, the order of later requests no longer matters.
     ignore PayRequested, CancelRequested;
-    on OrderPlaced do { assert false, "order placed twice"; }
-    on OrderPaid do { assert false, "order paid twice"; }
-    on OrderShipped goto Closed with (o: int) { Same(o); }
+    on OrderPlaced do (p: (order: int, amount: int)) {
+      assert false, format("order {0} placed twice", p.order);
+    }
+    on OrderPaid do (p: (order: int, amount: int)) {
+      assert false, format("order {0} paid twice", p.order);
+    }
+    on OrderShipped goto Closed with (o: int) { MatchOrder(o); }
     on OrderCancelled goto Closed with (c: (order: int, refunded: int)) {
-      Same(c.order);
+      MatchOrder(c.order);
       assert c.refunded == amount, format("order {0} refunded {1} of {2}", order, c.refunded, amount);
     }
   }
@@ -72,23 +84,29 @@ spec OrderLifecycle observes OrderPlaced, OrderPaid, OrderShipped, OrderCancelle
   state Closed {
     // A closed order ignores later requests (a retried payment is refused).
     ignore PayRequested, CancelRequested;
-    on OrderPlaced do { assert false, "order placed again after it closed"; }
-    on OrderPaid do { assert false, "order paid after it closed"; }
-    on OrderShipped do { assert false, "order shipped after it closed"; }
-    on OrderCancelled do { assert false, "order cancelled after it closed"; }
+    on OrderPlaced do (p: (order: int, amount: int)) {
+      assert false, format("order {0} placed again after it closed", p.order);
+    }
+    on OrderPaid do (p: (order: int, amount: int)) {
+      assert false, format("order {0} paid after it closed", p.order);
+    }
+    on OrderShipped do (o: int) { assert false, format("order {0} shipped after it closed", o); }
+    on OrderCancelled do (c: (order: int, refunded: int)) {
+      assert false, format("order {0} cancelled after it closed", c.order);
+    }
   }
 
-  fun PayRequested(o: int) {
-    Same(o);
+  fun NotePayRequest(o: int) {
+    MatchOrder(o);
     payRequested = true;
   }
 
-  fun CancelRequested(o: int) {
-    Same(o);
+  fun NoteCancelRequest(o: int) {
+    MatchOrder(o);
     if (!payRequested) { cancelledBeforePay = true; }
   }
 
-  fun Same(o: int) {
+  fun MatchOrder(o: int) {
     if (!known) {
       order = o;
       known = true;

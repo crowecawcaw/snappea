@@ -7,26 +7,23 @@ questions:
   - How do I write the same RPC-style client both ways?
 ---
 
-# Blocking `receive` versus state handlers
+# Blocking `receive` versus state handlers: a get/CAS counter client
 
 Real client code is usually written as calls: `v = get(); ok = cas(v.version, v.value + 1)`.
-P can model it two ways:
+P can model it as a function that blocks in **`receive`** until the reply arrives, or
+as **states**, one per outstanding request. Here two clients increment a shared
+versioned store with get, then compare-and-swap, and retry when another client wrote
+in between; the same client is written both ways and checked against the same spec.
 
-- **`receive`**: a function sends a request and blocks until the reply arrives, like a
-  synchronous RPC. The algorithm reads top to bottom, close to the real code.
-- **States**: one state per outstanding request; the reply's handler decides the next
-  step. More lines, but every waiting point is a state you can see, name and control.
+**Contract:**
 
-Both are checked the same way: each `send` and `receive` is a point where other
-machines can run. This sample writes one client both ways and checks both against
-the same spec.
+- Every increment the application asks for is applied exactly once, so the committed
+  values go 1, 2, 3 (`IncrementsApplied`).
+- Every requested increment commits (`IncrementsApplied` stays hot until then).
 
-**The design:** a versioned store with two atomic primitives, `get` and
-compare-and-swap. A client increments the value with get, then CAS at the version it
-read, and retries if another client wrote in between.
-
-**Contract:** every increment the application asks for is applied exactly once, so the
-committed values go 1, 2, 3.
+**Atomic primitives:** the store's `Get` handler reads the value and its version
+together; its `Cas` handler writes only if the version is unchanged. Between the two,
+another client can run.
 
 ## Files
 
@@ -38,25 +35,32 @@ committed values go 1, 2, 3.
 | [`PSpec/IncrementsApplied.p`](PSpec/IncrementsApplied.p) | The contract (safety and progress) |
 | [`PTst/Tests.p`](PTst/Tests.p) | Two clients per test; one gets two increments back to back |
 
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcReceiveClients` | 2 `ReceiveClient`s, 3 increments | CAS conflicts force retries; an increment arrives mid-call | Passes |
+| `tcStateClients` | 2 `StateClient`s, 3 increments | The same race, state-based client | Passes |
+
 ## The key lines
 
 With `receive`, the retry loop is plain code:
 
 ```p
-fun Increment() {
+fun ApplyIncrement() {
   var current: (version: int, value: int);
   var done: bool;
   while (!done) {
-    current = Get();
-    done = Cas(current.version, current.value + 1);
+    current = FetchCurrent();
+    done = TryCas(current.version, current.value + 1);
   }
 }
 
-fun Get(): (version: int, value: int) {
+fun FetchCurrent(): (version: int, value: int) {
   var result: (version: int, value: int);
   send store, Get, (client = this,);
   receive {
-    case GetResponse: (r: (version: int, value: int)) { result = r; }
+    case Got: (r: (version: int, value: int)) { result = r; }
   }
   return result;
 }
@@ -69,65 +73,47 @@ As states, the same loop is spread over `Reading` and `Writing`, and the retry i
 state Reading {
   defer Increment;
   entry { send store, Get, (client = this,); }
-  on GetResponse do (r: (version: int, value: int)) { current = r; goto Writing; }
+  on Got do (r: (version: int, value: int)) { current = r; goto Writing; }
 }
 
 state Writing {
   defer Increment;
   entry { send store, Cas, (client = this, version = current.version, value = current.value + 1); }
-  on CasResponse do (r: (ok: bool)) {
+  on CasResult do (r: (ok: bool)) {
     if (r.ok) { goto Idle; } else { goto Reading; }
   }
 }
 ```
 
+Both are checked the same way: each `send` and `receive` is a point where other
+machines can run.
+
 ## What happens to other events while waiting
 
 Here the first client gets a second `Increment` while it is still working on the
-first. Every event that arrives while a machine waits must be handled, deferred or
-ignored, or the run fails with "cannot be handled":
+first.
 
 - **In `receive`**, only the listed cases are taken. Any other event stays in the queue
-  if the *current state* handles, defers or ignores it, and is processed after the
-  `receive` returns. `ReceiveClient` waits inside `Idle`'s `Increment` handler, and
-  `Idle` handles `Increment`, so the second increment simply waits its turn. An event
-  the state does not mention at all is an error, even if a later state would handle it.
+  while the machine waits, as if deferred. When the `receive` returns, the machine
+  carries on, and the state it is then in must handle, defer or ignore each queued
+  event; an event that state does not mention is an unhandled-event error.
+  `ReceiveClient` waits inside `Idle`'s `Increment` handler and is still in `Idle`
+  afterwards, so the second increment simply runs next.
 - **With states**, each waiting state decides for itself. `Reading` and `Writing` must
   each say `defer Increment;`.
 
-So the trade-off: `receive` is easier to read and keeps the algorithm in one place, but
-what happens to other events depends on the state the machine happens to be in, which
-is easy to miss. Use `receive` for clients that make one call at a time and get few
-other events. Use states when the machine must react to other events while it waits
-(a cancel, a timeout, a notification), so each reaction is written down where it applies.
+So the trade-off: `receive` is easier to read and keeps the algorithm in one place,
+but which events are safe to receive meanwhile depends on the state the machine is in
+when the call returns, which is easy to miss. Use `receive` for clients that make one
+call at a time and get few other events. Use states when the machine must react to
+other events while it waits (a cancel, a timeout, a notification), so each reaction is
+written down where it applies.
 
-## Test cases
+## The suppressed mutant
 
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcReceiveClients` | 2 `ReceiveClient`s, 3 increments | CAS conflicts force retries; an increment arrives mid-call | passes, all 885 schedules |
-| `tcStateClients` | 2 `StateClient`s, 3 increments | The same race, state-based client | passes, all 920 schedules |
-
-Schedule counts, timings and report excerpts below are illustrative. Use the current
-run's completion status to decide whether it explored all schedules.
-
-## Run it
-
-```sh
-cd examples/samples/concepts/07-receive
-snappea check --deny mutation
-```
-
-```text
-ok    tcReceiveClients (all 885 schedules, 0.36s)
-ok    tcStateClients (all 920 schedules, 0.23s)
-Coverage of all test cases: 3/3 states, 50/50 statements, 6/6 branches, 8/8 event handlers, ...
-Mutation testing: 39 of 39 mutants detected, 1 suppressed (0.4s)
-```
-
-The suppressed mutant is `version + 1` → `version - 1` in the store: versions only need
-to differ, so counting down is equally correct. The suppression comment in
-`PSrc/Store.p` says so.
+`Store.p` suppresses one mutant: `version + 1` → `version - 1`. Versions are only
+compared for equality, so counting down is equally correct; no execution can tell the
+two apart. That is an equivalent mutant, and the suppression comment says why.
 
 ## Common mistake: one handler for the whole call
 
@@ -142,17 +128,26 @@ Remove `defer Increment;` from `StateClient`'s `Writing` state. The first client
 its second increment while waiting for the CAS reply:
 
 ```text
-FAIL  tcStateClients (bug found after 1 schedule, 0.02s)
-      StateClient(3) received event 'PImplementation.Increment' that cannot be handled.
+error: StateClient(3) in state 'Writing' received event 'Increment' that it cannot handle
 ```
 
-## Bounds
+## Run
+
+```sh
+cd examples/samples/concepts/07-receive
+snappea check --deny mutation
+```
+
+## Bounds and omissions
 
 Two clients, three increments, one store. Messages are not lost; a client never gives
-up retrying, which ends because only three writes ever happen.
+up retrying, which ends because only three writes ever happen. Each client serves its
+increments one at a time, which is the real design for an RPC-style client.
 
-## In your implementation
+## Testing the implementation
 
-Emit `Committed` from the store where the CAS succeeds, with the new value, and the
-number of increments when the test starts. The interesting real-code test forces a
+Emit `Committed` from the store where the CAS succeeds, with the new value, and
+`IncrementsPlanned` when the test starts. The interesting real-code test forces a
 conflict: let a second client write between the first client's get and its CAS.
+[12-scenarios](../12-scenarios/README.md) uses the same store and shows how to prove a
+test reached that conflict.

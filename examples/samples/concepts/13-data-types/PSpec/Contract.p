@@ -1,16 +1,14 @@
 // The cart contract, rebuilt from what shoppers asked for: a checkout pays for exactly
 // the cart's lines at list price when every line is in stock, and is refused otherwise;
-// stock never goes negative; a paid cart is emptied; every checkout gets a receipt.
+// a paid cart is emptied; every checkout gets a receipt. The spec keeps its own stock,
+// so a store that oversells refuses or charges differently from what the spec expects.
 
 // Announced by the driver: the opening stock and how many checkouts will follow.
 event Opened: (stock: map[Sku, int], checkouts: int);
 // Announced by a shopper as it sends each request.
 event Added: (cart: int, line: Line);
 event Removed: (cart: int, sku: Sku);
-// Announced by the store when a checkout commits or is refused.
-event CheckedOut: Receipt;
-
-spec CartContract observes Opened, Added, Removed, CheckedOut {
+spec CheckoutsMatchCarts observes Opened, Added, Removed, CheckoutResponse {
   var stock: map[Sku, int];
   var carts: map[int, Cart];
   var receiptsDue: int;
@@ -21,9 +19,15 @@ spec CartContract observes Opened, Added, Removed, CheckedOut {
       stock = o.stock;
       receiptsDue = o.checkouts;
     }
-    on Added do { assert false, "item added before the store opened"; }
-    on Removed do { assert false, "item removed before the store opened"; }
-    on CheckedOut do { assert false, "checkout before the store opened"; }
+    on Added do (a: (cart: int, line: Line)) {
+      assert false, format("cart {0}: item added before the store opened", a.cart);
+    }
+    on Removed do (r: (cart: int, sku: Sku)) {
+      assert false, format("cart {0}: item removed before the store opened", r.cart);
+    }
+    on CheckoutResponse do (r: Receipt) {
+      assert false, format("cart {0}: checkout before the store opened", r.cart);
+    }
   }
 
   // Hot until every planned checkout has its receipt.
@@ -37,9 +41,9 @@ spec CartContract observes Opened, Added, Removed, CheckedOut {
     on Removed do (r: (cart: int, sku: Sku)) {
       carts[r.cart] -= (r.sku);
     }
-    on CheckedOut do (r: Receipt) {
-      var expected: Result;
-      expected = Expected(r.cart);
+    on CheckoutResponse do (r: Receipt) {
+      var expected: CheckoutOutcome;
+      expected = DecideOutcome(r.cart);
       assert r.result == expected, format("cart {0}: checkout returned {1}, expected {2}", r.cart, r.result, expected);
       if (r.result == Paid) { Pay(r); }
       receiptsDue = receiptsDue - 1;
@@ -49,12 +53,18 @@ spec CartContract observes Opened, Added, Removed, CheckedOut {
 
   state Closed {
     on Opened do { assert false, "store opened after it closed"; }
-    on Added do { assert false, "item added after the last checkout"; }
-    on Removed do { assert false, "item removed after the last checkout"; }
-    on CheckedOut do { assert false, "receipt after the last checkout"; }
+    on Added do (a: (cart: int, line: Line)) {
+      assert false, format("cart {0}: item added after the last checkout", a.cart);
+    }
+    on Removed do (r: (cart: int, sku: Sku)) {
+      assert false, format("cart {0}: item removed after the last checkout", r.cart);
+    }
+    on CheckoutResponse do (r: Receipt) {
+      assert false, format("cart {0}: receipt after the last checkout", r.cart);
+    }
   }
 
-  fun Expected(cart: int): Result {
+  fun DecideOutcome(cart: int): CheckoutOutcome {
     var sku: Sku;
     if (!(cart in carts) || sizeof(carts[cart]) == 0) { return EmptyCart; }
     foreach (sku in keys(carts[cart])) {
@@ -65,7 +75,6 @@ spec CartContract observes Opened, Added, Removed, CheckedOut {
 
   fun Pay(r: Receipt) {
     var line: Line;
-    var qty: int;
     var total: int;
     assert sizeof(r.lines) == sizeof(carts[r.cart]),
       format("cart {0} paid for {1} lines, but it has {2}", r.cart, sizeof(r.lines), sizeof(carts[r.cart]));
@@ -76,9 +85,6 @@ spec CartContract observes Opened, Added, Removed, CheckedOut {
       total = total + line.qty * ExpectedPrice(line.sku);
     }
     assert r.total == total, format("cart {0} charged {1}, list price is {2}", r.cart, r.total, total);
-    foreach (qty in values(stock)) {
-      assert qty >= 0, format("stock went negative: {0}", stock);
-    }
     // A paid cart is emptied: checking it out again finds nothing.
     carts -= (r.cart);
   }

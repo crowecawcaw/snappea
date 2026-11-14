@@ -1,17 +1,22 @@
 // The connection contract: no more sessions open than the server has slots; a
 // connection tries at most twice; every connection ends closed for a reason the history
-// justifies; every session is freed.
+// justifies (its app asked, the server evicted it, or it was refused twice); every
+// session is freed.
 
 // Announced by the driver before it starts: the slots and the connections it will open.
 event Planned: (slots: int, connections: int);
+// Announced by an app (a driver) just before it asks its connection to close.
+event CloseRequested: machine;
 // Announced by the server.
 event Accepted: (conn: machine, session: int);
 event Rejected: machine;
+event Evicted: machine;
 event Freed: int;
 // Announced by a connection when it closes.
-event Closed: (conn: machine, reason: Reason);
+event ConnectionClosed: (conn: machine, reason: Reason);
 
-spec Lifecycle observes Planned, Accepted, Rejected, Freed, Closed {
+spec ConnectionsWithinSlots observes Planned, CloseRequested, Accepted, Rejected, Evicted, Freed,
+    ConnectionClosed {
   var slots: int;
   var unclosed: int;
   // session -> connection holding it
@@ -19,6 +24,8 @@ spec Lifecycle observes Planned, Accepted, Rejected, Freed, Closed {
   var accepted: set[machine];
   // connection -> refused attempts
   var refusals: map[machine, int];
+  var closeRequested: set[machine];
+  var evicted: set[machine];
   var closed: set[machine];
 
   start state Idle {
@@ -27,15 +34,13 @@ spec Lifecycle observes Planned, Accepted, Rejected, Freed, Closed {
       slots = p.slots;
       unclosed = p.connections;
     }
-    on Accepted do { assert false, "accepted before anything was planned"; }
-    on Rejected do { assert false, "rejected before anything was planned"; }
-    on Freed do { assert false, "freed before anything was planned"; }
-    on Closed do { assert false, "closed before anything was planned"; }
   }
 
   // Hot until every connection is closed and every session freed.
   hot state Running {
-    on Planned do { assert false, "planned twice"; }
+    on CloseRequested do (conn: machine) {
+      closeRequested += (conn);
+    }
     on Accepted do (a: (conn: machine, session: int)) {
       assert !(a.session in open), format("session {0} given out while still open", a.session);
       assert sizeof(open) < slots, format("{0} sessions open on {1} slots", sizeof(open) + 1, slots);
@@ -49,18 +54,24 @@ spec Lifecycle observes Planned, Accepted, Rejected, Freed, Closed {
       refusals[c] = refusals[c] + 1;
       assert refusals[c] <= 2, format("{0} refused {1} times: it should give up after 2", c, refusals[c]);
     }
+    on Evicted do (c: machine) {
+      assert c in accepted, format("{0} evicted, but it was never accepted", c);
+      evicted += (c);
+    }
     on Freed do (session: int) {
       assert session in open, format("session {0} freed but not open", session);
       open -= (session);
       Settle();
     }
-    on Closed do (c: (conn: machine, reason: Reason)) {
+    on ConnectionClosed do (c: (conn: machine, reason: Reason)) {
       assert !(c.conn in closed), format("{0} closed twice", c.conn);
       if (c.reason == CapacityRefused) {
         assert !(c.conn in accepted) && c.conn in refusals && refusals[c.conn] == 2,
           format("{0} gave up without being refused twice", c.conn);
+      } else if (c.reason == ClientClose) {
+        assert c.conn in closeRequested, format("{0} closed by its client, but its app never asked", c.conn);
       } else {
-        assert c.conn in accepted, format("{0} closed with {1} but was never accepted", c.conn, c.reason);
+        assert c.conn in evicted, format("{0} closed by eviction, but the server never evicted it", c.conn);
       }
       closed += (c.conn);
       unclosed = unclosed - 1;
@@ -69,11 +80,8 @@ spec Lifecycle observes Planned, Accepted, Rejected, Freed, Closed {
   }
 
   state Finished {
-    on Planned do { assert false, "planned after finishing"; }
-    on Accepted do { assert false, "accepted after finishing"; }
-    on Rejected do { assert false, "rejected after finishing"; }
-    on Freed do { assert false, "freed after finishing"; }
-    on Closed do { assert false, "closed after finishing"; }
+    // An app may ask to close a connection the server already evicted.
+    ignore CloseRequested;
   }
 
   fun Settle() {

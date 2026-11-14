@@ -7,23 +7,30 @@ questions:
   - What does "all N schedules" mean, and what do driver limits tell me?
 ---
 
-# Nondeterminism: let the checker choose
+# Nondeterminism: every withdrawal amount and every database timeout
 
 A test with fixed inputs checks one story. A **choice** lets the checker try every
-value, and every combination with every message order, in one test:
+value, and every combination with every message order, in one test. Here an account
+holds 2; the driver withdraws twice, each time an amount the checker chooses, and the
+account's database may time out on any request. The boundary (exactly the balance) and
+a timeout before or after a success all come out of two choices.
 
 | Expression | Means |
 | --- | --- |
 | `choose(n)` | an `int` from `0` to `n - 1` |
+| `choose(collection)` | any element of a `seq`, `set` or map keys |
 | `$` | a `bool` |
 | `$$` | a `bool` that upstream P treats as *fair* for liveness (not false forever in a long run). For safety checking it behaves like `$`. |
 
-This sample is an account with a balance of 2. The driver withdraws twice, each time an
-amount the checker chooses; the account's database may time out on any request.
+**Contract:**
 
-**Contract:** a withdrawal succeeds exactly when the balance covers it; every reply
-reports the balance the earlier successful withdrawals imply; "unavailable" changes
-nothing; every request gets an answer.
+- A withdrawal succeeds exactly when the balance covers it, and every reply reports the
+  balance the earlier successful withdrawals imply (`WithdrawalsMatchBalance`).
+- "Unavailable" changes nothing (`WithdrawalsMatchBalance`).
+- Every request gets an answer (`WithdrawalsMatchBalance` stays hot until then).
+
+**Atomic primitives:** the account's `Withdraw` handler is one database transaction:
+check the balance, debit it, and reply, or fail as a whole with a timeout.
 
 ## Files
 
@@ -32,6 +39,12 @@ nothing; every request gets an answer.
 | [`PSrc/Account.p`](PSrc/Account.p) | The design, with an environment choice (`$`) for database timeouts |
 | [`PSpec/Withdrawals.p`](PSpec/Withdrawals.p) | `WithdrawalsMatchBalance`: expected balance, rebuilt from the requests |
 | [`PTst/Tests.p`](PTst/Tests.p) | The driver, with an input choice (`choose(4)`), and the test case |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoWithdrawals` | Two withdrawals of 0-3 from a balance of 2, one after the other; each may time out | Boundary (exactly the balance), refusal, a timeout before or after a success | Passes |
 
 ## The key lines
 
@@ -42,8 +55,9 @@ nothing; every request gets an answer.
 entry {
   var amount: int;
   amount = choose(4);
-  announce WithdrawRequested, amount;
-  send account, Withdraw, (client = this, amount = amount);
+  made = made + 1;
+  announce WithdrawRequested, (id = made, amount = amount);
+  send account, Withdraw, (client = this, id = made, amount = amount);
 }
 ```
 
@@ -52,7 +66,7 @@ timeout, a lost message, a crash) is a choice inside the machine that stands for
 
 ```p
 if ($) {
-  send w.client, Unavailable;
+  send w.client, Unavailable, (id = w.id,);
 } else if (w.amount <= balance) {
   ...
 ```
@@ -64,33 +78,20 @@ tested with a different driver.
 The checker does not mutate choices: `if ($)` is never forced to `true` or `false`,
 since both are already explored.
 
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcTwoWithdrawals` | Two withdrawals of 0-3 from a balance of 2, each may time out | Boundary (exactly the balance), refusal, a timeout before or after a success | passes, all 52 schedules |
-
-Schedule counts, timings and report excerpts below are illustrative. Use the current
-run's completion status to decide whether it explored all schedules.
-
-## Run it
-
-```sh
-cd examples/samples/concepts/04-nondeterminism
-snappea check --deny mutation
-```
+## Reading the output
 
 ```text
-ok    tcTwoWithdrawals (all 52 schedules, 0.01s)
-      Coverage: 3/3 states, 30/30 statements, 8/8 branches, 7/7 event handlers, ...
-      Driver limits (held in all 52 schedules):
+ok    tcTwoWithdrawals (all 63 schedules, 2 workers, 0.01s)
+      Coverage: 3/3 states, 39/39 statements, 10/10 branches, 7/7 event handlers, 10/10 condition outcomes, 2/4 transition pairs
+      Driver limits (held in all 63 schedules):
         creates 1 Account, never more
         TwoWithdrawals sends Withdraw exactly twice
+        Withdraw is only sent with id = 1 or 2
         Account is always created with 2
 Mutation testing: 13 of 13 mutants detected (0.0s)
 ```
 
-- **all 52 schedules** means the search was **exhaustive**: every combination of
+- **all N schedules** means the search was **exhaustive**: every combination of
   choices and message orders, within this driver's bounds, was explored, and none
   broke the contract. The count is smaller than 4 x 2 x 4 x 2 because the checker
   skips a continuation once it has explored that same state. A search that runs out
@@ -100,15 +101,14 @@ Mutation testing: 13 of 13 mutants detected (0.0s)
 
 ## Common mistake: a fixed input
 
-Replace `amount = choose(4);` with `amount = 1;`. The run is now 6 schedules, the
-driver limits gain `Withdraw is always sent with amount = 1`, and the check fails on
-coverage, because no request is ever refused:
+Replace `amount = choose(4);` with `amount = 1;`. The driver limits gain
+`Withdraw is only sent with id = 1 or 2, amount = 1`, and the check fails on coverage,
+because no request is ever refused:
 
 ```text
 Not covered by the test case:
-  PSrc/Account.p:21       Account.Serving, on Withdraw: if (w.amount <= balance) never false
-  PSpec/Withdrawals.p:28  WithdrawalsMatchBalance.Pending, on WithdrawResponse: if (amount <= expected) never false
-Coverage requirements were not met for 4 points.
+  PSpec/Withdrawals.p:36  WithdrawalsMatchBalance.Open, on WithdrawResponse: if (amount <= expected) never false
+  PSrc/Account.p:22       Account.Serving, on Withdraw: if (w.amount <= balance) never false
 ```
 
 Pick choice ranges from the contract's boundaries: below, exactly at and above each
@@ -121,20 +121,28 @@ Change the account's test to `w.amount < balance` (an off-by-one at the boundary
 The checker finds the amount-equals-balance case:
 
 ```text
-FAIL  tcTwoWithdrawals (bug found after 1 schedule, 0.00s)
-      Assertion Failed: PSpec/Withdrawals.p:29:9 withdrawal of 2 refused although the balance was 2
+Assertion Failed: PSpec/Withdrawals.p:37:9 withdrawal 1 of 2 refused although the balance was 2
 ```
 
-## Bounds
+## Run
+
+```sh
+cd examples/samples/concepts/04-nondeterminism
+snappea check --deny mutation
+```
+
+## Bounds and omissions
 
 One account, two sequential withdrawals of 0-3 from a balance of 2, any request may
-time out. Concurrent withdrawals are not modeled (see
-[05-multiple-clients](../05-multiple-clients/README.md)). A timeout here means the
-database did nothing; a timeout after the write committed is a different, harder case
-(the client cannot tell them apart), not modeled here.
+time out. Concurrent withdrawals are in [05-multiple-clients](../05-multiple-clients/README.md)
+(a different resource) and [15-mutation-driven-specs](../15-mutation-driven-specs/README.md)
+(this account). A timeout here means the database did nothing; a timeout after the
+write committed is a different, harder case (the client cannot tell them apart), not
+modeled here.
 
-## In your implementation
+## Testing the implementation
 
-Emit `WithdrawRequested` when the client sends a withdrawal and `WithdrawResponse` or
-`Unavailable` when it gets the answer (one client at a time, so the order is safe).
-To reach the timeout case, inject a database timeout with a fault-injection wrapper.
+Emit `WithdrawRequested` when the client sends a withdrawal, and `WithdrawResponse` or
+`Unavailable` from the account where it replies. To reach the timeout case, inject a
+database timeout with a fault-injection wrapper; to reach the boundary, withdraw
+exactly the balance.

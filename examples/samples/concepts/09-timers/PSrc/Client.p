@@ -1,7 +1,8 @@
-// A client that sends requests one at a time, each with a timeout. Requests always reach
-// the server, but the server may never answer (it crashed, or the reply was lost), so the timeout is what guarantees an
-// outcome. Replies and timeouts are tagged with the request id, so a late reply or a
-// timer that fired after its cancel is recognised and ignored.
+// A client that sends requests one at a time, each with a timeout. Requests always
+// reach the server, but the server may never answer (it crashed, or the reply was
+// lost), so the timeout is what guarantees an outcome. Replies and timeouts carry the
+// request id, so a late reply or a timer that fired after its cancel is recognised and
+// ignored.
 
 event Request: (client: machine, id: int, value: int);
 event Reply: (id: int, result: int);
@@ -10,15 +11,20 @@ event Reply: (id: int, result: int);
 // test input, not code under test, and it is not mutated.
 // snappea: driver
 machine Server {
+  var dropsReplies: bool;
+
   start state Serving {
+    entry (drops: bool) {
+      dropsReplies = drops;
+    }
     on Request do (r: (client: machine, id: int, value: int)) {
       announce Received, r.id;
       // The reply may never come.
-      if ($) { return; }
+      if (dropsReplies && $) { return; }
+      // Announce before the send: the reply exists from here on, so a client that acts
+      // on it is always preceded by this event, in the model and in a real log.
+      announce Replied, r.id;
       send r.client, Reply, (id = r.id, result = r.value * 2);
-      // Announce after the send: the send is where the scheduler can switch, so this is
-      // the moment the reply is in the client's inbox.
-      announce Served, r.id;
     }
   }
 }
@@ -49,7 +55,7 @@ machine Client {
       if (r.id != current) { return; }
       // Best effort: the timer may already have fired. Correctness does not depend
       // on the cancel winning, so the checker cannot tell it is there.
-      // snappea-lint: allow mutation:remove-statement -- cancel is best effort; a timeout that fires anyway is ignored by its tag
+      // snappea-lint: allow mutation:remove-statement -- equivalent: a timeout that fires anyway is ignored by its tag
       send timer, Cancel;
       Decide(true, r.result);
     }
@@ -60,6 +66,7 @@ machine Client {
     }
   }
 
+  // Late replies and timers that fire after their cancel still arrive here.
   state Done {
     ignore Reply, Timeout;
   }
