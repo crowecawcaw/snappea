@@ -58,3 +58,12 @@ def test_competing_reservations():
 - Keep direct boundary, concurrency, and crash tests. Test encoded record limits and valid logical operations exceeding one record, including after history grows.
 - A passing observation validates the delivered history against the monitor, not missing events, unobserved schedules, or assumptions.
 - Options: [Python helpers](https://github.com/crowecawcaw/snappea/blob/main/python/src/snappea/__init__.py), [strict observation](https://github.com/crowecawcaw/snappea/blob/main/docs/observe.md#strict-observation).
+
+## Start from a saved regression suite
+
+Export `snappea guide example cas-queue --out /tmp` for a complete queue model,
+implementation, and pytest tests using the same independent spec. Install with
+`python -m pip install pysnappea pytest`; the import is `snappea`. Tests capture
+actual calls, encode optional results, recreate objects for delayed retries and
+force CAS conflicts without matching private storage-key names. The contract is
+selected by a model test, so default lint does not need an unselected-spec override.

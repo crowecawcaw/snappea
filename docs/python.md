@@ -20,3 +20,5 @@ Section links: [install](https://crowecawcaw.github.io/snappea/docs/python.html#
 
 The source is in [`python/`](../python); `pip install ./python` in a checkout builds the
 binary with cargo. The page's source is `web/src/site/docs/languages/Python.tsx`.
+
+For saved model-to-test projects, see the [runnable examples](https://crowecawcaw.github.io/snappea/docs/python.html#runnable-examples) section.

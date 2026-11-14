@@ -45,3 +45,12 @@ questions:
 - State omitted crash points, expiration, conflicting payloads under one ID, network behavior, and storage failures.
 - Completion needs assumptions such as eventual recovery and scheduling. Safety may not.
 - A bounded pass does not establish arbitrary-crash or implementation correctness.
+
+## Exercise the storage protocol
+
+`snappea guide example blob-publication --out /tmp` exports separate durable staging
+and root-CAS model steps, a Python implementation, and saved crash/retry tests.
+Crashes before publication leave invisible staged records; a lost response after CAS
+retries from the durable outcome. A losing publisher rereads and rebuilds both heads
+and its outcome map. The README states the finite record, request and crash bounds;
+Python storage simulates durable state across worker recreation, not machine restart.

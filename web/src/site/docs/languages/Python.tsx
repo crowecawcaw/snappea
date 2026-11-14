@@ -304,6 +304,33 @@ def server(tmp_path_factory):
       </section>
 
       <section>
+        <h2 id="runnable-examples">Runnable model-to-test examples</h2>
+        <p>
+          Export a complete queue model, independent contract, Python implementation and saved pytest regressions:
+        </p>
+        <Code lang="shell">{`
+snappea guide example cas-queue --out /tmp
+cd /tmp/cas-queue
+python -m pip install pysnappea pytest
+snappea check Queue.pproj --timeout 30s --deny mutation --json
+python -m pytest -q
+`}</Code>
+        <p>
+          The tests force load/CAS conflicts without matching private storage-key names, retry through new objects
+          after state changes, distinguish an empty result from zero, and show the shared P monitor rejecting an
+          actual implementation defect. Sequential observations have a known operation order; concurrent races
+          use ordinary assertions because response order is not commit order.
+        </p>
+        <p>
+          For immutable staging, root-CAS publication and saved crash/retry tests, export{" "}
+          <code>snappea guide example blob-publication --out /tmp</code>. Its in-memory storage simulates durability
+          across recreated workers. Read each README for the finite request, record and crash bounds. Require
+          complete model exploration and zero coverage or mutation gaps; exit status alone does not establish that.
+          These application tests validate selected real histories, not every execution or full model equivalence.
+        </p>
+      </section>
+
+      <section>
         <h2 id="failures">Failures</h2>
         <p>
           A failure shows the spec's assert message, the events of the key that broke it (the last 20) with where each
