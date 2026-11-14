@@ -116,8 +116,9 @@ flawed samples; personas; three to five questions the sample answers). Then thes
 sections, in this order, with these headings:
 
 1. `# Title` in sentence case, naming the situation (`Seat holds that expire during payment`).
-2. Two to four sentences: the system and why it is hard. Flawed samples add
-   **The flaw in one sentence.**
+2. Two to four sentences: the system and why it is hard. Flawed samples follow with
+   **The flaw in one sentence**, then `**Difficulty: Easy|Medium|Hard.**` and,
+   optionally, one sentence on why it is that hard to spot.
 3. **Contract**: bullets, each a property a spec checks. Name the spec.
 4. **Atomic primitives**: what one handler models in the real system.
 5. `## Files`: a table of file and what it holds.
