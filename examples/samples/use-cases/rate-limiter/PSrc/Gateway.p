@@ -5,12 +5,12 @@
 // Requests admitted per window, across all gateways.
 fun Limit(): int { return 2; }
 
-event eRequest: (client: machine, req: int);
-type tDecision = (req: int, admitted: bool);
-event eDecision: tDecision;
+event Request: (client: machine, req: int);
+type AdmissionDecision = (req: int, admitted: bool);
+event Decision: AdmissionDecision;
 // The clock: ask for the current window id.
-event eNow: machine;
-event eNowResp: int;
+event Now: machine;
+event NowResp: int;
 
 machine Gateway {
   var store: CounterStore;
@@ -21,25 +21,18 @@ machine Gateway {
       store = input.store;
       clock = input.clock;
     }
-    on eRequest do (r: (client: machine, req: int)) {
+    on Request do (r: (client: machine, req: int)) {
       var arrival: int;
-      var rec: tRecord;
+      var rec: CounterRecord;
       var window: int;
       var count: int;
       var done: bool;
       var admitted: bool;
-      var attempts: int;
-      send clock, eNow, this;
-      receive { case eNowResp: (w: int) { arrival = w; } }
+      send clock, Now, this;
+      receive { case NowResp: (w: int) { arrival = w; } }
       while (!done) {
-        // snappea-lint: allow mutation -- only feeds the test bound below, which no passing schedule reaches
-        attempts = attempts + 1;
-        // Test bound, not a production retry policy: each test has one other gateway
-        // with at most one write in flight, so a CAS can lose at most once. Without
-        // this, a CAS that never succeeds is a livelock the checker finds slowly.
-        assert attempts <= 2, format("request {0} lost its CAS twice with one competing write", r.req);
-        send store, eLoad, this;
-        receive { case eLoaded: (s: tRecord) { rec = s; } }
+        send store, Load, this;
+        receive { case Loaded: (s: CounterRecord) { rec = s; } }
         window = arrival;
         count = rec.count;
         // Another gateway already counts a later window: our clock reading is stale,
@@ -49,19 +42,20 @@ machine Gateway {
         // The record still counts an earlier window: this request starts a new one.
         if (rec.window < window) { count = 0; }
         if (count >= Limit()) {
-          announce eRejected, (req = r.req, window = window);
+          announce Rejected, (req = r.req, window = window);
           done = true;
         } else {
-          send store, eCas, (client = this, req = r.req, expected = rec.version,
+          send store, Cas, (client = this, req = r.req, expected = rec.version,
                              window = window, count = count + 1);
-          receive { case eCasResp: (ok: bool) {
+          receive { case CasResp: (result: (req: int, ok: bool)) {
+            assert result.req == r.req, "CAS response belongs to another request";
             // On a lost race, loop: reload and decide against the new count.
-            admitted = ok;
-            done = ok;
+            admitted = result.ok;
+            done = result.ok;
           } }
         }
       }
-      send r.client, eDecision, (req = r.req, admitted = admitted);
+      send r.client, Decision, (req = r.req, admitted = admitted);
     }
   }
 }

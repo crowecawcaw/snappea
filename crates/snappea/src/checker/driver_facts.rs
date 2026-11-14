@@ -378,7 +378,9 @@ impl DriverFacts {
                 orders.push(Fact {
                     kind: "order",
                     id: format!("{}.{}.{}", name, ev, if *when == "before" { "first" } else { "last" }),
-                    text: format!("{} sends {} once, {} everything else", who, ev, when),
+                    // "once" holds in every schedule, so none runs without the event (e.g. a fault
+                    // the driver always injects never leaves a fault-free run)
+                    text: format!("{} sends {} once, {} everything else; no schedule runs without it", who, ev, when),
                     hint: MORE_INPUTS,
                 });
             }

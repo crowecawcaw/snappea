@@ -48,21 +48,21 @@ The processor call is a separate request to an external service, between `claim`
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcDoubleClick` | Key 1 sent to both servers at once | Concurrent duplicate, or a timed-out attempt retried while the first is still charging: one charge, the other waits for or reads the result | pass, exhaustive |
-| `tcLostResponseRetry` | Key 1 answered by server A, then retried on server B | Lost response: the retry returns the saved result, no second charge | pass, exhaustive |
-| `tcDeclinedStaysDeclined` | No funds: key 1 declined; top up; retry key 1; then new key 2 | The retry must stay declined; key 2 is approved, so the decline is per key | pass, exhaustive |
-| `tcIndependentKeys` | Keys 1 and 2 at once on two servers, funds for one | Different keys never wait for or answer each other | pass, exhaustive |
-| `tcBugCheckThenAct` | `tcDoubleClick` with `CheckThenActApi` | Negative control | fails: `key 1 charged twice` |
+| `tcDoubleClick` | Key 1 sent to both servers at once | Concurrent duplicate, or a timed-out attempt retried while the first is still charging: one charge, the other waits for or reads the result | pass |
+| `tcLostResponseRetry` | Key 1 answered by server A, then retried on server B | Lost response: the retry returns the saved result, no second charge | pass |
+| `tcDeclinedStaysDeclined` | No funds: key 1 declined; top up; retry key 1; then new key 2 | The retry must stay declined; key 2 is approved, so the decline is per key | pass |
+| `tcIndependentKeys` | Keys 1 and 2 at once on two servers, funds for one | Different keys never wait for or answer each other | pass |
+| `tcBugCheckThenAct` | `tcDoubleClick` with `CheckThenActApi` | Negative control | expected bug: `key 1 charged twice` |
 
 ## Run
 
 ```sh
 snappea check tcDoubleClick tcLostResponseRetry tcDeclinedStaysDeclined tcIndependentKeys --timeout 30s
-snappea check tcBugCheckThenAct      # exits 1 with the double charge above
+snappea check tcBugCheckThenAct      # passes only when the declared failure is found
 ```
 
-With `--timeout`, every passing test explores all schedules in a few seconds.
-Without it, `tcIndependentKeys` may stop early once coverage stops growing.
+A time budget does not guarantee exhaustive search. Inspect `search_complete`
+in the report before claiming every bounded schedule was checked.
 
 ## Bounds and omissions
 
@@ -76,8 +76,8 @@ amount (the spec flags it; the API should reject it), and key expiry.
 
 ## Testing the implementation
 
-Record each processor call (`eProcessorCharged`) from a fake processor, and each
-attempt and answer (`eAttempted`, `eAnswered`) in the test client; check them against
+Record each processor call (`ProcessorCharged`) from a fake processor, and each
+attempt and answer (`Attempted`, `Answered`) in the test client; check them against
 `ChargedOnce` and `EveryAttemptAnswered`. To force the double click, block the fake
 processor on its first call, send the duplicate to a second server instance, then
 unblock. For the declined case, decline, top up the fake card, retry the same key.

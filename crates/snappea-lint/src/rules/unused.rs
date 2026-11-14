@@ -56,11 +56,17 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
     let mut used = HashSet::new();
     let mut direct_bases = HashSet::new();
     let mut writes = HashSet::new();
+    let mut messages = HashSet::new();
     visit::stmts(
         &body.stmts,
         &mut |s| {
             if let StmtKind::Assign { lhs, .. } = &s.kind {
                 written_place(lhs, &mut writes);
+            }
+            if let StmtKind::Assert { message: Some(message), .. } = &s.kind {
+                visit::expr(message, &mut |e| {
+                    messages.insert(e.span);
+                });
             }
         },
         &mut |_| {},
@@ -69,6 +75,9 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
     // not count as passing/reading the whole tuple. Any whole-tuple use is treated
     // conservatively as using all fields (aliases, helper calls, returns, etc.).
     visit::stmts(&body.stmts, &mut |_| {}, &mut |e| {
+        if messages.contains(&e.span) {
+            return;
+        }
         if let ExprKind::NamedTupleAccess { base, field } = &e.kind {
             if matches!(&base.kind, ExprKind::Name(n) if n.name == p.name.name) {
                 if !writes.contains(&e.span) {
@@ -83,6 +92,7 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
         if matches!(&e.kind, ExprKind::Name(n) if n.name == p.name.name)
             && !direct_bases.contains(&e.span)
             && !writes.contains(&e.span)
+            && !messages.contains(&e.span)
         {
             whole = true;
         }
@@ -96,7 +106,7 @@ fn check(ctx: &Context<'_>, p: &Param, body: &FunBody, out: &mut Vec<Finding>) {
                 "unused-payload-field",
                 p.name.span,
                 format!(
-                    "monitor payload field '{}.{}' is never read; check it or suppress this intentional abstraction",
+                    "monitor payload field '{}.{}' is never read outside assertion messages; check it or suppress this intentional abstraction",
                     p.name.name, field.name
                 ),
             ));
@@ -116,14 +126,25 @@ fn written_place(e: &Expr, writes: &mut HashSet<snappea_syntax::Span>) {
     }
 }
 
-/// Whether a body is only `assert false` (with an optional message), possibly in braces.
+/// Whether a handler rejects the event unconditionally, with optional diagnostics.
+/// Keep this narrow: a conditional rejection still needs to check accepted payloads.
 fn only_fails(stmts: &[Stmt]) -> bool {
-    match stmts {
-        [s] => match &s.kind {
-            StmtKind::Assert { cond, .. } => matches!(cond.kind, ExprKind::BoolLit(false)),
-            StmtKind::Compound(inner) => only_fails(inner),
-            _ => false,
-        },
-        _ => false,
+    for s in stmts {
+        match &s.kind {
+            StmtKind::Print(e) => {
+                // A helper can leave the handler with goto/raise; do not assume it
+                // returns to the rejection. Literal/format diagnostics are safe.
+                let mut calls = false;
+                visit::expr(e, &mut |e| calls |= matches!(e.kind, ExprKind::FunCall { .. } | ExprKind::Ctor { .. }));
+                if calls {
+                    return false;
+                }
+            }
+            StmtKind::NoStmt => {}
+            StmtKind::Assert { cond, .. } => return matches!(cond.kind, ExprKind::BoolLit(false)),
+            StmtKind::Compound(inner) if only_fails(inner) => return true,
+            _ => return false,
+        }
     }
+    false
 }

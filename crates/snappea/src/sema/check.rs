@@ -129,14 +129,21 @@ impl<'a> Analyzer<'a> {
         }
         if args.is_empty() {
             if !payload.is_same_type_as(&PType::Null, &self.prog) {
-                let d = self.e.type_mismatch(span, &PType::Null, &[payload], &self.prog);
+                let ty = crate::sema::errors::format_type(payload, &self.prog);
+                let d = self.e.type_mismatch(span, &PType::Null, &[payload], &self.prog).help(format!(
+                    "this takes a payload of type {ty}: pass a value after the event or machine, \
+                     e.g. `send m, e, v;` or `new M(v)`"
+                ));
                 self.report(d)?;
             }
         } else if args.len() == 1 {
             self.check_assignable(span, payload, &args[0].ty)?;
         } else if let PType::Tuple(ts) = payload.canonicalize(&self.prog) {
             if ts.len() != args.len() {
-                let d = self.e.incorrect_argument_count(span, args.len(), ts.len());
+                let d = self
+                    .e
+                    .incorrect_argument_count(span, args.len(), ts.len())
+                    .help(format!("the payload is a tuple of {} values: pass one value for each, in order", ts.len()));
                 self.report(d)?;
                 return Ok(());
             }
@@ -144,7 +151,10 @@ impl<'a> Analyzer<'a> {
                 self.check_assignable(span, t, &a.ty)?;
             }
         } else {
-            let d = self.e.incorrect_argument_count(span, args.len(), 1);
+            let ty = crate::sema::errors::format_type(payload, &self.prog);
+            let d = self.e.incorrect_argument_count(span, args.len(), 1).help(format!(
+                "the payload is a single value of type {ty}: pass one value, or make the payload type a tuple"
+            ));
             self.report(d)?;
         }
         Ok(())
@@ -409,7 +419,9 @@ impl<'a> Analyzer<'a> {
                     return Ok(expr(ExprKind::FunCall { fun: f, args: a }, ret, span));
                 }
                 if self.scopes.lookup_pure(ctx.scope, &fun.name).is_some() {
-                    let d = self.e.internal_error(span, "pure functions are only supported by the PVerifier backend");
+                    let d = self.e.internal_error(span, "pure functions are only supported by the PVerifier backend").help(
+                        "snappea checks models by running them and does not run PVerifier code; call a regular `fun` instead",
+                    );
                     self.report(d)?;
                     return Ok(err_expr(span));
                 }
@@ -499,7 +511,9 @@ impl<'a> Analyzer<'a> {
             | ast::ExprKind::Flying(_)
             | ast::ExprKind::Sent(_)
             | ast::ExprKind::Quant { .. } => {
-                let d = self.e.internal_error(span, "expression is only supported by the PVerifier backend");
+                let d = self.e.internal_error(span, "expression is only supported by the PVerifier backend").help(
+                    "snappea checks models by running them; express this check with an `assert` in a spec monitor instead",
+                );
                 self.report(d)?;
                 Ok(err_expr(span))
             }
@@ -519,7 +533,12 @@ impl<'a> Analyzer<'a> {
         }
         if let Some(m) = self.scopes.lookup_machine(ctx.scope, &n.name) {
             if self.prog.machines[m.idx()].is_spec() {
-                let d = self.e.internal_error(span, "spec references are only supported by the PVerifier backend");
+                let d = self
+                    .e
+                    .internal_error(span, "spec references are only supported by the PVerifier backend")
+                    .help(
+                    "machines cannot read a spec's state; announce an event the spec observes, and assert in the spec",
+                );
                 self.report(d)?;
                 return Ok(err_expr(span));
             }
@@ -816,7 +835,10 @@ impl<'a> Analyzer<'a> {
                     }
                 }
             }
-            _ => Err(self.e.internal_error(span, "invalid lvalue")),
+            _ => Err(self
+                .e
+                .internal_error(span, "invalid lvalue")
+                .help("assign to a variable, a field (`t.f`) or an element (`s[i]`, `m[k]`)")),
         }
     }
 
@@ -1194,7 +1216,8 @@ impl<'a> Analyzer<'a> {
                     entry_params.first().map(|v| self.prog.var_decls[v.idx()].ty.clone()).unwrap_or(PType::Null);
                 let a = self.check_args(ctx, args)?;
                 if a.len() != entry_params.len() {
-                    let d = self.e.incorrect_argument_count(span, a.len(), entry_params.len());
+                    let ty = expected_ty.original_repr(&self.prog);
+                    let d = self.e.goto_argument_count(span, &state.name, a.len(), entry_params.len(), &ty);
                     self.report(d)?;
                     return Ok(Self::stmt(StmtKind::Goto { state: st, payload: None }, span));
                 }
@@ -1273,7 +1296,10 @@ impl<'a> Analyzer<'a> {
                     .map(|v| self.prog.var_decls[v.idx()].ty.clone())
                     .unwrap_or(PType::Null);
                 let payload = self.prog.events[eid.idx()].payload.clone();
-                self.check_assignable(case.handler.span, &expected, &payload)?;
+                if !payload.is_error() && !expected.is_assignable_from(&payload, &self.prog) {
+                    let d = self.e.receive_case_payload(case.handler.span, &ev.name, &payload, &expected, &self.prog);
+                    self.report(d)?;
+                }
                 let h = self.prog.funs[hid.idx()].clone();
                 if h.can_change_state {
                     if !self.prog.funs[ctx.fun.idx()].ret.is_same_type_as(&PType::Null, &self.prog) {

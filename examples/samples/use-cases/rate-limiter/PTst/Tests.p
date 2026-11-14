@@ -1,26 +1,26 @@
 // Drivers. The clock is the environment, so it lives here and is not mutated: the
 // driver decides when a window ends. Gateways and stores are the design under test.
 
-event eTick: machine;
-event eTickDone;
+event Tick: machine;
+event TickDone;
 
-// Wall-clock time, as window ids. Gateways read it with eNow; the driver advances it.
+// Wall-clock time, as window ids. Gateways read it with Now; the driver advances it.
 machine Clock {
   var window: int;
   start state Running {
-    on eNow do (client: machine) { send client, eNowResp, window; }
-    on eTick do (driver: machine) {
+    on Now do (client: machine) { send client, NowResp, window; }
+    on Tick do (driver: machine) {
       window = window + 1;
-      announce eTicked, window;
-      send driver, eTickDone;
+      announce Ticked, window;
+      send driver, TickDone;
     }
   }
 }
 
-type tSystem = (clock: Clock, a: machine, b: machine);
+type GatewaySystem = (clock: Clock, a: machine, b: machine);
 
 // Two gateways sharing one store with load + compare-and-swap.
-fun NewSystem(): tSystem {
+fun NewSystem(): GatewaySystem {
   var clock: Clock;
   var store: CounterStore;
   clock = new Clock();
@@ -30,29 +30,29 @@ fun NewSystem(): tSystem {
 }
 
 fun Send(owner: machine, gateway: machine, req: int) {
-  announce eRequested, req;
-  send gateway, eRequest, (client = owner, req = req);
+  announce Requested, req;
+  send gateway, Request, (client = owner, req = req);
 }
 
 // The window already holds Limit() - 1 requests. Two gateways then each receive one
 // request, and every order of their loads and CASes is explored: both can read the
 // same count, so one CAS loses, reloads, finds the window full, and rejects.
 machine LastSlotRace {
-  var sys: tSystem;
+  var sys: GatewaySystem;
   start state Warmup {
-    entry (s: tSystem) {
+    entry (s: GatewaySystem) {
       sys = s;
-      announce eRequestsPlanned, 3;
+      announce RequestsPlanned, 3;
       Send(this, sys.a, 1);
     }
-    on eDecision goto Race with (d: tDecision) { announce eAnswered, d; }
+    on Decision goto Race with (d: AdmissionDecision) { announce Answered, d; }
   }
   state Race {
     entry {
       Send(this, sys.a, 2);
       Send(this, sys.b, 3);
     }
-    on eDecision do (d: tDecision) { announce eAnswered, d; }
+    on Decision do (d: AdmissionDecision) { announce Answered, d; }
   }
 }
 
@@ -61,28 +61,28 @@ machine LastSlotRace {
 // the other gateway already started window 1 (its reading is stale; it must count in
 // window 1, never write window 0 back).
 machine RolloverRace {
-  var sys: tSystem;
+  var sys: GatewaySystem;
   start state Fill {
-    entry (s: tSystem) {
+    entry (s: GatewaySystem) {
       sys = s;
-      announce eRequestsPlanned, 4;
+      announce RequestsPlanned, 4;
       Send(this, sys.a, 1);
     }
-    on eDecision goto Fill2 with (d: tDecision) { announce eAnswered, d; }
+    on Decision goto Fill2 with (d: AdmissionDecision) { announce Answered, d; }
   }
   state Fill2 {
     entry { Send(this, sys.b, 2); }
-    on eDecision goto Race with (d: tDecision) { announce eAnswered, d; }
+    on Decision goto Race with (d: AdmissionDecision) { announce Answered, d; }
   }
   state Race {
     entry {
       Send(this, sys.a, 3);
       Send(this, sys.b, 4);
       // Sent last, so the gateways' clock reads can land on either side of it.
-      send sys.clock, eTick, this;
+      send sys.clock, Tick, this;
     }
-    on eDecision do (d: tDecision) { announce eAnswered, d; }
-    ignore eTickDone;
+    on Decision do (d: AdmissionDecision) { announce Answered, d; }
+    ignore TickDone;
   }
 }
 
@@ -90,29 +90,29 @@ machine RolloverRace {
 // requests arrive. Both must be admitted; a gateway that trusts the old full record
 // rejects them.
 machine AfterRollover {
-  var sys: tSystem;
+  var sys: GatewaySystem;
   start state Fill {
-    entry (s: tSystem) {
+    entry (s: GatewaySystem) {
       sys = s;
-      announce eRequestsPlanned, 4;
+      announce RequestsPlanned, 4;
       Send(this, sys.a, 1);
     }
-    on eDecision goto Fill2 with (d: tDecision) { announce eAnswered, d; }
+    on Decision goto Fill2 with (d: AdmissionDecision) { announce Answered, d; }
   }
   state Fill2 {
     entry { Send(this, sys.b, 2); }
-    on eDecision goto Tick with (d: tDecision) { announce eAnswered, d; }
+    on Decision goto Tick with (d: AdmissionDecision) { announce Answered, d; }
   }
   state Tick {
-    entry { send sys.clock, eTick, this; }
-    on eTickDone goto Race;
+    entry { send sys.clock, Tick, this; }
+    on TickDone goto Race;
   }
   state Race {
     entry {
       Send(this, sys.a, 3);
       Send(this, sys.b, 4);
     }
-    on eDecision do (d: tDecision) { announce eAnswered, d; }
+    on Decision do (d: AdmissionDecision) { announce Answered, d; }
   }
 }
 
@@ -140,20 +140,19 @@ machine MainBugLoadThenStore {
 
 // Covered: a gateway lost its CAS, reloaded, and rejected that same request (the
 // window filled between its load and its CAS).
-scenario LostCasThenReject observes eCasLost, eRejected {
+scenario LostCasThenReject observes CasResp, Rejected {
   var loser: int;
   start hot state WaitLost {
-    on eCasLost do (req: int) { loser = req; goto WaitReject; }
-    ignore eRejected;
+    on CasResp do (r: (req: int, ok: bool)) {
+      if (!r.ok) { loser = r.req; goto WaitReject; }
+    }
   }
   hot state WaitReject {
-    on eRejected do (p: (req: int, window: int)) {
+    on Rejected do (p: (req: int, window: int)) {
       if (p.req == loser) { goto Covered; }
     }
-    ignore eCasLost;
   }
   cold state Covered {
-    ignore eCasLost, eRejected;
   }
 }
 
@@ -171,7 +170,7 @@ test tcAfterRollover [main=MainAfterRollover]:
   assert WindowLimit, RequestsAnswered in
   (union RateLimiter, { MainAfterRollover, AfterRollover });
 
-// expect-bug: window 0 admitted 3 requests, limit 2
+// snappea: expect-bug "window 0 admitted 3 requests, limit 2"
 test tcBugLoadThenStore [main=MainBugLoadThenStore]:
   assert WindowLimit, RequestsAnswered in
   { MainBugLoadThenStore, LastSlotRace, Clock, PlainCounterStore, BlindGateway };

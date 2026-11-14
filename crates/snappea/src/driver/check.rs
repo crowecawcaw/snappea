@@ -99,6 +99,10 @@ pub struct CheckConfig {
     /// `--schedules` (or `--timeout`) was given.
     pub user_set_iterations: bool,
     pub seed: Option<u32>,
+    /// Explicit seeds for repeated expected-bug checks; native CLI only.
+    pub expected_bug_seeds: Vec<u32>,
+    /// Artifact subdirectory for a repeated expected-bug check.
+    pub seed_artifact: Option<u32>,
     pub full_exploration: bool,
     pub max_unfair_steps: usize,
     pub max_fair_steps: usize,
@@ -115,6 +119,7 @@ pub struct CheckConfig {
     /// each gets the rest divided by the test cases left, as [`CheckConfig::time_share`].
     pub suite_budget: Option<f64>,
     pub verbose: bool,
+    pub list_suppressions: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
     /// Include execution-time source and value captures for visual replay.
@@ -210,6 +215,8 @@ impl Default for CheckConfig {
             workers: Some(1),
             user_set_iterations: false,
             seed: None,
+            expected_bug_seeds: Vec::new(),
+            seed_artifact: None,
             full_exploration: false,
             max_unfair_steps: 10000,
             max_fair_steps: 100000,
@@ -220,6 +227,7 @@ impl Default for CheckConfig {
             time_share: None,
             suite_budget: None,
             verbose: false,
+            list_suppressions: false,
             xml_trace: false,
             inspection_trace: false,
             timeline: Default::default(),
@@ -308,6 +316,9 @@ pub fn set_output_directory(host: &mut dyn Host, cfg: &mut CheckConfig) -> Resul
         } else {
             format!("{}/{}/", out, sanitize_segment(&cfg.test_case_name))
         };
+        if let Some(seed) = cfg.seed_artifact {
+            cfg.output_directory.push_str(&format!("seed-{seed}/"));
+        }
         let dir = full_path(&host.cwd(), Path::new(&cfg.output_directory));
         host.create_dir_all(&dir).map_err(|e| fail(host, &cfg.output_directory, e))?;
         if cfg.strategy != StrategyKind::Replay {
@@ -762,6 +773,7 @@ fn run_workers(
 /// What checking one test case found.
 #[derive(Debug, Clone)]
 pub struct CaseOutcome {
+    pub bug_identity: Option<crate::checker::runtime::BugIdentity>,
     pub test_case: String,
     pub bugs: usize,
     /// The first bug's report, e.g. `Assertion Failed: model.p:8:1 six heads`.
@@ -783,11 +795,15 @@ pub struct CaseOutcome {
     /// The exhaustive search was still running when time ran out: more time may finish
     /// it. Its untried alternatives along the path it was exploring (summed over workers).
     pub exhaustive_unfinished: Option<usize>,
+    /// Why and when each auto worker abandoned exhaustive search.
+    pub auto_handoffs: Vec<crate::checker::exhaustive::AutoHandoff>,
     /// The test tracked time (clocks, latencies or `--timed`).
     pub time_tracked: bool,
     /// Scheduling points with a choice per schedule, and the machines that branch most
     /// (see [`crate::checker::branching`]).
     pub branching: Option<(f64, Vec<crate::checker::branching::MachineBranching>)>,
+    /// Sampled top-level collection lengths, not a memory or growth proof.
+    pub collection_sizes: Vec<crate::checker::branching::CollectionSize>,
     /// Seconds the test case took.
     pub elapsed: f64,
     /// The `.schedule` file written for the bug (as `cfg.output_directory` names it).
@@ -959,6 +975,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         host.out_line(&format!("... Elapsed {} sec.", process_elapsed));
     }
     Ok(CaseOutcome {
+        bug_identity: res.report.bug_identities.first().cloned().flatten(),
         test_case: tc.name.clone(),
         bugs: res.report.num_bugs,
         bug_report: res.report.bug_reports.first().cloned(),
@@ -973,8 +990,10 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
             .as_ref()
             .filter(|x| x.running && !x.complete() && res.report.num_bugs == 0)
             .map(|x| x.frontier),
+        auto_handoffs: res.exhaustive.as_ref().map(|x| x.auto_handoffs.clone()).unwrap_or_default(),
         time_tracked: res.time_tracked,
         branching: res.branching.as_ref().map(|b| (b.points_per_schedule(), b.machines(prog))),
+        collection_sizes: res.branching.as_ref().map(|b| b.collections(prog)).unwrap_or_default(),
         elapsed: process_elapsed,
         schedule_file,
         code_coverage,

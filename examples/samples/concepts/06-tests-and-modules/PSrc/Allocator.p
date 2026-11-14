@@ -1,9 +1,9 @@
 // The design: an allocator hands out unique ids from 0 to limit - 1, and refuses once
 // they are all used. Each request is one atomic step.
 
-event eAlloc: (client: machine);
-event eIdResp: (id: int);
-event eNoIdsLeft;
+event Alloc: (client: machine);
+event IdResponse: (id: int);
+event NoIdsLeft;
 
 machine Allocator {
   var limit: int;
@@ -13,12 +13,12 @@ machine Allocator {
     entry (n: int) {
       limit = n;
     }
-    on eAlloc do (a: (client: machine)) {
+    on Alloc do (a: (client: machine)) {
       if (next < limit) {
-        send a.client, eIdResp, (id = next,);
+        send a.client, IdResponse, (id = next,);
         next = next + 1;
       } else {
-        send a.client, eNoIdsLeft;
+        send a.client, NoIdsLeft;
       }
     }
   }
@@ -34,11 +34,11 @@ machine WrappingAllocator {
     entry (n: int) {
       limit = n;
     }
-    on eAlloc do (a: (client: machine)) {
+    on Alloc do (a: (client: machine)) {
       if (next == limit) {
         next = 0;
       }
-      send a.client, eIdResp, (id = next,);
+      send a.client, IdResponse, (id = next,);
       next = next + 1;
     }
   }
@@ -58,16 +58,16 @@ machine Caller {
       requests = input.requests;
       Ask();
     }
-    on eIdResp do { Next(); }
-    on eNoIdsLeft do { Next(); }
+    on IdResponse do { Next(); }
+    on NoIdsLeft do { Next(); }
   }
 
   state Done {}
 
   fun Ask() {
     made = made + 1;
-    announce eIdRequested;
-    send allocator, eAlloc, (client = this,);
+    announce IdRequested;
+    send allocator, Alloc, (client = this,);
   }
 
   fun Next() {

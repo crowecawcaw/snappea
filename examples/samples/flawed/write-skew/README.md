@@ -54,7 +54,7 @@ From `tcBugWriteSkew` (doctors 1 and 2 on call, both ask at once):
 5. Nobody is on call:
 
 ```text
-Assertion Failed: PSpec/OnCall.p:77:5 nobody is on call: the last on-call doctors went off call together
+Assertion Failed: nobody is on call: the last on-call doctors went off call together
 ```
 
 ## Why ordinary tests miss it
@@ -92,18 +92,22 @@ conflict on what they read, not only on what they write.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFixedBothOffCall` | Two on call, both ask at once | The write-skew race: one granted, one aborted, retried and refused | passes, all schedules |
-| `tcFixedTwoOfThree` | Three on call, two ask at once | Both must be granted after the conflict and retry; a fix that refuses on contention fails | passes, all schedules |
-| `tcFixedOneAfterAnother` | Doctor 1 goes off call, then doctor 2 asks | Lifecycle: the last doctor on call is refused | passes, all schedules |
-| `tcFixedUnrelatedCommit` | A doctor goes off call while another transaction writes row 100 | Disjoint writes do not conflict: the store's conflict check is per row | passes, all schedules |
-| `tcBugWriteSkew` | Flawed client, two on call, both ask | **Expected to fail**: `nobody is on call` | fails at once |
+| `tcFixedBothOffCall` | Two on call, both ask at once | The write-skew race: one granted, one aborted, retried and refused | passes |
+| `tcFixedTwoOfThree` | Three on call, two ask at once | Both must be granted after the conflict and retry; a fix that refuses on contention fails | passes |
+| `tcFixedOneAfterAnother` | Doctor 1 goes off call, then doctor 2 asks | Lifecycle: the last doctor on call is refused | passes |
+| `tcFixedUnrelatedCommit` | A doctor goes off call while another transaction writes row 100 | Disjoint writes do not conflict: the store's conflict check is per row | passes |
+| `tcBugWriteSkew` | Flawed client, two on call, both ask | **Expected bug**: `nobody is on call` | Expected bug found |
 
 ## Run
 
 ```sh
 snappea check WriteSkew.pproj 'tcFixed*' --deny mutation
-snappea check WriteSkew.pproj tcBugWriteSkew   # exits 1 with the assertion above
+snappea check WriteSkew.pproj tcBugWriteSkew   # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -118,8 +122,8 @@ cannot tell them apart.
 
 ## Testing the implementation
 
-Emit `eCommitted` with the rows each transaction wrote (from the commit path, or a
-change feed) and `eOffCallAnswered` from the API. To force the race, run two off-call
+Emit `Committed` with the rows each transaction wrote (from the commit path, or a
+change feed) and `OffCallAnswered` from the API. To force the race, run two off-call
 requests whose transactions both pause after the `SELECT` (a test hook, or a lock both
 wait on), then let both commit. Against the flawed code both succeed and the roster is
 empty; with the roster row one fails with a serialization error and is retried.

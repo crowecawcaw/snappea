@@ -3,20 +3,20 @@
 // or by cancelling the hold. The payment service is a separate actor, so paying takes real time during
 // which the hold can expire.
 
-event eCharge: (client: Customer, hold: int);
-event eChargeResp: (hold: int);
-event eRefund: (hold: int);
+event Charge: (client: Customer, hold: int);
+event ChargeResp: (hold: int);
+event Refund: (hold: int);
 // Tells whoever started the checkout (the test driver) that it is over.
-event eCheckoutDone;
+event CheckoutDone;
 
 machine Payments {
   start state Serving {
-    on eCharge do (c: (client: Customer, hold: int)) {
-      announce eCharged, (hold = c.hold,);
-      send c.client, eChargeResp, (hold = c.hold,);
+    on Charge do (c: (client: Customer, hold: int)) {
+      announce Charged, (hold = c.hold,);
+      send c.client, ChargeResp, (hold = c.hold,);
     }
-    on eRefund do (r: (hold: int)) {
-      announce eRefunded, (hold = r.hold,);
+    on Refund do (r: (hold: int)) {
+      announce Refunded, (hold = r.hold,);
     }
   }
 }
@@ -39,40 +39,42 @@ machine Customer {
       abandons = input.abandons;
       cancels = input.cancels;
       owner = input.owner;
-      send store, eHoldReq, (client = this, seat = seat, hold = hold);
+      send store, HoldReq, (client = this, seat = seat, hold = hold);
     }
-    on eHoldResp do (r: (hold: int, ok: bool)) {
+    on HoldResp do (r: (hold: int, ok: bool)) {
+      assert r.hold == hold, "hold response belongs to another checkout";
       if (r.ok && abandons) {
         // Closed the tab: only the expiry timer will free the seat.
         goto Done, Abandoned;
       }
       if (r.ok && cancels) {
         // Clicked cancel: free the seat now rather than wait for expiry.
-        send store, eReleaseReq, (client = this, seat = seat, hold = hold);
+        send store, ReleaseReq, (client = this, seat = seat, hold = hold);
         goto Cancelling;
       }
       if (r.ok) {
-        send payments, eCharge, (client = this, hold = hold);
+        send payments, Charge, (client = this, hold = hold);
         goto Paying;
       }
-      goto Done, HoldRejected;
+      goto Done, HoldUnavailable;
     }
   }
 
   state Cancelling {
-    on eReleaseResp do { goto Done, Cancelled; }
+    on ReleaseResp do { goto Done, Cancelled; }
   }
 
   state Paying {
-    on eChargeResp goto Confirming with {
-      send store, eConfirmReq, (client = this, seat = seat, hold = hold);
+    on ChargeResp goto Confirming with {
+      send store, ConfirmReq, (client = this, seat = seat, hold = hold);
     }
   }
 
   state Confirming {
-    on eConfirmResp do (r: (hold: int, ok: bool)) {
+    on ConfirmResp do (r: (hold: int, ok: bool)) {
+      assert r.hold == hold, "confirmation response belongs to another checkout";
       if (!r.ok) {
-        send payments, eRefund, (hold = hold,);
+        send payments, Refund, (hold = hold,);
         goto Done, LostHold;
       }
       goto Done, Bought;
@@ -80,9 +82,9 @@ machine Customer {
   }
 
   state Done {
-    entry (outcome: tOutcome) {
-      announce eCheckoutEnded, (hold = hold, outcome = outcome);
-      send owner, eCheckoutDone;
+    entry (outcome: CheckoutOutcome) {
+      announce CheckoutEnded, (hold = hold, outcome = outcome);
+      send owner, CheckoutDone;
     }
   }
 }

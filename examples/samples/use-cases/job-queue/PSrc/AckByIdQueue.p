@@ -7,7 +7,7 @@
 machine AckByIdQueue {
   var timers: machine;
   var visible: set[int];
-  var inFlight: map[int, tInFlight];
+  var inFlight: map[int, InFlight];
   var remaining: int;
   var lastReceipt: int;
   // Long-polling receives waiting for a job to become visible.
@@ -19,38 +19,38 @@ machine AckByIdQueue {
       visible = input.jobs;
       remaining = sizeof(input.jobs);
     }
-    on eReceive do (r: (worker: machine)) {
+    on Receive do (r: (worker: machine)) {
       if (sizeof(visible) > 0) {
         Deliver(r.worker);
       } else if (remaining == 0) {
-        send r.worker, eNoMoreJobs;
+        send r.worker, NoMoreJobs;
       } else {
         waiting += (sizeof(waiting), r.worker);
       }
     }
-    on eVisibilityTimeout do (t: (job: int, receipt: int)) {
+    on VisibilityTimeout do (t: (job: int, receipt: int)) {
       // A timer for a delivery that was acked, or superseded, changes nothing.
       if (t.job in inFlight && inFlight[t.job].receipt == t.receipt) {
         inFlight -= (t.job);
         visible += (t.job);
-        announce eVisibilityExpired, (job = t.job, receipt = t.receipt);
+        announce VisibilityExpired, (job = t.job, receipt = t.receipt);
         if (sizeof(waiting) > 0) {
           Deliver(waiting[0]);
           waiting -= (0);
         }
       }
     }
-    on eAck do (a: (worker: machine, job: int, receipt: int)) {
+    on Ack do (a: (worker: machine, job: int, receipt: int)) {
       // BUG: any ack for an in-flight job completes it, whatever its receipt.
       if (a.job in inFlight) {
         inFlight -= (a.job);
         remaining = remaining - 1;
-        announce eAcked, (job = a.job, receipt = a.receipt);
-        send a.worker, eAckResp;
+        announce Acked, (job = a.job, receipt = a.receipt);
+        send a.worker, AckResp;
         if (remaining == 0) { ReleaseWaiting(); }
       } else {
-        announce eAckRejected, (job = a.job, receipt = a.receipt);
-        send a.worker, eAckResp;
+        announce AckRejected, (job = a.job, receipt = a.receipt);
+        send a.worker, AckResp;
       }
     }
   }
@@ -63,15 +63,15 @@ machine AckByIdQueue {
     lastReceipt = lastReceipt + 1;
     visible -= (job);
     inFlight[job] = (receipt = lastReceipt, worker = worker);
-    announce eDelivered, (job = job, receipt = lastReceipt);
-    send timers, eStartTimer, (queue = this, job = job, receipt = lastReceipt, worker = worker);
-    send worker, eJob, (job = job, receipt = lastReceipt);
+    announce Delivered, (job = job, receipt = lastReceipt);
+    send timers, StartTimer, (queue = this, job = job, receipt = lastReceipt, worker = worker);
+    send worker, Job, (job = job, receipt = lastReceipt);
   }
 
   // Every job is complete, which is final: no job will be delivered again, so the
   // released workers can stay in `waiting`.
   fun ReleaseWaiting() {
     var w: machine;
-    foreach (w in waiting) { send w, eNoMoreJobs; }
+    foreach (w in waiting) { send w, NoMoreJobs; }
   }
 }

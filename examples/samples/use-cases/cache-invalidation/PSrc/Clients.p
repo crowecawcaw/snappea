@@ -1,7 +1,7 @@
 // The application code: read-through on a miss, and write-then-delete.
 
 // Tells whoever started a client (the test driver) that it has finished.
-event eClientDone;
+event ClientDone;
 
 // Reads the key `reads` times, one after another. On a miss it reads the database and
 // tries to fill the cache with the lease from the miss; the fill may be refused.
@@ -13,32 +13,32 @@ machine Reader {
         ReadOnce(input.cache, input.db, input.id);
         i = i + 1;
       }
-      send input.owner, eClientDone;
+      send input.owner, ClientDone;
     }
   }
 
   fun ReadOnce(cache: machine, db: Database, id: int) {
     var result: int;
     var fromCache: bool;
-    announce eReadStarted, (reader = id,);
-    send cache, eCacheGet, (client = this,);
+    announce ReadStarted, (reader = id,);
+    send cache, CacheGet, (client = this,);
     receive {
-      case eCacheGetResp: (g: (hit: bool, value: int, lease: int)) {
+      case CacheGetResponse: (g: (hit: bool, value: int, lease: int)) {
         if (g.hit) {
           result = g.value;
           fromCache = true;
         } else {
-          send db, eDbRead, (client = this,);
+          send db, DatabaseRead, (client = this,);
           receive {
-            case eDbReadResp: (r: (value: int)) { result = r.value; }
+            case DatabaseReadResponse: (r: (value: int)) { result = r.value; }
           }
-          send cache, eCacheSet, (client = this, lease = g.lease, value = result);
+          send cache, CacheSet, (client = this, lease = g.lease, value = result);
           // The read's answer does not depend on whether the fill was stored.
-          receive { case eCacheSetResp: { } }
+          receive { case CacheSetResponse: { } }
         }
       }
     }
-    announce eReadReturned, (reader = id, value = result, fromCache = fromCache);
+    announce ReadReturned, (reader = id, value = result, fromCache = fromCache);
   }
 }
 
@@ -48,13 +48,13 @@ machine Writer {
     entry (input: (owner: machine, cache: machine, db: Database, writes: seq[int])) {
       var v: int;
       foreach (v in input.writes) {
-        send input.db, eDbWrite, (client = this, value = v);
-        receive { case eDbWriteResp: { } }
-        send input.cache, eCacheDelete, (client = this,);
-        receive { case eCacheDeleteResp: { } }
-        announce eWriteDone, (value = v,);
+        send input.db, DatabaseWrite, (client = this, value = v);
+        receive { case DatabaseWriteResponse: { } }
+        send input.cache, CacheDelete, (client = this,);
+        receive { case CacheDeleteResponse: { } }
+        announce WriteDone, (value = v,);
       }
-      send input.owner, eClientDone;
+      send input.owner, ClientDone;
     }
   }
 }

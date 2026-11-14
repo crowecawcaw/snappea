@@ -12,12 +12,12 @@ fun Plan(first: int, n: int): seq[int] {
 }
 
 fun StartUnfenced(locks: LockService, storage: UnfencedStorage, id: int, plan: seq[int]) {
-  announce eNodeStarted, (node = id, plan = plan);
+  announce NodeStarted, (node = id, plan = plan);
   new UnfencedNode((id = id, plan = plan, locks = locks, storage = storage));
 }
 
 fun StartFenced(locks: LockService, storage: FencedStorage, id: int, plan: seq[int]) {
-  announce eNodeStarted, (node = id, plan = plan);
+  announce NodeStarted, (node = id, plan = plan);
   new FencedNode((id = id, plan = plan, locks = locks, storage = storage));
 }
 
@@ -30,7 +30,7 @@ machine TwoLeadersUnfenced {
       var storage: UnfencedStorage;
       locks = new LockService();
       storage = new UnfencedStorage();
-      announce eNodesPlanned, 2;
+      announce NodesPlanned, 2;
       StartUnfenced(locks, storage, 1, Plan(10, 2));
       StartUnfenced(locks, storage, 2, Plan(20, 1));
     }
@@ -44,7 +44,7 @@ machine TwoLeaders {
       var storage: FencedStorage;
       locks = new LockService();
       storage = new FencedStorage();
-      announce eNodesPlanned, 2;
+      announce NodesPlanned, 2;
       StartFenced(locks, storage, 1, Plan(10, 2));
       StartFenced(locks, storage, 2, Plan(20, 1));
     }
@@ -58,11 +58,11 @@ machine CrashingNode {
   start state Acquiring {
     entry (c: (id: int, locks: LockService)) {
       id = c.id;
-      announce eNodeStarted, (node = c.id, plan = default(seq[int]));
-      send c.locks, eAcquire, (node = this, id = c.id);
+      announce NodeStarted, (node = c.id, plan = default(seq[int]));
+      send c.locks, Acquire, (node = this, id = c.id);
     }
-    on eGranted do {
-      announce eNodeDone, (node = id, fenced = false);
+    on Granted do {
+      announce NodeDone, (node = id, fenced = false);
       goto Dead;
     }
   }
@@ -78,7 +78,7 @@ machine LeaderCrashes {
       var storage: FencedStorage;
       locks = new LockService();
       storage = new FencedStorage();
-      announce eNodesPlanned, 2;
+      announce NodesPlanned, 2;
       new CrashingNode((id = 1, locks = locks));
       StartFenced(locks, storage, 2, Plan(20, 1));
     }
@@ -86,16 +86,15 @@ machine LeaderCrashes {
 }
 
 // Covered: an old leader's write was fenced off after a newer leader wrote.
-scenario OldLeaderFenced observes eWriteRejected {
+scenario OldLeaderFenced observes WriteRejected {
   start hot state WaitRejection {
-    on eWriteRejected goto Covered;
+    on WriteRejected goto Covered;
   }
   cold state Covered {
-    ignore eWriteRejected;
   }
 }
 
-// expect-bug: stale write: storage accepted value
+// snappea: expect-bug "stale write: storage accepted value"
 test tcBugStaleLeaderWrite [main=TwoLeadersUnfenced]:
   assert NoStaleWrites, NodesFinish in
   { TwoLeadersUnfenced, LockService, LeaseTimer, UnfencedStorage, UnfencedNode };

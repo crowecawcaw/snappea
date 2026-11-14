@@ -9,8 +9,8 @@
 // between nodes arrive in any order.
 
 // The election timer fired; the payload is the cluster membership.
-event eStartElection: map[int, machine];
+event StartElection: map[int, machine];
 // voter: the node the request is addressed to.
-type tVoteReq = (term: int, candidate: int, voter: int, from: machine);
-event eRequestVote: tVoteReq;
-event eVoteResp: (granted: bool);
+type VoteReq = (term: int, candidate: int, voter: int, from: machine);
+event RequestVote: VoteReq;
+event VoteResp: (granted: bool);

@@ -32,9 +32,9 @@ Lints catch some weak specs before any exploration; mutation testing catches the
 [`weak/Contract.p`](weak/Contract.p) (not part of the project) checks one thing:
 
 ```p
-spec Contract observes eWithdrawn {
+spec Contract observes Withdrawn {
   start state Watching {
-    on eWithdrawn do (w: (id: int, ok: bool, balance: int)) {
+    on Withdrawn do (w: (id: int, ok: bool, balance: int)) {
       assert w.balance >= 0, format("balance went negative: {0}", w.balance);
     }
   }
@@ -45,7 +45,7 @@ Lint already objects, before exploring:
 
 ```text
 $ snappea check PSrc/Account.p PSpec/Events.p weak/Contract.p PTst/Tests.p
-error[unchecked-event]: machine Account sends 'eWithdrawResp', but no spec observes it and no machine that handles it changes anything a check depends on, ...
+error[unchecked-event]: machine Account sends 'WithdrawResponse', but no spec observes it and no machine that handles it changes anything a check depends on, ...
 error[unused-payload-field]: monitor payload field 'w.id' is never read; ...
 error[unused-payload-field]: monitor payload field 'w.ok' is never read; ...
 error[no-progress-spec]: test 'tcTwoWithdrawals' waits for the model's responses, but none of its specs has a hot state, so a model that stops responding passes
@@ -58,7 +58,7 @@ ok    tcTwoWithdrawals (all 1125 schedules, 0.13s)
 Mutation testing: 1 of 16 mutants detected, 3 suppressed (1.5s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Account.p:12  Account.Open entry: removed `balance = initial;`
-  PSrc/Account.p:14  Account.Open, on eWithdraw: removed the whole body (4 statements) (and 10 more undetected inside it)
+  PSrc/Account.p:14  Account.Open, on Withdraw: removed the whole body (4 statements) (and 10 more undetected inside it)
   PSrc/Account.p:32  Account.Answer: removed the whole body (2 statements) (and 2 more undetected inside it)
 ```
 
@@ -73,10 +73,10 @@ from the opening balance and the requested amounts, never from the account's fie
 
 | Undetected with the weak spec | Added to the spec |
 | --- | --- |
-| Removed `Answer(...)`, removed the `send` of the reply, the whole handler emptied | **Hot state** `Running` until every client announced `eAnswered`: a withdrawal nobody answers fails at the end |
+| Removed `Answer(...)`, removed the `send` of the reply, the whole handler emptied | **Hot state** `Running` until every client announced `Answered`: a withdrawal nobody answers fails at the end |
 | `w.amount <= balance` → `<` (refuses exactly the balance); removed `ok = ...`; fast path answers `false`; removed `balance = initial` | `assert w.ok == (requested[w.id] <= expected)`: accept exactly when the balance covers it |
 | Removed `balance = balance - w.amount`, `-` → `+`, `if (ok)` removed or forced false, `w.amount == 0` forced true or turned into `!=` | `assert w.balance == expected`: the reported balance is the real one |
-| Removed `announce eWithdrawn` | `eAnswered` must match a committed decision (`a.id in decided`) |
+| Removed `announce Withdrawn` | `Answered` must match a committed decision (`a.id in decided`) |
 
 Two driver choices make these detectable: an amount equal to the balance (10), the
 boundary for `<=` versus `<`; and an amount only the first withdrawal can get (6 after
@@ -96,18 +96,21 @@ if (w.amount == 0) {
 ```
 
 Suppress one kind per line (`mutation:<kind>`), not `mutation` for everything: here
-`w.amount == 0` → `!=` is *not* equivalent, and stays checked. The run reports
-`3 suppressed`.
+`w.amount == 0` → `!=` is *not* equivalent, and stays checked. The report lists the suppressed sites. Suppressions apply only to the annotated
+statement; statements inside this `if` remain subject to mutation testing.
 
 ## What the checker shows now
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 ```text
 ok    tcTwoWithdrawals (all 1587 schedules, 0.27s)
       Coverage: 3/3 states, 36/36 statements, 8/8 branches, 6/6 event handlers, 8/8 condition outcomes, ...
       Driver limits (held in all 1587 schedules):
-        each Client sends eWithdraw exactly once
+        each Client sends Withdraw exactly once
         creates 1 Account and 2 Client, never more
-        eWithdraw is only sent with id = 1 or 2
+        Withdraw is only sent with id = 1 or 2
         Account is always created with 10
       hint: if the real environment can do more, extend the driver to try it
 Mutation testing: 16 of 16 mutants detected, 3 suppressed (0.1s)
@@ -146,9 +149,9 @@ Delete the `assert w.ok == (requested[w.id] <= expected), ...;` statement from
 ```text
 Mutation testing: 13 of 16 mutants detected, 3 suppressed (0.5s)
 Not detected by any test case (every test case still passes with the change):
-  PSrc/Account.p:21  Account.Open, on eWithdraw: `true` → `false`
-  PSrc/Account.p:24  Account.Open, on eWithdraw: removed `ok = w.amount <= balance;`
-  PSrc/Account.p:24  Account.Open, on eWithdraw: `w.amount <= balance` → `w.amount < balance`
+  PSrc/Account.p:21  Account.Open, on Withdraw: `true` → `false`
+  PSrc/Account.p:24  Account.Open, on Withdraw: removed `ok = w.amount <= balance;`
+  PSrc/Account.p:24  Account.Open, on Withdraw: `w.amount <= balance` → `w.amount < balance`
 ```
 
 `snappea check --deny mutation` (or `snappea check mutation`) then exits 1.
@@ -160,7 +163,7 @@ transfers between accounts, retried withdrawals.
 
 ## Testing the implementation
 
-Emit `eWithdrawn` after the debit transaction commits (including refusals) and
-`eAnswered` where the caller receives the result. The same mutation habit applies to
+Emit `Withdrawn` after the debit transaction commits (including refusals) and
+`Answered` where the caller receives the result. The same mutation habit applies to
 the implementation: break the comparison, drop the debit, drop the reply, and check a
 test fails each time.

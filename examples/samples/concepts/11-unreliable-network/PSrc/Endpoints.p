@@ -2,10 +2,10 @@
 // message at a time and retransmits it until it is acknowledged; the receiver deduplicates by message
 // id and acknowledges every copy, so a lost acknowledgement is repaired too.
 
-// Both carry the sending endpoint, so the receiver knows where to acknowledge.
-type tMsg = (from: machine, id: int);
-event eData: tMsg;
-event eAck: tMsg;
+// A data message carries its return address; an acknowledgement needs only the id.
+type Msg = (from: machine, id: int);
+event Data: Msg;
+event Ack: int;
 
 machine Sender {
   var net: Network;
@@ -19,27 +19,27 @@ machine Sender {
       receiver = input.receiver;
       queue = input.ids;
       // Ask the network for retransmission timeouts.
-      send net, eSetTimer, this;
+      send net, SetTimer, this;
       SendHead();
     }
-    on eAck do (a: tMsg) {
+    on Ack do (id: int) {
       // A duplicate or late acknowledgement for a message already acknowledged.
-      if (a.id != queue[0]) { return; }
-      announce eAcked, a.id;
+      if (id != queue[0]) { return; }
+      announce Acked, id;
       queue -= (0);
       if (sizeof(queue) == 0) { goto Done; }
       SendHead();
     }
     // The retransmission timeout.
-    on eTimeout do { SendHead(); }
+    on Timeout do { SendHead(); }
   }
 
   state Done {
-    ignore eAck, eTimeout;
+    ignore Ack, Timeout;
   }
 
   fun SendHead() {
-    send net, eNetSend, (dest = receiver, ev = eData, msg = (from = this, id = queue[0]));
+    send net, NetSend, (dest = receiver, ev = Data, msg = (from = this, id = queue[0]));
   }
 }
 
@@ -51,13 +51,13 @@ machine Receiver {
     entry (n: Network) {
       net = n;
     }
-    on eData do (d: tMsg) {
+    on Data do (d: Msg) {
       if (!(d.id in delivered)) {
         delivered += (d.id);
-        announce eDelivered, d.id;
+        announce Delivered, d.id;
       }
       // Acknowledge every copy: the first acknowledgement may have been lost.
-      send net, eNetSend, (dest = d.from, ev = eAck, msg = (from = this, id = d.id));
+      send net, NetSend, (dest = d.from, ev = Ack, msg = d.id);
     }
   }
 }

@@ -4,11 +4,11 @@
 // tcBugForgetsInFlightStep shows the contract catching the orphan.
 machine ForgetfulSaga {
   var owner: machine;
-  var services: map[tStep, machine];
-  var held: seq[tStep];
+  var services: map[BookingStep, machine];
+  var held: seq[BookingStep];
 
   start state Init {
-    entry (input: (owner: machine, services: map[tStep, machine])) {
+    entry (input: (owner: machine, services: map[BookingStep, machine])) {
       owner = input.owner;
       services = input.services;
       goto Booking, Flight;
@@ -16,20 +16,20 @@ machine ForgetfulSaga {
   }
 
   state Booking {
-    entry (step: tStep) {
-      announce eStepStarted, step;
-      send services[step], eReserve, (saga = this, step = step);
+    entry (step: BookingStep) {
+      announce StepStarted, step;
+      send services[step], Reserve, (saga = this, step = step);
     }
-    on eReserveResp do (r: (step: tStep, ok: bool)) {
+    on ReserveResp do (r: (step: BookingStep, ok: bool)) {
       if (r.ok) { held += (sizeof(held), r.step); }
       if (!r.ok) { goto Compensating; }
       if (r.step == Car) { goto Done, TripBooked; }
       goto Booking, NextStep(r.step);
     }
-    on eUserCancel do (user: machine) {
+    on UserCancel do (user: machine) {
       // BUG: compensates only confirmed steps; the in-flight one is forgotten.
-      announce eCancelAccepted;
-      send user, eCancelResp, true;
+      announce CancelAccepted;
+      send user, CancelResp, true;
       goto Compensating;
     }
   }
@@ -37,20 +37,20 @@ machine ForgetfulSaga {
   state Compensating {
     entry {
       if (sizeof(held) == 0) { goto Done, RolledBack; }
-      send services[held[sizeof(held) - 1]], eRelease, (saga = this, step = held[sizeof(held) - 1]);
+      send services[held[sizeof(held) - 1]], Release, (saga = this, step = held[sizeof(held) - 1]);
     }
-    on eReleaseResp do {
+    on ReleaseResp do {
       held -= (sizeof(held) - 1);
       goto Compensating;
     }
-    ignore eReserveResp;
+    ignore ReserveResp;
   }
 
   state Done {
-    entry (outcome: tOutcome) {
-      announce eSagaEnded, outcome;
-      send owner, eSagaDone, outcome;
+    entry (outcome: SagaOutcome) {
+      announce SagaEnded, outcome;
+      send owner, SagaDone, outcome;
     }
-    ignore eReserveResp, eUserCancel;
+    ignore ReserveResp, UserCancel;
   }
 }

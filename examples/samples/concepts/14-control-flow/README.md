@@ -19,10 +19,10 @@ until its owner closes it or the server evicts it, and always tells the server g
 | --- | --- | --- |
 | `goto S;` | Leaves this state (runs its `exit`), enters `S` (runs its `entry`) | `Connecting` re-enters itself for the next attempt |
 | `goto S, v;` | The same, passing `v` to `S`'s `entry (x: T)` | `goto Open, r.session;` |
-| `on E goto S;` | Handles `E` by moving to `S`; `E`'s payload goes to `S`'s entry | `on eReset goto Closed;` (reason `Evicted`) |
-| `on E goto S with { ... }` | Runs the block, then moves | `on eOpen goto Connecting with (owner: machine) { app = owner; }` |
-| `entry` / `exit` | Run on every way in / out of a state | `Open`'s `exit` sends `eFin` on close *and* on reset |
-| `raise E, v;` | Handles `E` in this machine now, ahead of queued events | `raise eGiveUp, Rejected;` |
+| `on E goto S;` | Handles `E` by moving to `S`; `E`'s payload goes to `S`'s entry | `on Reset goto Closed;` (reason `Evicted`) |
+| `on E goto S with { ... }` | Runs the block, then moves | `on Open goto Connecting with (owner: machine) { app = owner; }` |
+| `entry` / `exit` | Run on every way in / out of a state | `Open`'s `exit` sends `Fin` on close *and* on reset |
+| `raise E, v;` | Handles `E` in this machine now, ahead of queued events | `raise GiveUp, CapacityRefused;` |
 | `raise halt;` | Stops the machine; later events to it are dropped | `Closed` |
 | `return` in a handler or function | Ends it early; functions can return a value | `FreeSlot(): int` |
 | `while`, `foreach`, `if` | As usual, with `break` and `continue`; there is no `for` | `Server`'s slot scan |
@@ -35,18 +35,18 @@ A `goto` or `raise` ends the handler: statements after it do not run.
 [`PSrc/Connection.p`](PSrc/Connection.p):
 
 ```p
-on eSynAck do (r: (ok: bool, session: int)) {
+on SynAck do (r: (ok: bool, session: int)) {
   if (r.ok) { goto Open, r.session; }
   if (attempts < 2) { goto Connecting; }     // entry runs again: next attempt
-  raise eGiveUp, Rejected;
+  raise GiveUp, CapacityRefused;
 }
-on eGiveUp goto Closed;                       // Closed's entry gets Rejected
+on GiveUp goto Closed;                       // Closed's entry gets CapacityRefused
 ...
 state Open {
-  entry (s: int) { session = s; send app, eConnected, this; }
-  on eClose goto Closed;
-  on eReset goto Closed;
-  exit { send server, eFin, session; }        // every way out says goodbye
+  entry (s: int) { session = s; send app, Connected, this; }
+  on Close goto Closed;
+  on Reset goto Closed;
+  exit { send server, Fin, session; }        // every way out says goodbye
 }
 ```
 
@@ -84,6 +84,9 @@ snappea check --timeout 20s --deny mutation
 
 ## What the checker shows
 
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
+
 ```text
 ok    tcTwoConnectionsOneSlot (all 1966 schedules, 0.68s)
 ok    tcTwoConnectionsTwoSlots (all 1291 schedules, 0.34s)
@@ -106,8 +109,8 @@ Each test exists because mutation testing showed a gap without it:
 Put the goodbye in the close handler instead of `exit`:
 
 ```p
-on eClose goto Closed with { send server, eFin, session; }
-on eReset goto Closed;
+on Close goto Closed with { send server, Fin, session; }
+on Reset goto Closed;
 ```
 
 An evicted connection now never frees its slot:
@@ -131,6 +134,6 @@ Not modeled: keep-alives, half-closed connections, a server that crashes.
 
 ## Testing the implementation
 
-Emit `eAccepted`, `eRejected` and `eFreed` from the server's slot table and `eClosed`
+Emit `Accepted`, `Rejected` and `Freed` from the server's slot table and `Closed`
 from the client's close path. Force eviction by holding one connection open and
 connecting a second; force the race by closing the first at the moment it is reset.

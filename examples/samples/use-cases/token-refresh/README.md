@@ -85,7 +85,7 @@ stolen token use it during that window, and it would hide the missing lock in
 ```sh
 snappea check tcBothTabsExpire tcLostRefreshResponse tcRepeatedExpiry tcStolenToken
 snappea check mutation tcBothTabsExpire tcLostRefreshResponse tcRepeatedExpiry tcStolenToken
-snappea check tcBugNoLock     # exits 1: user logged out by reuse detection
+snappea check tcBugNoLock     # expected bug (exit 0): user logged out by reuse detection
 ```
 
 ## Bounds and omissions
@@ -101,8 +101,8 @@ reaches the tab afterwards).
 
 ## Testing the implementation
 
-Emit `eRotated` and `eFamilyRevoked` from the auth server (or a stub of it),
-`eTokenObtained` and `eSessionLost` from the tab code. To force the race, open two
+Emit `Rotated` and `FamilyRevoked` from the auth server (or a stub of it),
+`TokenObtained` and `SessionLost` from the tab code. To force the race, open two
 tabs (or two instances of the refresh module over shared storage) and expire both
 access tokens at once; to test the lost response, make the stub rotate the token and
 then fail the request, and check that neither tab presents the old token again.

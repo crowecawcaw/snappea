@@ -38,6 +38,8 @@ pub(crate) struct AutoStrategy {
     dfs_bounds: usize,
     has_hot: bool,
     interrupted: bool,
+    interruption_reason: Option<&'static str>,
+    schedules: usize,
     complete: bool,
     /// This worker explores part of a split search: when its part is done, it keeps
     /// looking for bugs with feedback until the other parts are done too, and leaves
@@ -83,6 +85,8 @@ impl AutoStrategy {
             dfs_bounds: 0,
             has_hot,
             interrupted: false,
+            interruption_reason: None,
+            schedules: 0,
             complete: false,
             split: shared,
         }
@@ -118,15 +122,29 @@ impl AutoStrategy {
             // Check before DFS materializes a potentially huge choice vector. Keep
             // DFS active until the schedule ends, so fairness and divergence describe
             // the schedule that actually ran.
-            self.interrupted |=
-                self.work > self.work_deadline || retained.saturating_add(alternatives) > MAX_ALTERNATIVES;
+            if self.interruption_reason.is_none() {
+                self.interruption_reason = if retained.saturating_add(alternatives) > MAX_ALTERNATIVES {
+                    Some("retained alternative limit reached")
+                } else if self.work > self.work_deadline {
+                    Some("exhaustive work limit reached without enough convergence")
+                } else {
+                    None
+                };
+            }
+            self.interrupted |= self.interruption_reason.is_some();
         }
         !self.interrupted
     }
-    fn park(&mut self) {
+    fn park(&mut self, reason: &str) {
         self.parked = self.dfs.take().and_then(|dfs| dfs.exhaustive_stats()).map(|stats| SearchStats {
             finished: false,
             depth_bound_hits: self.dfs_bounds,
+            auto_handoffs: vec![super::exhaustive::AutoHandoff {
+                worker: 1,
+                after_schedules: self.schedules,
+                choices: self.work,
+                reason: reason.into(),
+            }],
             ..stats
         });
         self.interrupted = false;
@@ -157,6 +175,7 @@ impl Strategy for AutoStrategy {
         self.active_mut().next_int(max)
     }
     fn prepare_next_iteration(&mut self) -> bool {
+        self.schedules += 1;
         if self.dfs.is_none() {
             return self.portfolio.prepare_next_iteration();
         }
@@ -168,7 +187,7 @@ impl Strategy for AutoStrategy {
         }
         self.dfs_bounds += usize::from(self.active().has_reached_max_steps());
         if self.interrupted {
-            self.park();
+            self.park(self.interruption_reason.unwrap_or("exhaustive resource limit reached"));
             return true;
         }
         let schedule_steps = self.active().scheduled_steps();
@@ -189,7 +208,13 @@ impl Strategy for AutoStrategy {
             return true;
         }
         if !more || self.dfs_bounds > 0 || !repeatable {
-            self.park();
+            self.park(if !repeatable {
+                "execution did not repeat with the same choices"
+            } else if self.dfs_bounds > 0 {
+                "a schedule reached the depth bound"
+            } else {
+                "state exploration finished but liveness remains unverified"
+            });
             return true;
         }
         let frontier = dfs.pending_alternatives();
@@ -224,7 +249,7 @@ impl Strategy for AutoStrategy {
             // stages. A huge, slowly shrinking input range is still too expensive
             // when its observed closure rate cannot finish inside the work budget.
             if frontier > SMALL_FRONTIER && !closing && (!shrinking || !affordable) {
-                self.park();
+                self.park("large frontier was not converging within the exhaustive work budget");
             } else {
                 self.window_frontier = Some(frontier);
                 self.window_states = stats.distinct_states;
@@ -314,6 +339,7 @@ impl Strategy for AutoStrategy {
         };
         if dfs.exhaustive_stats().is_some_and(|s| s.distinct_states >= MAX_STATES) {
             self.interrupted = true;
+            self.interruption_reason = Some("distinct state limit reached");
             return false;
         }
         dfs.observe_state(hash)

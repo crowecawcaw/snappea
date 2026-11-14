@@ -3,15 +3,15 @@
 // assignment or process a record. The specs rebuild ownership and offsets from that
 // history; they never read the coordinator.
 
-event eGeneration: (gen: int, members: seq[int], owner: map[int, int]);
-event eCommitted: (partition: int, offset: int, gen: int, member: int);
-event eCommitRejected: (partition: int, offset: int, gen: int, member: int);
-event eFetchRejected: (partition: int, gen: int, member: int);
-event eFetchServed: (partition: int, gen: int, member: int);
+event GenerationChanged: (gen: int, members: seq[int], owner: map[int, int]);
+event OffsetCommitted: (partition: int, offset: int, gen: int, member: int);
+event CommitRejected: (partition: int, gen: int, member: int);
+event FetchRejected: (partition: int, gen: int, member: int);
+event FetchServed: (partition: int, gen: int, member: int);
 // A consumer was told its commit was accepted.
-event eCommitAcked: (member: int, partition: int, offset: int);
-event eAdopted: (member: int, gen: int, partitions: seq[int]);
-event eProcessed: (member: int, partition: int, offset: int);
+event CommitAcked: (member: int, partition: int, offset: int);
+event Adopted: (member: int, gen: int, partitions: seq[int]);
+event Processed: (member: int, partition: int, offset: int);
 
 // Safety.
 // - Generations only move forward.
@@ -25,8 +25,8 @@ event eProcessed: (member: int, partition: int, offset: int);
 // - A consumer whose commit or offset fetch was rejected stops working on that
 //   generation's assignment (it rejoins instead of processing on as a zombie), and a
 //   consumer is told a commit succeeded only if it was accepted.
-spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejected, eFetchRejected, eFetchServed,
-    eCommitAcked, eAdopted, eProcessed {
+spec GroupSafety observes GroupPlanned, GenerationChanged, OffsetCommitted, CommitRejected, FetchRejected, FetchServed,
+    CommitAcked, Adopted, Processed {
   var accepted: set[(member: int, partition: int, offset: int)];
   var partitions: int;
   // member -> the generation in which one of its commits was rejected
@@ -43,10 +43,10 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
 
   start state Watching {
     // snappea-lint: allow unused-payload-field -- GroupProgress checks the record count
-    on eGroupPlanned do (p: (partitions: int, records: int)) {
+    on GroupPlanned do (p: (partitions: int, records: int)) {
       partitions = p.partitions;
     }
-    on eGeneration do (p: (gen: int, members: seq[int], owner: map[int, int])) {
+    on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) {
       var part: int;
       var i: int;
       assert p.gen > gen, format("generation {0} started after generation {1}", p.gen, gen);
@@ -66,7 +66,7 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
       owner = p.owner;
       assigned[gen] = p.owner;
     }
-    on eAdopted do (p: (member: int, gen: int, partitions: seq[int])) {
+    on Adopted do (p: (member: int, gen: int, partitions: seq[int])) {
       var part: int;
       var other: int;
       assert p.gen in assigned, format("member {0} adopted generation {1}, which never started", p.member, p.gen);
@@ -80,7 +80,7 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
       }
       held[p.member] = (gen = p.gen, partitions = p.partitions);
     }
-    on eProcessed do (p: (member: int, partition: int, offset: int)) {
+    on Processed do (p: (member: int, partition: int, offset: int)) {
       if (!(p.partition in processed)) {
         processed[p.partition] = default(set[int]);
       }
@@ -91,7 +91,7 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
       assert !(p.member in fenced) || fenced[p.member] != held[p.member].gen,
         format("member {0} kept processing partition {1} after its commit was rejected", p.member, p.partition);
     }
-    on eCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
+    on OffsetCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
       var o: int;
       assert p.gen == gen, format("commit from generation {0} accepted in generation {1}", p.gen, gen);
       assert p.partition in owner && owner[p.partition] == p.member,
@@ -106,25 +106,25 @@ spec GroupSafety observes eGroupPlanned, eGeneration, eCommitted, eCommitRejecte
       committed[p.partition] = p.offset;
       accepted += ((member = p.member, partition = p.partition, offset = p.offset));
     }
-    on eCommitAcked do (p: (member: int, partition: int, offset: int)) {
+    on CommitAcked do (p: (member: int, partition: int, offset: int)) {
       assert p in accepted,
         format("member {0} was told offset {1} of partition {2} was committed, but it was rejected", p.member, p.offset, p.partition);
     }
-    on eFetchServed do (p: (partition: int, gen: int, member: int)) {
+    on FetchServed do (p: (partition: int, gen: int, member: int)) {
       assert p.gen == gen && p.partition in owner && owner[p.partition] == p.member,
         format("offset fetch by member {0} for partition {1} in generation {2} served in generation {3}",
                p.member, p.partition, p.gen, gen);
     }
-    on eFetchRejected do (p: (partition: int, gen: int, member: int)) {
+    on FetchRejected do (p: (partition: int, gen: int, member: int)) {
       fenced[p.member] = p.gen;
       assert p.gen != gen || !(p.partition in owner) || owner[p.partition] != p.member,
         format("offset fetch by member {0}, the current owner of partition {1}, was rejected", p.member, p.partition);
     }
-    on eCommitRejected do (p: (partition: int, offset: int, gen: int, member: int)) {
+    on CommitRejected do (p: (partition: int, gen: int, member: int)) {
       fenced[p.member] = p.gen;
       assert p.gen != gen || !(p.partition in owner) || owner[p.partition] != p.member,
-        format("commit of offset {0} by member {1}, the current owner of partition {2}, was rejected",
-               p.offset, p.member, p.partition);
+        format("commit by member {0}, the current owner of partition {1}, was rejected",
+               p.member, p.partition);
     }
   }
 }
@@ -144,9 +144,9 @@ fun Prefix(s: seq[int], n: int): seq[int] {
 // rejoins. The driver announces the partitions and records before any consumer
 // starts. (A consumer that shuts down sends its last commit before its leave, so it is
 // never fenced as a non-member.)
-event eGroupPlanned: (partitions: int, records: int);
+event GroupPlanned: (partitions: int, records: int);
 
-spec GroupProgress observes eGroupPlanned, eCommitted, eCommitRejected, eFetchRejected, eGeneration {
+spec GroupProgress observes GroupPlanned, OffsetCommitted, CommitRejected, FetchRejected, GenerationChanged {
   var records: int;
   // partition -> records not yet committed
   var left: map[int, int];
@@ -155,7 +155,7 @@ spec GroupProgress observes eGroupPlanned, eCommitted, eCommitRejected, eFetchRe
   var outside: set[int];
 
   start state Idle {
-    on eGroupPlanned do (p: (partitions: int, records: int)) {
+    on GroupPlanned do (p: (partitions: int, records: int)) {
       var part: int;
       assert p.partitions > 0 && p.records > 0, "planned no work";
       records = p.records;
@@ -165,38 +165,43 @@ spec GroupProgress observes eGroupPlanned, eCommitted, eCommitRejected, eFetchRe
       }
       goto Busy;
     }
-    on eCommitted do { assert false, "commit with no work planned"; }
-    on eCommitRejected do { assert false, "commit with no work planned"; }
-    on eFetchRejected do { assert false, "fetch with no work planned"; }
-    on eGeneration do { assert false, "generation with no work planned"; }
+    on OffsetCommitted do { assert false, "commit with no work planned"; }
+    on CommitRejected do { assert false, "commit with no work planned"; }
+    on FetchRejected do { assert false, "fetch with no work planned"; }
+    on GenerationChanged do { assert false, "generation with no work planned"; }
   }
 
   hot state Busy {
-    on eGroupPlanned do { assert false, "work planned twice"; }
+    on GroupPlanned do { assert false, "work planned twice"; }
+
     // snappea-lint: allow unused-payload-field -- GroupSafety checks generations and members
-    on eCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
+    on OffsetCommitted do (p: (partition: int, offset: int, gen: int, member: int)) {
       assert p.partition in left, format("commit to unknown partition {0}", p.partition);
       assert p.offset <= records, format("partition {0} committed offset {1} past its end", p.partition, p.offset);
       left[p.partition] = records - p.offset;
       Check();
     }
+
     // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
-    on eCommitRejected do (p: (partition: int, offset: int, gen: int, member: int)) { Fenced(p.member); }
+    on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+
     // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
-    on eFetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
-    on eGeneration do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
+    on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+    on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
 
   // Everything committed and nobody left outside. A zombie can still be fenced and
   // rejoin from here, which reopens the obligation.
   state Done {
-    on eGroupPlanned do { assert false, "work planned twice"; }
-    on eCommitted do { assert false, "commit after every partition was fully committed"; }
+    on GroupPlanned do { assert false, "work planned twice"; }
+    on OffsetCommitted do { assert false, "commit after every partition was fully committed"; }
+
     // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
-    on eCommitRejected do (p: (partition: int, offset: int, gen: int, member: int)) { Fenced(p.member); }
+    on CommitRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+
     // snappea-lint: allow unused-payload-field -- GroupSafety checks why it was rejected
-    on eFetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
-    on eGeneration do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
+    on FetchRejected do (p: (partition: int, gen: int, member: int)) { Fenced(p.member); }
+    on GenerationChanged do (p: (gen: int, members: seq[int], owner: map[int, int])) { Generation(p); }
   }
 
   fun Fenced(member: int) {

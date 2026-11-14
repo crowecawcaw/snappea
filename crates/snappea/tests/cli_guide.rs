@@ -24,8 +24,15 @@ fn temp(name: &str) -> PathBuf {
 /// (example, spec file, spec, [(trace, expected error)])
 type Probe<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, Option<&'a str>)]);
 
-const EXAMPLES: &[&str] =
-    &["cas-retry", "forced-interleaving", "reservation", "bounded-history", "durable-retry", "versioned-publication"];
+const EXAMPLES: &[&str] = &[
+    "building-blocks",
+    "cas-retry",
+    "forced-interleaving",
+    "reservation",
+    "bounded-history",
+    "durable-retry",
+    "versioned-publication",
+];
 
 #[test]
 fn every_topic_prints_markdown() {
@@ -37,6 +44,7 @@ fn every_topic_prints_markdown() {
         "modeling",
         "scenarios",
         "scenario-monitors",
+        "spec-patterns",
         "recovery",
         "faults",
         "python",
@@ -46,7 +54,10 @@ fn every_topic_prints_markdown() {
         let args: Vec<&str> = std::iter::once("guide").chain((!topic.is_empty()).then_some(topic)).collect();
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");
-        assert!(String::from_utf8_lossy(&out.stdout).starts_with("# "), "guide {topic} is not Markdown");
+        assert!(
+            ["# ", "---\n"].iter().any(|prefix| String::from_utf8_lossy(&out.stdout).starts_with(prefix)),
+            "guide {topic} is not Markdown"
+        );
     }
     for e in EXAMPLES {
         let main = snappea(&["guide", "example", e], &dir);
@@ -114,6 +125,7 @@ fn guide_text_points_only_to_existing_topics_and_examples() {
         "modeling",
         "scenarios",
         "scenario-monitors",
+        "spec-patterns",
         "recovery",
         "faults",
         "python",
@@ -296,4 +308,117 @@ fn example_models_pass_and_their_broken_cases_fail_for_the_stated_reason() {
         }
     }
     std::fs::remove_dir_all(&out).ok();
+}
+
+#[test]
+fn reusable_building_blocks_import_and_check() {
+    let dir = temp("building-blocks");
+    let exported = snappea(&["guide", "example", "building-blocks", "--out", "."], &dir);
+    assert!(exported.status.success(), "{}", text(&exported));
+    // Resolve IncludeProject relative to Example.pproj, not this working directory.
+    let project = "building-blocks/Example.pproj";
+    let pass = snappea(&["check", "tcReplies", "tcNetworkFaults", project, "--no-mutation", "--format", "text"], &dir);
+    assert!(pass.status.success(), "{}", text(&pass));
+    for (case, reason) in [("tcDuplicate", "duplicate terminal reply"), ("tcMissing", "RepliesPending")] {
+        let fail = snappea(&["check", case, project, "--no-mutation", "--format", "text"], &dir);
+        assert_eq!(fail.status.code(), Some(1), "{}", text(&fail));
+        assert!(text(&fail).contains(reason), "{}", text(&fail));
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn network_building_block_permits_reordering_and_late_duplicate_delivery() {
+    use snappea::checker::engine::{Checker, CheckerOptions, Output};
+    use snappea::checker::strategy::StrategyKind;
+    struct Quiet;
+    impl Output for Quiet {
+        fn line(&mut self, _: &str) {}
+        fn error(&mut self, _: &str) {}
+    }
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("Network.p", include_str!("../src/cli/guide/examples/building-blocks/Network.p").to_string());
+    sm.add(
+        "Probe.p",
+        r#"
+        event Packet: int; event Timeout; event TimedOut;
+        machine Receiver {
+            start state Ready {
+                entry { send this, Timeout; }
+                on Timeout do { announce TimedOut; }
+                on Packet do (id: int) { assert id == 1 || id == 2; }
+            }
+        }
+        machine Main { start state Start { entry {
+            var receiver: Receiver; var network: BBNetwork;
+            receiver = new Receiver();
+            network = new BBNetwork((drops = 1, duplicates = 1));
+            send network, BBForward, (destination = receiver, message = Packet, payload = 1);
+            send network, BBForward, (destination = receiver, message = Packet, payload = 2);
+        } } }
+        scenario Reordered observes Packet {
+            start hot state Waiting { on Packet do (id: int) { if (id == 2) { goto Two; } } }
+            hot state Two { on Packet do (id: int) { if (id == 1) { goto Matched; } } }
+            cold state Matched { ignore Packet; }
+        }
+        scenario AfterTimeout observes Packet, TimedOut {
+            start hot state Waiting { ignore Packet; on TimedOut goto Timed; }
+            hot state Timed { on Packet goto Matched; ignore TimedOut; }
+            cold state Matched { ignore Packet, TimedOut; }
+        }
+        scenario Duplicated observes Packet {
+            var seen: set[int];
+            start hot state Waiting { on Packet do (id: int) {
+                if (id in seen) { goto Matched; } else { seen += (id); }
+            } }
+            cold state Matched { ignore Packet; }
+        }
+        test tcMain [main=Main]: { Main, Receiver, BBNetwork, BBDelivery };
+    "#,
+    );
+    let compiled = snappea::sema::compile(&sm, &Default::default()).unwrap();
+    let tc = compiled.program.test_cases().remove(0);
+    let result = Checker::new(&compiled.program)
+        .check(&tc, &CheckerOptions { strategy: StrategyKind::Dfs, iterations: 0, ..Default::default() }, &mut Quiet)
+        .unwrap();
+    assert_eq!(result.report.num_bugs, 0, "{:?}", result.report.bug_reports);
+    assert!(result.exhaustive.as_ref().unwrap().complete());
+    assert_eq!(result.report.scenarios.len(), 3);
+    for scenario in result.report.scenarios {
+        assert!(scenario.trigger_count > 0, "{} was never reached", scenario.name);
+    }
+}
+
+#[test]
+fn reply_building_block_checks_the_whole_plan_and_ids() {
+    use snappea::checker::engine::{Checker, CheckerOptions, Output};
+    use snappea::checker::strategy::StrategyKind;
+    struct Quiet;
+    impl Output for Quiet {
+        fn line(&mut self, _: &str) {}
+        fn error(&mut self, _: &str) {}
+    }
+    for (body, failure) in [
+        ("announce BBPlan, 2; announce BBRequested, 1; announce BBReplied, 1; announce BBRequested, 2; announce BBReplied, 2;", None),
+        ("announce BBPlan, 2; announce BBRequested, 1; announce BBReplied, 1;", Some("RepliesPending")),
+        ("announce BBPlan, 1; announce BBRequested, 1; announce BBReplied, 2;", Some("unknown request")),
+        ("announce BBPlan, 2; announce BBRequested, 1; announce BBRequested, 1;", Some("ID reused")),
+        ("announce BBPlan, 0;", Some("at least one request")),
+    ] {
+        let mut sm = snappea::syntax::SourceMap::new();
+        sm.add("RequestReplies.p", include_str!("../src/cli/guide/examples/building-blocks/RequestReplies.p"));
+        sm.add("Probe.p", format!("machine Main {{ start state S {{ entry {{ {body} }} }} }} test tc [main=Main]: assert BBRequestReplies in {{ Main }};"));
+        let compiled = snappea::sema::compile(&sm, &Default::default()).unwrap();
+        let tc = compiled.program.test_cases().remove(0);
+        let result = Checker::new(&compiled.program).check(&tc, &CheckerOptions {
+            strategy: StrategyKind::Dfs, iterations: 0, ..Default::default()
+        }, &mut Quiet).unwrap();
+        if let Some(reason) = failure {
+            assert_eq!(result.report.num_bugs, 1, "{body}");
+            assert!(result.report.bug_reports.iter().any(|b| b.contains(reason)), "{:?}", result.report.bug_reports);
+        } else {
+            assert_eq!(result.report.num_bugs, 0, "{:?}", result.report.bug_reports);
+            assert!(result.exhaustive.as_ref().unwrap().complete());
+        }
+    }
 }

@@ -4,12 +4,12 @@
 
 machine OrderedWorker {
   var db: Database;
-  var t: tTransfer;
+  var t: Transfer;
   var first: int;
   var second: int;
 
   start state LockingFirst {
-    entry (w: (db: Database, transfer: tTransfer)) {
+    entry (w: (db: Database, transfer: Transfer)) {
       db = w.db;
       t = w.transfer;
       first = t.src;
@@ -19,24 +19,24 @@ machine OrderedWorker {
         first = t.dst;
         second = t.src;
       }
-      send db, eLock, (worker = this, transfer = t.transfer, account = first);
+      send db, Lock, (worker = this, transfer = t.transfer, account = first);
     }
-    on eLocked goto LockingSecond;
+    on Locked goto LockingSecond;
   }
 
   state LockingSecond {
     entry {
-      send db, eLock, (worker = this, transfer = t.transfer, account = second);
+      send db, Lock, (worker = this, transfer = t.transfer, account = second);
     }
-    on eLocked goto Committing;
+    on Locked goto Committing;
   }
 
   state Committing {
     entry {
-      send db, eCommit, (worker = this, transfer = t);
+      send db, Commit, (worker = this, transfer = t);
     }
-    on eCommitted do {
-      announce eTransferDone, t.transfer;
+    on Committed do {
+      announce TransferDone, t.transfer;
     }
   }
 }

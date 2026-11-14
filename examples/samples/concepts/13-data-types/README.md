@@ -18,10 +18,10 @@ recomputes every receipt from what the shoppers asked for.
 
 | Need | P | Where |
 | --- | --- | --- |
-| A fixed set of values | `enum tSku { Apple, Pear }` | [`PSrc/Types.p`](PSrc/Types.p) |
-| Name a type once | `type tCart = map[tSku, int];` | `Types.p` |
-| A record | named tuple `(sku: tSku, qty: int)`; build it `(sku = Apple, qty = 1)` | `Types.p` |
-| Empty or zero value | `default(tCart)`, `default(seq[tSku])` | [`PSrc/Store.p`](PSrc/Store.p) |
+| A fixed set of values | `enum Sku { Apple, Pear }` | [`PSrc/Types.p`](PSrc/Types.p) |
+| Name a type once | `type Cart = map[Sku, int];` | `Types.p` |
+| A record | named tuple `(sku: Sku, qty: int)`; build it `(sku = Apple, qty = 1)` | `Types.p` |
+| Empty or zero value | `default(Cart)`, `default(seq[Sku])` | [`PSrc/Store.p`](PSrc/Store.p) |
 | Map: put, read, remove, test | `m[k] = v;` `m[k]` `m -= (k);` `k in m` | `Store.p` |
 | Sequence: append, index, length | `s += (sizeof(s), v);` `s[i]` `sizeof(s)` | `Store.p` |
 | Set: add, test, pick any | `s += (v);` `v in s` `choose(s)` | [`PTst/Tests.p`](PTst/Tests.p) |
@@ -49,8 +49,8 @@ foreach (sku in keys(items)) {
 carts -= (cart);
 ```
 
-The spec keeps its own copy of each cart (from `eAdded`/`eRemoved`, announced by the
-shoppers) and of the stock, decides the expected `tResult`, and for a payment checks
+The spec keeps its own copy of each cart (from `Added`/`Removed`, announced by the
+shoppers) and of the stock, decides the expected `Result`, and for a payment checks
 each receipt line, the total at list price, and that no stock value went negative:
 
 ```p
@@ -75,6 +75,9 @@ snappea check --timeout 20s --deny mutation
 
 ## What the checker shows
 
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
+
 ```text
 ok    tcTwoShoppers (all 7968 schedules, 3.66s)
 ok    tcEmptyCarts (all 404 schedules, 0.09s)
@@ -86,15 +89,18 @@ Mutation testing: 41 of 41 mutants detected (0.2s)
 Coverage is checked over all tests together: `tcEmptyCarts` alone runs half the code,
 and that is fine; it exists for the `EmptyCart` branch.
 
+The spec computes expected prices independently of the store's indexed price table.
+Sharing that calculation would let the same price bug change both the result and its oracle.
+
 ## Common mistakes
 
 - **Reading a missing map key.** It is a runtime error, not a default. Delete the
-  `default(tCart)` initialisation in `Store.eAdd` and the first schedule fails with
+  `default(Cart)` initialisation in `Store.Add` and the first schedule fails with
   `Exception 'System.Collections.Generic.KeyNotFoundException' was thrown in Store(2)
   (state 'Open', action 'Anon_1'): The given key '1' was not present in the dictionary.`
   Test `k in m` first.
 - **`as` versus `to`.** `as` changes the static type (from `any`, or to a supertype);
-  `to` converts a value: `sku to int`. `sku as int` fails with `types tSku and int are
+  `to` converts a value: `sku to int`. `sku as int` fails with `types Sku and int are
   incomparable`. Converting an integer back to an enum is not supported; pick from a set
   instead (`choose(skus)`).
 - **Reserved words as names.** `values`, `keys`, `to`, `format`, `default` are keywords;
@@ -121,6 +127,6 @@ change, reservations at add time, concurrent edits to one cart, payment failures
 
 ## Testing the implementation
 
-Emit `eAdded`/`eRemoved` from the cart API and `eCheckedOut` with the receipt after the
+Emit `Added`/`Removed` from the cart API and `CheckedOut` with the receipt after the
 checkout transaction commits. Run two checkouts that together exceed the stock, and a
 checkout that takes exactly the remaining stock.

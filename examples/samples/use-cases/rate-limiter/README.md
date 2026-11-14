@@ -55,26 +55,26 @@ CAS reloads and decides again, and may now reject.
 The `LostCasThenReject` scenario confirms the checks reach a CAS that lost and then
 rejected the same request on reload. Contract events alone cannot show that (an
 admission followed by a rejection also happens without any race), so the store
-announces `eCasLost` on a failed CAS, and `WindowLimit` checks it only names a
+announces a failed `CasResp` on a failed CAS, and `WindowLimit` checks it only names a
 request still in flight.
 
 ## Run
 
 ```sh
 snappea check tcLastSlotRace tcRolloverRace tcAfterRollover --timeout 30s
-snappea check tcBugLoadThenStore      # exits 1 with the over-admission above
+snappea check tcBugLoadThenStore      # expected bug (exit 0): the over-admission above
 ```
 
-With `--timeout`, all three passing tests explore every schedule in about two
-seconds. Without it, `tcRolloverRace` may stop early once coverage stops growing.
+The core tests can complete exhaustive search. Check the result of your run: a
+passing sampled run establishes less than `all N schedules`. The timeout is a
+resource budget, not a request for exhaustive search.
 
 ## Bounds and omissions
 
 Two gateways, `Limit()` = 2, windows 0 and 1, at most four requests. Each gateway
-handles one request at a time; two gateways are enough for the race. The gateway
-asserts that a CAS loses at most once: a test bound (one competing writer), not a
-production retry policy. Without it, a CAS that never succeeds is a livelock the
-checker finds only slowly.
+handles one request at a time; two gateways are enough for the race. The design
+retries after a lost CAS without a test-only attempt counter. The progress spec
+requires every planned request to receive a decision, including after contention.
 
 Not modeled: sliding windows, several counter keys (per user or per route), clock
 skew beyond "a reading can be stale by one window", store failures and timeouts
@@ -83,9 +83,9 @@ model it), and lost replies.
 
 ## Testing the implementation
 
-Emit `eAdmitted(req, window, count)` after each successful CAS, `eCasLost(req)`
-after each failed one, `eRejected(req, window)` where the gateway rejects, `eTicked` when the window changes and
-`eRequested`/`eAnswered` from the test client, then check them against
+Emit `Admitted(req, window, count)` after each successful CAS, `CasResp(req, ok)`
+for each CAS response, `Rejected(req, window)` where the gateway rejects, `Ticked` when the window changes and
+`Requested`/`Answered` from the test client, then check them against
 `WindowLimit` and `RequestsAnswered`. To force the race, wrap the store client so two
 gateways both complete `load` before either calls `cas`; for the rollover race, make
 the clock return the old window to one gateway after the other has written the new

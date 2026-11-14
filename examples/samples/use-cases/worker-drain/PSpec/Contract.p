@@ -5,34 +5,34 @@
 
 // Driver: `instances` instances are registered; clients will send `requests` requests
 // and the scale-in trigger will ask `scaleIns` times.
-event eFleetPlanned: (instances: int, requests: int, scaleIns: int);
+event FleetPlanned: (instances: int, requests: int, scaleIns: int);
 // Client (driver): sent request `id` / got its response.
-event eRequestSent: (id: int);
-event eGotResponse: (id: int);
+event RequestSent: (id: int);
+event GotResponse: (id: int);
 // Scale-in trigger (driver): asked to remove `inst`.
-event eScaleInRequested: (inst: int);
+event ScaleInRequested: (inst: int);
 
 // Load balancer: sent request `id` to instance `inst`.
-event eRouted: (id: int, inst: int);
+event Routed: (id: int, inst: int);
 // Load balancer: removed `inst` from rotation; it routes nothing there from now on.
-event eDeregistered: (inst: int);
+event Deregistered: (inst: int);
 // Instance: took request `id` / finished it and replied / refused it while draining.
-event eAccepted: (id: int, inst: int);
-event eServed: (id: int, inst: int);
-event eBounced: (id: int, inst: int);
+event Accepted: (id: int, inst: int);
+event Served: (id: int, inst: int);
+event Bounced: (id: int, inst: int);
 // Instance: started draining / was terminated.
-event eDrainStarted: (inst: int);
-event eTerminated: (inst: int);
+event DrainStarted: (inst: int);
+event Terminated: (inst: int);
 // Autoscaler: refused to remove `inst` because it is the last instance.
-event eScaleInRefused: (inst: int);
+event ScaleInRefused: (inst: int);
 
 // Safety: the load balancer never routes to a deregistered or terminated instance, and
 // routes a request again only after its instance refused it or is gone; an instance
 // drains only after it was deregistered, accepts nothing while draining, refuses only
 // while draining, says nothing once terminated, and is terminated only after draining
 // with nothing in flight; the last instance is never removed.
-spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eServed, eBounced, eDrainStarted,
-    eTerminated, eScaleInRefused {
+spec DrainSafety observes FleetPlanned, Routed, Deregistered, Accepted, Served, Bounced, DrainStarted,
+    Terminated, ScaleInRefused {
   var registered: set[int];
   var draining: set[int];
   var terminated: set[int];
@@ -43,7 +43,7 @@ spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eSer
 
   start state Init {
     // snappea-lint: allow unused-payload-field -- RequestsAndScaleInsFinish counts requests and scale-ins
-    on eFleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
+    on FleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
       var i: int;
       while (i < p.instances) {
         registered += (i);
@@ -52,19 +52,19 @@ spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eSer
       }
       goto Watching;
     }
-    on eRouted do { assert false, "request routed before the fleet was planned"; }
-    on eDeregistered do { assert false, "deregistration before the fleet was planned"; }
-    on eAccepted do { assert false, "request accepted before the fleet was planned"; }
-    on eServed do { assert false, "request served before the fleet was planned"; }
-    on eBounced do { assert false, "request bounced before the fleet was planned"; }
-    on eDrainStarted do { assert false, "drain before the fleet was planned"; }
-    on eTerminated do { assert false, "termination before the fleet was planned"; }
-    on eScaleInRefused do { assert false, "scale-in refused before the fleet was planned"; }
+    on Routed do { assert false, "request routed before the fleet was planned"; }
+    on Deregistered do { assert false, "deregistration before the fleet was planned"; }
+    on Accepted do { assert false, "request accepted before the fleet was planned"; }
+    on Served do { assert false, "request served before the fleet was planned"; }
+    on Bounced do { assert false, "request bounced before the fleet was planned"; }
+    on DrainStarted do { assert false, "drain before the fleet was planned"; }
+    on Terminated do { assert false, "termination before the fleet was planned"; }
+    on ScaleInRefused do { assert false, "scale-in refused before the fleet was planned"; }
   }
 
   state Watching {
-    on eFleetPlanned do { assert false, "fleet planned twice"; }
-    on eRouted do (r: (id: int, inst: int)) {
+    on FleetPlanned do { assert false, "fleet planned twice"; }
+    on Routed do (r: (id: int, inst: int)) {
       assert !(r.inst in terminated), format("request {0} routed to terminated instance {1}", r.id, r.inst);
       assert r.inst in registered, format("request {0} routed to deregistered instance {1}", r.id, r.inst);
       // Routing a request again is legitimate only when its last instance refused it,
@@ -73,33 +73,34 @@ spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eSer
         format("request {0} routed again while instance {1} still had it", r.id, routedTo[r.id]);
       routedTo[r.id] = r.inst;
     }
-    on eDeregistered do (d: (inst: int)) {
+    on Deregistered do (d: (inst: int)) {
       assert d.inst in registered, format("instance {0} deregistered twice", d.inst);
       assert sizeof(registered) > 1, format("last instance {0} was deregistered", d.inst);
       registered -= (d.inst);
     }
-    on eAccepted do (a: (id: int, inst: int)) {
+    on Accepted do (a: (id: int, inst: int)) {
       assert !(a.inst in terminated), format("terminated instance {0} accepted request {1}", a.inst, a.id);
       assert !(a.inst in draining), format("draining instance {0} accepted new request {1}", a.inst, a.id);
       Delivered(a.id, a.inst);
       inFlight[a.inst] += (a.id);
     }
-    on eServed do (s: (id: int, inst: int)) {
+    // snappea-lint: allow unused-payload-field -- DrainSafety checks which instance served it
+    on Served do (s: (id: int, inst: int)) {
       assert s.id in inFlight[s.inst], format("instance {0} served request {1} it never accepted", s.inst, s.id);
       inFlight[s.inst] -= (s.id);
     }
-    on eBounced do (b: (id: int, inst: int)) {
+    on Bounced do (b: (id: int, inst: int)) {
       assert !(b.inst in terminated), format("terminated instance {0} answered request {1}", b.inst, b.id);
       assert b.inst in draining, format("instance {0} refused request {1} although it was serving", b.inst, b.id);
       Delivered(b.id, b.inst);
     }
-    on eDrainStarted do (d: (inst: int)) {
+    on DrainStarted do (d: (inst: int)) {
       assert !(d.inst in registered),
         format("instance {0} started draining while the load balancer still routes to it", d.inst);
       assert !(d.inst in draining), format("instance {0} drained twice", d.inst);
       draining += (d.inst);
     }
-    on eTerminated do (t: (inst: int)) {
+    on Terminated do (t: (inst: int)) {
       var id: int;
       assert t.inst in draining, format("instance {0} terminated without draining", t.inst);
       foreach (id in inFlight[t.inst]) {
@@ -108,7 +109,7 @@ spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eSer
       draining -= (t.inst);
       terminated += (t.inst);
     }
-    on eScaleInRefused do (r: (inst: int)) {
+    on ScaleInRefused do (r: (inst: int)) {
       assert sizeof(registered) == 1 && r.inst in registered,
         format("scale-in of instance {0} refused although it is not the last instance", r.inst);
     }
@@ -123,8 +124,8 @@ spec DrainSafety observes eFleetPlanned, eRouted, eDeregistered, eAccepted, eSer
 
 // Progress: every request gets exactly one response, and every scale-in request ends
 // with the instance terminated or the request refused.
-spec RequestsAndScaleInsFinish observes eFleetPlanned, eRequestSent, eGotResponse, eServed, eScaleInRequested,
-    eTerminated, eScaleInRefused {
+spec RequestsAndScaleInsFinish observes FleetPlanned, RequestSent, GotResponse, Served, ScaleInRequested,
+    Terminated, ScaleInRefused {
   var requestsLeft: int;
   var scaleInsLeft: int;
   var outstanding: set[int];
@@ -132,54 +133,55 @@ spec RequestsAndScaleInsFinish observes eFleetPlanned, eRequestSent, eGotRespons
   var asked: set[int];
 
   start state Init {
-    on eFleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
+    // snappea-lint: allow unused-payload-field -- RequestsAndScaleInsFinish counts requests and scale-ins
+    on FleetPlanned do (p: (instances: int, requests: int, scaleIns: int)) {
       assert p.instances > 0 && p.requests > 0, "planned no instances or no requests";
       requestsLeft = p.requests;
       scaleInsLeft = p.scaleIns;
       goto Busy;
     }
-    on eRequestSent do { assert false, "request before the fleet was planned"; }
-    on eGotResponse do { assert false, "response before the fleet was planned"; }
-    on eServed do { assert false, "request served before the fleet was planned"; }
-    on eScaleInRequested do { assert false, "scale-in before the fleet was planned"; }
-    on eTerminated do { assert false, "termination before the fleet was planned"; }
-    on eScaleInRefused do { assert false, "refusal before the fleet was planned"; }
+    on RequestSent do { assert false, "request before the fleet was planned"; }
+    on GotResponse do { assert false, "response before the fleet was planned"; }
+    on Served do { assert false, "request served before the fleet was planned"; }
+    on ScaleInRequested do { assert false, "scale-in before the fleet was planned"; }
+    on Terminated do { assert false, "termination before the fleet was planned"; }
+    on ScaleInRefused do { assert false, "refusal before the fleet was planned"; }
   }
 
   hot state Busy {
-    on eFleetPlanned do { assert false, "fleet planned twice"; }
-    on eRequestSent do (r: (id: int)) {
+    on FleetPlanned do { assert false, "fleet planned twice"; }
+    on RequestSent do (r: (id: int)) {
       assert !(r.id in outstanding), format("request {0} outstanding twice", r.id);
       outstanding += (r.id);
     }
     // snappea-lint: allow unused-payload-field -- DrainSafety checks which instance served it
-    on eServed do (s: (id: int, inst: int)) {
+    on Served do (s: (id: int, inst: int)) {
       assert s.id in outstanding, format("request {0} served but never outstanding", s.id);
       assert !(s.id in served), format("request {0} served twice", s.id);
       served += (s.id);
     }
-    on eGotResponse do (r: (id: int)) {
+    on GotResponse do (r: (id: int)) {
       assert r.id in served, format("client got a response to request {0}, which no instance served", r.id);
       outstanding -= (r.id);
       requestsLeft = requestsLeft - 1;
       Check();
     }
-    on eScaleInRequested do (s: (inst: int)) {
+    on ScaleInRequested do (s: (inst: int)) {
       assert !(s.inst in asked), format("scale-in of instance {0} asked twice", s.inst);
       asked += (s.inst);
     }
-    on eTerminated do (t: (inst: int)) { Resolve(t.inst); }
-    on eScaleInRefused do (r: (inst: int)) { Resolve(r.inst); }
+    on Terminated do (t: (inst: int)) { Resolve(t.inst); }
+    on ScaleInRefused do (r: (inst: int)) { Resolve(r.inst); }
   }
 
   state Finished {
-    on eFleetPlanned do { assert false, "fleet planned twice"; }
-    on eRequestSent do { assert false, "request after everything finished"; }
-    on eGotResponse do { assert false, "response after everything finished"; }
-    on eServed do { assert false, "request served after everything finished"; }
-    on eScaleInRequested do { assert false, "scale-in after everything finished"; }
-    on eTerminated do { assert false, "termination after everything finished"; }
-    on eScaleInRefused do { assert false, "refusal after everything finished"; }
+    on FleetPlanned do { assert false, "fleet planned twice"; }
+    on RequestSent do { assert false, "request after everything finished"; }
+    on GotResponse do { assert false, "response after everything finished"; }
+    on Served do { assert false, "request served after everything finished"; }
+    on ScaleInRequested do { assert false, "scale-in after everything finished"; }
+    on Terminated do { assert false, "termination after everything finished"; }
+    on ScaleInRefused do { assert false, "refusal after everything finished"; }
   }
 
   fun Resolve(inst: int) {

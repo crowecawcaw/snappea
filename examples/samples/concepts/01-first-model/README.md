@@ -36,9 +36,9 @@ A machine is a state machine with its own variables. `on E do` handles an event;
 machine Counter {
   var count: int;
   start state Serving {
-    on ePing do (p: (client: Client)) {
+    on Ping do (p: (client: Client)) {
       count = count + 1;
-      send p.client, ePong, (count = count,);
+      send p.client, Pong, (count = count,);
     }
   }
 }
@@ -52,9 +52,9 @@ sent enough:
 state Pinging {
   entry {
     pinged = pinged + 1;
-    send counter, ePing, (client = this,);
+    send counter, Ping, (client = this,);
   }
-  on ePong do {
+  on Pong do {
     if (pinged < pings) { goto Pinging; }
   }
 }
@@ -68,13 +68,13 @@ many pongs to demand.
 
 ```p
 // PTst/Tests.p: the driver
-announce ePingsPlanned, 4;
+announce PingsPlanned, 4;
 new Client((counter = counter, pings = 2));
 new Client((counter = counter, pings = 2));
 
 // PSpec/PongsCountPings.p: the spec
 hot state Waiting {
-  on ePong do (p: (count: int)) {
+  on Pong do (p: (count: int)) {
     ponged = ponged + 1;
     assert p.count == ponged, format("pong {0} reported count {1}", ponged, p.count);
     if (ponged == planned) { goto AllAnswered; }
@@ -97,6 +97,9 @@ test tcTwoClients [main=Main]: assert PongsCountPings in { Main, Counter, Client
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcTwoClients` | Two clients, two pings each, interleaved | Every pong carries the right count, and none is missing | passes, all 186 schedules |
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
@@ -130,7 +133,7 @@ with full coverage, but mutation testing reports:
 ```text
 Mutation testing: 7 of 17 mutants detected (0.1s)
 Not detected by any test case (every test case still passes with the change):
-  PSrc/PingCounter.p:11  Counter.Serving, on ePing: removed the whole body (2 statements) ...
+  PSrc/PingCounter.p:11  Counter.Serving, on Ping: removed the whole body (2 statements) ...
   PSrc/PingCounter.p:33  Client.Pinging entry: removed the whole body (2 statements) ...
 ```
 
@@ -140,7 +143,7 @@ runs. Safety specs check what happens; only a hot state checks that something ha
 
 ## Try this
 
-In `Counter`, reply before counting (swap the two lines in the `ePing` handler). The
+In `Counter`, reply before counting (swap the two lines in the `Ping` handler). The
 check fails on the first schedule:
 
 ```text
@@ -158,7 +161,7 @@ covers per-client state and how many clients a test needs.
 
 ## In your implementation
 
-Emit `ePong` with its count from the counter service each time it replies (where the
+Emit `Pong` with its count from the counter service each time it replies (where the
 count is assigned, not where the client receives it), and the planned count when the
 test starts. `snappea observe` or `pysnappea` checks the
 recorded events against the same `PongsCountPings` spec.

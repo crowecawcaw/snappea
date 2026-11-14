@@ -5,10 +5,10 @@
 
 // Tells the driver that a client has finished its operation. Each Writer and Reader
 // machine performs one operation.
-event eClientDone;
+event ClientDone;
 
 // Quorum sizes, from configuration: N = 3 replicas, `r` replicas per read, `w` per write.
-type tQuorums = (r: int, w: int);
+type Quorums = (r: int, w: int);
 
 // Reads every replica and uses the first `r` answers; returns the (version, value)
 // with the highest version among them. Later answers are ignored.
@@ -17,11 +17,11 @@ fun QuorumRead(caller: machine, replicas: seq[machine], r: int): (version: int, 
   var best: (version: int, value: int);
   var answers: int;
   foreach (rep in replicas) {
-    send rep, eReplicaRead, (client = caller,);
+    send rep, ReplicaRead, (client = caller,);
   }
   while (answers < r) {
     receive {
-      case eReplicaReadResp: (resp: (version: int, value: int)) {
+      case ReplicaReadResp: (resp: (version: int, value: int)) {
         // snappea-lint: allow mutation:swap-operator -- equal versions name the same write, so they carry the same value
         if (resp.version > best.version) { best = resp; }
         answers = answers + 1;
@@ -41,38 +41,38 @@ fun QuorumWrite(caller: machine, replicas: seq[machine], w: int, version: int, v
   while (acks < w) {
     // A writer machine performs one write, so every ack is for this write. A client
     // that writes again must tag acks (and read answers) with an operation id.
-    receive { case eReplicaWriteResp: { acks = acks + 1; } }
+    receive { case ReplicaWriteResp: { acks = acks + 1; } }
   }
 }
 
 machine Writer {
   start state Writing {
-    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int, value: int)) {
+    entry (input: (owner: machine, replicas: seq[machine], quorums: Quorums, id: int, value: int)) {
       var seen: (version: int, value: int);
       var version: int;
-      announce eWriteStarted, (value = input.value,);
+      announce WriteStarted, (value = input.value,);
       // Read phase: the next counter is above every version in the read quorum.
       seen = QuorumRead(this, input.replicas, input.quorums.r);
       version = (seen.version / 10 + 1) * 10 + input.id;
       QuorumWrite(this, input.replicas, input.quorums.w, version, input.value);
-      announce eWriteDone, (value = input.value,);
-      send input.owner, eClientDone;
+      announce WriteDone, (value = input.value,);
+      send input.owner, ClientDone;
     }
     // Answers from the replicas that answered after the quorum.
-    ignore eReplicaReadResp, eReplicaWriteResp;
+    ignore ReplicaReadResp, ReplicaWriteResp;
   }
 }
 
 machine Reader {
   start state Reading {
-    entry (input: (owner: machine, replicas: seq[machine], quorums: tQuorums, id: int)) {
+    entry (input: (owner: machine, replicas: seq[machine], quorums: Quorums, id: int)) {
       var got: (version: int, value: int);
-      announce eReadStarted, (reader = input.id,);
+      announce ReadStarted, (reader = input.id,);
       got = QuorumRead(this, input.replicas, input.quorums.r);
-      announce eReadDone, (reader = input.id, value = got.value);
-      send input.owner, eClientDone;
+      announce ReadDone, (reader = input.id, value = got.value);
+      send input.owner, ClientDone;
     }
     // Answers from the replicas that answered after the quorum.
-    ignore eReplicaReadResp;
+    ignore ReplicaReadResp;
   }
 }

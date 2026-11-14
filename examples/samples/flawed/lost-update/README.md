@@ -36,10 +36,10 @@ read-then-write sequence is not.
 
 ## The counterexample
 
-`snappea check tcBugLostUpdate` fails with:
+`snappea check tcBugLostUpdate` finds the declared bug:
 
 ```text
-Assertion Failed: PSpec/Contract.p:30:7 lost update: deposit 2 stored balance 3, but the deposits committed so far sum to 8
+Assertion Failed: lost update: deposit 2 stored balance 3, but the deposits committed so far sum to 8
 ```
 
 From `PCheckerOutput/tcBugLostUpdate/bug.txt`:
@@ -72,19 +72,19 @@ no retry; compare-and-swap is shown because it generalizes to any update.)
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcBugLostUpdate` | Two read-modify-write deposits, +5 and +3 | The race itself | **Fails**: `lost update: deposit 2 stored balance 3, but the deposits committed so far sum to 8` |
-| `tcFixedTwoDeposits` | Two CAS deposits | Same race against the fix: the loser retries | Passes, all 200 schedules |
-| `tcFixedThreeDeposits` | Three CAS deposits | A client can lose the CAS twice in a row, so the retry must loop | Passes, all 8959 schedules (needs `--timeout`; see below) |
+| `tcBugLostUpdate` | Two read-modify-write deposits, +5 and +3 | The race itself | **Expected bug**: `lost update: deposit 2 stored balance 3, but the deposits committed so far sum to 8` |
+| `tcFixedTwoDeposits` | Two CAS deposits | Same race against the fix: the loser retries | Passes |
+| `tcFixedThreeDeposits` | Three CAS deposits | A client can lose the CAS twice in a row, so the retry must loop | Passes |
 
 ## Run
 
 ```sh
 snappea check tcFixedTwoDeposits tcFixedThreeDeposits --deny mutation --timeout 20s
-snappea check tcBugLostUpdate          # exits 1 with the lost update above
+snappea check tcBugLostUpdate          # succeeds only when the declared bug is found
 ```
 
-Without `--timeout`, `tcFixedThreeDeposits` stops early once coverage stops growing;
-with it, the search completes in about 3 seconds.
+A time budget is a limit, not a guarantee of exhaustive exploration. Read the
+search-completion result; an incomplete search gives evidence only for explored schedules.
 
 One mutant is suppressed: `version + 1` → `version - 1` in `VersionedStore`, because
 versions are only compared for equality and counting down keeps them unique.
@@ -97,8 +97,8 @@ store does not crash. Not modeled: withdrawals and overdraft rules, retried requ
 
 ## Testing the implementation
 
-Emit `eBalanceWritten(id, balance)` after the store's write commits, and
-`eDepositReturned` when the deposit call returns. To force the race, wrap the store
+Emit `BalanceWritten(id, balance)` after the store's write commits, and
+`DepositReturned` when the deposit call returns. To force the race, wrap the store
 so the second deposit's read runs after the first deposit's read and before its
 write; with the flawed code the final balance is short by one deposit, with the fix
 the first `cas` fails and retries.

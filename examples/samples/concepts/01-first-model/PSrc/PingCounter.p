@@ -1,16 +1,16 @@
 // The design: clients ping a shared counter service, one ping at a time each, and the
 // counter replies with how many pings it has counted so far.
 
-event ePing: (client: Client);
-event ePong: (count: int);
+event Ping: (client: Client);
+event Pong: (count: int);
 
 machine Counter {
   var count: int;
 
   start state Serving {
-    on ePing do (p: (client: Client)) {
+    on Ping do (p: (client: Client)) {
       count = count + 1;
-      send p.client, ePong, (count = count,);
+      send p.client, Pong, (count = count,);
     }
   }
 }
@@ -32,9 +32,9 @@ machine Client {
   state Pinging {
     entry {
       pinged = pinged + 1;
-      send counter, ePing, (client = this,);
+      send counter, Ping, (client = this,);
     }
-    on ePong do {
+    on Pong do {
       if (pinged < pings) {
         goto Pinging;
       }

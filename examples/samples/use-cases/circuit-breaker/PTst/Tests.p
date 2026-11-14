@@ -16,16 +16,16 @@ machine Dependency {
       script = cfg.script;
       slow = cfg.slow;
     }
-    on eDepCall do (c: (breaker: machine, call: int)) {
+    on DependencyCall do (c: (breaker: machine, call: int)) {
       var ok: bool;
       ok = true;
       if (served < sizeof(script)) { ok = script[served]; }
       served = served + 1;
-      announce eDepAnswered, (call = c.call, ok = ok);
+      announce DepAnswered, (call = c.call, ok = ok);
       if (c.call == slow) {
         new DepReply((breaker = c.breaker, call = c.call, ok = ok));
       } else {
-        send c.breaker, eDepResult, (call = c.call, ok = ok);
+        send c.breaker, DependencyResult, (call = c.call, ok = ok);
       }
     }
   }
@@ -34,7 +34,7 @@ machine Dependency {
 machine DepReply {
   start state Sending {
     entry (r: (breaker: machine, call: int, ok: bool)) {
-      send r.breaker, eDepResult, (call = r.call, ok = r.ok);
+      send r.breaker, DependencyResult, (call = r.call, ok = r.ok);
     }
   }
 }
@@ -49,9 +49,9 @@ machine TimerService {
     entry (d: bool) {
       duplicates = d;
     }
-    on eStartCooldown do (t: (breaker: machine, period: int)) {
-      announce eCooldownElapsed, (period = t.period,);
-      send t.breaker, eCooldown, (period = t.period,);
+    on StartCooldown do (t: (breaker: machine, period: int)) {
+      announce CooldownElapsed, (period = t.period,);
+      send t.breaker, Cooldown, (period = t.period,);
       if (duplicates) {
         new LateDuplicate(t);
       }
@@ -62,7 +62,7 @@ machine TimerService {
 machine LateDuplicate {
   start state Sending {
     entry (t: (breaker: machine, period: int)) {
-      send t.breaker, eCooldown, (period = t.period,);
+      send t.breaker, Cooldown, (period = t.period,);
     }
   }
 }
@@ -70,26 +70,26 @@ machine LateDuplicate {
 // A caller makes `calls` calls one after another. A rejected call is retried at once,
 // with a new call id, up to `retries` times (a caller polling until the breaker lets it
 // through). Call ids start at `firstId` so callers never share one.
-type tCaller = (owner: machine, breaker: machine, firstId: int, calls: int, retries: int);
+type CallerConfig = (owner: machine, breaker: machine, firstId: int, calls: int, retries: int);
 // Tells the caller's owner (the test's main machine) that the caller finished.
-event eCallerFinished: (firstId: int);
+event CallerFinished: (firstId: int);
 
 machine Caller {
-  var cfg: tCaller;
+  var cfg: CallerConfig;
   var next: int;
   var made: int;
   var retriesLeft: int;
 
   start state Calling {
-    entry (c: tCaller) {
+    entry (c: CallerConfig) {
       cfg = c;
       next = c.firstId;
       retriesLeft = c.retries;
       Call();
     }
-    on eCallResult do (r: (call: int, outcome: tOutcome)) {
+    on CallResult do (r: (call: int, outcome: CallOutcome)) {
       assert r.call == next - 1, format("caller got an answer for call {0}, it is waiting for {1}", r.call, next - 1);
-      announce eCallAnswered, r;
+      announce CallAnswered, r;
       if (r.outcome == Rejected && retriesLeft > 0) {
         retriesLeft = retriesLeft - 1;
         Call();
@@ -101,14 +101,14 @@ machine Caller {
         Call();
         return;
       }
-      announce eCallerDone;
-      send cfg.owner, eCallerFinished, (firstId = cfg.firstId,);
+      announce CallerDone;
+      send cfg.owner, CallerFinished, (firstId = cfg.firstId,);
     }
   }
 
   fun Call() {
-    announce eCallStarted, (call = next,);
-    send cfg.breaker, eCall, (caller = this, call = next);
+    announce CallStarted, (call = next,);
+    send cfg.breaker, CallRequested, (caller = this, call = next);
     next = next + 1;
   }
 }
@@ -123,7 +123,7 @@ fun Script(a: bool, b: bool, c: bool, d: bool): seq[bool] {
 }
 
 fun NewBreaker(script: seq[bool], slow: int, threshold: int, duplicates: bool): Breaker {
-  announce eBreakerPlanned, (threshold = threshold,);
+  announce BreakerPlanned, (threshold = threshold,);
   return new Breaker((dependency = new Dependency((script = script, slow = slow)),
                       timers = new TimerService(duplicates),
                       threshold = threshold));
@@ -136,11 +136,11 @@ machine ConcurrentCallers {
     entry {
       var b: Breaker;
       b = NewBreaker(Script(false, false, true, true), -1, 2, false);
-      announce eCallersPlanned, 2;
+      announce CallersPlanned, 2;
       new Caller((owner = this, breaker = b, firstId = 10, calls = 2, retries = 0));
       new Caller((owner = this, breaker = b, firstId = 20, calls = 1, retries = 0));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
@@ -151,17 +151,17 @@ machine HalfOpenRace {
   start state First {
     entry {
       b = NewBreaker(Script(false, true, true, true), -1, 1, false);
-      announce eCallersPlanned, 3;
+      announce CallersPlanned, 3;
       new Caller((owner = this, breaker = b, firstId = 10, calls = 1, retries = 0));
     }
-    on eCallerFinished goto Racing;
+    on CallerFinished goto Racing;
   }
   state Racing {
     entry {
       new Caller((owner = this, breaker = b, firstId = 20, calls = 1, retries = 0));
       new Caller((owner = this, breaker = b, firstId = 30, calls = 1, retries = 0));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
@@ -178,12 +178,12 @@ machine LateFailure {
       s = Script(false, false, false, true);
       s += (4, false);
       b = NewBreaker(s, 40, 2, false);
-      announce eCallersPlanned, 4;
+      announce CallersPlanned, 4;
       new Caller((owner = this, breaker = b, firstId = 20, calls = 1, retries = 0));
       new Caller((owner = this, breaker = b, firstId = 30, calls = 1, retries = 0));
       new Caller((owner = this, breaker = b, firstId = 40, calls = 1, retries = 0));
     }
-    on eCallerFinished do (c: (firstId: int)) {
+    on CallerFinished do (c: (firstId: int)) {
       if (c.firstId != 40) { finished = finished + 1; }
       if (finished == 2) { goto Reclosing; }
     }
@@ -192,7 +192,7 @@ machine LateFailure {
     entry {
       new Caller((owner = this, breaker = b, firstId = 10, calls = 2, retries = 0));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
@@ -210,10 +210,10 @@ machine SuccessResetsCount {
       s += (5, false);
       s += (6, false);
       b = NewBreaker(s, -1, 2, false);
-      announce eCallersPlanned, 1;
+      announce CallersPlanned, 1;
       new Caller((owner = this, breaker = b, firstId = 10, calls = 8, retries = 2));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
@@ -226,10 +226,10 @@ machine DuplicateCooldown {
     entry {
       var b: Breaker;
       b = NewBreaker(Script(false, false, true, true), -1, 1, true);
-      announce eCallersPlanned, 1;
+      announce CallersPlanned, 1;
       new Caller((owner = this, breaker = b, firstId = 10, calls = 3, retries = 1));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
@@ -237,44 +237,40 @@ machine BuggyHalfOpenRace {
   var b: machine;
   start state First {
     entry {
-      announce eBreakerPlanned, (threshold = 1,);
+      announce BreakerPlanned, (threshold = 1,);
       b = new AdmitAllBreaker((dependency = new Dependency((script = Script(false, true, true, true), slow = -1)),
                                timers = new TimerService(false), threshold = 1));
-      announce eCallersPlanned, 3;
+      announce CallersPlanned, 3;
       new Caller((owner = this, breaker = b, firstId = 10, calls = 1, retries = 0));
     }
-    on eCallerFinished goto Racing;
+    on CallerFinished goto Racing;
   }
   state Racing {
     entry {
       new Caller((owner = this, breaker = b, firstId = 20, calls = 1, retries = 1));
       new Caller((owner = this, breaker = b, firstId = 30, calls = 1, retries = 1));
     }
-    ignore eCallerFinished;
+    ignore CallerFinished;
   }
 }
 
 // Covered: a result sent before the breaker opened arrived after it had closed again.
-scenario LateResultAfterReclose observes eDispatched, eBreakerChanged, eResultSeen {
+scenario LateResultAfterReclose observes CallDispatched, BreakerChanged, CallResultObserved {
   var early: set[int];
   start hot state WaitOpen {
-    on eDispatched do (d: (call: int)) { early += (d.call); }
-    on eBreakerChanged do (c: (mode: tBreakerState)) { if (c.mode == Open) { goto WaitClose; } }
-    ignore eResultSeen;
+    on CallDispatched do (d: (call: int)) { early += (d.call); }
+    on BreakerChanged do (c: (mode: BreakerState)) { if (c.mode == Open) { goto WaitClose; } }
   }
   hot state WaitClose {
-    on eResultSeen do (r: (call: int, ok: bool)) { early -= (r.call); }
-    on eBreakerChanged do (c: (mode: tBreakerState)) {
+    on CallResultObserved do (r: (call: int, ok: bool)) { early -= (r.call); }
+    on BreakerChanged do (c: (mode: BreakerState)) {
       if (c.mode == Closed && sizeof(early) > 0) { goto WaitLate; }
     }
-    ignore eDispatched;
   }
   hot state WaitLate {
-    on eResultSeen do (r: (call: int, ok: bool)) { if (r.call in early) { goto Covered; } }
-    ignore eDispatched, eBreakerChanged;
+    on CallResultObserved do (r: (call: int, ok: bool)) { if (r.call in early) { goto Covered; } }
   }
   cold state Covered {
-    ignore eDispatched, eBreakerChanged, eResultSeen;
   }
 }
 
@@ -298,7 +294,7 @@ test tcDuplicateCooldown [main=DuplicateCooldown]:
   assert BreakerContract, CallsAnswered in
   { DuplicateCooldown, Breaker, Dependency, DepReply, TimerService, LateDuplicate, Caller };
 
-// expect-bug: sent while a half-open trial was in flight
+// snappea: expect-bug "sent while a half-open trial was in flight"
 test tcBugHalfOpenAdmitsAll [main=BuggyHalfOpenRace]:
   assert BreakerContract, CallsAnswered in
   { BuggyHalfOpenRace, AdmitAllBreaker, Dependency, DepReply, TimerService, LateDuplicate, Caller };

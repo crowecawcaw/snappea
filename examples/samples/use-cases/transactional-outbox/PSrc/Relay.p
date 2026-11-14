@@ -5,10 +5,10 @@
 // the old process is still alive); they publish some rows twice. Duplicates are
 // expected, and the consumer removes them.
 
-event ePublish: (relay: machine, id: int);
-event eAck: int;
+event Publish: (relay: machine, id: int);
+event Ack: int;
 // To the supervisor (the test driver): this relay process died.
-event eRelayCrashed;
+event RelayCrashed;
 
 machine Relay {
   var db: OrderDb;
@@ -27,31 +27,31 @@ machine Relay {
   }
 
   state Fetching {
-    entry { send db, eFetch, this; }
-    on eFetchResp do (rows: seq[int]) {
+    entry { send db, Fetch, this; }
+    on FetchResp do (rows: seq[int]) {
       var id: int;
       if (sizeof(rows) == 0) { goto Sleeping; }
       foreach (id in rows) {
-        send broker, ePublish, (relay = this, id = id);
-        receive { case eAck: (acked: int) { } }
+        send broker, Publish, (relay = this, id = id);
+        receive { case Ack: (acked: int) { } }
         if (crashAfterPublish) {
           // Fault injection for the test: the process dies here, published but not
           // marked, so the row is still unsent in the table.
-          send supervisor, eRelayCrashed;
-          // snappea-lint: allow mutation -- without it the "dead" relay keeps running beside its replacement: the two-relay case, which the contract allows
+          send supervisor, RelayCrashed;
+          // snappea-lint: allow mutation:remove-statement -- without it the "dead" relay keeps running beside its replacement: the two-relay case, which the contract allows
           goto Crashed;
         }
-        send db, eMarkSent, id;
+        send db, MarkSent, id;
       }
       goto Fetching;
     }
   }
 
   state Sleeping {
-    on eWake goto Fetching;
+    on Wake goto Fetching;
   }
 
   state Crashed {
-    ignore eWake;
+    ignore Wake;
   }
 }

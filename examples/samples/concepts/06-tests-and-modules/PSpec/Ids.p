@@ -1,26 +1,26 @@
-event eAllocatorCreated: int;
-event eIdRequested;
+event AllocatorCreated: int;
+event IdRequested;
 
 // Safety: no id is handed out twice, every id is in range, and a refusal happens only
 // once every id has been handed out.
-spec UniqueIds observes eAllocatorCreated, eIdResp, eNoIdsLeft {
+spec UniqueIds observes AllocatorCreated, IdResponse, NoIdsLeft {
   var limit: int;
   var given: set[int];
 
   start state Setup {
-    on eAllocatorCreated do (n: int) {
+    on AllocatorCreated do (n: int) {
       limit = n;
       goto Checking;
     }
   }
 
   state Checking {
-    on eIdResp do (r: (id: int)) {
+    on IdResponse do (r: (id: int)) {
       assert !(r.id in given), format("id {0} given twice", r.id);
       assert r.id >= 0 && r.id < limit, format("id {0} is outside 0..{1}", r.id, limit - 1);
       given += (r.id);
     }
-    on eNoIdsLeft do {
+    on NoIdsLeft do {
       assert sizeof(given) == limit,
         format("refused although only {0} of {1} ids were given", sizeof(given), limit);
     }
@@ -28,17 +28,17 @@ spec UniqueIds observes eAllocatorCreated, eIdResp, eNoIdsLeft {
 }
 
 // Progress: every request gets an id or a refusal.
-spec RequestsAnswered observes eIdRequested, eIdResp, eNoIdsLeft {
+spec RequestsAnswered observes IdRequested, IdResponse, NoIdsLeft {
   var outstanding: int;
 
   start state Idle {
-    on eIdRequested do { Owe(); }
+    on IdRequested do { Owe(); }
   }
 
   hot state Waiting {
-    on eIdRequested do { Owe(); }
-    on eIdResp do { Answer(); }
-    on eNoIdsLeft do { Answer(); }
+    on IdRequested do { Owe(); }
+    on IdResponse do { Answer(); }
+    on NoIdsLeft do { Answer(); }
   }
 
   fun Owe() {

@@ -35,15 +35,15 @@ requests that arrive while it is busy must wait, not vanish.
 The spec is cold while nothing is owed and hot while any request is pending:
 
 ```p
-spec RequestsAnswered observes eRequested, eResponse {
+spec RequestsAnswered observes Requested, Response {
   var pending: set[int];
   start cold state AllAnswered {
-    on eRequested do (r: (id: int)) { Owe(r.id); goto Waiting; }
+    on Requested do (r: (id: int)) { Owe(r.id); goto Waiting; }
     ...
   }
   hot state Waiting {
-    on eRequested do (r: (id: int)) { Owe(r.id); }
-    on eResponse do (p: (id: int)) {
+    on Requested do (r: (id: int)) { Owe(r.id); }
+    on Response do (p: (id: int)) {
       assert p.id in pending, format("response to request {0}, which nobody is waiting for", p.id);
       pending -= (p.id);
       if (sizeof(pending) == 0) { goto AllAnswered; }
@@ -52,7 +52,7 @@ spec RequestsAnswered observes eRequested, eResponse {
 }
 ```
 
-The clients are test drivers and announce what they ask for (`eRequested`). The spec
+The clients are test drivers and announce what they ask for (`Requested`). The spec
 learns of the obligation from the driver, not from the server, so a server that loses
 a request cannot also hide it.
 
@@ -61,9 +61,9 @@ them. Both look harmless, and neither ever sends a wrong reply:
 
 ```p
 state Busy {
-  defer eRequest;      // Server: handle it after returning to Idle
-  // ignore eRequest;  // DroppingServer: gone for good
-  on eJobDone do (r: tRequest) { send r.client, eResponse, (id = r.id,); goto Idle; }
+  defer Request;      // Server: handle it after returning to Idle
+  // ignore Request;  // DroppingServer: gone for good
+  on JobDone do (r: Request) { send r.client, Response, (id = r.id,); goto Idle; }
 }
 ```
 
@@ -72,21 +72,24 @@ state Busy {
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcTwoClients` | Two clients request at once; one arrives while the server is busy | The second request must wait and still be answered | passes, all 769 schedules |
-| `tcBugDropsWhileBusy` | Same clients, `DroppingServer` | Shows a liveness bug no safety assertion sees | **fails**: `liveness bug in hot state 'Waiting'` |
+| `tcBugDropsWhileBusy` | Same clients, `DroppingServer` | Shows a liveness bug no safety assertion sees | **expected bug**: `liveness bug in hot state 'Waiting'` |
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
 ```sh
 cd examples/samples/concepts/03-liveness
 snappea check tcTwoClients --deny mutation
-snappea check tcBugDropsWhileBusy       # exits 1
+snappea check tcBugDropsWhileBusy       # exits 0 when the declared bug matches
 ```
 
 ```text
 ok    tcTwoClients (all 769 schedules, 0.25s)
 Mutation testing: 11 of 11 mutants detected (0.0s)
 
-FAIL  tcBugDropsWhileBusy (bug found after 1 schedule, 0.00s)
+expected bug  tcBugDropsWhileBusy (matching declared failure)
       PImplementation.RequestsAnswered detected liveness bug in hot state 'Waiting' at the end of program execution.
       Replay: snappea replay PCheckerOutput/tcBugDropsWhileBusy/bug.schedule
 ```
@@ -125,7 +128,7 @@ error[no-progress-spec]: test 'tcTwoClients' waits for the model's responses, bu
 
 ## Try this
 
-In `Server`, replace `defer eRequest;` with `ignore eRequest;`. `tcTwoClients` then
+In `Server`, replace `defer Request;` with `ignore Request;`. `tcTwoClients` then
 fails the same way as the negative control:
 
 ```text
@@ -142,6 +145,6 @@ Two clients, one request each, one worker, no message loss and no timeouts.
 
 ## In your implementation
 
-Emit `eRequested` when a client sends a request and `eResponse` when the server
+Emit `Requested` when a client sends a request and `Response` when the server
 replies. In an observation test, check the recorded events against `RequestsAnswered`
 at the end of the test: a request still pending then is the same failure.

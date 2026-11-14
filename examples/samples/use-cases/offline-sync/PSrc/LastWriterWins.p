@@ -4,28 +4,28 @@
 // Last writer wins: the server ignores the base version and overwrites whatever is
 // there. Two offline edits of the same base both "succeed" and the first is lost.
 machine LastWriterWinsServer {
-  var note: tNote;
+  var note: Note;
   var applied: map[int, int];
 
   start state Serving {
-    entry (initial: tNote) {
+    entry (initial: Note) {
       note = initial;
     }
-    on eUpdate do (u: tUpdate) {
+    on Update do (u: Update) {
       if (u.req in applied) {
-        announce eReplayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
-        send u.client, eUpdateOk, (req = u.req, version = applied[u.req]);
+        announce Replayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
+        send u.client, UpdateOk, (req = u.req, version = applied[u.req]);
         return;
       }
       // BUG: no check of u.base against note.version.
       note = (version = note.version + 1, content = u.content, deleted = u.deleted);
       applied[u.req] = note.version;
-      announce eAccepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
+      announce Accepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
                            content = note.content, deleted = note.deleted);
-      send u.client, eUpdateOk, (req = u.req, version = note.version);
+      send u.client, UpdateOk, (req = u.req, version = note.version);
     }
-    on eFetch do (c: machine) {
-      send c, eFetchResp, note;
+    on Fetch do (c: machine) {
+      send c, FetchResp, note;
     }
   }
 }
@@ -33,26 +33,26 @@ machine LastWriterWinsServer {
 // No request ids: a client whose reply was lost resends the same update, and the
 // server, seeing a base one version behind its own write, reports a conflict.
 machine ForgetfulServer {
-  var note: tNote;
+  var note: Note;
 
   start state Serving {
-    entry (initial: tNote) {
+    entry (initial: Note) {
       note = initial;
     }
-    on eUpdate do (u: tUpdate) {
+    on Update do (u: Update) {
       // BUG: no record of applied requests.
       if (u.base != note.version) {
-        announce eConflicted, (client = u.clientId, req = u.req, base = u.base, current = note.version);
-        send u.client, eUpdateConflict, (req = u.req, server = note);
+        announce Conflicted, (client = u.clientId, req = u.req, base = u.base, current = note.version);
+        send u.client, UpdateConflict, (req = u.req, server = note);
         return;
       }
       note = (version = note.version + 1, content = u.content, deleted = u.deleted);
-      announce eAccepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
+      announce Accepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
                            content = note.content, deleted = note.deleted);
-      send u.client, eUpdateOk, (req = u.req, version = note.version);
+      send u.client, UpdateOk, (req = u.req, version = note.version);
     }
-    on eFetch do (c: machine) {
-      send c, eFetchResp, note;
+    on Fetch do (c: machine) {
+      send c, FetchResp, note;
     }
   }
 }
@@ -64,13 +64,13 @@ machine NaiveSyncClient {
   var owner: machine;
   var server: machine;
   var id: int;
-  var note: tNote;
+  var note: Note;
   var edit: int;
   var base: int;
   var content: set[int];
 
   start state Offline {
-    entry (input: tClientInit) {
+    entry (input: ClientInit) {
       owner = input.owner;
       server = input.server;
       id = input.id;
@@ -85,11 +85,11 @@ machine NaiveSyncClient {
   }
 
   state Pushing {
-    on eUpdateOk do (r: (req: int, version: int)) {
+    on UpdateOk do (r: (req: int, version: int)) {
       note = (version = r.version, content = content, deleted = false);
       goto Idle;
     }
-    on eUpdateConflict do (r: (req: int, server: tNote)) {
+    on UpdateConflict do (r: (req: int, server: Note)) {
       var e: int;
       // BUG: no check that the conflict is newer than this attempt's base.
       foreach (e in r.server.content) {
@@ -98,28 +98,28 @@ machine NaiveSyncClient {
       base = r.server.version;
       Push();
     }
-    on eSyncTimeout do {
+    on SyncTimeout do {
       Push();
     }
   }
 
   state Idle {
     entry {
-      announce eOpDone, (client = id, edit = edit, applied = true, version = note.version);
-      send owner, eClientIdle;
+      announce OpDone, (client = id, edit = edit, applied = true, version = note.version);
+      send owner, ClientIdle;
     }
-    ignore eUpdateOk, eUpdateConflict;
-    on ePull do {
-      send server, eFetch, this;
+    ignore UpdateOk, UpdateConflict;
+    on Pull do {
+      send server, Fetch, this;
     }
-    on eFetchResp do (n: tNote) {
+    on FetchResp do (n: Note) {
       note = n;
-      announce eSynced, (client = id, note = note);
+      announce Synced, (client = id, note = note);
     }
   }
 
   fun Push() {
-    send server, eUpdate, (client = this, clientId = id, req = edit, base = base,
+    send server, Update, (client = this, clientId = id, req = edit, base = base,
                            content = content, deleted = false);
   }
 }

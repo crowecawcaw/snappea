@@ -8,12 +8,12 @@ machine TwoReceiveClients {
       var a: ReceiveClient;
       var b: ReceiveClient;
       store = new Store();
-      announce eIncrementsPlanned, 3;
+      announce IncrementsPlanned, 3;
       a = new ReceiveClient(store);
       b = new ReceiveClient(store);
-      send a, eIncrement;
-      send a, eIncrement;
-      send b, eIncrement;
+      send a, Increment;
+      send a, Increment;
+      send b, Increment;
     }
   }
 }
@@ -25,12 +25,12 @@ machine TwoStateClients {
       var a: StateClient;
       var b: StateClient;
       store = new Store();
-      announce eIncrementsPlanned, 3;
+      announce IncrementsPlanned, 3;
       a = new StateClient(store);
       b = new StateClient(store);
-      send a, eIncrement;
-      send a, eIncrement;
-      send b, eIncrement;
+      send a, Increment;
+      send a, Increment;
+      send b, Increment;
     }
   }
 }

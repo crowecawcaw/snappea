@@ -66,16 +66,16 @@ The backfill reads a row and then writes it: two steps, with writers in between.
 
 | Test | Drives | Why it matters | Result |
 | --- | --- | --- | --- |
-| `tcBackfillRacesWriter` | Key 1 = 10, one writer puts 20 during the backfill | The classic stale copy | passes, exhaustive |
-| `tcDeleteDuringBackfill` | One writer deletes key 1 during the backfill | Resurrection | passes, exhaustive |
-| `tcTwoWritersOneKey` | Two writers put 20 and 30 on key 1 | Dual-writes reach new in the other order than old committed them | passes, exhaustive (about 15 s) |
-| `tcReadsAcrossCutover` | One writer, one reader reading key 1 twice | Reads stay fresh and monotonic across the flip | passes, exhaustive (about 27 s; sampled under a shorter `--timeout`) |
-| `tcWriteAfterCutover` | A write and two reads start after cutover | Lifecycle boundary: writes still go old then new; reads come from new | passes, exhaustive |
+| `tcBackfillRacesWriter` | Key 1 = 10, one writer puts 20 during the backfill | The classic stale copy | passes, bounded search |
+| `tcDeleteDuringBackfill` | One writer deletes key 1 during the backfill | Resurrection | passes, bounded search |
+| `tcTwoWritersOneKey` | Two writers put 20 and 30 on key 1 | Dual-writes reach new in the other order than old committed them | passes, bounded search |
+| `tcReadsAcrossCutover` | One writer, one reader reading key 1 twice | Reads stay fresh and monotonic across the flip | passes, bounded search |
+| `tcWriteAfterCutover` | A write and two reads start after cutover | Lifecycle boundary: writes still go old then new; reads come from new | passes, bounded search |
 | `tcGeneratedMigration` | Two keys, two writers each putting or deleting either key, a reader of key 1, 2 or 3 (never written) | Keys do not leak into each other; reading a missing key | passes, sampled |
-| `tcBugBlindBackfill` | Unconditional copy, as in `tcBackfillRacesWriter` | **Expected to fail**: `new store moved key 1 back from version 2 to 1` | fails |
-| `tcBugResurrectedDelete` | Insert-if-absent, hard deletes, as in `tcDeleteDuringBackfill` | **Expected to fail**: `new store moved key 1 back from version 2 to 1` (the delete was version 2) | fails |
-| `tcBugCutoverMidWrite` | A router that flips at once, one writer, no reader | **Expected to fail**: `cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old` | fails |
-| `tcBugCutoverMidRead` | A router that flips at once, one reader, no writer | **Expected to fail**: `cutover broken: old store served a read after cutover` | fails |
+| `tcBugBlindBackfill` | Unconditional copy, as in `tcBackfillRacesWriter` | **Expected bug**: `new store moved key 1 back from version 2 to 1` | matched bug |
+| `tcBugResurrectedDelete` | Insert-if-absent, hard deletes, as in `tcDeleteDuringBackfill` | **Expected bug**: `new store moved key 1 back from version 2 to 1` (the delete was version 2) | matched bug |
+| `tcBugCutoverMidWrite` | A router that flips at once, one writer, no reader | **Expected bug**: `cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old` | matched bug |
+| `tcBugCutoverMidRead` | A router that flips at once, one reader, no writer | **Expected bug**: `cutover broken: old store served a read after cutover` | matched bug |
 
 Each negative control fails with exactly one message, whatever schedule the search
 finds first: the stale copy is caught when it lands in new, before a write returns or
@@ -87,7 +87,7 @@ gets its own control with only the traffic that exposes it.
 ```sh
 snappea check tcBackfillRacesWriter tcDeleteDuringBackfill tcTwoWritersOneKey tcReadsAcrossCutover tcWriteAfterCutover tcGeneratedMigration --timeout 30s
 snappea check mutation tcBackfillRacesWriter tcDeleteDuringBackfill tcTwoWritersOneKey tcReadsAcrossCutover tcWriteAfterCutover tcGeneratedMigration
-snappea check tcBugBlindBackfill     # exits 1: new store moved key 1 back from version 2 to 1
+snappea check tcBugBlindBackfill     # passes on the expected bug: new store moved key 1 back from version 2 to 1
 ```
 
 ## Bounds and omissions
@@ -99,15 +99,30 @@ that safe), writes that bypass the router, decommissioning old, schema changes, 
 the time the drain pauses traffic.
 
 Two suppressions: the new store's `>` may become `>=` (versions are unique per write,
-so an equal version is the same row), and the old store's `eOldRead` announcement is
+so an equal version is the same row), and the old store's `OldRead` announcement is
 observation only.
 
 ## Testing the implementation
 
-Emit `eOldCommitted` and `eNewApplied` from each store after its write commits (with
-the row's version), `eWriteAcked` when a write call returns, `eReadStarted` and
-`eReadSeen` around each read, `eOldRead` when old serves a read, and `eCutover` when
+Emit `OldCommitted` and `NewApplied` from each store after its write commits (with
+the row's version), `WriteAcked` when a write call returns, `ReadStarted` and
+`ReadSeen` around each read, `OldRead` when old serves a read, and `Cutover` when
 the routing flag flips. To force the stale copy, pause the backfill after it reads a
 row, run a write to completion, then let the copy proceed. For the resurrection,
 do the same with a delete. For the cutover, hold a write between its old and new
 writes and request the cutover: it must wait.
+
+Negative controls declare `// snappea: expect-bug "message"`. A matching bug
+passes the test; a different failure or no discovered bug fails it. Check their
+failure identity across seeds with `snappea check 'tcBug*' --no-mutation
+--expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
+not fill coverage gaps or detect mutants in the correct design.
+
+Search is complete only when this run reports `all N schedules` (or JSON
+`search_complete: true`). A timeout, seed, or historical schedule count does not
+guarantee completeness. An incomplete passing run is sampled evidence.
+
+Each writer has one operation in flight and the stores reply exactly once over
+reliable channels, so an `OldWritten` reply belongs to the current operation. The
+unread request-ID advisory records this boundary. Adding retries, duplicate replies,
+or concurrent writes requires correlating replies before advancing.

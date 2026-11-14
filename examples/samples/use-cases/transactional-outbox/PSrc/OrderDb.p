@@ -9,11 +9,11 @@
 //             never let a test end, while a sleeping relay does.
 //   markSent: set one outbox row to sent
 
-event ePlaceOrder: (id: int, commits: bool);
-event eFetch: machine;
-event eFetchResp: seq[int];
-event eMarkSent: int;
-event eWake;
+event PlaceOrder: (id: int, commits: bool);
+event Fetch: machine;
+event FetchResp: seq[int];
+event MarkSent: int;
+event Wake;
 
 machine OrderDb {
   // order id -> has its outbox row been marked sent?
@@ -21,34 +21,34 @@ machine OrderDb {
   var sleepers: set[machine];
 
   start state Serving {
-    on ePlaceOrder do (o: (id: int, commits: bool)) {
+    on PlaceOrder do (o: (id: int, commits: bool)) {
       if (!o.commits) {
         // The transaction failed (validation, conflict): neither row is written.
-        announce eOrderAborted, o.id;
+        announce OrderAborted, o.id;
         return;
       }
       outbox[o.id] = false;
-      announce eOrderCommitted, o.id;
+      announce OrderCommitted, o.id;
       WakeSleepers();
     }
-    on eFetch do (relay: machine) {
+    on Fetch do (relay: machine) {
       var rows: seq[int];
       var id: int;
       foreach (id in keys(outbox)) {
         if (!outbox[id]) { rows += (sizeof(rows), id); }
       }
       if (sizeof(rows) == 0) { sleepers += (relay); }
-      send relay, eFetchResp, rows;
+      send relay, FetchResp, rows;
     }
-    on eMarkSent do (id: int) {
+    on MarkSent do (id: int) {
       outbox[id] = true;
-      announce eMarkedSent, id;
+      announce MarkedSent, id;
     }
   }
 
   fun WakeSleepers() {
     var s: machine;
-    foreach (s in sleepers) { send s, eWake; }
+    foreach (s in sleepers) { send s, Wake; }
     sleepers = default(set[machine]);
   }
 }

@@ -3,8 +3,8 @@
 // that load the same count both admit, and the window takes more than Limit().
 // tcBugLoadThenStore shows the contract catching it.
 
-event eSet: (client: machine, req: int, window: int, count: int);
-event eSetOk;
+event Set: (client: machine, req: int, window: int, count: int);
+event SetOk;
 
 // A store with load and unconditional set (a plain key-value GET/SET).
 machine PlainCounterStore {
@@ -12,14 +12,14 @@ machine PlainCounterStore {
   var count: int;
 
   start state Serving {
-    on eLoad do (client: machine) {
-      send client, eLoaded, (window = window, count = count, version = 0);
+    on Load do (client: machine) {
+      send client, Loaded, (window = window, count = count, version = 0);
     }
-    on eSet do (s: (client: machine, req: int, window: int, count: int)) {
+    on Set do (s: (client: machine, req: int, window: int, count: int)) {
       window = s.window;
       count = s.count;
-      announce eAdmitted, (req = s.req, window = window, count = count);
-      send s.client, eSetOk;
+      announce Admitted, (req = s.req, window = window, count = count);
+      send s.client, SetOk;
     }
   }
 }
@@ -33,28 +33,28 @@ machine BlindGateway {
       store = input.store;
       clock = input.clock;
     }
-    on eRequest do (r: (client: machine, req: int)) {
+    on Request do (r: (client: machine, req: int)) {
       var arrival: int;
-      var rec: tRecord;
+      var rec: CounterRecord;
       var window: int;
       var count: int;
-      send clock, eNow, this;
-      receive { case eNowResp: (w: int) { arrival = w; } }
-      send store, eLoad, this;
-      receive { case eLoaded: (s: tRecord) { rec = s; } }
+      send clock, Now, this;
+      receive { case NowResp: (w: int) { arrival = w; } }
+      send store, Load, this;
+      receive { case Loaded: (s: CounterRecord) { rec = s; } }
       window = arrival;
       count = rec.count;
       if (rec.window > window) { window = rec.window; }
       if (rec.window < window) { count = 0; }
       if (count >= Limit()) {
-        announce eRejected, (req = r.req, window = window);
-        send r.client, eDecision, (req = r.req, admitted = false);
+        announce Rejected, (req = r.req, window = window);
+        send r.client, Decision, (req = r.req, admitted = false);
         return;
       }
       // BUG: another gateway can write between the load above and this set.
-      send store, eSet, (client = this, req = r.req, window = window, count = count + 1);
-      receive { case eSetOk: { } }
-      send r.client, eDecision, (req = r.req, admitted = true);
+      send store, Set, (client = this, req = r.req, window = window, count = count + 1);
+      receive { case SetOk: { } }
+      send r.client, Decision, (req = r.req, admitted = true);
     }
   }
 }

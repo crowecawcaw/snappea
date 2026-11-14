@@ -1,6 +1,7 @@
 <!-- Autoscaler scale-in behind a load balancer: deregister, drain, terminate. See README.md. -->
 <Project>
 <ProjectName>WorkerDrain</ProjectName>
+<IncludeProject>../../../../crates/snappea/src/cli/guide/examples/building-blocks/Network.pproj</IncludeProject>
 <InputFiles>
 	<PFile>./PSrc/</PFile>
 	<PFile>./PSpec/</PFile>

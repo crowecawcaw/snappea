@@ -1,5 +1,5 @@
-// Clients, the scale-in trigger, and the test cases. The load balancer, couriers,
-// instances and autoscaler are the design under test.
+// Clients, the scale-in trigger, and the test cases. The load balancer, instances
+// and autoscaler are the design under test; BBDelivery models independent transit.
 
 // Sends `ids` one after another, each after the previous response.
 machine Client {
@@ -13,17 +13,17 @@ machine Client {
       ids = c.ids;
       Send();
     }
-    on eResponse do (r: (id: int)) {
+    on Response do (r: (id: int)) {
       assert r.id == ids[next], format("client got response {0} while waiting for {1}", r.id, ids[next]);
-      announce eGotResponse, r;
+      announce GotResponse, r;
       next = next + 1;
       if (next < sizeof(ids)) { Send(); }
     }
   }
 
   fun Send() {
-    announce eRequestSent, (id = ids[next],);
-    send lb, eRequest, (id = ids[next], client = this);
+    announce RequestSent, (id = ids[next],);
+    send lb, Request, (id = ids[next], client = this);
   }
 }
 
@@ -34,8 +34,8 @@ machine ScaleInTrigger {
     entry (t: (autoscaler: machine, insts: seq[int])) {
       var i: int;
       foreach (i in t.insts) {
-        announce eScaleInRequested, (inst = i,);
-        send t.autoscaler, eScaleIn, (inst = i,);
+        announce ScaleInRequested, (inst = i,);
+        send t.autoscaler, ScaleIn, (inst = i,);
       }
     }
   }
@@ -60,13 +60,13 @@ fun StartFleet(requests: int, scaleIns: int): (lb: LoadBalancer, instances: map[
   var instances: map[int, machine];
   var lb: LoadBalancer;
   var i: int;
-  announce eFleetPlanned, (instances = 2, requests = requests, scaleIns = scaleIns);
+  announce FleetPlanned, (instances = 2, requests = requests, scaleIns = scaleIns);
   lb = new LoadBalancer();
   while (i < 2) {
     instances[i] = new Instance((id = i, lb = lb));
     i = i + 1;
   }
-  send lb, eJoin, instances;
+  send lb, Join, instances;
   return (lb = lb, instances = instances);
 }
 
@@ -135,39 +135,36 @@ machine BuggyDrainBeforeDeregistered {
 
 // Covered: a request routed to the instance before deregistration reached it while it
 // was draining (or gone), and was served elsewhere.
-scenario LateRequestRerouted observes eRouted, eDrainStarted, eBounced, eServed {
+scenario LateRequestRerouted observes Routed, DrainStarted, Bounced, Served {
   var bounced: int;
   start hot state Watching {
-    on eBounced do (b: (id: int, inst: int)) { bounced = b.id; goto WaitServed; }
-    ignore eRouted, eDrainStarted, eServed;
+    on Bounced do (b: (id: int, inst: int)) { bounced = b.id; goto WaitServed; }
   }
   hot state WaitServed {
-    on eServed do (s: (id: int, inst: int)) { if (s.id == bounced) { goto Covered; } }
-    ignore eRouted, eDrainStarted, eBounced;
+    on Served do (s: (id: int, inst: int)) { if (s.id == bounced) { goto Covered; } }
   }
   cold state Covered {
-    ignore eRouted, eDrainStarted, eBounced, eServed;
   }
 }
 
 test tcScaleInUnderLoad [main=ScaleInUnderLoad]:
   assert DrainSafety, RequestsAndScaleInsFinish in
-  { ScaleInUnderLoad, LoadBalancer, Courier, Instance, Autoscaler, Client, ScaleInTrigger };
+  { ScaleInUnderLoad, LoadBalancer, BBDelivery, Instance, Autoscaler, Client, ScaleInTrigger };
 
 test tcLateRequestDuringDrain [main=LateRequestDuringDrain]:
   assert DrainSafety, RequestsAndScaleInsFinish in
-  { LateRequestDuringDrain, LoadBalancer, Courier, Instance, Autoscaler, Client, ScaleInTrigger };
+  { LateRequestDuringDrain, LoadBalancer, BBDelivery, Instance, Autoscaler, Client, ScaleInTrigger };
 
 test tcLastInstanceRefused [main=LastInstanceRefused]:
   assert DrainSafety, RequestsAndScaleInsFinish in
-  { LastInstanceRefused, LoadBalancer, Courier, Instance, Autoscaler, Client, ScaleInTrigger };
+  { LastInstanceRefused, LoadBalancer, BBDelivery, Instance, Autoscaler, Client, ScaleInTrigger };
 
-// expect-bug: terminated with request
+// snappea: expect-bug "terminated with request"
 test tcBugTerminateEarly [main=BuggyTerminateEarly]:
   assert DrainSafety, RequestsAndScaleInsFinish in
-  { BuggyTerminateEarly, LoadBalancer, Courier, Instance, HastyAutoscaler, Client, ScaleInTrigger };
+  { BuggyTerminateEarly, LoadBalancer, BBDelivery, Instance, HastyAutoscaler, Client, ScaleInTrigger };
 
-// expect-bug: started draining while the load balancer still routes to it
+// snappea: expect-bug "started draining while the load balancer still routes to it"
 test tcBugDrainBeforeDeregistered [main=BuggyDrainBeforeDeregistered]:
   assert DrainSafety, RequestsAndScaleInsFinish in
-  { BuggyDrainBeforeDeregistered, LoadBalancer, Courier, Instance, EarlyDrainAutoscaler, Client, ScaleInTrigger };
+  { BuggyDrainBeforeDeregistered, LoadBalancer, BBDelivery, Instance, EarlyDrainAutoscaler, Client, ScaleInTrigger };

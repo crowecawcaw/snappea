@@ -8,21 +8,21 @@
 //
 // Real primitives: lookup (SELECT by key), record (INSERT key, result).
 
-event eLookup: (worker: machine, key: int);
-event eLookupResp: (found: bool, charge: int);
-event eRecord: (key: int, charge: int);
+event Lookup: (worker: machine, key: int);
+event LookupResp: (found: bool, charge: int);
+event Record: (key: int, charge: int);
 
 machine KeyTable {
   var results: map[int, int];
   start state Serving {
-    on eLookup do (l: (worker: machine, key: int)) {
+    on Lookup do (l: (worker: machine, key: int)) {
       if (l.key in results) {
-        send l.worker, eLookupResp, (found = true, charge = results[l.key]);
+        send l.worker, LookupResp, (found = true, charge = results[l.key]);
       } else {
-        send l.worker, eLookupResp, (found = false, charge = 0);
+        send l.worker, LookupResp, (found = false, charge = 0);
       }
     }
-    on eRecord do (r: (key: int, charge: int)) {
+    on Record do (r: (key: int, charge: int)) {
       results[r.key] = r.charge;
     }
   }
@@ -33,32 +33,32 @@ machine LookupThenRecordWorker {
   var client: machine;
   var table: KeyTable;
   var gateway: Gateway;
-  var request: tRequest;
+  var request: Request;
 
   start state Looking {
-    entry (w: (client: machine, table: KeyTable, gateway: Gateway, request: tRequest)) {
+    entry (w: (client: machine, table: KeyTable, gateway: Gateway, request: Request)) {
       client = w.client;
       table = w.table;
       gateway = w.gateway;
       request = w.request;
-      send table, eLookup, (worker = this, key = request.key);
+      send table, Lookup, (worker = this, key = request.key);
     }
-    on eLookupResp do (r: (found: bool, charge: int)) {
+    on LookupResp do (r: (found: bool, charge: int)) {
       if (r.found) {
         Reply(r.charge);
         return;
       }
       // BUG: the key is still unmarked while the charge is in flight.
-      send gateway, eCharge, (client = this, key = request.key, amount = request.amount);
+      send gateway, Charge, (client = this, key = request.key, amount = request.amount);
     }
-    on eChargeResp do (r: (charge: int)) {
-      send table, eRecord, (key = request.key, charge = r.charge);
+    on ChargeResp do (r: (charge: int)) {
+      send table, Record, (key = request.key, charge = r.charge);
       Reply(r.charge);
     }
   }
 
   fun Reply(charge: int) {
-    announce eReplied, (req = request.req, charge = charge);
-    send client, eChargeResult, (req = request.req, charge = charge);
+    announce Replied, (req = request.req, charge = charge);
+    send client, ChargeResult, (req = request.req, charge = charge);
   }
 }

@@ -12,6 +12,8 @@
 //! - forces the condition of an `if` to `true` or to `false`;
 //! - swaps an operator: `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-` (numbers),
 //!   `&&` and `||`;
+//! - drops either side of `&&` or `||`;
+//! - removes a state's `defer` or `ignore` policy for an event, or turns `defer` into `ignore`;
 //! - removes a `!`;
 //! - flips a `true` or `false` literal.
 //!
@@ -33,7 +35,8 @@ use rustc_hash::FxHashMap;
 use crate::checker::bytecode::{Probe, ProbeKind};
 use crate::checker::code_coverage::{fun_context, shorten, snippet};
 use crate::sema::{
-    BinOp, Block, Expr, ExprKind, FunId, MachineId, MachineKind, PType, Program, Stmt, StmtKind, TestCase, UnOp,
+    BinOp, Block, EventId, Expr, ExprKind, FunId, HandlerAction, MachineId, MachineKind, PType, Program, StateId, Stmt,
+    StmtKind, TestCase, UnOp,
 };
 use crate::syntax::{SourceMap, Span};
 
@@ -42,6 +45,12 @@ use crate::syntax::{SourceMap, Span};
 pub enum Change {
     /// The statement is removed.
     Remove,
+    /// Remove one event from a state's deferral declaration.
+    RemoveDefer,
+    /// Discard a deferred event instead of keeping it for a later state.
+    DeferToIgnore,
+    /// Remove one event from a state's ignore declaration.
+    RemoveIgnore,
     /// The `if` condition is replaced by a constant.
     Force(bool),
     /// The binary operator is replaced.
@@ -52,6 +61,10 @@ pub enum Change {
     FlipBool,
     /// Every top-level statement of the body but `return` is removed.
     EmptyBody,
+    /// Drop the left (true) or right (false) clause of a conjunction.
+    DropConjunct { left: bool },
+    /// Drop the left (true) or right (false) clause of a disjunction.
+    DropDisjunct { left: bool },
 }
 
 impl Change {
@@ -60,12 +73,17 @@ impl Change {
     pub fn name(self) -> &'static str {
         match self {
             Change::Remove => "remove-statement",
+            Change::RemoveDefer => "remove-defer",
+            Change::DeferToIgnore => "defer-to-ignore",
+            Change::RemoveIgnore => "remove-ignore",
             Change::Force(true) => "condition-true",
             Change::Force(false) => "condition-false",
             Change::Operator(_) => "swap-operator",
             Change::DropNot => "remove-not",
             Change::FlipBool => "flip-boolean",
             Change::EmptyBody => "empty-body",
+            Change::DropConjunct { .. } => "drop-conjunct",
+            Change::DropDisjunct { .. } => "drop-disjunct",
         }
     }
 }
@@ -73,14 +91,16 @@ impl Change {
 /// One mutant.
 #[derive(Debug, Clone)]
 pub struct Mutant {
-    /// The function whose body is changed.
-    pub fun: FunId,
+    /// The function whose body is changed; absent for state queue-policy changes.
+    pub fun: Option<FunId>,
+    /// State and event whose queue policy changes.
+    queue: Option<(StateId, EventId)>,
     /// The place in the body, in [`walk`] order.
     site: u32,
     pub change: Change,
     /// The code coverage probe (see [`Probe`]) that runs whenever the changed code does:
     /// only a test case that ran it can notice the change.
-    pub probe: u32,
+    pub probe: Option<u32>,
     /// The changed code.
     pub span: Span,
     pub file: String,
@@ -111,10 +131,15 @@ pub struct Mutant {
 }
 
 impl Mutant {
+    /// Whether a passing run exercised the statement or examined this queue policy.
+    pub fn reached(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
+        self.probe.is_some_and(|p| hits.ran(p)) || self.queue.is_some_and(|(s, e)| hits.queue_policy(s, e))
+    }
+
     /// Whether the change would have changed a value in a run with code coverage `hits`.
     pub fn changed(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
         self.unchecked.is_none()
-            && hits.ran(self.probe)
+            && self.reached(hits)
             && (self.changes.is_empty() || self.changes.iter().any(|p| hits.ran(*p)))
     }
 }
@@ -150,6 +175,8 @@ pub fn parents(mutants: &[Mutant]) -> Vec<Option<usize>> {
 /// The functions a mutant may change: those of the machines the test cases check (not
 /// spec monitors, a test case's main machine, nor the other machines in `drivers`, see
 /// [`crate::checker::driver_facts::driver_machines`]), and the functions they call.
+/// Functions declared under a `PTst` directory are test scaffolding, even when a
+/// design function calls them. Their callees outside `PTst` are still considered.
 pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<bool> {
     let mut machines = vec![false; prog.machines.len()];
     let mut mains = vec![false; prog.machines.len()];
@@ -192,6 +219,16 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec
             funs[i] = true;
         }
     }
+    for (i, f) in prog.funs.iter().enumerate() {
+        if prog
+            .sources
+            .files()
+            .get(f.span.file.0 as usize)
+            .is_some_and(|source| source.name.split(['/', '\\']).any(|part| part.eq_ignore_ascii_case("PTst")))
+        {
+            funs[i] = false;
+        }
+    }
     funs
 }
 
@@ -230,10 +267,11 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             if let Some(&probe) = probe_of.get(&(ProbeKind::Entry, fun, f.span)) {
                 let loc = sm.location(f.span);
                 out.push(Mutant {
-                    fun,
+                    fun: Some(fun),
+                    queue: None,
                     site: u32::MAX,
                     change: Change::EmptyBody,
-                    probe,
+                    probe: Some(probe),
                     span: f.span,
                     file: loc.file.unwrap_or_default(),
                     line: loc.line.max(0) as u32,
@@ -308,10 +346,11 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             }
             let loc = sm.location(at);
             out.push(Mutant {
-                fun,
+                fun: Some(fun),
+                queue: None,
                 site: this,
                 change,
-                probe,
+                probe: Some(probe),
                 span: at,
                 file: loc.file.unwrap_or_default(),
                 line: loc.line.max(0) as u32,
@@ -325,6 +364,80 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 under_choice: choices.iter().any(|c| c.file == at.file && c.start <= at.start && at.end <= c.end),
             });
         });
+    }
+    out
+}
+
+/// Queue-policy mutations in selected design machines, one per declared event.
+/// Drivers and monitors are excluded even when they have no function bodies.
+pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Mutant> {
+    let mut selected = vec![false; prog.machines.len()];
+    let mut mains = vec![false; prog.machines.len()];
+    for tc in tests {
+        let (module, main) = prog.test_case_module(tc);
+        for (_, m) in &module.interface_def {
+            selected[m.idx()] = true;
+        }
+        if let Some(m) = main {
+            mains[m.idx()] = true;
+        }
+    }
+    let mut out = Vec::new();
+    for (i, machine) in prog.machines.iter().enumerate() {
+        let in_test_dir = prog
+            .sources
+            .files()
+            .get(machine.span.file.0 as usize)
+            .is_some_and(|s| s.name.split(['/', '\\']).any(|p| p.eq_ignore_ascii_case("PTst")));
+        if !selected[i]
+            || mains[i]
+            || drivers.get(i).copied().unwrap_or(false)
+            || in_test_dir
+            || machine.kind != MachineKind::Impl
+        {
+            continue;
+        }
+        for state in &machine.states {
+            let st = prog.state(*state);
+            for h in &st.handlers {
+                let changes: &[Change] = match h.action {
+                    HandlerAction::Defer => &[Change::RemoveDefer, Change::DeferToIgnore],
+                    HandlerAction::Ignore => &[Change::RemoveIgnore],
+                    _ => continue,
+                };
+                if h.span.is_dummy() {
+                    continue;
+                }
+                let loc = prog.sources.location(h.span);
+                let event = &prog.event(h.event).name;
+                for change in changes {
+                    let description = match change {
+                        Change::RemoveDefer => format!("removed `defer {event}`"),
+                        Change::DeferToIgnore => format!("`defer {event}` replaced by `ignore {event}`"),
+                        Change::RemoveIgnore => format!("removed `ignore {event}`"),
+                        _ => unreachable!(),
+                    };
+                    out.push(Mutant {
+                        fun: None,
+                        queue: Some((*state, h.event)),
+                        site: 0,
+                        change: *change,
+                        probe: None,
+                        span: h.span,
+                        file: loc.file.clone().unwrap_or_default(),
+                        line: loc.line.max(0) as u32,
+                        context: format!("{}.{}, on {}", machine.name, st.name, event),
+                        description,
+                        coarse: false,
+                        changes: Vec::new(),
+                        unchanged: "",
+                        unchecked: None,
+                        equivalent: None,
+                        under_choice: false,
+                    });
+                }
+            }
+        }
     }
     out
 }
@@ -429,14 +542,27 @@ impl Effects<'_> {
 /// `prog` with mutant `m` applied.
 pub fn apply(prog: &Program, m: &Mutant) -> Program {
     let mut out = prog.clone();
-    let mut body = out.funs[m.fun.idx()].body.take().expect("a mutant changes a function with a body");
+    if let Some((state, event)) = m.queue {
+        let handlers = &mut out.states[state.idx()].handlers;
+        let i = handlers.iter().position(|h| h.event == event).expect("queue mutant's event exists");
+        match m.change {
+            Change::RemoveDefer | Change::RemoveIgnore => {
+                handlers.remove(i);
+            }
+            Change::DeferToIgnore => handlers[i].action = HandlerAction::Ignore,
+            _ => unreachable!("not a queue-policy mutant"),
+        }
+        return out;
+    }
+    let fun = m.fun.expect("function mutant has a function");
+    let mut body = out.funs[fun.idx()].body.take().expect("a mutant changes a function with a body");
     if m.change == Change::EmptyBody {
         for s in &mut body.stmts {
             if !matches!(s.kind, StmtKind::Return(_)) {
                 s.kind = StmtKind::Nop;
             }
         }
-        out.funs[m.fun.idx()].body = Some(body);
+        out.funs[fun.idx()].body = Some(body);
         return out;
     }
     let mut site = 0u32;
@@ -446,7 +572,7 @@ pub fn apply(prog: &Program, m: &Mutant) -> Program {
         }
         site += 1;
     });
-    out.funs[m.fun.idx()].body = Some(body);
+    out.funs[fun.idx()].body = Some(body);
     out
 }
 
@@ -467,6 +593,11 @@ fn change(target: Target<'_>) {
         Target::Expr(e, Change::Operator(new)) => {
             if let ExprKind::Binary { op, .. } = &mut e.kind {
                 *op = new;
+            }
+        }
+        Target::Expr(e, Change::DropConjunct { left } | Change::DropDisjunct { left }) => {
+            if let ExprKind::Binary { lhs, rhs, .. } = &e.kind {
+                *e = if left { (**rhs).clone() } else { (**lhs).clone() };
             }
         }
         Target::Expr(e, Change::DropNot) => {
@@ -627,8 +758,17 @@ fn walk_expr(prog: &Program, e: &mut Expr, stmt: Span, visit: &mut dyn FnMut(Spa
     match &e.kind {
         ExprKind::Binary { op, .. } if logic(*op) && has_choice(e) => {}
         ExprKind::Binary { op, .. } => {
-            if let Some(new) = swapped(prog, *op, e) {
+            let op = *op;
+            if let Some(new) = swapped(prog, op, e) {
                 visit(stmt, Target::Expr(e, Change::Operator(new)));
+            }
+            for left in [true, false] {
+                let change = match op {
+                    BinOp::And => Change::DropConjunct { left },
+                    BinOp::Or => Change::DropDisjunct { left },
+                    _ => continue,
+                };
+                visit(stmt, Target::Expr(e, change));
             }
         }
         ExprKind::Unary { op: UnOp::Not, .. } if has_choice(e) => {}
@@ -728,6 +868,11 @@ fn describe(sm: &SourceMap, target: &Target<'_>) -> (Change, Span, String) {
             };
             (*c, e.span, description)
         }
+        Target::Expr(e, c @ (Change::DropConjunct { left } | Change::DropDisjunct { left })) => {
+            let ExprKind::Binary { lhs, rhs, .. } = &e.kind else { unreachable!() };
+            let kept = if *left { rhs } else { lhs };
+            (*c, e.span, format!("`{}` → `{}`", code(sm, e.span), code(sm, kept.span)))
+        }
         Target::Expr(e, c @ Change::DropNot) => {
             let ExprKind::Unary { operand, .. } = &e.kind else { unreachable!() };
             (*c, e.span, format!("`{}` → `{}`", code(sm, e.span), code(sm, operand.span)))
@@ -785,6 +930,8 @@ mod tests {
                 (7, "condition-true", "`n < 3 && !(n == 0)` replaced by `true`"),
                 (7, "condition-false", "`n < 3 && !(n == 0)` replaced by `false`"),
                 (7, "swap-operator", "`n < 3 && !(n == 0)` → `n < 3 || !(n == 0)`"),
+                (7, "drop-conjunct", "`n < 3 && !(n == 0)` → `!(n == 0)`"),
+                (7, "drop-conjunct", "`n < 3 && !(n == 0)` → `n < 3`"),
                 (7, "swap-operator", "`n < 3` → `n <= 3`"),
                 (7, "remove-not", "`!(n == 0)` → `n == 0`"),
                 (7, "swap-operator", "`n == 0` → `n != 0`"),
@@ -801,6 +948,32 @@ mod tests {
             .iter()
             .zip(&ms[1..])
             .all(|(p, m)| *p == Some(if m.line == 7 && !m.coarse { 1 } else { 0 })));
+    }
+
+    #[test]
+    fn ptst_global_helpers_are_not_mutated_but_their_design_callees_are() {
+        for path in ["PTst/Network.p", "sample/ptst/Network.p", r"sample\PTst\Network.p"] {
+            let mut sm = crate::syntax::SourceMap::new();
+            sm.add(path, "fun Pick(): int { return DesignHelper() + 1; }");
+            sm.add(
+                "PSrc/Design.p",
+                r#"
+                fun DesignHelper(): int { return 2 + 1; }
+                machine Server { start state S { entry { assert Pick() > 0; } } }
+                machine Main { start state S { entry { new Server(); } } }
+                test tc [main=Main]: { Main, Server };
+            "#,
+            );
+            let prog = crate::sema::compile(&sm, &Default::default()).unwrap().program;
+            let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
+            let selected = |name| funs[prog.funs.iter().position(|f| f.name == name).unwrap()];
+            assert!(!selected("Pick"), "{path}");
+            assert!(selected("DesignHelper"), "a test helper must not hide production callees");
+            let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+            let ms = mutants(&prog, &funs, &probes);
+            assert!(ms.iter().all(|m| m.file != path));
+            assert!(ms.iter().any(|m| m.context == "DesignHelper"));
+        }
     }
 
     #[test]
@@ -872,9 +1045,55 @@ mod tests {
             Change::DropNot,
             Change::FlipBool,
             Change::EmptyBody,
+            Change::DropConjunct { left: true },
+            Change::DropDisjunct { left: true },
+            Change::RemoveDefer,
+            Change::DeferToIgnore,
+            Change::RemoveIgnore,
         ]
         .map(Change::name);
         assert_eq!(names.as_slice(), snappea_lint::MUTATIONS);
+    }
+
+    #[test]
+    fn each_dropped_boolean_clause_is_detected_by_the_truth_table() {
+        use crate::checker::engine::{Checker, CheckerOptions};
+        use crate::checker::strategy::StrategyKind;
+        for (condition, count) in [("p.a && p.b", 2), ("p.a || p.b", 2), ("p.a && (p.b || p.c)", 4)] {
+            let source = format!(
+                r#"
+                machine Server {{ start state S {{ entry (p: (a: bool, b: bool, c: bool)) {{
+                    var accepted: bool;
+                    if ({condition}) {{ accepted = true; }}
+                    assert accepted == ({condition}), "missing guard clause";
+                }} }} }}
+                machine Main {{ start state S {{ entry {{ new Server((a = $, b = $, c = $)); }} }} }}
+                test tc [main=Main]: {{ Main, Server }};
+            "#
+            );
+            let mut sm = SourceMap::new();
+            sm.add("model.p", source);
+            let prog = crate::sema::compile(&sm, &Default::default()).unwrap().program;
+            let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
+            let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+            let mutations: Vec<_> = mutants(&prog, &funs, &probes)
+                .into_iter()
+                .filter(|m| matches!(m.change, Change::DropConjunct { .. } | Change::DropDisjunct { .. }))
+                .collect();
+            assert_eq!(mutations.len(), count, "{condition}");
+            let options = CheckerOptions { strategy: StrategyKind::Dfs, iterations: 0, ..Default::default() };
+            let run = |p: &Program| Checker::new(p).check(&p.test_cases()[0], &options, &mut Vec::new()).unwrap();
+            assert_eq!(run(&prog).report.num_bugs, 0);
+            for m in mutations {
+                let result = run(&apply(&prog, &m));
+                assert!(result.report.num_bugs > 0, "{}", m.description);
+                assert!(
+                    result.report.bug_reports.iter().any(|b| b.contains("missing guard clause")),
+                    "{:?}",
+                    result.report.bug_reports
+                );
+            }
+        }
     }
 
     #[test]
@@ -883,18 +1102,18 @@ mod tests {
         let funs = mutable_funs(&prog, &prog.test_cases(), &[]);
         let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
         let ms = mutants(&prog, &funs, &probes);
-        let body = |p: &Program, m: &Mutant| format!("{:?}", p.fun(m.fun).body);
+        let body = |p: &Program, m: &Mutant| format!("{:?}", p.fun(m.fun.unwrap()).body);
         for m in &ms {
             let mutated = apply(&prog, m);
             assert_ne!(body(&prog, m), body(&mutated, m), "{}", m.description);
             // nothing else changes
-            for (i, f) in prog.funs.iter().enumerate().filter(|(i, _)| *i != m.fun.idx()) {
+            for (i, f) in prog.funs.iter().enumerate().filter(|(i, _)| *i != m.fun.unwrap().idx()) {
                 assert_eq!(format!("{:?}", f.body), format!("{:?}", mutated.funs[i].body));
             }
         }
         let removed = ms.iter().find(|m| m.change == Change::Remove && m.line == 8).unwrap();
         let mutated = apply(&prog, removed);
-        let stmts = &mutated.fun(removed.fun).body.as_ref().unwrap().stmts;
+        let stmts = &mutated.fun(removed.fun.unwrap()).body.as_ref().unwrap().stmts;
         assert!(matches!(stmts.last().unwrap().kind, StmtKind::Nop));
     }
 }

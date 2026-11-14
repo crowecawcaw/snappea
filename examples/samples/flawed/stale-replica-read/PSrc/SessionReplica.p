@@ -3,8 +3,8 @@
 // answers only once it has applied at least that LSN; until then it holds the read (it
 // could instead forward it to the primary). Reads still go to any replica.
 
-event eReadAtLeast: (client: machine, session: int, minLsn: int);
-event eReadAtResp: (value: int, lsn: int);
+event ReadAtLeast: (client: machine, session: int, minLsn: int);
+event ReadAtResp: (value: int, lsn: int);
 
 machine SessionReplica {
   var value: int;
@@ -13,7 +13,7 @@ machine SessionReplica {
   var waiting: seq[(client: machine, session: int, minLsn: int)];
 
   start state Serving {
-    on eReplicate do (r: (lsn: int, value: int)) {
+    on Replicate do (r: (lsn: int, value: int)) {
       var i: int;
       var w: (client: machine, session: int, minLsn: int);
       value = r.value;
@@ -28,7 +28,7 @@ machine SessionReplica {
         }
       }
     }
-    on eReadAtLeast do (r: (client: machine, session: int, minLsn: int)) {
+    on ReadAtLeast do (r: (client: machine, session: int, minLsn: int)) {
       if (r.minLsn <= applied) {
         Serve(r.client, r.session);
       } else {
@@ -38,33 +38,35 @@ machine SessionReplica {
   }
 
   fun Serve(client: machine, session: int) {
-    announce eReadServed, (session = session, value = value);
-    send client, eReadAtResp, (value = value, lsn = applied);
+    announce ReadServed, (session = session, value = value);
+    send client, ReadAtResp, (value = value, lsn = applied);
   }
 }
 
 // Like Session, plus the token. `route` is the replica for each read, as before.
 machine TokenSession {
   start state Run {
-    entry (p: (session: int, primary: machine, route: seq[machine], ops: seq[tOp], firstValue: int)) {
-      var op: tOp;
+    entry (p: (session: int, primary: machine, route: seq[machine], ops: seq[Operation], firstValue: int)) {
+      var op: Operation;
       var next: int;
       var reads: int;
       var token: int;
       next = p.firstValue;
       foreach (op in p.ops) {
         if (op == Write) {
-          send p.primary, eWrite, (client = this, session = p.session, value = next);
+          send p.primary, WriteRequest, (client = this, session = p.session, value = next);
           // A write's LSN is above every LSN committed before it, so above the token.
-          receive { case eWriteAck: (lsn: int) { token = lsn; } }
+          receive { case WriteAck: (lsn: int) { token = lsn; } }
           // snappea-lint: allow mutation:swap-operator -- the values only need to be distinct; counting down works as well
           next = next + 1;
         } else {
-          send p.route[reads], eReadAtLeast, (client = this, session = p.session, minLsn = token);
-          // snappea-lint: allow mutation -- only steers which replica the next read uses; any routing is allowed, so the contract cannot tell
+          send p.route[reads], ReadAtLeast, (client = this, session = p.session, minLsn = token);
+          // snappea-lint: allow mutation:remove-statement,swap-operator -- only steers which replica the next read uses; any routing is allowed, so the contract cannot tell
           reads = reads + 1;
           // The replica answered at or past the token, so this never moves it back.
-          receive { case eReadAtResp: (r: (value: int, lsn: int)) { token = r.lsn; } }
+          // SessionGuarantees checks the returned value at ReadServed; subsequent
+          // routing depends only on its LSN, not application work on that value.
+          receive { case ReadAtResp: (r: (value: int, lsn: int)) { token = r.lsn; } }
         }
       }
     }

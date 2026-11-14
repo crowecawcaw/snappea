@@ -34,10 +34,10 @@ The register **announces at the commit point**: in the handler that changes the 
 so the spec sees writes in the order they took effect.
 
 ```p
-on eWrite do (w: (client: machine, value: int)) {
+on Write do (w: (client: machine, value: int)) {
   value = w.value;
-  announce eWriteCommitted, (value = w.value,);
-  send w.client, eWriteAck, (value = w.value,);
+  announce WriteCommitted, (value = w.value,);
+  send w.client, WriteAck, (value = w.value,);
 }
 ```
 
@@ -46,11 +46,11 @@ reply against it. `format` puts the actual and expected values in the failure me
 so a counterexample explains itself:
 
 ```p
-spec LastWriteWins observes eWriteCommitted, eReadResp {
+spec LastWriteWins observes WriteCommitted, ReadResponse {
   var expected: int;
   start hot state Unread {
-    on eWriteCommitted do (c: (value: int)) { expected = c.value; }
-    on eReadResp do (r: (value: int)) {
+    on WriteCommitted do (c: (value: int)) { expected = c.value; }
+    on ReadResponse do (r: (value: int)) {
       assert r.value == expected,
         format("read returned {0}, but the last committed write was {1}", r.value, expected);
       goto Read;
@@ -60,7 +60,7 @@ spec LastWriteWins observes eWriteCommitted, eReadResp {
 }
 ```
 
-`eReadResp` is a normal `send`, observed directly. A spec sees a sent event at the
+`ReadResponse` is a normal `send`, observed directly. A spec sees a sent event at the
 moment of the `send`, inside the sender's handler, so observing it is as good as an
 announcement when the send happens in the same atomic step as the commit. Use
 `announce` when no message marks the commit, or the message is sent later.
@@ -74,14 +74,17 @@ checkable, so a register that drops an acknowledgement fails too
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcTwoWritersThenRead` | Writers of 1 and 2 race; the driver reads after both are acknowledged | Either write can land last; the read must match whichever did | passes, all 134 schedules |
-| `tcBugSpecUsesAckOrder` | Same driver, but checked by `LastAckWins` | Shows that reply-receipt order is not commit order | **fails**: `read returned 2, but the last acknowledged write was 1` |
+| `tcBugSpecUsesAckOrder` | Same driver, but checked by `LastAckWins` | Shows that reply-receipt order is not commit order | **expected bug**: `read returned 2, but the last acknowledged write was 1` |
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
 ```sh
 cd examples/samples/concepts/02-safety-spec
 snappea check tcTwoWritersThenRead --deny mutation
-snappea check tcBugSpecUsesAckOrder        # exits 1: the false alarm below
+snappea check tcBugSpecUsesAckOrder        # exits 0 when the declared bug matches: the false alarm below
 ```
 
 ```text
@@ -89,14 +92,14 @@ ok    tcTwoWritersThenRead (all 134 schedules, 0.04s)
       Coverage: 2/2 states, 18/18 statements, 2/2 branches, 6/6 event handlers, ...
 Mutation testing: 5 of 5 mutants detected (0.0s)
 
-FAIL  tcBugSpecUsesAckOrder (bug found after 7 schedules, 0.01s)
+expected bug  tcBugSpecUsesAckOrder (matching declared failure)
       Assertion Failed: PSpec/LastWriteWins.p:44:7 read returned 2, but the last acknowledged write was 1
 ```
 
 ## Common mistake: announcing where the reply arrives
 
 It is tempting to instrument the client: "when my write is acknowledged, tell the
-spec". `LastAckWins` does exactly that, through `eWriteAckReceived` announced by each
+spec". `LastAckWins` does exactly that, through `WriteAckReceived` announced by each
 `Writer`. The register is correct, yet `tcBugSpecUsesAckOrder` fails:
 
 1. The register commits 1, then 2, and sends both acknowledgements.
@@ -126,6 +129,6 @@ was served, which is exactly what `expected` holds at that moment.
 
 ## In your implementation
 
-Emit `eWriteCommitted` from the store right after the write transaction commits (or
-attach the store's version to the reply and order by it), and `eReadResp` with the
+Emit `WriteCommitted` from the store right after the write transaction commits (or
+attach the store's version to the reply and order by it), and `ReadResponse` with the
 value a read returned. Check those events against `LastWriteWins`.

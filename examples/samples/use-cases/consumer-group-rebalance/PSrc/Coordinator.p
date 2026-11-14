@@ -7,15 +7,15 @@
 // accepted only from the consumer that owns the partition in the current generation:
 // a consumer that missed a rebalance (a zombie) is fenced.
 
-event eJoin: (consumer: machine, id: int);
-event eLeave: (id: int);
+event Join: (consumer: machine, id: int);
+event LeaveGroup: (id: int);
 // From the session timer: this member stopped heartbeating, as far as we know.
-event eExpire: (id: int);
-event eAssignment: (gen: int, partitions: seq[int]);
-event eFetch: (consumer: machine, id: int, gen: int, partition: int);
-event eFetched: (gen: int, partition: int, ok: bool, offset: int);
-event eCommit: (consumer: machine, id: int, gen: int, partition: int, offset: int);
-event eCommitResp: (gen: int, partition: int, ok: bool);
+event Expire: (id: int);
+event Assignment: (gen: int, partitions: seq[int]);
+event Fetch: (consumer: machine, id: int, gen: int, partition: int);
+event Fetched: (gen: int, partition: int, ok: bool, offset: int);
+event Commit: (consumer: machine, id: int, gen: int, partition: int, offset: int);
+event CommitResponse: (gen: int, partition: int, ok: bool);
 
 machine Coordinator {
   var partitions: int;
@@ -31,7 +31,7 @@ machine Coordinator {
     entry (n: int) {
       partitions = n;
     }
-    on eJoin do (j: (consumer: machine, id: int)) {
+    on Join do (j: (consumer: machine, id: int)) {
       // Only a non-member rejoins. A member fenced by a newer generation got that
       // generation's assignment before the rejection (messages from the coordinator
       // arrive in order), so it drops the stale rejection instead of rejoining.
@@ -39,31 +39,31 @@ machine Coordinator {
       order += (sizeof(order), j.id);
       Rebalance();
     }
-    on eLeave do (l: (id: int)) { Remove(l.id); }
-    on eExpire do (e: (id: int)) { Remove(e.id); }
+    on LeaveGroup do (l: (id: int)) { Remove(l.id); }
+    on Expire do (e: (id: int)) { Remove(e.id); }
     // Fetching the committed offset is fenced like a commit, so a consumer that was
     // expelled while it had nothing left to commit still finds out and rejoins.
-    on eFetch do (f: (consumer: machine, id: int, gen: int, partition: int)) {
+    on Fetch do (f: (consumer: machine, id: int, gen: int, partition: int)) {
       if (Owns(f.id, f.gen, f.partition)) {
         // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-        announce eFetchServed, (partition = f.partition, gen = f.gen, member = f.id);
-        send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = true, offset = Committed(f.partition));
+        announce FetchServed, (partition = f.partition, gen = f.gen, member = f.id);
+        send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = true, offset = Committed(f.partition));
         return;
       }
       // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce eFetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
-      send f.consumer, eFetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
+      announce FetchRejected, (partition = f.partition, gen = f.gen, member = f.id);
+      send f.consumer, Fetched, (gen = f.gen, partition = f.partition, ok = false, offset = 0);
     }
-    on eCommit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
+    on Commit do (c: (consumer: machine, id: int, gen: int, partition: int, offset: int)) {
       if (Owns(c.id, c.gen, c.partition)) {
         committed[c.partition] = c.offset;
-        announce eCommitted, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
-        send c.consumer, eCommitResp, (gen = c.gen, partition = c.partition, ok = true);
+        announce OffsetCommitted, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
+        send c.consumer, CommitResponse, (gen = c.gen, partition = c.partition, ok = true);
         return;
       }
       // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce eCommitRejected, (partition = c.partition, offset = c.offset, gen = c.gen, member = c.id);
-      send c.consumer, eCommitResp, (gen = c.gen, partition = c.partition, ok = false);
+      announce CommitRejected, (partition = c.partition, gen = c.gen, member = c.id);
+      send c.consumer, CommitResponse, (gen = c.gen, partition = c.partition, ok = false);
     }
   }
 
@@ -91,9 +91,9 @@ machine Coordinator {
       p = p + 1;
     }
     owner = next;
-    announce eGeneration, (gen = gen, members = order, owner = owner);
+    announce GenerationChanged, (gen = gen, members = order, owner = owner);
     foreach (id in order) {
-      send members[id], eAssignment, (gen = gen, partitions = Owned(id));
+      send members[id], Assignment, (gen = gen, partitions = Owned(id));
     }
   }
 

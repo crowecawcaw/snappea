@@ -3,10 +3,10 @@
 // successor's write. tcBugStorageIgnoresTokens shows the contract catching it.
 machine UnfencedStorage {
   start state Serving {
-    on eWrite do (w: (client: machine, id: int, token: int)) {
+    on Write do (w: (client: machine, id: int, token: int)) {
       // BUG: no comparison with the highest token seen.
-      announce eWriteAccepted, (id = w.id, token = w.token);
-      send w.client, eWriteResp, true;
+      announce WriteAccepted, (id = w.id, token = w.token);
+      send w.client, WriteResp, true;
     }
   }
 }

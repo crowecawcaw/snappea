@@ -1,6 +1,7 @@
 <!-- Offline note edits synced with a base version. See README.md. -->
 <Project>
 <ProjectName>OfflineSync</ProjectName>
+<IncludeProject>../../../../crates/snappea/src/cli/guide/examples/building-blocks/Network.pproj</IncludeProject>
 <InputFiles>
 	<PFile>./PSrc/</PFile>
 	<PFile>./PSpec/</PFile>

@@ -2,18 +2,18 @@
 // announce what they asked for. Writers, readers, the router and the migrator are the
 // design under test.
 
-type tReads = (key: int, reads: int);
-type tPlan = (seed: map[int, int], writers: seq[seq[tOp]], readers: seq[tReads]);
+type Reads = (key: int, reads: int);
+type Plan = (seed: map[int, int], writers: seq[seq[Op]], readers: seq[Reads]);
 
 // Starts everything at once, so writes and reads race with the backfill and cutover.
-fun Migrate(owner: machine, newStore: machine, plan: tPlan) {
+fun Migrate(owner: machine, newStore: machine, plan: Plan) {
   var oldStore: OldStore;
   Plan(plan);
   oldStore = new OldStore(plan.seed);
   MigrateVia(owner, oldStore, new Router((oldStore = oldStore, newStore = newStore)), newStore, plan);
 }
 
-fun MigrateVia(owner: machine, oldStore: OldStore, router: machine, newStore: machine, plan: tPlan) {
+fun MigrateVia(owner: machine, oldStore: OldStore, router: machine, newStore: machine, plan: Plan) {
   var scan: seq[int];
   var key: int;
   foreach (key in keys(plan.seed)) {
@@ -23,24 +23,24 @@ fun MigrateVia(owner: machine, oldStore: OldStore, router: machine, newStore: ma
   StartClients(router, oldStore, newStore, plan);
 }
 
-fun Plan(plan: tPlan) {
-  var ops: seq[tOp];
-  var op: tOp;
+fun Plan(plan: Plan) {
+  var ops: seq[Op];
+  var op: Op;
   var writes: int;
   var i: int;
   foreach (ops in plan.writers) { writes = writes + sizeof(ops); }
-  announce eMigrationPlanned, (writes = writes, seed = plan.seed);
+  announce MigrationPlanned, (writes = writes, seed = plan.seed);
   foreach (ops in plan.writers) {
-    foreach (op in ops) { announce eWriteRequested, op; }
+    foreach (op in ops) { announce WriteRequested, op; }
   }
   while (i < sizeof(plan.readers)) {
-    announce eReadsPlanned, (reader = i + 1, key = plan.readers[i].key, reads = plan.readers[i].reads);
+    announce ReadsPlanned, (reader = i + 1, key = plan.readers[i].key, reads = plan.readers[i].reads);
     i = i + 1;
   }
 }
 
-fun StartClients(router: machine, oldStore: OldStore, newStore: machine, plan: tPlan) {
-  var ops: seq[tOp];
+fun StartClients(router: machine, oldStore: OldStore, newStore: machine, plan: Plan) {
+  var ops: seq[Op];
   var i: int;
   foreach (ops in plan.writers) {
     new Writer((router = router, oldStore = oldStore, newStore = newStore, ops = ops));
@@ -57,20 +57,20 @@ fun Seed1(): map[int, int] {
   return seed;
 }
 
-fun Put(req: int, key: int, value: int): seq[tOp] {
-  var ops: seq[tOp];
+fun Put(req: int, key: int, value: int): seq[Op] {
+  var ops: seq[Op];
   ops += (0, (req = req, key = key, value = value, deleted = false));
   return ops;
 }
 
-fun Delete(req: int, key: int): seq[tOp] {
-  var ops: seq[tOp];
+fun Delete(req: int, key: int): seq[Op] {
+  var ops: seq[Op];
   ops += (0, (req = req, key = key, value = 0, deleted = true));
   return ops;
 }
 
-fun OneWriter(ops: seq[tOp]): tPlan {
-  var plan: tPlan;
+fun OneWriter(ops: seq[Op]): Plan {
+  var plan: Plan;
   plan.seed = Seed1();
   plan.writers += (0, ops);
   return plan;
@@ -81,7 +81,7 @@ fun OneWriter(ops: seq[tOp]): tPlan {
 machine BackfillRacesWriter {
   start state Run {
     entry { Migrate(this, new NewStore(), OneWriter(Put(1, 1, 20))); }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -89,7 +89,7 @@ machine BackfillRacesWriter {
 machine DeleteDuringBackfill {
   start state Run {
     entry { Migrate(this, new NewStore(), OneWriter(Delete(1, 1))); }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -98,12 +98,12 @@ machine DeleteDuringBackfill {
 machine TwoWritersOneKey {
   start state Run {
     entry {
-      var plan: tPlan;
+      var plan: Plan;
       plan = OneWriter(Put(1, 1, 20));
       plan.writers += (1, Put(2, 1, 30));
       Migrate(this, new NewStore(), plan);
     }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -112,19 +112,19 @@ machine TwoWritersOneKey {
 machine ReadsAcrossCutover {
   start state Run {
     entry {
-      var plan: tPlan;
+      var plan: Plan;
       plan = OneWriter(Put(1, 1, 20));
       plan.readers += (0, (key = 1, reads = 2));
       Migrate(this, new NewStore(), plan);
     }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
 // Lifecycle boundary: a write and a read that start only after cutover. Writes still
 // go old then new, and reads now come from new.
 machine WriteAfterCutover {
-  var plan: tPlan;
+  var plan: Plan;
   var router: Router;
   var oldStore: OldStore;
   var newStore: NewStore;
@@ -141,7 +141,7 @@ machine WriteAfterCutover {
       scan += (0, 1);
       new Migrator((owner = this, router = router, oldStore = oldStore, newStore = newStore, scan = scan));
     }
-    on eMigrationDone do {
+    on MigrationDone do {
       StartClients(router, oldStore, newStore, plan);
     }
   }
@@ -152,7 +152,7 @@ machine WriteAfterCutover {
 machine GeneratedMigration {
   start state Run {
     entry {
-      var plan: tPlan;
+      var plan: Plan;
       var i: int;
       plan.seed = Seed1();
       plan.seed[2] = 20;
@@ -168,7 +168,7 @@ machine GeneratedMigration {
       plan.readers += (0, (key = choose(3) + 1, reads = 2));
       Migrate(this, new NewStore(), plan);
     }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -176,7 +176,7 @@ machine GeneratedMigration {
 machine BugBlindBackfill {
   start state Run {
     entry { Migrate(this, new BlindCopyNewStore(), OneWriter(Put(1, 1, 20))); }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -185,7 +185,7 @@ machine BugBlindBackfill {
 machine BugCutoverMidWrite {
   start state Run {
     entry { Eager(this, OneWriter(Put(1, 1, 20))); }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -194,16 +194,16 @@ machine BugCutoverMidWrite {
 machine BugCutoverMidRead {
   start state Run {
     entry {
-      var plan: tPlan;
+      var plan: Plan;
       plan.seed = Seed1();
       plan.readers += (0, (key = 1, reads = 2));
       Eager(this, plan);
     }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
-fun Eager(owner: machine, plan: tPlan) {
+fun Eager(owner: machine, plan: Plan) {
   var oldStore: OldStore;
   var newStore: NewStore;
   Plan(plan);
@@ -215,7 +215,7 @@ fun Eager(owner: machine, plan: tPlan) {
 machine BugResurrectedDelete {
   start state Run {
     entry { Migrate(this, new InsertIfAbsentNewStore(), OneWriter(Delete(1, 1))); }
-    ignore eMigrationDone;
+    ignore MigrationDone;
   }
 }
 
@@ -243,22 +243,22 @@ test tcGeneratedMigration [main=GeneratedMigration]:
   assert MigrationSafety, MigrationCompletes in
   { GeneratedMigration, OldStore, NewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: new store moved key 1 back from version 2 to 1
+// snappea: expect-bug "new store moved key 1 back from version 2 to 1"
 test tcBugBlindBackfill [main=BugBlindBackfill]:
   assert MigrationSafety, MigrationCompletes in
   { BugBlindBackfill, OldStore, BlindCopyNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: new store moved key 1 back from version 2 to 1
+// snappea: expect-bug "new store moved key 1 back from version 2 to 1"
 test tcBugResurrectedDelete [main=BugResurrectedDelete]:
   assert MigrationSafety, MigrationCompletes in
   { BugResurrectedDelete, OldStore, InsertIfAbsentNewStore, Router, Writer, Reader, Migrator };
 
-// expect-bug: cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old
+// snappea: expect-bug "cutover broken: new store lost a change: key 1 reads 10 from new but 20 from old"
 test tcBugCutoverMidWrite [main=BugCutoverMidWrite]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverMidWrite, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
 
-// expect-bug: cutover broken: old store served a read after cutover
+// snappea: expect-bug "cutover broken: old store served a read after cutover"
 test tcBugCutoverMidRead [main=BugCutoverMidRead]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverMidRead, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };

@@ -7,7 +7,7 @@ fun Backoff(): seq[int] {
 
 // The caller starts its stopwatch as it calls.
 fun Call(timeout: int) {
-  announce eCalled, Mark();
+  announce Called, Mark();
   new Client((server = new Server(), policy = (timeout = timeout, backoff = Backoff())));
 }
 
@@ -32,6 +32,6 @@ machine SlowPolicy {
 test tcRetryWithinDeadline [main=FixedPolicy]:
   assert AnswersWithinDeadline in { FixedPolicy, Client, Server, Timer };
 
-// expect-bug: the deadline is 1000000 us
+// snappea: expect-bug "the deadline is 1000000 us"
 test tcBugRetryOverDeadline [main=SlowPolicy]:
   assert AnswersWithinDeadline in { SlowPolicy, Client, Server, Timer };

@@ -19,34 +19,34 @@ machine EagerController {
   }
 
   state Idle {
-    on eCall do (c: (floor: int)) {
+    on CallRequested do (c: (floor: int)) {
       Register(c.floor);
       Dispatch();
     }
-    ignore eDoorClosedAck;
+    ignore DoorClosedAck;
   }
 
   state Moving {
-    on eCall do (c: (floor: int)) { Register(c.floor); }
-    on eArrivedAt do (a: (floor: int)) {
+    on CallRequested do (c: (floor: int)) { Register(c.floor); }
+    on ArrivedAt do (a: (floor: int)) {
       floor = a.floor;
       Dispatch();
     }
-    ignore eDoorClosedAck;
+    ignore DoorClosedAck;
   }
 
   state Opening {
-    on eCall do (c: (floor: int)) { Register(c.floor); }
-    on eDoorOpenAck do {
-      send door, eClose, this;
-      // BUG: moves on without waiting for eDoorClosedAck.
+    on CallRequested do (c: (floor: int)) { Register(c.floor); }
+    on DoorOpenAck do {
+      send door, Close, this;
+      // BUG: moves on without waiting for DoorClosedAck.
       Dispatch();
     }
-    ignore eDoorClosedAck;
+    ignore DoorClosedAck;
   }
 
   fun Register(f: int) {
-    announce eCallRegistered, (floor = f,);
+    announce CallRegistered, (floor = f,);
     requests += (f);
   }
 
@@ -54,7 +54,7 @@ machine EagerController {
     var f: int;
     if (floor in requests) {
       requests -= (floor);
-      send door, eOpen, this;
+      send door, Open, this;
       goto Opening;
     }
     if (sizeof(requests) == 0) {
@@ -64,8 +64,8 @@ machine EagerController {
     foreach (f in requests) {
       if (f > floor) { dir = 1; }
     }
-    announce eMoveCommanded, (dir = dir,);
-    send motor, eMove, (ctl = this, dir = dir);
+    announce MoveCommanded, (dir = dir,);
+    send motor, Move, (ctl = this, dir = dir);
     goto Moving;
   }
 }

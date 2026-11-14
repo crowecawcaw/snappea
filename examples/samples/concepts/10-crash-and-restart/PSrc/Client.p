@@ -2,7 +2,7 @@
 // client is still waiting, it resends: its request may have died with the old process.
 
 // From the process manager: the server's new address.
-event eRestarted: machine;
+event Restarted: machine;
 
 machine Client {
   var server: machine;
@@ -10,19 +10,19 @@ machine Client {
   start state Asking {
     entry (s: machine) {
       server = s;
-      send server, eNext, this;
+      send server, Next, this;
     }
-    on eRestarted do (s: machine) {
+    on Restarted do (s: machine) {
       server = s;
-      send server, eNext, this;
+      send server, Next, this;
     }
-    on eTicket goto Holding with (t: int) {
-      announce eGotTicket, (client = this, ticket = t);
+    on Ticket goto Holding with (t: int) {
+      announce GotTicket, (client = this, ticket = t);
     }
   }
 
   // A client that holds a ticket never asks again, so a second ticket is an error.
   state Holding {
-    ignore eRestarted;
+    ignore Restarted;
   }
 }

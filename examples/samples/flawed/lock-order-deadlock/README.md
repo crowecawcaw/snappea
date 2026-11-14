@@ -87,20 +87,24 @@ which is what `tcFixedCycleOfThree` checks.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcBugOppositeTransfers` | 1 to 2 and 2 to 1, argument order | The classic two-lock deadlock | **Fails**: `liveness bug in hot state 'TransferPending'` |
-| `tcBugCycleOfThree` | 1 to 2, 2 to 3, 3 to 1, argument order | A deadlock with no opposite pair | **Fails**: same message |
-| `tcFixedOppositeTransfers` | The opposite pair, global order | The fix for the classic case | Passes, all 202 schedules |
-| `tcFixedCycleOfThree` | The three-way cycle, global order | A fix that only special-cases reversed pairs fails here | Passes, all 10571 schedules (about 5 s) |
+| `tcBugOppositeTransfers` | 1 to 2 and 2 to 1, argument order | The classic two-lock deadlock | **Expected bug**: `liveness bug in hot state 'TransferPending'` |
+| `tcBugCycleOfThree` | 1 to 2, 2 to 3, 3 to 1, argument order | A deadlock with no opposite pair | **Expected bug**: same message |
+| `tcFixedOppositeTransfers` | The opposite pair, global order | The fix for the classic case | Passes |
+| `tcFixedCycleOfThree` | The three-way cycle, global order | A fix that only special-cases reversed pairs fails here | Passes |
 
 ## Run
 
 ```sh
 snappea check tcFixedOppositeTransfers tcFixedCycleOfThree --deny mutation --timeout 20s
-snappea check tcBugOppositeTransfers   # exits 1 with the liveness bug above
+snappea check tcBugOppositeTransfers   # succeeds only when the declared bug is found
 ```
 
 One mutant is suppressed: `t.dst < t.src` → `t.dst <= t.src` in `OrderedWorker`,
 because a transfer's two accounts always differ (the spec asserts it).
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -111,7 +115,7 @@ checks, crashes.
 
 ## Testing the implementation
 
-Emit `eLockGranted`, `eApplied` and `eLockReleased` from a thin wrapper around the
-database calls, and `eTransferDone` when a transfer returns. To force the race, run
+Emit `LockGranted`, `Applied` and `LockReleased` from a thin wrapper around the
+database calls, and `TransferDone` when a transfer returns. To force the race, run
 two opposite transfers with a barrier after each one's first lock: the flawed code
 hangs (or gets a deadlock error), the fixed code completes both.

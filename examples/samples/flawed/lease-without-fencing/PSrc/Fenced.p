@@ -7,37 +7,37 @@
 // Real primitives: storage write-if-token (one conditional write that compares the
 // token with the stored maximum and updates both).
 
-event eFencedWrite: (node: machine, id: int, token: int, value: int);
+event FencedWrite: (node: machine, id: int, token: int, value: int);
 
 machine FencedStorage {
   var value: int;
   var maxToken: int;
   start state Serving {
-    on eFencedWrite do (w: (node: machine, id: int, token: int, value: int)) {
+    on FencedWrite do (w: (node: machine, id: int, token: int, value: int)) {
       if (w.token < maxToken) {
-        announce eWriteRejected, (node = w.id, value = w.value);
-        send w.node, eWriteResp, (ok = false,);
+        announce WriteRejected, (node = w.id, value = w.value);
+        send w.node, WriteResp, (ok = false,);
         return;
       }
       maxToken = w.token;
       value = w.value;
-      announce eWriteAccepted, (node = w.id, value = value);
-      send w.node, eWriteResp, (ok = true,);
+      announce WriteAccepted, (node = w.id, value = value);
+      send w.node, WriteResp, (ok = true,);
     }
   }
 }
 
 machine FencedNode {
-  var config: tNodeConfig;
+  var config: NodeConfig;
   var token: int;
   var written: int;
 
   start state Acquiring {
-    entry (c: tNodeConfig) {
+    entry (c: NodeConfig) {
       config = c;
-      send config.locks, eAcquire, (node = this, id = config.id);
+      send config.locks, Acquire, (node = this, id = config.id);
     }
-    on eGranted do (g: (token: int)) {
+    on Granted do (g: (token: int)) {
       token = g.token;
       goto Writing;
     }
@@ -45,12 +45,12 @@ machine FencedNode {
 
   state Writing {
     entry {
-      send this, eResume;
+      send this, Resume;
     }
-    on eResume do {
-      send config.storage, eFencedWrite, (node = this, id = config.id, token = token, value = config.plan[written]);
+    on Resume do {
+      send config.storage, FencedWrite, (node = this, id = config.id, token = token, value = config.plan[written]);
     }
-    on eWriteResp do (r: (ok: bool)) {
+    on WriteResp do (r: (ok: bool)) {
       if (!r.ok) {
         // A newer leader has written: stop acting as leader.
         Stop(true);
@@ -58,13 +58,13 @@ machine FencedNode {
       }
       written = written + 1;
       if (written < sizeof(config.plan)) { goto Writing; }
-      // snappea-lint: allow mutation -- releasing only ends the lease before its timer would; the model has no time, so the two are indistinguishable
-      send config.locks, eRelease, (token = token,);
+      // snappea-lint: allow mutation:remove-statement -- releasing only ends the lease before its timer would; the model has no time, so the two are indistinguishable
+      send config.locks, Release, (token = token,);
       Stop(false);
     }
   }
 
   fun Stop(fenced: bool) {
-    announce eNodeDone, (node = config.id, fenced = fenced);
+    announce NodeDone, (node = config.id, fenced = fenced);
   }
 }

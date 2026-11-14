@@ -12,17 +12,17 @@ machine DroppingServer {
   }
 
   state Idle {
-    on eRequest do (r: tRequest) {
-      send worker, eJob, r;
+    on Request do (r: Request) {
+      send worker, Job, r;
       goto Busy;
     }
   }
 
   state Busy {
-    // BUG: should be `defer eRequest;`.
-    ignore eRequest;
-    on eJobDone do (r: tRequest) {
-      send r.client, eResponse, (id = r.id,);
+    // BUG: should be `defer Request;`.
+    ignore Request;
+    on JobDone do (r: Request) {
+      send r.client, Response, (id = r.id,);
       goto Idle;
     }
   }

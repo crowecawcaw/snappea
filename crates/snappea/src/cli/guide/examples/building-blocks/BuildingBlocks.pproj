@@ -1,0 +1,5 @@
+<Project>
+  <ProjectName>BuildingBlocks</ProjectName>
+  <IncludeProject>Network.pproj</IncludeProject>
+  <IncludeProject>RequestReplies.pproj</IncludeProject>
+</Project>

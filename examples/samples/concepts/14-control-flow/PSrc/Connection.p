@@ -2,11 +2,11 @@
 // Closed. However it leaves Open, by its owner's close or the server's reset, the exit
 // handler says goodbye so the server frees the slot.
 
-event eOpen: machine;
-event eClose: tReason;
-event eConnected: machine;
+event Open: machine;
+event Close: Reason;
+event Connected: machine;
 // Raised internally when the last attempt is refused.
-event eGiveUp: tReason;
+event GiveUp: Reason;
 
 machine Connection {
   var server: Server;
@@ -17,15 +17,15 @@ machine Connection {
   start state Idle {
     entry (s: Server) { server = s; }
     // `on E goto S with { ... }` runs the block, then moves to S.
-    on eOpen goto Connecting with (owner: machine) { app = owner; }
+    on Open goto Connecting with (owner: machine) { app = owner; }
   }
 
   state Connecting {
     entry {
       attempts = attempts + 1;
-      send server, eSyn, this;
+      send server, Syn, this;
     }
-    on eSynAck do (r: (ok: bool, session: int)) {
+    on SynAck do (r: (ok: bool, session: int)) {
       if (r.ok) {
         // `goto S, payload` passes the payload to S's entry.
         goto Open, r.session;
@@ -35,28 +35,28 @@ machine Connection {
         goto Connecting;
       }
       // `raise` handles an event in this machine right now, before anything queued.
-      raise eGiveUp, Rejected;
+      raise GiveUp, CapacityRefused;
     }
     // The event's payload becomes Closed's entry payload.
-    on eGiveUp goto Closed;
+    on GiveUp goto Closed;
   }
 
   state Open {
     entry (s: int) {
       session = s;
-      send app, eConnected, this;
+      send app, Connected, this;
     }
-    on eClose goto Closed;
-    on eReset goto Closed;
+    on Close goto Closed;
+    on Reset goto Closed;
     // Runs on every way out of Open.
     exit {
-      send server, eFin, session;
+      send server, Fin, session;
     }
   }
 
   state Closed {
-    entry (reason: tReason) {
-      announce eClosed, (conn = this, reason = reason);
+    entry (reason: Reason) {
+      announce Closed, (conn = this, reason = reason);
       // Done for good: events still on their way to this machine are dropped.
       raise halt;
     }

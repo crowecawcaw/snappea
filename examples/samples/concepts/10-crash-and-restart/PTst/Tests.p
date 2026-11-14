@@ -12,9 +12,9 @@ machine CrashOnce {
       server = new Server((storage = storage, owner = this));
       clients = StartClients(server);
       // No crash, or one that lands before, between or during the requests, or after both.
-      if ($) { send server, eCrash; }
+      if ($) { send server, Crash; }
     }
-    on eExited do {
+    on Exited do {
       Reconnect(clients, new Server((storage = storage, owner = this)));
     }
   }
@@ -31,9 +31,9 @@ machine CrashOnceMemoryOnly {
       storage = new Storage();
       server = new MemoryOnlyServer((storage = storage, owner = this));
       clients = StartClients(server);
-      send server, eCrash;
+      send server, Crash;
     }
-    on eExited do {
+    on Exited do {
       Reconnect(clients, new MemoryOnlyServer((storage = storage, owner = this)));
     }
   }
@@ -43,7 +43,7 @@ fun StartClients(server: machine): seq[Client] {
   var clients: seq[Client];
   var c: Client;
   var i: int;
-  announce eClientsPlanned, 2;
+  announce ClientsPlanned, 2;
   while (i < 2) {
     c = new Client(server);
     clients += (i, c);
@@ -55,13 +55,13 @@ fun StartClients(server: machine): seq[Client] {
 fun Reconnect(clients: seq[Client], server: machine) {
   var c: Client;
   foreach (c in clients) {
-    send c, eRestarted, server;
+    send c, Restarted, server;
   }
 }
 
 test tcCrashAnywhere [main=CrashOnce]:
   assert TicketsUnique in { CrashOnce, Storage, Server, Client };
 
-// expect-bug: issued twice
+// snappea: expect-bug "issued twice"
 test tcBugMemoryOnly [main=CrashOnceMemoryOnly]:
   assert TicketsUnique in { CrashOnceMemoryOnly, Storage, MemoryOnlyServer, Client };

@@ -2,10 +2,10 @@
 // and when it returns. The spec uses only real-time order; it never sees versions.
 // Each write writes a distinct value, so a value names its write. 0 is the initial value.
 
-event eWriteStarted: (value: int);
-event eWriteDone: (value: int);
-event eReadStarted: (reader: int);
-event eReadDone: (reader: int, value: int);
+event WriteStarted: (value: int);
+event WriteDone: (value: int);
+event ReadStarted: (reader: int);
+event ReadDone: (reader: int, value: int);
 
 // Regular register (read-after-write):
 //  - a read returns the initial value or a value whose write started before the read
@@ -13,7 +13,7 @@ event eReadDone: (reader: int, value: int);
 //  - a read never returns a value superseded before the read started: if write B
 //    started after write A completed, and B completed before the read started, the
 //    read must not return A's value (nor the initial value).
-spec ReadAfterWrite observes eWriteStarted, eWriteDone, eReadStarted, eReadDone {
+spec ReadAfterWrite observes WriteStarted, WriteDone, ReadStarted, ReadDone {
   // Logical clock: one tick per observed event.
   var now: int;
   // value -> tick its write started / completed
@@ -23,22 +23,22 @@ spec ReadAfterWrite observes eWriteStarted, eWriteDone, eReadStarted, eReadDone 
   var readStart: map[int, int];
 
   start state Watching {
-    on eWriteStarted do (w: (value: int)) {
+    on WriteStarted do (w: (value: int)) {
       now = now + 1;
       assert w.value > 0 && !(w.value in started), format("value {0} written twice or is the initial value", w.value);
       started[w.value] = now;
     }
-    on eWriteDone do (w: (value: int)) {
+    on WriteDone do (w: (value: int)) {
       now = now + 1;
       assert w.value in started && !(w.value in done), format("write of {0} completed twice or never started", w.value);
       done[w.value] = now;
     }
-    on eReadStarted do (r: (reader: int)) {
+    on ReadStarted do (r: (reader: int)) {
       now = now + 1;
       assert !(r.reader in readStart), format("reader {0} started two reads at once", r.reader);
       readStart[r.reader] = now;
     }
-    on eReadDone do (r: (reader: int, value: int)) {
+    on ReadDone do (r: (reader: int, value: int)) {
       var b: int;
       now = now + 1;
       assert r.reader in readStart, format("reader {0} returned a read it never started", r.reader);
@@ -59,25 +59,25 @@ spec ReadAfterWrite observes eWriteStarted, eWriteDone, eReadStarted, eReadDone 
 
 // Progress: every operation the driver plans returns. The driver announces the count
 // before starting clients.
-event eOpsPlanned: int;
+event OpsPlanned: int;
 
-spec OperationsReturn observes eOpsPlanned, eWriteDone, eReadDone {
+spec OperationsReturn observes OpsPlanned, WriteDone, ReadDone {
   var pending: int;
 
   start state Idle {
-    on eOpsPlanned do (n: int) {
+    on OpsPlanned do (n: int) {
       assert n > 0, "planned no operations";
       pending = n;
       goto Busy;
     }
-    on eWriteDone do { assert false, "write returned with no work planned"; }
-    on eReadDone do { assert false, "read returned with no work planned"; }
+    on WriteDone do { assert false, "write returned with no work planned"; }
+    on ReadDone do { assert false, "read returned with no work planned"; }
   }
 
   hot state Busy {
-    on eOpsPlanned do { assert false, "operations planned twice"; }
-    on eWriteDone do { Finish(); }
-    on eReadDone do { Finish(); }
+    on OpsPlanned do { assert false, "operations planned twice"; }
+    on WriteDone do { Finish(); }
+    on ReadDone do { Finish(); }
   }
 
   fun Finish() {

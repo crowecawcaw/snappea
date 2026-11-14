@@ -3,22 +3,22 @@
 // duplicates that look up before either records both charge.
 // tcBugCheckThenAct shows the contract catching it.
 
-event eLookup: (api: machine, key: int);
-event eLookupResp: (found: bool, result: tResult);
-event ePut: (key: int, result: tResult);
+event Lookup: (api: machine, key: int);
+event LookupResponse: (found: bool, result: ChargeResult);
+event Put: (key: int, result: ChargeResult);
 
 // A plain key-value table: get and put, no conditional insert.
 machine PlainKeyStore {
-  var results: map[int, tResult];
+  var results: map[int, ChargeResult];
   start state Serving {
-    on eLookup do (l: (api: machine, key: int)) {
+    on Lookup do (l: (api: machine, key: int)) {
       if (l.key in results) {
-        send l.api, eLookupResp, (found = true, result = results[l.key]);
+        send l.api, LookupResponse, (found = true, result = results[l.key]);
       } else {
-        send l.api, eLookupResp, (found = false, result = Declined);
+        send l.api, LookupResponse, (found = false, result = Declined);
       }
     }
-    on ePut do (p: (key: int, result: tResult)) { results[p.key] = p.result; }
+    on Put do (p: (key: int, result: ChargeResult)) { results[p.key] = p.result; }
   }
 }
 
@@ -31,21 +31,21 @@ machine CheckThenActApi {
       store = input.store;
       processor = input.processor;
     }
-    on eCharge do (r: (client: machine, key: int, amount: int)) {
+    on Charge do (r: (client: machine, key: int, amount: int)) {
       var found: bool;
-      var result: tResult;
-      send store, eLookup, (api = this, key = r.key);
-      receive { case eLookupResp: (l: (found: bool, result: tResult)) {
+      var result: ChargeResult;
+      send store, Lookup, (api = this, key = r.key);
+      receive { case LookupResponse: (l: (found: bool, result: ChargeResult)) {
         found = l.found;
         result = l.result;
       } }
       if (!found) {
         // BUG: another server can look the key up between the lookup and the put.
-        send processor, eProcess, (api = this, key = r.key, amount = r.amount);
-        receive { case eProcessResp: (p: tResult) { result = p; } }
-        send store, ePut, (key = r.key, result = result);
+        send processor, Process, (api = this, key = r.key, amount = r.amount);
+        receive { case ProcessResponse: (p: ChargeResult) { result = p; } }
+        send store, Put, (key = r.key, result = result);
       }
-      send r.client, eChargeResp, (key = r.key, result = result);
+      send r.client, ChargeResponse, (key = r.key, result = result);
     }
   }
 }

@@ -1,24 +1,24 @@
 // A worker: receive a job, apply its effect to the sink, ack with the receipt. The
 // sink records each job's effect once, keyed by job id, so a redelivered job that was
-// already applied is harmless. A worker can crash at any point (eCrash from the test's
+// already applied is harmless. A worker can crash at any point (Crash from the test's
 // failure injector) and never comes back.
 
-event eApply: (worker: machine, job: int, receipt: int);
-event eApplied;
-event eCrash;
+event Apply: (worker: machine, job: int, receipt: int);
+event Applied;
+event Crash;
 
 machine Sink {
   var recorded: set[int];
 
   start state Serving {
-    on eApply do (a: (worker: machine, job: int, receipt: int)) {
+    on Apply do (a: (worker: machine, job: int, receipt: int)) {
       // One transaction: insert the effect unless a row for this job id exists.
-      announce eEffectApplied, (job = a.job, receipt = a.receipt);
+      announce EffectApplied, (job = a.job, receipt = a.receipt);
       if (!(a.job in recorded)) {
         recorded += (a.job);
-        announce eEffectRecorded, (job = a.job,);
+        announce EffectRecorded, (job = a.job,);
       }
-      send a.worker, eApplied;
+      send a.worker, Applied;
     }
   }
 }
@@ -38,40 +38,40 @@ machine Worker {
   }
 
   state Receiving {
-    entry { send queue, eReceive, (worker = this,); }
-    on eJob goto Applying with (j: (job: int, receipt: int)) {
+    entry { send queue, Receive, (worker = this,); }
+    on Job goto Applying with (j: (job: int, receipt: int)) {
       job = j.job;
       receipt = j.receipt;
     }
-    on eNoMoreJobs goto Stopped;
-    on eCrash goto Crashed;
+    on NoMoreJobs goto Stopped;
+    on Crash goto Crashed;
   }
 
   state Applying {
-    entry { send sink, eApply, (worker = this, job = job, receipt = receipt); }
-    on eApplied goto Acking;
-    on eCrash goto Crashed;
+    entry { send sink, Apply, (worker = this, job = job, receipt = receipt); }
+    on Applied goto Acking;
+    on Crash goto Crashed;
   }
 
   state Acking {
     entry {
-      announce eAckSent, (job = job, receipt = receipt);
-      send queue, eAck, (worker = this, job = job, receipt = receipt);
+      announce AckSent, (job = job, receipt = receipt);
+      send queue, Ack, (worker = this, job = job, receipt = receipt);
     }
     // A rejected ack means the job was redelivered: whoever holds it now will ack it.
-    on eAckResp goto Receiving;
-    on eCrash goto Crashed;
+    on AckResp goto Receiving;
+    on Crash goto Crashed;
   }
 
   state Stopped {
-    entry { announce eWorkerStopped, (worker = this,); }
-    ignore eCrash;
+    entry { announce WorkerStopped, (worker = this,); }
+    ignore Crash;
   }
 
   // Crashed for good: replies to the dead process are dropped. The announcement
   // marks the moment of the crash for the specs (a supervisor would see it).
   state Crashed {
-    entry { announce eWorkerCrashed, (worker = this,); }
-    ignore eJob, eNoMoreJobs, eApplied, eAckResp, eCrash;
+    entry { announce WorkerCrashed, (worker = this,); }
+    ignore Job, NoMoreJobs, Applied, AckResp, Crash;
   }
 }

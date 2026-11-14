@@ -32,7 +32,7 @@ committed values go 1, 2, 3.
 
 | File | What it holds |
 | --- | --- |
-| [`PSrc/Store.p`](PSrc/Store.p) | The store: `eGet` and `eCas`, each one atomic step |
+| [`PSrc/Store.p`](PSrc/Store.p) | The store: `Get` and `Cas`, each one atomic step |
 | [`PSrc/ReceiveClient.p`](PSrc/ReceiveClient.p) | The client with `receive` |
 | [`PSrc/StateClient.p`](PSrc/StateClient.p) | The same client as states |
 | [`PSpec/IncrementsApplied.p`](PSpec/IncrementsApplied.p) | The contract (safety and progress) |
@@ -54,9 +54,9 @@ fun Increment() {
 
 fun Get(): (version: int, value: int) {
   var result: (version: int, value: int);
-  send store, eGet, (client = this,);
+  send store, Get, (client = this,);
   receive {
-    case eGetResp: (r: (version: int, value: int)) { result = r; }
+    case GetResponse: (r: (version: int, value: int)) { result = r; }
   }
   return result;
 }
@@ -67,15 +67,15 @@ As states, the same loop is spread over `Reading` and `Writing`, and the retry i
 
 ```p
 state Reading {
-  defer eIncrement;
-  entry { send store, eGet, (client = this,); }
-  on eGetResp do (r: (version: int, value: int)) { current = r; goto Writing; }
+  defer Increment;
+  entry { send store, Get, (client = this,); }
+  on GetResponse do (r: (version: int, value: int)) { current = r; goto Writing; }
 }
 
 state Writing {
-  defer eIncrement;
-  entry { send store, eCas, (client = this, version = current.version, value = current.value + 1); }
-  on eCasResp do (r: (ok: bool)) {
+  defer Increment;
+  entry { send store, Cas, (client = this, version = current.version, value = current.value + 1); }
+  on CasResponse do (r: (ok: bool)) {
     if (r.ok) { goto Idle; } else { goto Reading; }
   }
 }
@@ -83,17 +83,17 @@ state Writing {
 
 ## What happens to other events while waiting
 
-Here the first client gets a second `eIncrement` while it is still working on the
+Here the first client gets a second `Increment` while it is still working on the
 first. Every event that arrives while a machine waits must be handled, deferred or
 ignored, or the run fails with "cannot be handled":
 
 - **In `receive`**, only the listed cases are taken. Any other event stays in the queue
   if the *current state* handles, defers or ignores it, and is processed after the
-  `receive` returns. `ReceiveClient` waits inside `Idle`'s `eIncrement` handler, and
-  `Idle` handles `eIncrement`, so the second increment simply waits its turn. An event
+  `receive` returns. `ReceiveClient` waits inside `Idle`'s `Increment` handler, and
+  `Idle` handles `Increment`, so the second increment simply waits its turn. An event
   the state does not mention at all is an error, even if a later state would handle it.
 - **With states**, each waiting state decides for itself. `Reading` and `Writing` must
-  each say `defer eIncrement;`.
+  each say `defer Increment;`.
 
 So the trade-off: `receive` is easier to read and keeps the algorithm in one place, but
 what happens to other events depends on the state the machine happens to be in, which
@@ -107,6 +107,9 @@ other events. Use states when the machine must react to other events while it wa
 | --- | --- | --- | --- |
 | `tcReceiveClients` | 2 `ReceiveClient`s, 3 increments | CAS conflicts force retries; an increment arrives mid-call | passes, all 885 schedules |
 | `tcStateClients` | 2 `StateClient`s, 3 increments | The same race, state-based client | passes, all 920 schedules |
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
@@ -128,19 +131,19 @@ to differ, so counting down is equally correct. The suppression comment in
 
 ## Common mistake: one handler for the whole call
 
-Writing the increment as one store handler (`on eIncrement do { value = value + 1; }`)
+Writing the increment as one store handler (`on Increment do { value = value + 1; }`)
 removes the get/CAS gap, and with it the race the model is for. Keep the client's
 `send` and `receive` (or states) between reading and writing, so another client can
 run there.
 
 ## Try this
 
-Remove `defer eIncrement;` from `StateClient`'s `Writing` state. The first client gets
+Remove `defer Increment;` from `StateClient`'s `Writing` state. The first client gets
 its second increment while waiting for the CAS reply:
 
 ```text
 FAIL  tcStateClients (bug found after 1 schedule, 0.02s)
-      StateClient(3) received event 'PImplementation.eIncrement' that cannot be handled.
+      StateClient(3) received event 'PImplementation.Increment' that cannot be handled.
 ```
 
 ## Bounds
@@ -150,6 +153,6 @@ up retrying, which ends because only three writes ever happen.
 
 ## In your implementation
 
-Emit `eCommitted` from the store where the CAS succeeds, with the new value, and the
+Emit `Committed` from the store where the CAS succeeds, with the new value, and the
 number of increments when the test starts. The interesting real-code test forces a
 conflict: let a second client write between the first client's get and its CAS.

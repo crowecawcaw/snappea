@@ -5,17 +5,17 @@ machine App {
   start state Running {
     entry (input: (owner: machine, conn: Connection, holds: bool)) {
       owner = input.owner;
-      send input.conn, eOpen, this;
+      send input.conn, Open, this;
       if (input.holds) { goto Holding; }
     }
-    on eConnected do (conn: machine) {
-      send owner, eConnected, conn;
-      send conn, eClose, ByClient;
+    on Connected do (conn: machine) {
+      send owner, Connected, conn;
+      send conn, Close, ByClient;
     }
   }
   // Keeps the connection open until the server takes it away.
   state Holding {
-    on eConnected do (conn: machine) { send owner, eConnected, conn; }
+    on Connected do (conn: machine) { send owner, Connected, conn; }
   }
 }
 
@@ -29,12 +29,12 @@ machine TwoConnectionsOneSlot {
   start state Init {
     entry {
       var server: Server;
-      announce ePlanned, (slots = 1, connections = 2);
+      announce Planned, (slots = 1, connections = 2);
       server = new Server(1);
       StartApp(this, server, false);
       StartApp(this, server, false);
     }
-    ignore eConnected;
+    ignore Connected;
   }
 }
 
@@ -44,12 +44,12 @@ machine TwoConnectionsTwoSlots {
   start state Init {
     entry {
       var server: Server;
-      announce ePlanned, (slots = 2, connections = 2);
+      announce Planned, (slots = 2, connections = 2);
       server = new Server(2);
       StartApp(this, server, false);
       StartApp(this, server, false);
     }
-    ignore eConnected;
+    ignore Connected;
   }
 }
 
@@ -59,15 +59,15 @@ machine EvictIdleHolder {
   var server: Server;
   start state First {
     entry {
-      announce ePlanned, (slots = 1, connections = 2);
+      announce Planned, (slots = 1, connections = 2);
       server = new Server(1);
       StartApp(this, server, true);
     }
-    on eConnected goto Second;
+    on Connected goto Second;
   }
   state Second {
     entry { StartApp(this, server, false); }
-    ignore eConnected;
+    ignore Connected;
   }
 }
 

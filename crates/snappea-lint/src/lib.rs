@@ -10,15 +10,28 @@ mod visit;
 use snappea_syntax::{ast::*, parse, FileId, ParseError, SourceMap, Span};
 
 pub use rules::{
-    NoModelMachine, PermissiveMonitor, ScenarioColdStart, ScenarioNeverAccepts, TautologicalAssert, UnobservedHandler,
-    UnselectedSpec, UnusedPayloadField,
+    AnnounceAndSend, EnumValueShadowsMachine, NoModelMachine, PermissiveMonitor, ScenarioColdStart,
+    ScenarioNeverAccepts, TautologicalAssert, UnobservedHandler, UnselectedSpec, UnusedPayloadField,
 };
-pub use suppression::MUTATIONS;
+pub use suppression::{MutationSuppression, TestIntent, MUTATIONS};
+
+/// Intent declarations on test cases; malformed declarations are lint findings.
+pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> {
+    Ok(suppression::test_intents(&Context::parse(sources)?))
+}
 
 /// Rules that need the type-checked program, which `snappea` runs on it (see
 /// `snappea::checker::checked`): their IDs and descriptions, so suppression comments and
 /// `--list-rules` know them.
 pub const PROGRAM_RULES: &[(&str, &str)] = &[
+    (
+        "unused-design-payload-field",
+        "Advisory: a design event handler never reads a named payload field outside diagnostic output.",
+    ),
+    (
+        "shared-spec-helper",
+        "Advisory: a selected spec and design machine call the same global helper, so a shared mistake may escape the oracle.",
+    ),
     (
         "unchecked-state",
         "A model or spec field is written, but no assertion, condition, spec or sent event depends on it.",
@@ -53,7 +66,13 @@ pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding
     Ok(())
 }
 
-/// An actionable diagnostic. Every unsuppressed finding fails CLI linting.
+/// Whether a rule reports an advisory rather than blocking a check. Advisory findings
+/// remain warnings even with `--deny lint`; source suppressions work as usual.
+pub fn is_advisory(rule: &str) -> bool {
+    matches!(rule, "shared-spec-helper" | "unused-design-payload-field")
+}
+
+/// An actionable diagnostic; advisory rules do not fail CLI linting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     pub rule: &'static str,
@@ -135,6 +154,8 @@ impl Registry {
         r.register(UnobservedHandler);
         r.register(ScenarioNeverAccepts);
         r.register(ScenarioColdStart);
+        r.register(EnumValueShadowsMachine);
+        r.register(AnnounceAndSend);
         r
     }
 
@@ -184,6 +205,10 @@ pub fn lint_observation(sources: &SourceMap) -> Result<Vec<Finding>, ParseError>
 
 /// The code `// snappea-lint: allow mutation[:<kind>]` comments exclude from mutation
 /// testing, with the ID each allows (`mutation` or `mutation:<kind>`).
+pub fn mutation_suppression_details(sources: &SourceMap) -> Result<Vec<MutationSuppression>, ParseError> {
+    Ok(suppression::mutation_suppression_details(&Context::parse(sources)?))
+}
+
 pub fn mutation_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
     Ok(suppression::mutation_suppressions(&Context::parse(sources)?))
 }

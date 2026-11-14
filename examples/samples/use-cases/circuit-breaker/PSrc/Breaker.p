@@ -14,16 +14,16 @@
 // answers its caller. The cooldown timer carries the period too, so a duplicate or
 // stale firing cannot reopen the half-open window.
 
-event eCall: (caller: machine, call: int);
-event eCallResult: (call: int, outcome: tOutcome);
-event eDepCall: (breaker: machine, call: int);
-event eDepResult: (call: int, ok: bool);
-// To the timer service: fire eCooldown with this period after the cooldown.
-event eStartCooldown: (breaker: machine, period: int);
-event eCooldown: (period: int);
+event CallRequested: (caller: machine, call: int);
+event CallResult: (call: int, outcome: CallOutcome);
+event DependencyCall: (breaker: machine, call: int);
+event DependencyResult: (call: int, ok: bool);
+// To the timer service: fire Cooldown with this period after the cooldown.
+event StartCooldown: (breaker: machine, period: int);
+event Cooldown: (period: int);
 
 machine Breaker {
-  var mode: tBreakerState;
+  var mode: BreakerState;
   var threshold: int;
   var failures: int;
   var period: int;
@@ -42,10 +42,12 @@ machine Breaker {
       // mode starts Closed, the enum's first value.
     }
 
-    on eCall do (c: (caller: machine, call: int)) {
-      if (mode == Open || (mode == HalfOpen && trialInFlight)) {
-        announce eShortCircuited, (call = c.call,);
-        send c.caller, eCallResult, (call = c.call, outcome = Rejected);
+    on CallRequested do (c: (caller: machine, call: int)) {
+      // Only a half-open trial sets trialInFlight; its result clears it before
+      // changing mode. Either an open breaker or an occupied trial rejects.
+      if (mode == Open || trialInFlight) {
+        announce CallRejected, (call = c.call,);
+        send c.caller, CallResult, (call = c.call, outcome = Rejected);
         return;
       }
       if (mode == HalfOpen) {
@@ -53,13 +55,13 @@ machine Breaker {
       }
       callers[c.call] = c.caller;
       sentIn[c.call] = period;
-      announce eDispatched, (call = c.call,);
-      send dependency, eDepCall, (breaker = this, call = c.call);
+      announce CallDispatched, (call = c.call,);
+      send dependency, DependencyCall, (breaker = this, call = c.call);
     }
 
-    on eDepResult do (r: (call: int, ok: bool)) {
+    on DependencyResult do (r: (call: int, ok: bool)) {
       var caller: machine;
-      announce eResultSeen, r;
+      announce CallResultObserved, r;
       caller = callers[r.call];
       // snappea-lint: allow mutation:remove-statement -- forgetting a finished call; call ids are never reused, so keeping it is unobservable
       callers -= (r.call);
@@ -81,26 +83,28 @@ machine Breaker {
       // snappea-lint: allow mutation:remove-statement -- as above: frees memory only
       sentIn -= (r.call);
       if (r.ok) {
-        send caller, eCallResult, (call = r.call, outcome = Succeeded);
+        send caller, CallResult, (call = r.call, outcome = Succeeded);
       } else {
-        send caller, eCallResult, (call = r.call, outcome = Failed);
+        send caller, CallResult, (call = r.call, outcome = Failed);
       }
     }
 
-    on eCooldown do (t: (period: int)) {
-      if (mode == Open && t.period == period) {
+    on Cooldown do (t: (period: int)) {
+      // Timers are created only on entry to Open. Every mode change advances
+      // period, so a matching timer also proves we are still in that Open period.
+      if (t.period == period) {
         Change(HalfOpen);
       }
     }
   }
 
-  fun Change(target: tBreakerState) {
+  fun Change(target: BreakerState) {
     mode = target;
     period = period + 1;
     failures = 0;
-    announce eBreakerChanged, (mode = target,);
+    announce BreakerChanged, (mode = target,);
     if (target == Open) {
-      send timers, eStartCooldown, (breaker = this, period = period);
+      send timers, StartCooldown, (breaker = this, period = period);
     }
   }
 }

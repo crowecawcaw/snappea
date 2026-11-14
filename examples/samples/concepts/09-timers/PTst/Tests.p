@@ -3,7 +3,7 @@
 fun StartCalls(inputs: seq[int]): seq[int] {
   var i: int;
   while (i < sizeof(inputs)) {
-    announce eRequested, (id = i + 1, value = inputs[i]);
+    announce Requested, (id = i + 1, value = inputs[i]);
     i = i + 1;
   }
   return inputs;
@@ -37,6 +37,6 @@ machine StaleReplyCalls {
 test tcTimeoutRace [main=TwoCalls]:
   assert FirstArrivalDecides in { TwoCalls, Client, Server, Timer };
 
-// expect-bug: but the server computes 4 for it
+// snappea: expect-bug "but the server computes 4 for it"
 test tcBugStaleReply [main=StaleReplyCalls]:
   assert FirstArrivalDecides in { StaleReplyCalls, StaleReplyClient, Server, Timer };

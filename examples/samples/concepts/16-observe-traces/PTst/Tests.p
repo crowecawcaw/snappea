@@ -4,7 +4,7 @@
 machine Customer {
   start state Shopping {
     entry (service: OrderService) {
-      send service, ePlace, (order = 7, amount = 30);
+      send service, Place, (order = 7, amount = 30);
       if ($) {
         Cancel(service);
         Pay(service);
@@ -19,13 +19,13 @@ machine Customer {
 // The customer's requests are logged too, so the spec knows what was asked and in
 // which order, not only what the service decided.
 fun Pay(service: OrderService) {
-  announce ePayRequested, 7;
-  send service, ePay, 30;
+  announce PayRequested, 7;
+  send service, Pay, 30;
 }
 
 fun Cancel(service: OrderService) {
-  announce eCancelRequested, 7;
-  send service, eCancel;
+  announce CancelRequested, 7;
+  send service, Cancel;
 }
 
 machine OneOrder {

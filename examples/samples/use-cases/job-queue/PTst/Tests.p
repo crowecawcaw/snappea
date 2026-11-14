@@ -2,7 +2,7 @@
 // driver machine with budgets. Workers, queue and sink are the design.
 
 // The environment's crash request: crash this worker at a moment the scheduler picks.
-event eCrashWorker: (worker: machine);
+event CrashWorker: (worker: machine);
 
 // Visibility timers. A timer fires only when the environment allows it: for every
 // delivery to a crashed worker (it never acks), and for at most `slow` other
@@ -21,7 +21,7 @@ machine Timers {
       slow = budget.slow;
       duplicates = budget.duplicates;
     }
-    on eStartTimer do (t: (queue: machine, job: int, receipt: int, worker: machine)) {
+    on StartTimer do (t: (queue: machine, job: int, receipt: int, worker: machine)) {
       deliveries[t.receipt] = (queue = t.queue, job = t.job, worker = t.worker);
       if (t.worker in crashed) {
         Fire(t.receipt);
@@ -33,10 +33,10 @@ machine Timers {
         if (duplicates && $) { Fire(t.receipt); }
       }
     }
-    on eCrashWorker do (c: (worker: machine)) {
+    on CrashWorker do (c: (worker: machine)) {
       var r: int;
       crashed += (c.worker);
-      send c.worker, eCrash;
+      send c.worker, Crash;
       // The crashed worker's deliveries will all time out.
       foreach (r in keys(deliveries)) {
         if (deliveries[r].worker == c.worker) { Fire(r); }
@@ -45,12 +45,12 @@ machine Timers {
   }
 
   fun Fire(receipt: int) {
-    send deliveries[receipt].queue, eVisibilityTimeout, (job = deliveries[receipt].job, receipt = receipt);
+    send deliveries[receipt].queue, VisibilityTimeout, (job = deliveries[receipt].job, receipt = receipt);
   }
 }
 
 // crash: whether the failure injector crashes the first worker.
-type tSetup = (jobs: int, workers: int, slow: int, duplicates: bool, crash: bool);
+type Setup = (jobs: int, workers: int, slow: int, duplicates: bool, crash: bool);
 
 // Enqueues jobs 1..n and starts the workers against `queue`'s kind of queue.
 fun JobSet(n: int): set[int] {
@@ -58,14 +58,14 @@ fun JobSet(n: int): set[int] {
   var j: int;
   j = 1;
   while (j <= n) {
-    announce eEnqueued, (job = j,);
+    announce Enqueued, (job = j,);
     jobs += (j);
     j = j + 1;
   }
   return jobs;
 }
 
-fun StartWorkers(queue: machine, timers: machine, s: tSetup) {
+fun StartWorkers(queue: machine, timers: machine, s: Setup) {
   var sink: Sink;
   var w: machine;
   var first: machine;
@@ -73,18 +73,18 @@ fun StartWorkers(queue: machine, timers: machine, s: tSetup) {
   sink = new Sink();
   while (i < s.workers) {
     w = new Worker((queue = queue, sink = sink));
-    announce eWorkerStarted, (worker = w,);
+    announce WorkerStarted, (worker = w,);
     if (i == 0) { first = w; }
     i = i + 1;
   }
   // Requested once every worker runs, so either worker may already hold a job.
-  if (s.crash) { send timers, eCrashWorker, (worker = first,); }
+  if (s.crash) { send timers, CrashWorker, (worker = first,); }
 }
 
-fun Run(s: tSetup) {
+fun Run(s: Setup) {
   var timers: machine;
   var queue: machine;
-  announce eWorkersPlanned, s.workers;
+  announce WorkersPlanned, s.workers;
   timers = new Timers((slow = s.slow, duplicates = s.duplicates));
   queue = new Queue((timers = timers, jobs = JobSet(s.jobs)));
   StartWorkers(queue, timers, s);
@@ -146,9 +146,9 @@ machine BuggySlowWorker {
     entry {
       var timers: machine;
       var queue: machine;
-      var s: tSetup;
+      var s: Setup;
       s = (jobs = 1, workers = 2, slow = 1, duplicates = false, crash = false);
-      announce eWorkersPlanned, s.workers;
+      announce WorkersPlanned, s.workers;
       timers = new Timers((slow = s.slow, duplicates = s.duplicates));
       queue = new AckByIdQueue((timers = timers, jobs = JobSet(s.jobs)));
       StartWorkers(queue, timers, s);
@@ -156,6 +156,6 @@ machine BuggySlowWorker {
   }
 }
 
-// expect-bug: completed by an ack with stale receipt
+// snappea: expect-bug "completed by an ack with stale receipt"
 test tcBugAckByJobId [main=BuggySlowWorker]:
   assert ReceiptsFence, JobsComplete in { BuggySlowWorker, Timers, AckByIdQueue, Sink, Worker };

@@ -47,7 +47,7 @@ From `tcBugCheckThenWait` (one consumer, one item):
 4. Item 10 sits in the queue, the consumer waits for a wake-up that already happened,
    and nothing else can run.
 
-The check fails with:
+The negative control finds this declared bug:
 
 ```text
 Deadlock detected. RacyConsumer(3) is waiting to receive an event, but no other controlled tasks are enabled.
@@ -66,7 +66,7 @@ test rarely arranges. The checker found it in the first handful of schedules.
 
 ## The fix
 
-`WaitQueue` makes take-or-register one critical section (`eTakeOrWait`): the queue
+`WaitQueue` makes take-or-register one critical section (`TakeOrWait`): the queue
 either hands back an item or records the consumer as a waiter while it still holds the
 lock. A put then either finds the item gone or finds the waiter and wakes it. This is
 what `while (queue.isEmpty()) cond.wait(lock);` gives you, since `wait` releases the
@@ -88,9 +88,9 @@ parking, also fixes it.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFixedOneConsumerTwoItems` | One consumer takes two items from one producer | Take from a non-empty queue, sleep on an empty one, be woken by a put | passes, all 121 schedules |
-| `tcFixedTwoConsumers` | Two consumers, one item each | Both asleep at once, a put wakes only one, a woken consumer finds its item stolen and sleeps again | passes, all 1152 schedules |
-| `tcBugCheckThenWait` | Flawed queue, one consumer, one item | **Expected to fail**: `RacyConsumer(3) is waiting to receive an event` | fails within 6 schedules |
+| `tcFixedOneConsumerTwoItems` | One consumer takes two items from one producer | Take from a non-empty queue, sleep on an empty one, be woken by a put | passes |
+| `tcFixedTwoConsumers` | Two consumers, one item each | Both asleep at once, a put wakes only one, a woken consumer finds its item stolen and sleeps again | passes |
+| `tcBugCheckThenWait` | Flawed queue, one consumer, one item | **Expected bug**: consumer remains waiting for `Wake` | Expected bug found |
 
 `PutWakesSleeper` confirms the fixed tests reach the interesting history: a consumer
 asleep, then a put, then its wake-up.
@@ -99,8 +99,16 @@ asleep, then a put, then its wake-up.
 
 ```sh
 snappea check LostWakeup.pproj 'tcFixed*' --deny mutation
-snappea check LostWakeup.pproj tcBugCheckThenWait   # exits 1 with the deadlock above
+snappea check LostWakeup.pproj tcBugCheckThenWait   # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
+
+The declaration matches `is waiting to receive an event`, rather than the
+allocation-dependent machine number. This model has one consumer; inspect the
+replay to confirm that it is waiting for `Wake` after the producer has finished.
 
 ## Bounds and omissions
 
@@ -111,7 +119,7 @@ the same flaw makes producers hang).
 
 ## Testing the implementation
 
-Emit `eQueued`, `eTaken`, `eSleeping` and `eWoken` from inside the queue's critical
+Emit `Queued`, `Taken`, `Sleeping` and `Woken` from inside the queue's critical
 sections. To force the race, add a test hook between the consumer's empty check and its
 registration, block the consumer there, put the last item, then release the consumer:
 with the flaw the take never returns (use a timeout in the test).

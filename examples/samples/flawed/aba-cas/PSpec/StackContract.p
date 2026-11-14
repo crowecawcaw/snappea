@@ -3,27 +3,27 @@
 // stack (a sequence, top first) and compares it with the list memory actually links up.
 // It never reads a thread's local view, so it holds for any algorithm.
 
-enum tOp { Pop, Push }
+enum Operation { Pop, Push }
 // One thread's script: the operations it runs in order, and the free nodes it owns
 // before it starts. A pop adds the node to the thread's owned nodes; a push takes the
 // oldest node the thread owns, so popping X and later pushing reuses node X.
-type tPlan = (ops: seq[tOp], owned: seq[int]);
+type ThreadPlan = (ops: seq[Operation], owned: seq[int]);
 
 // From the driver, before any thread starts: the initial stack and each thread's plan.
-event eStackStarted: (stack: seq[int], plans: map[int, tPlan]);
+event StackStarted: (stack: seq[int], plans: map[int, ThreadPlan]);
 // From memory, inside the compare-and-swap that succeeded: which thread swapped the
 // top, and memory's whole list (top and every next pointer) right after it.
-event eTopSwapped: (tid: int, top: int, next: map[int, int]);
+event TopSwapped: (tid: int, top: int, next: map[int, int]);
 // From a thread, when its operation returns: the node it popped or pushed.
-event eOpDone: (tid: int, op: tOp, node: int);
+event OpDone: (tid: int, op: Operation, node: int);
 
 // Safety and progress: every successful swap commits the thread's next planned
 // operation, the list memory links up afterwards is exactly the stack the history of
 // committed operations gives, each operation returns the node it committed, and every
 // planned operation finishes.
-spec StackIsLinearizable observes eStackStarted, eTopSwapped, eOpDone {
+spec StackIsLinearizable observes StackStarted, TopSwapped, OpDone {
   var stack: seq[int];
-  var plans: map[int, tPlan];
+  var plans: map[int, ThreadPlan];
   // tid -> index of its current operation
   var step: map[int, int];
   // tid -> node its current operation committed (absent until the swap succeeds)
@@ -31,7 +31,7 @@ spec StackIsLinearizable observes eStackStarted, eTopSwapped, eOpDone {
   var unfinished: int;
 
   start state Idle {
-    on eStackStarted do (p: (stack: seq[int], plans: map[int, tPlan])) {
+    on StackStarted do (p: (stack: seq[int], plans: map[int, ThreadPlan])) {
       var tid: int;
       stack = p.stack;
       plans = p.plans;
@@ -42,14 +42,14 @@ spec StackIsLinearizable observes eStackStarted, eTopSwapped, eOpDone {
       assert unfinished > 0, "planned no operations";
       goto Running;
     }
-    on eTopSwapped do { assert false, "top swapped before the stack started"; }
-    on eOpDone do { assert false, "operation finished before the stack started"; }
+    on TopSwapped do { assert false, "top swapped before the stack started"; }
+    on OpDone do { assert false, "operation finished before the stack started"; }
   }
 
   hot state Running {
-    on eStackStarted do { assert false, "stack started twice"; }
-    on eTopSwapped do (p: (tid: int, top: int, next: map[int, int])) {
-      var op: tOp;
+    on StackStarted do { assert false, "stack started twice"; }
+    on TopSwapped do (p: (tid: int, top: int, next: map[int, int])) {
+      var op: Operation;
       var node: int;
       assert p.tid in plans, format("unknown thread {0} swapped the top", p.tid);
       assert step[p.tid] < sizeof(plans[p.tid].ops), format("thread {0} swapped after its last operation", p.tid);
@@ -71,7 +71,7 @@ spec StackIsLinearizable observes eStackStarted, eTopSwapped, eOpDone {
         format("after thread {0} committed node {1}, memory links up the stack {2}, but the committed operations give {3}",
           p.tid, node, Linked(p.top, p.next), stack);
     }
-    on eOpDone do (p: (tid: int, op: tOp, node: int)) {
+    on OpDone do (p: (tid: int, op: Operation, node: int)) {
       assert p.tid in committed, format("thread {0}'s operation returned before it committed", p.tid);
       assert p.op == plans[p.tid].ops[step[p.tid]],
         format("thread {0} ran an operation its plan does not have next", p.tid);
@@ -85,19 +85,21 @@ spec StackIsLinearizable observes eStackStarted, eTopSwapped, eOpDone {
   }
 
   state Finished {
-    on eStackStarted do { assert false, "stack started twice"; }
-    on eTopSwapped do { assert false, "top swapped after every planned operation finished"; }
-    on eOpDone do { assert false, "operation finished after every planned operation finished"; }
+    on StackStarted do { assert false, "stack started twice"; }
+    on TopSwapped do { assert false, "top swapped after every planned operation finished"; }
+    on OpDone do { assert false, "operation finished after every planned operation finished"; }
   }
 
-  // The list memory holds, top first: follow next pointers from top until 0. Stops after
-  // as many nodes as memory has, so a cycle shows up as a too-long list instead of a hang.
-  // snappea-lint: allow coverage -- the bound only stops a cycle, which only a broken design links up
+  // Follow next pointers until the null node. Reject a cycle explicitly, so a
+  // malformed stack produces a useful counterexample instead of hanging the spec.
   fun Linked(top: int, next: map[int, int]) : seq[int] {
     var list: seq[int];
+    var visited: set[int];
     var p: int;
     p = top;
-    while (p != 0 && sizeof(list) <= sizeof(next)) {
+    while (p != 0) {
+      assert !(p in visited), format("cycle in stack links at node {0}", p);
+      visited += (p);
       list += (sizeof(list), p);
       p = next[p];
     }

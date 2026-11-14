@@ -1,6 +1,7 @@
 <!-- Quorum-replicated register: N=3, W=2, R=2, versions from a read phase. See README.md. -->
 <Project>
 <ProjectName>QuorumKv</ProjectName>
+<IncludeProject>../../../../crates/snappea/src/cli/guide/examples/building-blocks/Network.pproj</IncludeProject>
 <InputFiles>
 	<PFile>./PSrc/</PFile>
 	<PFile>./PSpec/</PFile>

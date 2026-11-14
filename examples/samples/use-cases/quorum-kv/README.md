@@ -51,13 +51,13 @@ ack). Everything else is client logic that interleaves.
 | `tcOneReplicaDown` | Read, write, read with the third replica dead | Quorums make progress without it, and still see the write |
 | `tcWriteAndReads` | One writer and one reader concurrently | Reads before, during and after the write |
 | `tcTwoWriters` | Two writers and a reader concurrently | Same counter from both read phases; the writer id breaks the tie; late writes |
-| `tcBugReadOne` | Write then read with R = 1 (R + W = N) | **Expected to fail**: `reader 1 returned the initial value after write 1 completed` |
+| `tcBugReadOne` | Write then read with R = 1 (R + W = N) | **Expected bug**: `reader 1 returned the initial value after write 1 completed` |
 
 ## Run
 
 ```sh
 snappea check tcWriteThenRead tcWriteWriteRead tcOneReplicaDown tcWriteAndReads tcTwoWriters --deny mutation
-snappea check tcBugReadOne      # exits 1 with the stale read above
+snappea check tcBugReadOne      # passes when it finds the stale read above
 ```
 
 `tcWriteThenRead` (22k schedules) and `tcOneReplicaDown` explore every schedule; the
@@ -84,7 +84,25 @@ read before returning).
 
 ## Testing the implementation
 
-Emit `eWriteStarted`/`eWriteDone` and `eReadStarted`/`eReadDone` from the client
+Emit `WriteStarted`/`WriteDone` and `ReadStarted`/`ReadDone` from the client
 library around each call, with distinct values per write. To force the overlap case,
 use a test transport that delays the write to one replica until after the next read
 has been answered by that replica and one other.
+
+## Reuse the delivery building block
+
+The project imports `Network.pproj` from Snappea's guide sources and uses
+`BBDelivery` for independently scheduled delivery. It does not add loss or duplicate
+messages by itself. When copying this sample outside the repository, run
+`snappea guide example building-blocks --out vendor`, commit the exported files,
+and point the project's `IncludeProject` at `vendor/building-blocks/Network.pproj`.
+
+Negative controls declare `// snappea: expect-bug "message"`. A matching bug
+passes the test; a different failure or no discovered bug fails it. Check their
+failure identity across seeds with `snappea check 'tcBug*' --no-mutation
+--expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
+not fill coverage gaps or detect mutants in the correct design.
+
+Search is complete only when this run reports `all N schedules` (or JSON
+`search_complete: true`). A timeout, seed, or historical schedule count does not
+guarantee completeness. An incomplete passing run is sampled evidence.

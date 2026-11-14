@@ -1,6 +1,6 @@
 // The contract after mutation testing. Each assertion is here because a mutant survived
 // without it (see README.md).
-spec Contract observes eOpened, eRequested, eWithdrawn, eAnswered {
+spec Contract observes Opened, Requested, Withdrawn, Answered {
   // The balance rebuilt from the history, independent of the account.
   var expected: int;
   // id -> amount asked for
@@ -10,24 +10,24 @@ spec Contract observes eOpened, eRequested, eWithdrawn, eAnswered {
   var unanswered: int;
 
   start state Idle {
-    on eOpened goto Running with (o: (balance: int, withdrawals: int)) {
+    on Opened goto Running with (o: (balance: int, withdrawals: int)) {
       assert o.withdrawals > 0, "planned no withdrawals";
       expected = o.balance;
       unanswered = o.withdrawals;
     }
-    on eRequested do { assert false, "withdrawal before the account opened"; }
-    on eWithdrawn do { assert false, "commit before the account opened"; }
-    on eAnswered do { assert false, "answer before the account opened"; }
+    on Requested do { assert false, "withdrawal before the account opened"; }
+    on Withdrawn do { assert false, "commit before the account opened"; }
+    on Answered do { assert false, "answer before the account opened"; }
   }
 
-  // Hot until every withdrawal is answered: kills "removed send eWithdrawResp".
+  // Hot until every withdrawal is answered: kills "removed send WithdrawResponse".
   hot state Running {
-    on eOpened do { assert false, "account opened twice"; }
-    on eRequested do (r: (id: int, amount: int)) {
+    on Opened do { assert false, "account opened twice"; }
+    on Requested do (r: (id: int, amount: int)) {
       assert !(r.id in requested), format("withdrawal {0} requested twice", r.id);
       requested[r.id] = r.amount;
     }
-    on eWithdrawn do (w: (id: int, ok: bool, balance: int)) {
+    on Withdrawn do (w: (id: int, ok: bool, balance: int)) {
       assert w.id in requested && !(w.id in decided), format("withdrawal {0} committed twice or never requested", w.id);
       // Accept exactly when the balance covers it: kills `<=` -> `<` and forced conditions.
       assert w.ok == (requested[w.id] <= expected),
@@ -37,7 +37,7 @@ spec Contract observes eOpened, eRequested, eWithdrawn, eAnswered {
       assert w.balance == expected, format("withdrawal {0} left balance {1}, expected {2}", w.id, w.balance, expected);
       decided[w.id] = w.ok;
     }
-    on eAnswered do (a: (id: int, ok: bool)) {
+    on Answered do (a: (id: int, ok: bool)) {
       assert a.id in decided && a.ok == decided[a.id], format("withdrawal {0} answered ok = {1} against its commit", a.id, a.ok);
       unanswered = unanswered - 1;
       if (unanswered == 0) { goto Done; }
@@ -45,9 +45,9 @@ spec Contract observes eOpened, eRequested, eWithdrawn, eAnswered {
   }
 
   state Done {
-    on eOpened do { assert false, "account opened after the last answer"; }
-    on eRequested do { assert false, "withdrawal after the last answer"; }
-    on eWithdrawn do { assert false, "commit after the last answer"; }
-    on eAnswered do { assert false, "answer after the last one"; }
+    on Opened do { assert false, "account opened after the last answer"; }
+    on Requested do { assert false, "withdrawal after the last answer"; }
+    on Withdrawn do { assert false, "commit after the last answer"; }
+    on Answered do { assert false, "answer after the last one"; }
   }
 }

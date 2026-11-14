@@ -8,9 +8,9 @@
 // LogShipper, a link that delivers records in order but with any delay, so reads race
 // with it.
 
-event eWrite: (client: machine, session: int, value: int);
-event eWriteAck: int;
-event eReplicate: (lsn: int, value: int);
+event WriteRequest: (client: machine, session: int, value: int);
+event WriteAck: int;
+event Replicate: (lsn: int, value: int);
 
 machine Primary {
   // One log shipper per replica.
@@ -19,13 +19,13 @@ machine Primary {
 
   start state Serving {
     entry (r: seq[machine]) { replicas = r; }
-    on eWrite do (w: (client: machine, session: int, value: int)) {
+    on WriteRequest do (w: (client: machine, session: int, value: int)) {
       var replica: machine;
       lsn = lsn + 1;
-      announce eWritten, (session = w.session, value = w.value);
-      send w.client, eWriteAck, lsn;
+      announce Written, (session = w.session, value = w.value);
+      send w.client, WriteAck, lsn;
       foreach (replica in replicas) {
-        send replica, eReplicate, (lsn = lsn, value = w.value);
+        send replica, Replicate, (lsn = lsn, value = w.value);
       }
     }
   }
@@ -37,6 +37,6 @@ machine LogShipper {
 
   start state Shipping {
     entry (r: machine) { replica = r; }
-    on eReplicate do (r: (lsn: int, value: int)) { send replica, eReplicate, r; }
+    on Replicate do (r: (lsn: int, value: int)) { send replica, Replicate, r; }
   }
 }

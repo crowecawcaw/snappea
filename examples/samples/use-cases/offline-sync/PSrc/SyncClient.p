@@ -12,20 +12,20 @@
 // change is resolved, and a conflict that reports no version newer than the attempt's
 // base (a fresh conflict always reports a newer one).
 
-event ePull;
+event Pull;
 // The client's request timed out (its reply is lost or late); it resends the same request.
-event eSyncTimeout;
+event SyncTimeout;
 // Tells the driver this client has resolved its change and stopped editing.
-event eClientIdle;
+event ClientIdle;
 
-type tClientInit = (owner: machine, server: machine, id: int, note: tNote, edit: int, isDelete: bool);
+type ClientInit = (owner: machine, server: machine, id: int, note: Note, edit: int, isDelete: bool);
 
 machine SyncClient {
   var owner: machine;
   var server: machine;
   var id: int;
   // the local copy the user last saw
-  var note: tNote;
+  var note: Note;
   var edit: int;
   var isDelete: bool;
   // the attempt in flight
@@ -33,7 +33,7 @@ machine SyncClient {
   var content: set[int];
 
   start state Offline {
-    entry (input: tClientInit) {
+    entry (input: ClientInit) {
       owner = input.owner;
       server = input.server;
       id = input.id;
@@ -52,11 +52,11 @@ machine SyncClient {
   }
 
   state Pushing {
-    on eUpdateOk do (r: (req: int, version: int)) {
+    on UpdateOk do (r: (req: int, version: int)) {
       note = (version = r.version, content = content, deleted = isDelete);
       goto Idle, true;
     }
-    on eUpdateConflict do (r: (req: int, server: tNote)) {
+    on UpdateConflict do (r: (req: int, server: Note)) {
       var e: int;
       if (r.server.version <= base) {
         // A late reply to an earlier attempt: this attempt already uses its version.
@@ -73,29 +73,29 @@ machine SyncClient {
       base = r.server.version;
       Push();
     }
-    on eSyncTimeout do {
+    on SyncTimeout do {
       Push();
     }
   }
 
   state Idle {
     entry (applied: bool) {
-      announce eOpDone, (client = id, edit = edit, applied = applied, version = note.version);
-      send owner, eClientIdle;
+      announce OpDone, (client = id, edit = edit, applied = applied, version = note.version);
+      send owner, ClientIdle;
     }
     // Late replies to earlier attempts: the change is already resolved.
-    ignore eUpdateOk, eUpdateConflict;
-    on ePull do {
-      send server, eFetch, this;
+    ignore UpdateOk, UpdateConflict;
+    on Pull do {
+      send server, Fetch, this;
     }
-    on eFetchResp do (n: tNote) {
+    on FetchResp do (n: Note) {
       note = n;
-      announce eSynced, (client = id, note = note);
+      announce Synced, (client = id, note = note);
     }
   }
 
   fun Push() {
-    send server, eUpdate, (client = this, clientId = id, req = edit, base = base,
+    send server, Update, (client = this, clientId = id, req = edit, base = base,
                            content = content, deleted = isDelete);
   }
 }

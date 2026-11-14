@@ -20,8 +20,9 @@ carry over to tests of a real implementation.
 - **[flawed/](flawed/)**: a plausible design with a deliberate flaw, the failing
   test that finds it, and the fix.
 
-Every sample passes lint, coverage and mutation testing, and every test marked
-`// expect-bug:` fails with the named message. CI runs
+The suite checks lint, coverage and mutation testing. Negative controls declare
+`// snappea: expect-bug "message"`; the checker requires that failure on each of three
+seeds. CI runs
 [`check_samples.py`](check_samples.py); see [AUTHORING.md](AUTHORING.md) to add one.
 
 ```sh

@@ -93,18 +93,22 @@ next update with the previous update's commit result (`tcFixedStaleCommitResult`
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFixedServiceCrash` | Outbox design, one update, service may crash anywhere | The same fault as the bug test, against the fix | passes, all schedules |
-| `tcFixedStaleCommitResult` | Service crashed right after each commit, two updates, no relay | A late commit result must not confirm the next update | passes, all schedules |
-| `tcFixedTwoUpdates` | Two updates, no faults | Commits, notifications and relay reads interleave; no duplicates without a crash | passes, all schedules |
-| `tcFixedRelayCrash` | One update, relay may crash anywhere | Crash between publish and mark: delivered twice, applied once | passes, all schedules |
-| `tcBugCrashBetweenWriteAndPublish` | Flawed design, one update, service may crash anywhere | **Expected to fail**: `CommittedNotPublished` | fails within a few schedules |
+| `tcFixedServiceCrash` | Outbox design, one update, service may crash anywhere | The same fault as the bug test, against the fix | passes |
+| `tcFixedStaleCommitResult` | Service crashed right after each commit, two updates, no relay | A late commit result must not confirm the next update | passes |
+| `tcFixedTwoUpdates` | Two updates, no faults | Commits, notifications and relay reads interleave; no duplicates without a crash | passes |
+| `tcFixedRelayCrash` | One update, relay may crash anywhere | Crash between publish and mark: delivered twice, applied once | passes |
+| `tcBugCrashBetweenWriteAndPublish` | Flawed design, one update, service may crash anywhere | **Expected bug**: `CommittedNotPublished` | Expected bug found |
 
 ## Run
 
 ```sh
 snappea check DualWriteCrash.pproj 'tcFixed*' --deny mutation
-snappea check DualWriteCrash.pproj tcBugCrashBetweenWriteAndPublish   # exits 1, liveness bug above
+snappea check DualWriteCrash.pproj tcBugCrashBetweenWriteAndPublish   # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -122,7 +126,7 @@ reads return rows in id order).
 
 ## Testing the implementation
 
-Emit `eCommitted` from the transaction, `eDelivered`/`eApplied` from the consumer, and
+Emit `Committed` from the transaction, `Delivered`/`Applied` from the consumer, and
 the client's request and answer. To force the bug, kill the service process (or throw)
 right after the commit returns; with the outbox, assert the relay still publishes. Kill
 the relay between the broker's acknowledgement and the mark, restart it, and assert the

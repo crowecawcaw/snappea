@@ -5,10 +5,10 @@ machine Broker {
   var consumer: machine;
   start state Serving {
     entry (c: machine) { consumer = c; }
-    on ePublish do (p: (relay: machine, id: int)) {
-      announce eBrokerReceived, p.id;
-      send consumer, eDeliver, p.id;
-      send p.relay, eAck, p.id;
+    on Publish do (p: (relay: machine, id: int)) {
+      announce BrokerReceived, p.id;
+      send consumer, Deliver, p.id;
+      send p.relay, Ack, p.id;
     }
   }
 }
@@ -17,10 +17,10 @@ machine Broker {
 // `crashes` is how many relay crashes the test injects.
 fun PlaceOrders(db: OrderDb, commits: seq[bool], crashes: int) {
   var i: int;
-  announce eOrdersPlanned, (orders = sizeof(commits), crashes = crashes);
+  announce OrdersPlanned, (orders = sizeof(commits), crashes = crashes);
   while (i < sizeof(commits)) {
-    announce eOrderPlaced, (id = i + 1, commits = commits[i]);
-    send db, ePlaceOrder, (id = i + 1, commits = commits[i]);
+    announce OrderPlaced, (id = i + 1, commits = commits[i]);
+    send db, PlaceOrder, (id = i + 1, commits = commits[i]);
     i = i + 1;
   }
 }
@@ -67,7 +67,7 @@ machine RelayCrashAfterPublish {
       commits += (1, false);
       PlaceOrders(db, commits, 1);
     }
-    on eRelayCrashed do { NewRelay(db, broker, this, false); }
+    on RelayCrashed do { NewRelay(db, broker, this, false); }
   }
 }
 
@@ -95,9 +95,9 @@ machine BugDualWrite {
     entry {
       var service: DualWriteOrderService;
       service = new DualWriteOrderService(new Broker(new Consumer()));
-      announce eOrdersPlanned, (orders = 1, crashes = 0);
-      announce eOrderPlaced, (id = 1, commits = true);
-      send service, eDualWriteOrder, (id = 1, crashesBeforePublish = $);
+      announce OrdersPlanned, (orders = 1, crashes = 0);
+      announce OrderPlaced, (id = 1, commits = true);
+      send service, DualWriteOrder, (id = 1, crashesBeforePublish = $);
     }
   }
 }
@@ -115,11 +115,11 @@ test tcRelayCrashAfterPublish [main=RelayCrashAfterPublish]:
 test tcOrdersWhileRelayRuns [main=OrdersWhileRelayRuns]:
   assert AppliedOnce, CommittedOrdersDelivered, OutboxDrains in (union Outbox, { OrdersWhileRelayRuns });
 
-// expect-bug: CommittedOrdersDelivered detected liveness bug in hot state 'Undelivered'
+// snappea: expect-bug "CommittedOrdersDelivered detected liveness bug in hot state 'Undelivered'"
 test tcBugDualWrite [main=BugDualWrite]:
   assert AppliedOnce, CommittedOrdersDelivered in { BugDualWrite, DualWriteOrderService, Broker, Consumer };
 
-// expect-bug: order 1 applied twice
+// snappea: expect-bug "order 1 applied twice"
 test tcBugNoDedup [main=MainBugNoDedup]:
   assert AppliedOnce, CommittedOrdersDelivered, OutboxDrains in
   { MainBugNoDedup, TwoRelays, OrderDb, Relay, NaiveConsumer, Broker };

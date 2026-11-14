@@ -5,17 +5,17 @@
 //   - Health checks are only meaningful now: while initializing, the server ignores
 //     them (no answer means "not healthy yet"), rather than answering late.
 
-event eLoad: (server: machine);
-event eLoaded: (config: int);
-event eRequest: (client: machine, id: int);
-event eResponse: (id: int, config: int);
-event eHealthCheck: (probe: machine);
-event eHealthy;
+event Load: (server: machine);
+event Loaded: (config: int);
+event Request: (client: machine, id: int);
+event Response: (id: int, config: int);
+event HealthCheck: (probe: machine);
+event Healthy;
 
 machine Storage {
   start state Serving {
-    on eLoad do (l: (server: machine)) {
-      send l.server, eLoaded, (config = 7,);
+    on Load do (l: (server: machine)) {
+      send l.server, Loaded, (config = 7,);
     }
   }
 }
@@ -24,24 +24,24 @@ machine Server {
   var config: int;
 
   start state Initializing {
-    defer eRequest;
-    ignore eHealthCheck;
+    defer Request;
+    ignore HealthCheck;
     entry (storage: Storage) {
-      send storage, eLoad, (server = this,);
+      send storage, Load, (server = this,);
     }
-    on eLoaded do (l: (config: int)) {
+    on Loaded do (l: (config: int)) {
       config = l.config;
-      announce eReady;
+      announce Ready;
       goto Serving;
     }
   }
 
   state Serving {
-    on eRequest do (r: (client: machine, id: int)) {
-      send r.client, eResponse, (id = r.id, config = config);
+    on Request do (r: (client: machine, id: int)) {
+      send r.client, Response, (id = r.id, config = config);
     }
-    on eHealthCheck do (h: (probe: machine)) {
-      send h.probe, eHealthy;
+    on HealthCheck do (h: (probe: machine)) {
+      send h.probe, Healthy;
     }
   }
 }
@@ -52,23 +52,23 @@ machine NoDeferServer {
   var config: int;
 
   start state Initializing {
-    ignore eHealthCheck;
+    ignore HealthCheck;
     entry (storage: Storage) {
-      send storage, eLoad, (server = this,);
+      send storage, Load, (server = this,);
     }
-    on eLoaded do (l: (config: int)) {
+    on Loaded do (l: (config: int)) {
       config = l.config;
-      announce eReady;
+      announce Ready;
       goto Serving;
     }
   }
 
   state Serving {
-    on eRequest do (r: (client: machine, id: int)) {
-      send r.client, eResponse, (id = r.id, config = config);
+    on Request do (r: (client: machine, id: int)) {
+      send r.client, Response, (id = r.id, config = config);
     }
-    on eHealthCheck do (h: (probe: machine)) {
-      send h.probe, eHealthy;
+    on HealthCheck do (h: (probe: machine)) {
+      send h.probe, Healthy;
     }
   }
 }

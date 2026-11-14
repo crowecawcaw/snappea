@@ -14,12 +14,12 @@ machine BlindWarehouse {
       store = input.store;
       payments = input.payments;
     }
-    on eFulfil do (r: (order: int, customer: machine)) {
+    on Fulfil do (r: (order: int, customer: machine)) {
       customers[r.order] = r.customer;
-      send store, eTransition, (client = this, order = r.order, allowed = Only(Authorized), next = Picked);
+      send store, Transition, (client = this, order = r.order, allowed = Only(Authorized), next = Picked);
     }
-    on eTransitionResp do (r: (order: int, next: tStatus, ok: bool, prior: tStatus)) {
-      var everything: set[tStatus];
+    on TransitionResp do (r: (order: int, next: Status, ok: bool, prior: Status)) {
+      var everything: set[Status];
       if (!r.ok) {
         return;
       }
@@ -28,17 +28,17 @@ machine BlindWarehouse {
         everything = BeforeShipping();
         everything += (Shipped);
         everything += (Cancelled);
-        send store, eTransition, (client = this, order = r.order, allowed = everything, next = Shipped);
+        send store, Transition, (client = this, order = r.order, allowed = everything, next = Shipped);
         return;
       }
-      send payments, eCapture, (client = this, order = r.order);
+      send payments, CapturePayment, (client = this, order = r.order);
     }
-    on eCaptureResp do (r: (order: int, ok: bool)) {
+    on CaptureResp do (r: (order: int, ok: bool)) {
       if (!r.ok) {
-        send payments, eCapture, (client = this, order = r.order);
+        send payments, CapturePayment, (client = this, order = r.order);
         return;
       }
-      send customers[r.order], eShippedNotice, (order = r.order,);
+      send customers[r.order], ShippedNotice, (order = r.order,);
     }
   }
 }

@@ -1,6 +1,6 @@
 // The same client as a state machine: one state per outstanding request, and the
 // reply handler decides the next step. Each waiting state must say what happens to
-// an eIncrement that arrives meanwhile: here, defer it until the client is Idle.
+// an Increment that arrives meanwhile: here, defer it until the client is Idle.
 machine StateClient {
   var store: Store;
   var current: (version: int, value: int);
@@ -13,26 +13,26 @@ machine StateClient {
   }
 
   state Idle {
-    on eIncrement goto Reading;
+    on Increment goto Reading;
   }
 
   state Reading {
-    defer eIncrement;
+    defer Increment;
     entry {
-      send store, eGet, (client = this,);
+      send store, Get, (client = this,);
     }
-    on eGetResp do (r: (version: int, value: int)) {
+    on GetResponse do (r: (version: int, value: int)) {
       current = r;
       goto Writing;
     }
   }
 
   state Writing {
-    defer eIncrement;
+    defer Increment;
     entry {
-      send store, eCas, (client = this, version = current.version, value = current.value + 1);
+      send store, Cas, (client = this, version = current.version, value = current.value + 1);
     }
-    on eCasResp do (r: (ok: bool)) {
+    on CasResponse do (r: (ok: bool)) {
       if (r.ok) {
         goto Idle;
       } else {

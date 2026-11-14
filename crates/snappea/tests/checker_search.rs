@@ -493,7 +493,11 @@ fn auto_resource_limit_falls_back_without_claiming_exhaustion() {
         test tcMain [main=Main]: { Main };";
     let result = check(src, &opts(StrategyKind::Auto, 30));
     assert_eq!(result.report.num_bugs, 0);
-    assert!(!result.exhaustive.unwrap().finished);
+    let stats = result.exhaustive.unwrap();
+    assert!(!stats.finished);
+    assert_eq!(stats.auto_handoffs.len(), 1);
+    assert!(stats.auto_handoffs[0].reason.contains("limit"));
+    assert!(stats.auto_handoffs[0].choices > 0);
     assert!(result.report.explored_fair_schedules > 0);
 }
 
@@ -646,6 +650,8 @@ fn auto_depth_bound_hands_off_to_fair_feedback_and_replays_the_bug() {
     let stats = result.exhaustive.unwrap();
     assert!(!stats.finished);
     assert_eq!(stats.depth_bound_hits, 1);
+    assert_eq!(stats.auto_handoffs[0].reason, "a schedule reached the depth bound");
+    assert_eq!(stats.auto_handoffs[0].after_schedules, 1);
     let replay = check(
         src,
         &CheckerOptions {
@@ -818,4 +824,147 @@ fn auto_does_not_reward_revisited_phase_coverage_as_new() {
         "revisiting a phase must restore coverage; repeated features otherwise earn unbounded false credit: {:?}",
         result.scheduler_stats
     );
+}
+
+#[test]
+fn scenario_evidence_ends_at_acceptance_and_does_not_change_exploration() {
+    let src = r#"
+        event eTick: int; event eDone: int;
+        machine Main { start state S { entry {
+            if ($) { announce eTick, 7; }
+            announce eDone, 42;
+            announce eTick, 99;
+        } } }
+        scenario Reached observes eTick, eDone {
+            start hot state Waiting { ignore eTick; on eDone goto Accepted; }
+            cold state Accepted { ignore eTick, eDone; }
+        }
+        test tcMain [main=Main]: { Main };
+    "#;
+    let options = opts(StrategyKind::Dfs, 0);
+    let before = check(src, &options);
+    let after = check(src, &CheckerOptions { snappea_reports: true, ..options });
+    assert_eq!(before.report.num_bugs, after.report.num_bugs);
+    assert_eq!(before.report.explored_unfair_schedules, after.report.explored_unfair_schedules);
+    assert_eq!(before.report.timelines, after.report.timelines);
+    assert_eq!(before.exhaustive, after.exhaustive);
+    let old = &before.report.scenarios[0];
+    let new = &after.report.scenarios[0];
+    assert!(old.witness.is_none());
+    assert_eq!(old.trigger_count, new.trigger_count);
+    assert_eq!(old.satisfying_timelines, new.satisfying_timelines);
+    let w = new.witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 1);
+    assert_eq!(w.accepting_state, "Accepted");
+    assert!(!w.truncated);
+    assert!(w.events[0].contains("Main("), "{w:?}");
+    assert!(w.events[0].contains("eDone") && w.events[0].contains("42"), "{w:?}");
+    assert!(w.events[0].contains("model.p:"), "{w:?}");
+    assert!(!w.events.iter().any(|e| e.contains("99")));
+    let artifact = snappea::driver::scenario::from_report(&after.report, "tcMain");
+    assert_eq!(snappea::driver::scenario::Artifact::parse(&artifact.to_json()).unwrap(), artifact);
+    let longer_src = src.replace("if ($) { announce eTick, 7; }", "announce eTick, 7;");
+    let longer = check(&longer_src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    assert_eq!(longer.report.scenarios[0].witness.as_ref().unwrap().observed_events, 2);
+    let mut reverse = after.report.clone();
+    reverse.merge(longer.report.clone());
+    assert_eq!(reverse.scenarios[0].witness.as_ref().unwrap().observed_events, 1);
+    let mut combined = longer.report;
+    combined.merge(after.report);
+    assert_eq!(combined.scenarios[0].witness.as_ref().unwrap().observed_events, 1);
+}
+
+#[test]
+fn scenario_evidence_is_bounded_and_reports_truncation() {
+    let src = r#"
+        event eTick; event eDone;
+        machine Main { start state S { entry {
+            var i: int; while (i < 200) { announce eTick; i = i + 1; }
+            announce eDone;
+        } } }
+        scenario Reached observes eTick, eDone {
+            start hot state Waiting { ignore eTick; on eDone goto Accepted; }
+            cold state Accepted { ignore eTick, eDone; }
+        }
+        test tcMain [main=Main]: { Main };
+    "#;
+    let result = check(src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    let w = result.report.scenarios[0].witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 201);
+    assert_eq!(w.events.len(), 128);
+    assert!(w.truncated);
+    assert_eq!(w.accepting_state, "Accepted");
+}
+
+#[test]
+fn scenario_evidence_clips_unicode_payloads_by_character() {
+    let payload = "🫛".repeat(1100);
+    let src = format!(
+        r#"
+        event eData: string;
+        machine Main {{ start state S {{ entry {{ announce eData, "{payload}"; }} }} }}
+        scenario Reached observes eData {{
+            start hot state Waiting {{ on eData goto Accepted; }}
+            cold state Accepted {{ ignore eData; }}
+        }}
+        test tcMain [main=Main]: {{ Main }};
+    "#
+    );
+    let result = check(&src, &CheckerOptions { snappea_reports: true, ..opts(StrategyKind::Dfs, 0) });
+    let w = result.report.scenarios[0].witness.as_ref().unwrap();
+    assert_eq!(w.observed_events, 1);
+    assert_eq!(w.events[0].chars().count(), 1024);
+    assert!(w.truncated);
+    assert_eq!(w.accepting_state, "Accepted");
+}
+
+#[test]
+fn collection_size_evidence_does_not_change_search_and_counts_only_lengths() {
+    let src = r#"
+        event eTick: int;
+        machine Main {
+            var pending: map[int,int]; var seen: set[int]; var queue: seq[int];
+            start state S {
+                entry {
+                    pending[1] = 9001; pending[2] = 9002; pending[3] = 9003;
+                    seen += (10); seen += (20);
+                    queue += (0, 100); queue += (1, 200); queue += (2, 300); queue += (3, 400);
+                    send this, eTick, 1;
+                }
+                on eTick do (n:int) { if (n < 3) { send this, eTick, n+1; } }
+            }
+        }
+        spec History observes eTick {
+            var history: map[int,bool];
+            start state S { on eTick do (n:int) { history[n] = true; assert n <= 3; } }
+        }
+        test tcMain [main=Main]: assert History in { Main };
+    "#;
+    let plain = check(src, &opts(StrategyKind::Auto, 0));
+    let measured = check(src, &CheckerOptions { branching: true, ..opts(StrategyKind::Auto, 0) });
+    assert_eq!(plain.exhaustive, measured.exhaustive);
+    assert_eq!(plain.report.timelines, measured.report.timelines);
+    assert_eq!(plain.report.explored_unfair_schedules, measured.report.explored_unfair_schedules);
+    assert_eq!(plain.report.bug_reports, measured.report.bug_reports);
+    assert!(plain.branching.is_none());
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("model.p", src);
+    let a = snappea::sema::compile(&sm, &Default::default()).unwrap();
+    let stats = measured.branching.unwrap();
+    let fields = stats.collections(&a.program);
+    for (machine, field, max) in
+        [("Main", "pending", 3), ("Main", "seen", 2), ("Main", "queue", 4), ("History", "history", 3)]
+    {
+        let size = fields.iter().find(|s| s.machine == machine && s.field == field).unwrap();
+        assert_eq!(size.max, max, "{size:?}");
+        assert!(size.observations > 0);
+        assert_eq!(size.file, "model.p");
+        assert!(size.line > 0);
+    }
+    let mut merged = stats.clone();
+    merged.merge(&stats);
+    for (single, both) in fields.iter().zip(merged.collections(&a.program)) {
+        assert_eq!((single.min, single.max), (both.min, both.max));
+        assert_eq!(single.observations * 2, both.observations);
+    }
 }

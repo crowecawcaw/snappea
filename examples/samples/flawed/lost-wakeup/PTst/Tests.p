@@ -14,7 +14,7 @@ machine RacyOneItem {
       var queue: machine;
       var plan: map[int, int];
       plan[1] = 1;
-      announce eQueuePlanned, plan;
+      announce QueuePlanned, plan;
       queue = new RacyQueue();
       new RacyConsumer((queue = queue, consumer = 1, wants = 1));
       new Producer((queue = queue, items = Items(1)));
@@ -30,7 +30,7 @@ machine OneConsumerTwoItems {
       var queue: machine;
       var plan: map[int, int];
       plan[1] = 2;
-      announce eQueuePlanned, plan;
+      announce QueuePlanned, plan;
       queue = new WaitQueue();
       new WaitingConsumer((queue = queue, consumer = 1, wants = 2));
       new Producer((queue = queue, items = Items(2)));
@@ -47,7 +47,7 @@ machine TwoConsumers {
       var plan: map[int, int];
       plan[1] = 1;
       plan[2] = 1;
-      announce eQueuePlanned, plan;
+      announce QueuePlanned, plan;
       queue = new WaitQueue();
       new WaitingConsumer((queue = queue, consumer = 1, wants = 1));
       new WaitingConsumer((queue = queue, consumer = 2, wants = 1));
@@ -57,21 +57,17 @@ machine TwoConsumers {
 }
 
 // Covered: a consumer went to sleep, then a put arrived and woke it.
-scenario PutWakesSleeper observes eSleeping, eQueued, eWoken {
+scenario PutWakesSleeper observes Sleeping, Queued, Woken {
   start hot state WaitSleep {
-    on eSleeping goto WaitPut;
-    ignore eQueued, eWoken;
+    on Sleeping goto WaitPut;
   }
   hot state WaitPut {
-    on eQueued goto WaitWake;
-    ignore eSleeping, eWoken;
+    on Queued goto WaitWake;
   }
   hot state WaitWake {
-    on eWoken goto Covered;
-    ignore eSleeping, eQueued;
+    on Woken goto Covered;
   }
   cold state Covered {
-    ignore eSleeping, eQueued, eWoken;
   }
 }
 
@@ -81,6 +77,8 @@ test tcFixedOneConsumerTwoItems [main=OneConsumerTwoItems]:
 test tcFixedTwoConsumers [main=TwoConsumers]:
   assert TakeBlocksOnlyWhenEmpty in { TwoConsumers, WaitQueue, WaitingConsumer, Producer };
 
-// expect-bug: RacyConsumer(3) is waiting to receive an event
+// The only blocking receive left at quiescence is the consumer waiting for Wake.
+// Match the deadlock message without depending on machine-allocation order.
+// snappea: expect-bug "is waiting to receive an event"
 test tcBugCheckThenWait [main=RacyOneItem]:
   assert TakeBlocksOnlyWhenEmpty in { RacyOneItem, RacyQueue, RacyConsumer, Producer };

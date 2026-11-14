@@ -87,18 +87,22 @@ writes; monotonic reads hold because it also covers every value the session has 
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFixedReadYourWrites` | One session writes twice, then reads; one replica | The read must wait for the second write, not just the first | passes, all schedules |
-| `tcFixedMonotonicReads` | Session 1 writes; session 2 reads replica 0, then replica 1 | The token from the first read holds the second | passes, all schedules |
-| `tcFixedTwoWriters` | Two sessions write, then read; one replica | A read's token can be two records ahead: the replica keeps holding it after applying one | passes, all schedules |
-| `tcBugReadYourWrites` | Flawed design, as `tcFixedReadYourWrites` | **Expected to fail**: `read-your-writes violated` | fails at once |
-| `tcBugMonotonicReads` | Flawed design, as `tcFixedMonotonicReads` | **Expected to fail**: `monotonic reads violated` | fails within a few hundred schedules |
+| `tcFixedReadYourWrites` | One session writes twice, then reads; one replica | The read must wait for the second write, not just the first | passes |
+| `tcFixedMonotonicReads` | Session 1 writes; session 2 reads replica 0, then replica 1 | The token from the first read holds the second | passes |
+| `tcFixedTwoWriters` | Two sessions write, then read; one replica | A read's token can be two records ahead: the replica keeps holding it after applying one | passes |
+| `tcBugReadYourWrites` | Flawed design, as `tcFixedReadYourWrites` | **Expected bug**: `read-your-writes violated` | Expected bug found |
+| `tcBugMonotonicReads` | Flawed design, as `tcFixedMonotonicReads` | **Expected bug**: `monotonic reads violated` | Expected bug found |
 
 ## Run
 
 ```sh
 snappea check StaleReplicaRead.pproj 'tcFixed*' --deny mutation
-snappea check StaleReplicaRead.pproj 'tcBug*'    # both exit 1 with the messages above
+snappea check StaleReplicaRead.pproj 'tcBug*'    # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -114,7 +118,7 @@ and the written values only need to be distinct.
 
 ## Testing the implementation
 
-Emit `eWritten` from the primary's commit and `eReadServed` from the replica as it
+Emit `Written` from the primary's commit and `ReadServed` from the replica as it
 answers, with the session id. To force the race, pause the replication stream to one
 replica (or add an artificial apply delay), write through the session, then read
 through it with the load balancer pinned to the paused replica. Without tokens the

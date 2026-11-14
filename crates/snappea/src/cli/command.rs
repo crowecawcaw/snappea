@@ -68,10 +68,10 @@ Runs test cases over many schedules (event orders, nondeterministic choices) to
 find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj or
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
-Sources are linted first; findings fail with exit status 2. `check lint` only lints;
+Sources are linted first; blocking findings fail with exit status 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
-Lint findings and required coverage gaps fail the check; undetected mutants are
+Blocking lint findings and required coverage gaps fail the check; undetected mutants are
 warnings. Silence an intended finding in the source with a
 `// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
 fails for one run.
@@ -92,6 +92,11 @@ Exploration:
                             shared machines.
       --seed <N>            Seed for reproducible choices. Not needed to reproduce
                             a bug: its .schedule replays exactly.
+      --expect-bug-seeds <N,N,...>
+                            Repeat declared expected-bug tests with 2–32 explicit seeds
+                            (e.g. 1,2,3), and compare actual failure sites. Positive tests
+                            still run once. Different sites are advisory; every seed
+                            must find its declared failure. --timeout applies per seed.
 
 Strategies are chosen automatically. A search that covers every schedule ends
 early; one that times out is incomplete.
@@ -134,6 +139,7 @@ Output:
       --coverage-file <FILE>
                             Write every statement, branch and event handler no test
                             case ran to FILE
+      --list-suppressions   List suppressed mutants with reasons and stale suppressions.
   -v, --verbose             Show progress and statistics, and log every schedule.
                             Uses one worker.
       --progress <WHEN>     auto, off or json. auto (default) shows a status line
@@ -190,6 +196,7 @@ Options:
                             test cases share 10s)
   -j, --workers <N>         Worker limit (default: one per CPU core)
       --seed <N>            Seed for reproducible choices
+      --expect-bug-seeds <N,N,...>  Repeat negative controls and compare failure sites
       --latency <FILE>[:<PROFILE>], --timed
       --warn <CHECK>, --deny <CHECK>
                             As for `snappea check`
@@ -384,9 +391,9 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
             Some(c @ ("check" | "replay" | "tests" | "observe" | "coverage" | "guide")) => {
                 dispatch(&[c.to_string(), "--help".into()], host)
             }
-            Some(c) => usage_error(host, &format!("unknown command '{}'", c), None),
+            Some(c) => usage_error(host, &unknown_command(c), None),
         },
-        c => usage_error(host, &format!("unknown command '{}'", c), None),
+        c => usage_error(host, &unknown_command(c), None),
     }
 }
 
@@ -482,7 +489,13 @@ pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> 
             let name = a.split('=').next().unwrap_or(a);
             return Err(match RENAMED.iter().find(|(old, _)| *old == name) {
                 Some((_, new)) => format!("unknown option '{}': it was renamed, use '{}'", name, new),
-                None => format!("unknown option '{}'", a),
+                None => {
+                    let longs = spec.iter().chain(OUTPUT_OPTS).map(|o| o.long).filter(|l| !l.is_empty());
+                    match crate::sema::errors::closest(name.trim_start_matches('-'), longs) {
+                        Some(l) => format!("unknown option '{}'; did you mean '--{}'?", a, l),
+                        None => format!("unknown option '{}'", a),
+                    }
+                }
             });
         };
         let v = match (opt.takes_value, inline) {
@@ -667,13 +680,24 @@ fn is_source(arg: &str) -> bool {
     l.ends_with(".pproj") || l.ends_with(".p")
 }
 
+/// `unknown command 'chek'; did you mean 'check'?`, with the commands.
+fn unknown_command(c: &str) -> String {
+    const COMMANDS: [&str; 7] = ["check", "replay", "tests", "observe", "coverage", "guide", "version"];
+    let mut m = format!("unknown command '{}'", c);
+    if let Some(s) = crate::sema::errors::closest(c, COMMANDS) {
+        m.push_str(&format!("; did you mean '{}'?", s));
+    }
+    m.push_str(&format!("{}{}", if m.ends_with('?') { " Commands: " } else { "; commands: " }, COMMANDS.join(", ")));
+    m
+}
+
 /// Splits positionals into the sources (`.pproj`, `.p`) and the rest.
 fn sources(cfg: &mut CheckConfig, positional: &[String]) -> Result<Vec<String>, String> {
     let mut rest = Vec::new();
     for a in positional {
         if a.to_lowercase().ends_with(".pproj") {
             if let Some(p) = &cfg.input.pproj {
-                return Err(format!("two project files given: '{}' and '{}'", p, a));
+                return Err(format!("two project files given: '{}' and '{}'; pass one .pproj", p, a));
             }
             cfg.input.pproj = Some(a.clone());
         } else if is_source(a) {
@@ -715,7 +739,17 @@ fn select_tests(names: &[String], patterns: &[String]) -> Result<Vec<String>, St
     }
     for p in patterns {
         if !names.iter().any(|n| glob_match(p, n)) {
-            return Err(format!("no test case matches '{}'. Test cases: {}", p, names.join(", ")));
+            let mut m = format!("no test case matches '{}'. Test cases: {}", p, names.join(", "));
+            if let Some(s) = crate::sema::errors::closest(p, names.iter().map(String::as_str)) {
+                m = format!("no test case matches '{}'; did you mean '{}'? Test cases: {}", p, s, names.join(", "));
+            }
+            if p.contains('/') || p.contains('.') {
+                m.push_str(&format!(
+                    ". '{}' is read as a test case name; to check files, pass .p or .pproj paths, e.g. `snappea check src/*.p`",
+                    p
+                ));
+            }
+            return Err(m);
         }
     }
     Ok(names.iter().filter(|n| patterns.iter().any(|p| glob_match(p, n))).cloned().collect())
@@ -728,7 +762,8 @@ Usage: snappea check lint [SOURCE...] [--list-rules]
 
 Type-checks and lints .p or .pproj sources without exploring schedules or writing
 checker output. Fast; use it while editing. The same rules run before `snappea check`.
-Exit status: 0 clean, 2 unsuppressed findings or source errors.
+Exit status: 0 with no blocking findings, 2 blocking findings or source errors.
+Advisory rules remain warnings, including under --deny lint.
 
   --list-rules  List available rule IDs and descriptions without loading sources
 
@@ -754,7 +789,13 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     cfg.ignore_foreign_files = true;
     match sources(&mut cfg, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
-        Ok(_) => return usage_error(host, "lint accepts sources (.p or .pproj), not test names", Some("check lint")),
+        Ok(rest) => {
+            let m = format!(
+                "'{}' is not a .p or .pproj file; lint takes sources only, e.g. `snappea check lint src/*.p`",
+                rest[0]
+            );
+            return usage_error(host, &m, Some("check lint"));
+        }
         Err(m) => return usage_error(host, &m, Some("check lint")),
     }
     with_output(host, &a, "lint", |host| {
@@ -769,7 +810,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
                 .iter()
                 .map(|(id, description)| {
                     host.out_line(&format!("{}  {}", id, description));
-                    json!({"id": id, "description": description})
+                    json!({"id": id, "description": description, "severity": if snappea_lint::is_advisory(id) { "advisory" } else { "error" }})
                 })
                 .collect();
             return Ok((OK, json!({"rules": rules})));
@@ -779,11 +820,17 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         let Buffered { out, .. } = quiet;
         match loaded {
             Ok(loaded) => {
-                if crate::driver::lint::run(host, &loaded.sources, &loaded.analysis.program)? != 0 {
+                let sm = loaded.sources.source_map();
+                let findings = crate::driver::lint::findings(host, &sm, &loaded.analysis.program)?;
+                if crate::driver::lint::report(host, &sm, &findings) != 0 {
                     return Err(Exit(ERROR));
                 }
-                host.out_line("Lint passed.");
-                Ok((OK, json!({"findings": []})))
+                host.out_line(if findings.is_empty() { "Lint passed." } else { "Lint passed with advisory findings." });
+                let findings: Vec<_> = findings.iter().map(|f| {
+                    let loc = sm.location(f.span);
+                    json!({"rule": f.rule, "severity": "advisory", "message": f.message, "file": loc.file, "line": loc.line, "column": loc.col})
+                }).collect();
+                Ok((OK, json!({"findings": findings})))
             }
             Err(e) => {
                 for (stream, text, color) in out {
@@ -800,10 +847,12 @@ const CHECK_OPTS: &[Opt] = &[
     value("timeout", None),
     value("workers", Some('j')),
     value("seed", None),
+    value("expect-bug-seeds", None),
     value("latency", None),
     flag("timed", None),
     value("out", Some('o')),
     flag("verbose", Some('v')),
+    flag("list-suppressions", None),
     value("mutation-timeout", None),
     flag("no-mutation", None),
     value("warn", None),
@@ -918,6 +967,17 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.seed =
             Some(s.parse().map_err(|_| format!("'--seed' needs a whole number from 0 to 4294967295, not '{}'", s))?);
     }
+    if let Some(seeds) = a.get("expect-bug-seeds") {
+        cfg.expected_bug_seeds = seeds
+            .split(',')
+            .map(|s| s.trim().parse::<u32>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "'--expect-bug-seeds' needs comma-separated seed numbers, e.g. 1,2,3".to_string())?;
+        let distinct: std::collections::BTreeSet<_> = cfg.expected_bug_seeds.iter().collect();
+        if !(2..=32).contains(&cfg.expected_bug_seeds.len()) || distinct.len() != cfg.expected_bug_seeds.len() {
+            return Err("'--expect-bug-seeds' needs 2 to 32 distinct seeds".into());
+        }
+    }
     if let Some(l) = a.get("latency") {
         cfg.latency_profile = split_latency(l).1.map(str::to_string);
     }
@@ -927,6 +987,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.output_path = o.to_string();
     }
     cfg.verbose = a.has("verbose");
+    cfg.list_suppressions = a.has("list-suppressions");
     cfg.driver_facts = !a.has("no-driver-facts");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
@@ -977,7 +1038,10 @@ fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
         cfg.user_set_max_fair_steps = true;
     }
     if cfg.max_fair_steps < cfg.max_unfair_steps {
-        return Err("'--fair-max-steps' must be at least '--max-steps'".into());
+        return Err(format!(
+            "'--fair-max-steps' ({}) must be at least '--max-steps' ({}); raise it, or leave it out to use 10 x '--max-steps'",
+            cfg.max_fair_steps, cfg.max_unfair_steps
+        ));
     }
     cfg.fail_on_max_steps = a.has("fail-on-max-steps");
     Ok(())
@@ -1038,30 +1102,75 @@ fn run_check(
     check::resolve_sources(&mut con, &mut cfg)?;
     let loaded = check::load(&mut con, &cfg)?;
     let gates = cfg.gates;
-    let lint_findings = crate::driver::lint::gate(con.inner, &loaded.sources, &loaded.analysis.program, gates.lint)?;
+
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
     let selected = select_tests(&names, patterns).map_err(|m| {
         error(con.inner, &m);
         Exit(ERROR)
     })?;
     if selected.is_empty() {
-        error(con.inner, "the sources declare no test case");
+        error(con.inner, "the sources declare no test case; add one, e.g. `test tcMain [main=Main]: { Main };`");
         return Err(Exit(ERROR));
     }
-    let n = selected.len();
+    let all_tests = loaded.analysis.program.test_cases();
+    let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
+    let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
+    let lint_findings = crate::driver::lint::gate_selected(
+        con.inner,
+        &loaded.sources,
+        &loaded.analysis.program,
+        gates.lint,
+        &selected_tests,
+        &intents,
+    )?;
+    if !cfg.expected_bug_seeds.is_empty()
+        && !selected_tests.iter().any(|tc| {
+            crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
+                .is_some_and(|i| i.expected_bug.is_some())
+        })
+    {
+        error(con.inner, "--expect-bug-seeds requires a selected test with a snappea: expect-bug marker");
+        return Err(Exit(ERROR));
+    }
+    let mut planned = Vec::new();
+    for name in selected {
+        let tc = selected_tests.iter().find(|t| t.name == name).unwrap();
+        let negative = crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
+            .is_some_and(|i| i.expected_bug.is_some());
+        if negative && !cfg.expected_bug_seeds.is_empty() {
+            planned.extend(cfg.expected_bug_seeds.iter().map(|&seed| (name.clone(), Some(seed))));
+        } else {
+            planned.push((name, None));
+        }
+    }
+    let n = planned.len();
     con.inner.out_line(&format!("Checking {}: {} test case{}", cfg.project_name, n, plural(n)));
     let mut failed = 0;
     let prog = &loaded.analysis.program;
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
     let (mut scope, mut hits) = (Scope::default(), Hits::default());
+    let mut selected_scope = Scope::default();
     let mut cases = Vec::new();
     let mut scenarios = Vec::new();
     let mut incomplete = 0;
-    let all_tests = prog.test_cases();
+    let sources = loaded.sources.source_map();
+    let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
+    let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
+    let (mut negative_driver_scope, mut negative_hits, mut positive_design) =
+        (Scope::default(), Hits::default(), Scope::default());
+    for tc in &selected_tests {
+        if crate::driver::lint::intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()) {
+            positive_design.add(&Scope::partition_drivers(prog, tc, &drivers).1);
+        }
+    }
     let mut passed = Vec::new();
     let check_start = con.inner.now();
-    for (i, name) in selected.into_iter().enumerate() {
+    let base_seed = cfg.seed;
+    let mut seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>> = Default::default();
+    for (i, (name, seed)) in planned.into_iter().enumerate() {
         cfg.test_case_name = name;
+        cfg.seed = seed.or(base_seed);
+        cfg.seed_artifact = seed;
         // the shared budget left, split between the test cases left
         cfg.time_share = cfg.suite_budget.map(|b| {
             let left = b - (con.inner.now() - check_start);
@@ -1070,14 +1179,77 @@ fn run_check(
         cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
         check::set_output_directory(&mut con, &mut cfg)?;
         let case = check::testing_process(&mut con, &loaded, &cfg)?;
-        if case.bugs > 0 {
+        let tc = all_tests.iter().find(|t| t.name == case.test_case).unwrap();
+        let intent = crate::driver::lint::intent(prog, tc, &intents);
+        let expected = intent.and_then(|i| i.expected_bug.as_deref());
+        let boundary = intent.is_some_and(|i| i.boundary.is_some());
+        let matched = expected.is_some_and(|text| {
+            case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, &sources).contains(text))
+        });
+        if let Some(seed) = seed {
+            seed_runs.entry(case.test_case.clone()).or_default().push(SeedFailure {
+                seed,
+                matched,
+                identity: case.bug_identity.clone(),
+            });
+        }
+        if expected.is_some() && !matched || expected.is_none() && case.bugs > 0 {
             failed += 1;
-        } else if case.exhaustive_finished != Some(true) {
+        } else if expected.is_none() && case.exhaustive_finished != Some(true) {
             incomplete += 1;
         }
-        print_case(con.inner, &case, &cfg);
-        let mut result = case_json(&case, &cfg);
+        if let Some(expected) = expected {
+            con.inner.out_line(&format!(
+                "{}  {}{} (expected bug: {:?})",
+                if matched { "ok  " } else { "FAIL" },
+                case.test_case,
+                seed.map(|s| format!(" [seed {s}]")).unwrap_or_default(),
+                expected
+            ));
+            if !matched {
+                let reason = if case.bugs > 0 {
+                    "the observed failure did not match"
+                } else if case.exhaustive_finished == Some(true) {
+                    "search complete, no bug: this test cannot reach the expected flaw"
+                } else {
+                    "search incomplete, no matching bug found within the run budget"
+                };
+                con.inner.out_line(&format!("      {reason}; check the test and expected failure text"));
+            }
+            if let Some(report) = &case.bug_report {
+                con.inner.out_line(&format!("      {report}"));
+            }
+            if let Some(schedule) = &case.schedule_file {
+                con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, &cfg)));
+            }
+            if matched && case.schedules == 1 {
+                con.inner.out_line("      note: the expected bug appeared in the first schedule; check that the control exercises the intended flaw");
+            }
+        } else {
+            print_case(con.inner, &case, &cfg, boundary);
+        }
+        let mut result = case_json(&case, &cfg, boundary);
+        if let Some(seed) = seed {
+            result["seed"] = json!(seed);
+        }
+        if let Some(text) = expected {
+            result["result"] = json!(if matched { "expected_bug" } else { "expectation_failed" });
+            let outcome = if matched {
+                "matched"
+            } else if case.bugs > 0 {
+                "wrong_failure"
+            } else if case.exhaustive_finished == Some(true) {
+                "unreachable"
+            } else {
+                "not_found"
+            };
+            result["expected_bug"] = json!({"text": text, "matched": matched, "outcome": outcome});
+        }
+        if let Some(reason) = intent.and_then(|i| i.boundary.as_deref()) {
+            result["boundary"] = json!(reason);
+        }
         if let Some((s, h)) = &case.code_coverage {
+            selected_scope.add(s);
             let summary = CodeMap::new(prog, &probes, s).coverage(h).summary();
             if !only {
                 con.inner.out_line(&format!(
@@ -1088,9 +1260,32 @@ fn run_check(
             }
             result["coverage"] = summary.to_json();
             result["coverage"]["partial"] = json!(case.bugs > 0);
-            scope.add(s);
-            hits.add(h);
-            if case.bugs == 0 {
+            if expected.is_some() {
+                let (mut driver_scope, design_scope) = Scope::partition_drivers(prog, tc, &drivers);
+                driver_scope.exclude(&positive_design);
+                let driver_summary = CodeMap::new(prog, &probes, &driver_scope).coverage(h).summary();
+                result["expected_bug_driver_coverage"] = driver_summary.to_json();
+                result["expected_bug_driver_coverage"]["included"] = json!(matched);
+                let design_map = CodeMap::new(prog, &probes, &design_scope);
+                let design_coverage = design_map.coverage(h);
+                result["expected_bug_design_coverage"] = design_coverage.summary().to_json();
+                result["expected_bug_design_coverage"]["partial"] =
+                    json!(case.bugs > 0 || case.exhaustive_finished != Some(true));
+                if !only {
+                    con.inner.out_line(&format!(
+                        "      Expected-bug design coverage (separate): {}",
+                        design_coverage.summary()
+                    ));
+                }
+                if matched {
+                    negative_driver_scope.add(&driver_scope);
+                    negative_hits.add(h);
+                }
+            } else {
+                scope.add(s);
+                hits.add(h);
+            }
+            if expected.is_none() && case.bugs == 0 {
                 if let Some(tc) = all_tests.iter().find(|t| t.name == case.test_case) {
                     passed.push((tc.clone(), h.clone()));
                 }
@@ -1110,10 +1305,26 @@ fn run_check(
         }
         if !case.scenario_coverage.scenarios.is_empty() {
             result["scenarios"] = serde_json::from_str(&case.scenario_coverage.to_json()).unwrap();
-            scenarios.push(case.scenario_coverage.clone());
+            if expected.is_none() {
+                scenarios.push(case.scenario_coverage.clone());
+            }
         }
         cases.push(result);
     }
+    let seed_checks = expected_seed_checks(&seed_runs);
+    for check in &seed_checks {
+        let name = check["test_case"].as_str().unwrap();
+        match check["status"].as_str().unwrap() {
+            "different_failures" => con.inner.out_line(&format!("      warning: {name} failed at different sites across seeds; inspect each seed's failure identity and replay, then split or tighten the negative control")),
+            "incomplete" => con.inner.out_line(&format!("      note: {name}: failure identity comparison is incomplete; a seed did not match or its failure has no captured identity")),
+            _ => con.inner.out_line(&format!("      {name}: expected failure identity consistent across {} seeds (evidence from these runs, not a guarantee)", check["runs"].as_array().unwrap().len())),
+        }
+    }
+    cfg.seed = base_seed;
+    cfg.seed_artifact = None;
+    negative_driver_scope.exclude(&positive_design);
+    hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
+    scope.add(&negative_driver_scope);
     let map = CodeMap::new(prog, &probes, &scope);
     let suite = map.coverage(&hits);
     let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
@@ -1154,14 +1365,44 @@ fn run_check(
             " For a scenario never satisfied, add or extend a test case that drives the model through it."
         }
     );
-    let excluded = scope.excluded(prog);
+    let excluded = selected_scope.excluded(prog);
     if !only {
         if n > 1 {
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
         }
         let heading = if n > 1 { "Not covered by any test case:" } else { "Not covered by the test case:" };
-        for l in uncovered_lines(heading, &uncovered, " (--json lists all)") {
+        let (conditions, pairs) = map.advisory_uncovered(&suite, &coverage_suppressions);
+        let actionable: Vec<_> = uncovered
+            .iter()
+            .filter(|gap| conditions.binary_search(gap).is_err() && pairs.binary_search(gap).is_err())
+            .cloned()
+            .collect();
+        for l in uncovered_lines(heading, &actionable, " (--json lists all)") {
             con.inner.out_line(&l);
+        }
+        if !actionable.is_empty() {
+            if incomplete == 0 && failed == 0 {
+                con.inner.out_line("No schedule of the selected tests reaches these gaps: their searches completed. Run other tests or add a scenario that reaches the missing behavior.");
+            }
+            con.inner.out_line("For an impossible spec event, use a handler with `assert false` to state that contract. For an unreachable defensive branch, remove it and document why it is unnecessary, or use `allow coverage` with a reason.");
+        }
+        for l in uncovered_lines(
+            "Informational condition coverage (does not fail the check):",
+            &conditions,
+            " (--json lists all)",
+        ) {
+            con.inner.out_line(&l);
+        }
+        if !pairs.is_empty() {
+            con.inner.out_line(&format!(
+                "{} transition pairs not taken (informational; -v to list, --json lists all).",
+                pairs.len()
+            ));
+            if cfg.verbose {
+                for l in uncovered_lines("Informational transition pairs:", &pairs, " (--json lists all)") {
+                    con.inner.out_line(&l);
+                }
+            }
         }
         for l in uncovered_lines("Not covered, suppressed:", &uncovered_suppressed, " (--json lists all)") {
             con.inner.out_line(&l);
@@ -1187,6 +1428,11 @@ fn run_check(
         }
         if !scenarios.is_empty() {
             con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            if cfg.verbose {
+                for line in scenario::evidence_lines(&scenarios) {
+                    con.inner.out_line(&line);
+                }
+            }
         }
     }
     let mut undetected = 0;
@@ -1199,13 +1445,19 @@ fn run_check(
     }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
+        _ if passed.is_empty() && failed == 0 => {
+            skipped.push("mutation testing (no passing positive test case)");
+            con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
+            json!({"skipped": "no passing positive test case"})
+        }
         _ if failed > 0 => {
             con.inner.out_line("Mutation testing skipped: a test case failed.");
             json!({"skipped": "a test case failed"})
         }
         Mutation::After(Some(limit)) | Mutation::Only(limit) => {
             // the sources parsed when they were loaded
-            let suppressed = snappea_lint::mutation_suppressions(&loaded.sources.source_map()).unwrap_or_default();
+            let suppressed =
+                snappea_lint::mutation_suppression_details(&loaded.sources.source_map()).unwrap_or_default();
             let sources = loaded.sources.source_map();
             let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
             let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
@@ -1221,6 +1473,14 @@ fn run_check(
             );
             for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
                 con.inner.out_line(&l);
+            }
+            if report.blanket_suppressions > 0 {
+                con.inner.out_line("hint: blanket mutation suppressions also hide other mutation kinds; prefer mutation:<kind>. Use --list-suppressions to inspect their scope.");
+            }
+            if cfg.list_suppressions || cfg.verbose {
+                for line in report.suppression_lines() {
+                    con.inner.out_line(&line);
+                }
             }
             // those inside an undetected coarse mutant too
             undetected = report.undetected().len() + report.subsumed();
@@ -1252,6 +1512,10 @@ fn run_check(
     };
     // what was reported but did not fail the check
     let mut warnings = serde_json::Map::new();
+    let differing = seed_checks.iter().filter(|c| c["status"] == "different_failures").count();
+    if differing > 0 {
+        warnings.insert("expected_bug_failure_identity".into(), json!(differing));
+    }
     if lint_findings > 0 {
         warnings.insert("lint".into(), json!(lint_findings));
     }
@@ -1260,6 +1524,10 @@ fn run_check(
     }
     if undetected > 0 && !mutation_failed {
         warnings.insert("mutation".into(), json!(undetected));
+    }
+    if let Some(advisories) = mutation.get("suppression_advisories").and_then(Value::as_array).filter(|a| !a.is_empty())
+    {
+        warnings.insert("mutation_suppressions".into(), json!(advisories.len()));
     }
     let with_warnings = if failed > 0 || warnings.is_empty() {
         String::new()
@@ -1271,13 +1539,32 @@ fn run_check(
                 match k.as_str() {
                     "lint" => format!("{} lint finding{}", n, plural(n)),
                     "coverage" => format!("{} coverage gap{}", n, plural(n)),
+                    "expected_bug_failure_identity" => {
+                        format!("{} expected-bug test{} with differing failures", n, plural(n))
+                    }
+                    "mutation_suppressions" => {
+                        format!("{} mutation suppression advisor{}", n, if n == 1 { "y" } else { "ies" })
+                    }
                     _ => format!("{} undetected mutant{}", n, plural(n)),
                 }
             })
             .collect();
         format!(", with warnings: {}", parts.join(", "))
     };
-    con.inner.out_line(&if only && failed == 0 {
+    let success = if selected_tests
+        .iter()
+        .any(|tc| crate::driver::lint::intent(prog, tc, &intents).is_some_and(|i| i.expected_bug.is_some()))
+    {
+        "Test expectations met"
+    } else {
+        "No bugs found"
+    };
+    con.inner.out_line(&if only && failed == 0 && passed.is_empty() {
+        format!(
+            "Test expectations met in {}{}; mutation testing skipped: no passing positive test case.",
+            elapsed, memory
+        )
+    } else if only && failed == 0 {
         match undetected {
             0 => format!("🫛 Every mutant was detected in {}{}{}.", elapsed, memory, with_warnings),
             n if mutation_failed => format!("{} mutant{} not detected in {}{}.", n, plural(n), elapsed, memory),
@@ -1294,7 +1581,7 @@ fn run_check(
         )
     } else if failed == 0 && incomplete > 0 {
         format!(
-            "🫛 No bugs found in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
+            "🫛 {success} in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
             elapsed,
             memory,
             with_warnings,
@@ -1322,6 +1609,7 @@ fn run_check(
             "output": format!("{}/", out),
             "mutation": mutation,
             "warnings": warnings,
+            "expected_bug_seed_checks": seed_checks,
         });
         return Ok((if failed > 0 || mutation_failed { BUG } else { OK }, result));
     }
@@ -1350,6 +1638,7 @@ fn run_check(
         "coverage_failed": coverage_failed,
         "mutation": mutation,
         "warnings": warnings,
+        "expected_bug_seed_checks": seed_checks,
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
     Ok((if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK }, result))
@@ -1537,8 +1826,69 @@ fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBra
     out
 }
 
+struct SeedFailure {
+    seed: u32,
+    matched: bool,
+    identity: Option<crate::checker::runtime::BugIdentity>,
+}
+
+fn bug_identity_json(identity: &crate::checker::runtime::BugIdentity) -> Value {
+    json!({"kind": identity.kind, "machine": identity.machine, "state": identity.state,
+        "file": identity.file, "line": identity.line, "column": identity.column})
+}
+
+fn expected_seed_checks(runs: &std::collections::BTreeMap<String, Vec<SeedFailure>>) -> Vec<Value> {
+    runs.iter()
+        .map(|(name, runs)| {
+            let identities: std::collections::BTreeSet<_> = runs.iter().filter_map(|r| r.identity.as_ref()).collect();
+            let all_matched = runs.iter().all(|r| r.matched);
+            let status = if identities.len() > 1 {
+                "different_failures"
+            } else if !all_matched || runs.iter().any(|r| r.identity.is_none()) {
+                "incomplete"
+            } else {
+                "consistent"
+            };
+            json!({"test_case": name, "status": status, "all_matched": all_matched,
+            "runs": runs.iter().map(|r| json!({"seed": r.seed, "matched": r.matched,
+                "identity": r.identity.as_ref().map(bug_identity_json)})).collect::<Vec<_>>()})
+        })
+        .collect()
+}
+
+/// Match the diagnostic message, never source excerpts or suggested fixes. Native
+/// diagnostics place those after a location/help line; assertion and liveness reports
+/// without a rendered snippet retain their whole message, including newlines.
+fn failure_message(report: &str, sources: &crate::syntax::SourceMap) -> String {
+    if let Some(assertion) = report.strip_prefix("Assertion Failed: ") {
+        for source in sources.files() {
+            let prefix = format!("{}:", source.name.replace('\\', "\\\\"));
+            let Some(rest) = assertion.strip_prefix(&prefix) else { continue };
+            let Some((line, rest)) = rest.split_once(':') else { continue };
+            if line.parse::<u32>().is_err() {
+                continue;
+            }
+            let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            if end == 0 {
+                continue;
+            }
+            let message = rest[end..].strip_prefix(' ').unwrap_or(&rest[end..]);
+            return format!("Assertion Failed: {message}");
+        }
+        return report.to_string();
+    }
+    report
+        .lines()
+        .take_while(|line| {
+            let line = line.trim_start();
+            !line.starts_with("-->") && !line.starts_with("= help:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// One test case's result as JSON.
-fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
+fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Value {
     let mut v = json!({
         "name": case.test_case,
         "result": if case.bugs > 0 { "bug" } else { "ok" },
@@ -1553,6 +1903,18 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
     }
     if let Some(reason) = incomplete_reason(case) {
         v["incomplete_reason"] = json!(reason);
+    }
+    if !case.auto_handoffs.is_empty() {
+        v["auto_handoffs"] = json!(case
+            .auto_handoffs
+            .iter()
+            .map(|h| json!({
+                "worker": h.worker,
+                "after_schedules": h.after_schedules,
+                "choices": h.choices,
+                "reason": h.reason,
+            }))
+            .collect::<Vec<_>>());
     }
     if let Some(frontier) = case.exhaustive_unfinished {
         v["untried_alternatives"] = json!(frontier);
@@ -1572,12 +1934,23 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
             })).collect::<Vec<_>>(),
         });
     }
-    if little_to_explore(case) {
+    if !case.collection_sizes.is_empty() {
+        v["collection_sizes"] = json!(case
+            .collection_sizes
+            .iter()
+            .map(|c| json!({
+                "machine": c.machine, "field": c.field, "file": c.file, "line": c.line,
+                "min": c.min, "max": c.max, "observations": c.observations,
+            }))
+            .collect::<Vec<_>>());
+    }
+    if !boundary && little_to_explore(case) {
         v["little_to_explore"] = json!(true);
     }
     if case.bugs > 0 {
         v["bug"] = json!({
             "report": case.bug_report,
+            "identity": case.bug_identity.as_ref().map(bug_identity_json),
             "schedule": case.schedule_file,
             "replay": case.schedule_file.as_ref().map(|s| replay_command(s, cfg)),
         });
@@ -1586,7 +1959,13 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig) -> Value {
 }
 
 /// One test case's result line, and for a bug its report and how to replay it.
-fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig) {
+fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) {
+    for handoff in &case.auto_handoffs {
+        host.out_line(&format!(
+            "      auto {}: worker {} switched from exhaustive search to sampling after {} schedules ({} exhaustive choices): {}",
+            case.test_case, handoff.worker, handoff.after_schedules, handoff.choices, handoff.reason
+        ));
+    }
     let s = case.schedules;
     // a bug ends an exhaustive search early, so its extent only matters without one
     let schedules = match case.exhaustive_finished.filter(|_| case.bugs == 0) {
@@ -1615,13 +1994,24 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig)
     let time = duration(case.elapsed);
     if case.bugs == 0 {
         host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));
-        if little_to_explore(case) {
+        if !boundary && little_to_explore(case) {
             host.out_line(
                 "      note: every schedule reaches nearly the same states, so this test checks little more than one run would",
             );
             host.out_line(
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
+        }
+        if (cfg.verbose || incomplete_reason(case).is_some()) && !case.collection_sizes.is_empty() {
+            let fields = case
+                .collection_sizes
+                .iter()
+                .take(5)
+                .map(|c| format!("{}.{} {}..{}", c.machine, c.field, c.min, c.max))
+                .collect::<Vec<_>>()
+                .join(", ");
+            host.out_line(&format!("      Sampled collection sizes (elements): {fields}"));
+            host.out_line("      note: ranges combine sampled states and instances; they do not prove growth or identify the cause of search size (--json lists fields and locations)");
         }
         let branching = case
             .branching
@@ -1893,8 +2283,14 @@ fn coverage(args: &[String], host: &mut dyn Host) -> i32 {
         [m, _, extra, ..] if m == "merge" => {
             return usage_error(host, &format!("unexpected argument '{}'", extra), Some("coverage"))
         }
-        [] => return usage_error(host, "missing subcommand: merge", Some("coverage")),
-        [other, ..] => return usage_error(host, &format!("unknown subcommand '{}'", other), Some("coverage")),
+        [] => {
+            let m = "missing subcommand: use `merge [DIR]` or `merge-observe REPORT.json...`";
+            return usage_error(host, m, Some("coverage"));
+        }
+        [other, ..] => {
+            let m = format!("unknown subcommand '{}': use `merge [DIR]` or `merge-observe REPORT.json...`", other);
+            return usage_error(host, &m, Some("coverage"));
+        }
     };
     with_output(host, &a, "coverage", |host| {
         let full = full_path(&host.cwd(), Path::new(&dir));

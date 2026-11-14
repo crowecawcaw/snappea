@@ -10,13 +10,13 @@ machine MemoryOnlyServer {
       // BUG: storage is never used, so nothing survives a crash.
       owner = input.owner;
     }
-    on eNext do (c: machine) {
+    on Next do (c: machine) {
       last = last + 1;
-      send c, eTicket, last;
-      announce eIssued, (client = c, ticket = last);
+      send c, Ticket, last;
+      announce Issued, (client = c, ticket = last);
     }
-    on eCrash do {
-      send owner, eExited;
+    on Crash do {
+      send owner, Exited;
       raise halt;
     }
   }

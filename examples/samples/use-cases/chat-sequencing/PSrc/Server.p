@@ -12,37 +12,37 @@
 //   replay:    read the log after `after` and send it on the connection
 // A connection can drop at any moment; whatever it was carrying is lost.
 
-event ePost: (msg: int);
-event eSubscribe: (conn: machine, after: int);
+event Post: (msg: int);
+event Subscribe: (conn: machine, after: int);
 // Server -> connection -> client.
-event eDeliver: (sn: int, msg: int);
+event Deliver: (sn: int, msg: int);
 // Server to itself: the replay step of a subscription.
-event eReplay: (conn: machine, after: int);
+event Replay: (conn: machine, after: int);
 
 machine Server {
   var log: seq[int];
   var conns: set[machine];
 
   start state Serving {
-    on ePost do (p: (msg: int)) {
+    on Post do (p: (msg: int)) {
       var c: machine;
       log += (sizeof(log), p.msg);
-      announce eSequenced, (sn = sizeof(log), msg = p.msg);
+      announce Sequenced, (sn = sizeof(log), msg = p.msg);
       foreach (c in conns) {
-        send c, eDeliver, (sn = sizeof(log), msg = p.msg);
+        send c, Deliver, (sn = sizeof(log), msg = p.msg);
       }
     }
-    on eSubscribe do (s: (conn: machine, after: int)) {
+    on Subscribe do (s: (conn: machine, after: int)) {
       conns += (s.conn);
-      send this, eReplay, s;
+      send this, Replay, s;
     }
-    on eReplay do (r: (conn: machine, after: int)) {
+    on Replay do (r: (conn: machine, after: int)) {
       var i: int;
       // Sequence numbers start at 1: log[i] has seq i + 1.
       // snappea-lint: allow mutation:remove-statement -- replaying from the start only adds duplicates, which the client skips by seq; the contract does not cover bandwidth
       i = r.after;
       while (i < sizeof(log)) {
-        send r.conn, eDeliver, (sn = i + 1, msg = log[i]);
+        send r.conn, Deliver, (sn = i + 1, msg = log[i]);
         i = i + 1;
       }
     }

@@ -4,7 +4,7 @@ machine TwoClients {
     entry {
       var store: Store;
       store = new Store();
-      announce eIncrementsPlanned, 2;
+      announce IncrementsPlanned, 2;
       new Client(store);
       new Client(store);
     }
@@ -14,21 +14,16 @@ machine TwoClients {
 // Coverage, not correctness: a compare-and-swap was refused, and a write committed after
 // it. With two clients the winner has already written, so that write is the loser's
 // retry. A passing test means little unless this race happened in some schedule.
-scenario ConflictThenRetry observes eCasResp, eWritten {
+scenario ConflictThenRetry observes CasResponse, Written {
   start hot state WaitConflict {
-    on eCasResp do (ok: bool) {
+    on CasResponse do (ok: bool) {
       if (!ok) { goto WaitRetry; }
     }
-    // Writes before the conflict are the winner's: not what we are waiting for.
-    ignore eWritten;
   }
   hot state WaitRetry {
-    on eWritten goto Retried;
-    // Further refusals and successful replies do not matter here.
-    ignore eCasResp;
+    on Written goto Retried;
   }
   cold state Retried {
-    ignore eCasResp, eWritten;
   }
 }
 
@@ -39,7 +34,7 @@ machine ThreeClients {
     entry {
       var store: Store;
       store = new Store();
-      announce eIncrementsPlanned, 3;
+      announce IncrementsPlanned, 3;
       new Client(store);
       new Client(store);
       new Client(store);
@@ -49,19 +44,18 @@ machine ThreeClients {
 
 // Coverage: two refusals in one run. Two clients can never produce this (only one of
 // them can lose a round), so tcTwoClients alone reports it as a gap.
-scenario RefusedTwice observes eCasResp {
+scenario RefusedTwice observes CasResponse {
   start hot state WaitFirst {
-    on eCasResp do (ok: bool) {
+    on CasResponse do (ok: bool) {
       if (!ok) { goto WaitSecond; }
     }
   }
   hot state WaitSecond {
-    on eCasResp do (ok: bool) {
+    on CasResponse do (ok: bool) {
       if (!ok) { goto Seen; }
     }
   }
   cold state Seen {
-    ignore eCasResp;
   }
 }
 

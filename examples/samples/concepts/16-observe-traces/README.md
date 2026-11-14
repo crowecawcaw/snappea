@@ -18,8 +18,8 @@ broken.
 ## The concept
 
 - **One spec, two uses.** [`PSpec/OrderLifecycle.p`](PSpec/OrderLifecycle.p) observes
-  `eOrderPlaced`, `eOrderPaid`, `eOrderShipped`, `eOrderCancelled` and the client's
-  `ePayRequested`/`eCancelRequested`. The model announces them; the application logs them
+  `OrderPlaced`, `OrderPaid`, `OrderShipped`, `OrderCancelled` and the client's
+  `PayRequested`/`CancelRequested`. The model announces them; the application logs them
   with the same names and payloads.
 - **Keys give each entity its own monitor.** Every log line has a `key`; observe creates
   a fresh spec instance per key. Write the spec about *one* order, and log the order id
@@ -39,7 +39,7 @@ real executions, one at a time, with whatever happened in them. Use both.
 A log line ([`logs/valid.jsonl`](logs/valid.jsonl)):
 
 ```json
-{"key": "7", "timestamp": "2026-11-12T10:00:02.000Z", "event": "eOrderPaid", "payload": {"order": 7, "amount": 30}}
+{"key": "7", "timestamp": "2026-11-12T10:00:02.000Z", "event": "OrderPaid", "payload": {"order": 7, "amount": 30}}
 ```
 
 The spec learns its order from the first event, because a client may log its request
@@ -62,7 +62,7 @@ fun Same(o: int) {
 | `logs/valid.jsonl` | Three orders: shipped; paid then refunded; cancelled before payment |
 | `logs/paid-after-cancel.jsonl` | Cancel requested before payment, but the order was paid and shipped |
 | `logs/never-shipped.jsonl` | An order paid and never shipped or refunded |
-| `logs/misspelled.jsonl` | `eOrderShiped` instead of `eOrderShipped` |
+| `logs/misspelled.jsonl` | `OrderShiped` instead of `OrderShipped` |
 
 ## Test cases and commands
 
@@ -79,6 +79,9 @@ fun Same(o: int) {
 `check_samples.py` checks the model only; the observe commands above were run by hand.
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 The valid log covers the whole spec, so the logs exercised every rule:
 
@@ -106,7 +109,7 @@ FAIL  OrderLifecycle (1 error; 3 events, 1 key)
 The typo:
 
 ```text
-      Unknown event 'eOrderShiped': not declared in the P sources (1 occurrence, first at logs/misspelled.jsonl:4); did you mean eOrderShipped?
+      Unknown event 'OrderShiped': not declared in the P sources (1 occurrence, first at logs/misspelled.jsonl:4); did you mean OrderShipped?
 ```
 
 The coverage list under each result ("Not covered by the events") says which rules the
@@ -121,7 +124,7 @@ log never exercised: a log of only happy paths leaves the cancel handlers uncove
   still being written.
 - **Checking logs without `--strict` in CI.** If the logging is switched off, every
   check passes on an empty log.
-- **Logging only outcomes.** Without `eCancelRequested` the spec could not tell a cancel
+- **Logging only outcomes.** Without `CancelRequested` the spec could not tell a cancel
   that lost a fair race from one the service ignored. Log requests as they are sent.
 
 ## Try this

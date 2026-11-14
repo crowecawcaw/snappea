@@ -6,53 +6,53 @@
 // Real primitives (each atomic): lock(row), commit(transaction). Between the two lock
 // statements of one transaction, other transactions run.
 
-event eLock: (worker: machine, transfer: int, account: int);
-event eLocked: (account: int);
-event eCommit: (worker: machine, transfer: tTransfer);
-event eCommitted;
+event Lock: (worker: machine, transfer: int, account: int);
+event Locked: (account: int);
+event Commit: (worker: machine, transfer: Transfer);
+event Committed;
 
-type tWaiter = (worker: machine, transfer: int, account: int);
-type tTransfer = (transfer: int, src: int, dst: int, amount: int);
+type Waiter = (worker: machine, transfer: int, account: int);
+type Transfer = (transfer: int, src: int, dst: int, amount: int);
 
 machine Database {
   var balances: map[int, int];
   // account -> transaction holding its row lock
   var holder: map[int, int];
   // account -> lock requests waiting for it, in arrival order
-  var waiters: map[int, seq[tWaiter]];
+  var waiters: map[int, seq[Waiter]];
 
   start state Serving {
     entry (accounts: map[int, int]) {
       var account: int;
       balances = accounts;
       foreach (account in keys(balances)) {
-        waiters[account] = default(seq[tWaiter]);
+        waiters[account] = default(seq[Waiter]);
       }
     }
-    on eLock do (w: tWaiter) {
+    on Lock do (w: Waiter) {
       if (w.account in holder) {
         waiters[w.account] += (sizeof(waiters[w.account]), w);
         return;
       }
       Grant(w);
     }
-    on eCommit do (c: (worker: machine, transfer: tTransfer)) {
+    on Commit do (c: (worker: machine, transfer: Transfer)) {
       Apply(c.transfer.src, c.transfer.transfer, -c.transfer.amount);
       Apply(c.transfer.dst, c.transfer.transfer, c.transfer.amount);
       Release(c.transfer.src, c.transfer.transfer);
       Release(c.transfer.dst, c.transfer.transfer);
-      send c.worker, eCommitted;
+      send c.worker, Committed;
     }
   }
 
   fun Apply(account: int, transfer: int, delta: int) {
     balances[account] = balances[account] + delta;
-    announce eApplied, (account = account, transfer = transfer, balance = balances[account]);
+    announce Applied, (account = account, transfer = transfer, balance = balances[account]);
   }
 
   fun Release(account: int, transfer: int) {
-    var next: tWaiter;
-    announce eLockReleased, (account = account, transfer = transfer);
+    var next: Waiter;
+    announce LockReleased, (account = account, transfer = transfer);
     holder -= (account);
     if (sizeof(waiters[account]) > 0) {
       next = waiters[account][0];
@@ -61,9 +61,9 @@ machine Database {
     }
   }
 
-  fun Grant(w: tWaiter) {
+  fun Grant(w: Waiter) {
     holder[w.account] = w.transfer;
-    announce eLockGranted, (account = w.account, transfer = w.transfer);
-    send w.worker, eLocked, (account = w.account,);
+    announce LockGranted, (account = w.account, transfer = w.transfer);
+    send w.worker, Locked, (account = w.account,);
   }
 }

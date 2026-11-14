@@ -346,6 +346,17 @@ pub enum Failure {
     Other(String),
 }
 
+/// Stable failure site captured while executing, independent of message values and snippets.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BugIdentity {
+    pub kind: String,
+    pub machine: String,
+    pub state: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+}
+
 /// A .NET-style exception raised by P code.
 #[derive(Debug, Clone)]
 pub struct Exception {
@@ -488,6 +499,7 @@ pub struct Runtime<'p> {
     pub(crate) handler_starts: u64,
     /// The first failure of this execution (see [`Failure`]).
     pub(crate) failure: Option<Failure>,
+    pub(crate) bug_identity: Option<BugIdentity>,
     /// See [`Setup::java_semantics`].
     pub(crate) java: Option<&'p JavaFormatter<'p>>,
     next_op_id: u64,
@@ -587,6 +599,7 @@ impl<'p> Runtime<'p> {
             time: time.map(|o| Box::new(crate::checker::time::TimeState::new(o))),
             handler_starts: 0,
             failure: None,
+            bug_identity: None,
             java: java_semantics,
             next_op_id: 0,
             format_buf: String::new(),
@@ -765,6 +778,27 @@ impl<'p> Runtime<'p> {
 
     // ---- assertions and bugs ------------------------------------------------
 
+    /// Capture semantic failure identity before formatting its report.
+    pub(crate) fn identify_bug(&mut self, kind: &str, actor: Actor, at: Option<crate::syntax::Span>) {
+        if self.bug_identity.is_some() {
+            return;
+        }
+        let (decl, state) = match actor {
+            Actor::Machine(m) => (self.machines[m].decl, self.machines[m].state),
+            Actor::Monitor(m) => (self.monitors[m].decl, self.monitors[m].state),
+        };
+        let at = at.filter(|s| !s.is_dummy());
+        let location = at.map(|s| self.prog.sources.location(s));
+        self.bug_identity = Some(BugIdentity {
+            kind: kind.into(),
+            machine: self.prog.machine(decl).name.clone(),
+            state: state.map(|s| self.prog.state(s).name.clone()).unwrap_or_default(),
+            file: location.as_ref().and_then(|l| l.file.clone()),
+            line: location.as_ref().and_then(|l| u32::try_from(l.line).ok()),
+            column: location.as_ref().and_then(|l| u32::try_from(l.col).ok()),
+        });
+    }
+
     /// `OperationScheduler.NotifyAssertionFailure`.
     pub fn report_bug(&mut self, text: String) -> Stop {
         if self.bug.is_none() {
@@ -827,6 +861,7 @@ impl<'p> Runtime<'p> {
         action: &str,
         at: Option<crate::syntax::Span>,
     ) -> Stop {
+        self.identify_bug(&exc.ty, actor, at);
         self.failure.get_or_insert(Failure::Exception(exc.ty.to_string(), exc.message.clone()));
         if let Actor::Machine(m) = actor {
             let short = exc.ty.rsplit('.').next().unwrap_or(&exc.ty).to_string();
@@ -956,6 +991,11 @@ impl<'p> Runtime<'p> {
                         self.state_name(self.monitors[i].state),
                         self.spec_fields_line(i)
                     );
+                    self.identify_bug(
+                        "liveness",
+                        Actor::Monitor(i),
+                        self.monitors[i].state.map(|s| self.prog.state(s).span),
+                    );
                     return Err(self.report_bug(msg));
                 }
             }
@@ -1003,6 +1043,7 @@ impl<'p> Runtime<'p> {
             if n == 1 { "s" } else { "" },
             if n == 1 { "it" } else { "them" },
         );
+        self.identify_bug("liveness", Actor::Monitor(i), self.monitors[i].state.map(|s| self.prog.state(s).span));
         Err(self.report_bug(msg))
     }
 
@@ -1066,7 +1107,22 @@ impl<'p> Runtime<'p> {
         r
     }
 
+    /// Collection-size evidence does not enter the state hash or scheduling choices.
+    pub(crate) fn record_collection_sizes(&mut self) {
+        if let Some(b) = &mut self.branching {
+            for m in &self.machines {
+                b.observe_fields(self.prog, m.decl, &m.fields);
+            }
+            for m in &self.monitors {
+                b.observe_fields(self.prog, m.decl, &m.fields);
+            }
+        }
+    }
+
     fn schedule_from(&mut self, infos: &mut [OpInfo]) -> Result<(), Stop> {
+        if self.branching.as_mut().is_some_and(|b| b.sample_sizes()) {
+            self.record_collection_sizes();
+        }
         if self.time.as_ref().is_some_and(|t| t.opts.timed) {
             self.filter_timed(infos);
         }
@@ -1316,6 +1372,7 @@ impl<'p> Runtime<'p> {
                         self.prog.state(s).name,
                         self.spec_fields_line(i)
                     );
+                    self.identify_bug("liveness", Actor::Monitor(i), Some(self.prog.state(s).span));
                     let _ = self.report_bug(msg);
                     return;
                 }
@@ -1602,6 +1659,7 @@ impl<'p> Runtime<'p> {
         while i < self.machines[m].inbox.queue.len() {
             let id = self.machines[m].inbox.queue[i].id;
             if self.is_ignored(m, id) {
+                self.cov_queue_policy(m, id);
                 if check_only {
                     i += 1;
                 } else {
@@ -1615,6 +1673,7 @@ impl<'p> Runtime<'p> {
                 }
                 return self.machines[m].inbox.queue.remove(i);
             }
+            self.cov_queue_policy(m, id);
             i += 1;
         }
         None
@@ -1683,6 +1742,9 @@ impl<'p> Runtime<'p> {
                         continue;
                     }
                     if let Some(raised) = self.machines[m].inbox.raised.take() {
+                        if self.is_ignored(m, raised.id) {
+                            self.cov_queue_policy(m, raised.id);
+                        }
                         if raised.id == GOTO_EVENT || !self.is_ignored(m, raised.id) {
                             self.cov_handle_raised(m, raised.id);
                             self.machines[m].stage = Stage::Handle(raised);
@@ -1862,6 +1924,13 @@ impl<'p> Runtime<'p> {
                             self.machines[m].stage = Stage::Halt;
                             continue;
                         }
+                        if self.config.snappea_reports {
+                            let decl = self.machines[m].decl;
+                            let (what, at, help) =
+                                crate::checker::report::unhandled_event(self.prog, decl, &name, popped, e.id);
+                            let text = crate::checker::report::render(self.prog, &what, "", at, &help);
+                            return Err(self.report_bug(text));
+                        }
                         let msg = format!(
                             "{} received event '{}' that cannot be handled.",
                             self.machines[m].name,
@@ -1884,6 +1953,7 @@ impl<'p> Runtime<'p> {
                             self.begin_goto(m, target, with, e);
                         }
                         Some(HandlerAction::Ignore) | Some(HandlerAction::Defer) => {
+                            self.cov_queue_policy(m, e.id);
                             self.machines[m].stage = Stage::Loop;
                         }
                         None => {
@@ -2206,6 +2276,7 @@ impl<'p> Runtime<'p> {
                     reached: std::collections::BTreeSet::new(),
                     saw_start_entry: false,
                     satisfied: false,
+                    witness: self.config.snappea_reports.then(ScenarioWitness::default),
                 });
             }
             let fields = self.code.field_defaults[decl.idx()].clone();
@@ -2285,6 +2356,11 @@ impl<'p> Runtime<'p> {
                 let is_start_entry = !sc.saw_start_entry;
                 sc.saw_start_entry = true;
                 if self.prog.state(st).temperature == Temperature::Cold && !is_start_entry {
+                    if !sc.satisfied {
+                        if let Some(w) = &mut sc.witness {
+                            w.accepting_state = self.prog.state(st).name.clone();
+                        }
+                    }
                     sc.satisfied = true;
                 }
             }
@@ -2475,6 +2551,34 @@ impl<'p> Runtime<'p> {
     /// `Monitor.MonitorEvent`. With no sender, the monitor reads the event stamp
     /// as its clock (used for recorded observations).
     pub fn monitor_event(&mut self, mon: usize, e: Event, sender_idx: Option<usize>) -> Result<(), Stop> {
+        // Reporting only: this history is never read by the scheduler or state hash.
+        let decl = self.monitors[mon].decl;
+        if let Some(i) = self.scenarios.iter().position(|s| s.decl == decl && !s.satisfied && s.witness.is_some()) {
+            let w = self.scenarios[i].witness.as_mut().unwrap();
+            w.observed_events = w.observed_events.saturating_add(1);
+            if w.events.len() < ScenarioWitness::MAX_EVENTS {
+                let state = self.monitors[mon].state;
+                let at =
+                    state.map(|s| self.prog.state(s).handler_for(e.id).map_or(self.prog.state(s).span, |h| h.span));
+                let location = at.map(|s| self.prog.sources.location(s));
+                let source = location.map(|l| format!("{}:{}", l.file.unwrap_or_default(), l.line)).unwrap_or_default();
+                let actor = sender_idx.map(|i| self.machines[i].name.to_string()).unwrap_or_else(|| "external".into());
+                let text = format!(
+                    "{}: {} -> {} in {} (scenario handler/state at {})",
+                    actor,
+                    self.event_with_payload(&e),
+                    self.prog.machine(decl).name,
+                    self.state_name(state),
+                    source
+                );
+                let w = self.scenarios[i].witness.as_mut().unwrap();
+                let clipped: String = text.chars().take(1024).collect();
+                w.truncated |= clipped.len() < text.len();
+                w.events.push(clipped);
+            } else {
+                w.truncated = true;
+            }
+        }
         let sender: Option<Rc<str>> = sender_idx.map(|i| self.machines[i].name.clone());
         self.cov_monitor_process(mon, e.id, sender_idx);
         self.log(|rt| {
@@ -2665,6 +2769,9 @@ impl<'p> Runtime<'p> {
     /// `--timed` dequeue: removes the picked event, dropping ignored events queued
     /// ahead of it as `try_dequeue` does.
     fn timed_take(&mut self, m: usize, has_default: bool) -> Result<Option<Event>, Stop> {
+        for i in 0..self.machines[m].inbox.queue.len() {
+            self.cov_queue_policy(m, self.machines[m].inbox.queue[i].id);
+        }
         let Some(mut i) = self.timed_pick(m, None, has_default)? else { return Ok(None) };
         let mut j = 0;
         while j < i {
@@ -2791,8 +2898,18 @@ impl<'p> Runtime<'p> {
     }
 
     fn monitor_handle_event(&mut self, mon: usize, e: Event) -> Result<(), Stop> {
+        // the state that had no handler, for the report
+        let mut popped: Option<StateId> = None;
         loop {
             let Some(s) = self.monitors[mon].state else {
+                if self.config.snappea_reports {
+                    let decl = self.monitors[mon].decl;
+                    let name = self.prog.machine(decl).name.clone();
+                    let (what, at, help) =
+                        crate::checker::report::unhandled_event(self.prog, decl, &name, popped, e.id);
+                    let text = crate::checker::report::render(self.prog, &what, "", at, &help);
+                    return Err(self.report_bug(text));
+                }
                 let msg = format!(
                     "{} received event '{}' that cannot be handled.",
                     self.monitor_full_name(mon),
@@ -2840,6 +2957,7 @@ impl<'p> Runtime<'p> {
                 }
                 None => {
                     self.monitor_state_log(mon, false);
+                    popped = Some(s);
                     self.monitors[mon].state = None;
                 }
             }
@@ -2896,6 +3014,33 @@ pub struct ScenarioProgress {
     pub saw_start_entry: bool,
     /// Entered a cold (accepting) state other than its start state.
     pub satisfied: bool,
+    /// Bounded reporting evidence, frozen at first acceptance.
+    pub witness: Option<ScenarioWitness>,
+}
+
+/// An observed scenario history ending at its first accepting state, not a full replay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScenarioWitness {
+    pub observed_events: usize,
+    pub events: Vec<String>,
+    pub accepting_state: String,
+    pub truncated: bool,
+}
+
+impl ScenarioWitness {
+    pub const MAX_EVENTS: usize = 128;
+
+    /// Prefer the shortest observed history; break ties deterministically across workers.
+    pub fn retain_best(best: &mut Option<Self>, candidate: &Self) {
+        let key = |w: &Self| (w.observed_events, w.truncated);
+        if best.as_ref().is_none_or(|b| {
+            key(candidate) < key(b)
+                || (key(candidate) == key(b)
+                    && (&candidate.events, &candidate.accepting_state) < (&b.events, &b.accepting_state))
+        }) {
+            *best = Some(candidate.clone());
+        }
+    }
 }
 
 /// `MonitorMapWithScenarios`: the module's monitors plus every scenario monitor observing

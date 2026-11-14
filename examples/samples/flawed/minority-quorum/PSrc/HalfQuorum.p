@@ -22,53 +22,53 @@ machine HalfQuorumNode {
   }
 
   state Following {
-    on eStartElection do (p: map[int, machine]) {
+    on StartElection do (p: map[int, machine]) {
       var peer: int;
       peers = p;
       term = votedTerm + 1;
       votedTerm = term;
       grants = 1;
-      announce eCandidacy, (candidate = id, term = term);
-      announce eVoteGranted, (term = term, voter = id, candidate = id);
+      announce Candidacy, (candidate = id, term = term);
+      announce VoteGranted, (term = term, voter = id, candidate = id);
       foreach (peer in keys(peers)) {
         if (peer != id) { toAsk += (sizeof(toAsk), peer); }
       }
       goto Campaigning;
     }
-    on eRequestVote do (r: tVoteReq) { Vote(r); }
+    on RequestVote do (r: VoteReq) { Vote(r); }
   }
 
   // Asks one node at a time, so each request is an RPC the candidate waits on.
   state Campaigning {
     entry {
-      send peers[toAsk[0]], eRequestVote, (term = term, candidate = id, voter = toAsk[0], from = this);
+      send peers[toAsk[0]], RequestVote, (term = term, candidate = id, voter = toAsk[0], from = this);
       toAsk -= (0);
     }
-    on eRequestVote do (r: tVoteReq) { Vote(r); }
-    on eVoteResp do (v: (granted: bool)) {
+    on RequestVote do (r: VoteReq) { Vote(r); }
+    on VoteResp do (v: (granted: bool)) {
       if (v.granted) { grants = grants + 1; }
     // BUG: n / 2 is not a majority when n is even.
       if (grants >= sizeof(peers) / 2) {
-        announce eElectionEnded, (term = term, candidate = id, won = true);
+        announce ElectionEnded, (term = term, candidate = id, won = true);
         goto Following;
       }
       if (sizeof(toAsk) == 0) {
         // Every node has answered and we lack a quorum: nobody else will vote for us.
-        announce eElectionEnded, (term = term, candidate = id, won = false);
+        announce ElectionEnded, (term = term, candidate = id, won = false);
         goto Following;
       }
       goto Campaigning;
     }
   }
 
-  fun Vote(r: tVoteReq) {
+  fun Vote(r: VoteReq) {
     if (r.term > votedTerm) {
       votedTerm = r.term;
-      announce eVoteGranted, (term = r.term, voter = id, candidate = r.candidate);
-      send r.from, eVoteResp, (granted = true,);
+      announce VoteGranted, (term = r.term, voter = id, candidate = r.candidate);
+      send r.from, VoteResp, (granted = true,);
       return;
     }
-    announce eVoteDenied, (term = r.term, voter = id, candidate = r.candidate);
-    send r.from, eVoteResp, (granted = false,);
+    announce VoteDenied, (term = r.term, voter = id, candidate = r.candidate);
+    send r.from, VoteResp, (granted = false,);
   }
 }

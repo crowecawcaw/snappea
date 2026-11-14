@@ -26,6 +26,11 @@ const TOPICS: &[(&str, &str, &str)] = &[
         "`scenario` monitors: prove a test reached a race; read their summary",
         include_str!("guide/scenario-monitors.md"),
     ),
+    (
+        "spec-patterns",
+        "Pin down inputs, replies and progress; test timeouts and convergence",
+        include_str!("guide/spec-patterns.md"),
+    ),
     ("faults", "Model timers, crashes and lossy networks as drivers", include_str!("guide/faults.md")),
     ("python", "Capture real Python calls and check them against P specs", include_str!("guide/python.md")),
     ("syntax", "P syntax and a complete small model", include_str!("guide/syntax.md")),
@@ -40,6 +45,21 @@ pub(super) struct Example {
 }
 
 pub(super) const EXAMPLES: &[Example] = &[
+    Example {
+        name: "building-blocks",
+        main: "Example.p",
+        about: "Importable P building blocks: bounded network faults and per-ID request/reply obligations.",
+        files: &[
+            ("Example.p", include_str!("guide/examples/building-blocks/Example.p")),
+            ("Example.pproj", include_str!("guide/examples/building-blocks/Example.pproj")),
+            ("BuildingBlocks.pproj", include_str!("guide/examples/building-blocks/BuildingBlocks.pproj")),
+            ("Network.p", include_str!("guide/examples/building-blocks/Network.p")),
+            ("Network.pproj", include_str!("guide/examples/building-blocks/Network.pproj")),
+            ("RequestReplies.pproj", include_str!("guide/examples/building-blocks/RequestReplies.pproj")),
+            ("RequestReplies.p", include_str!("guide/examples/building-blocks/RequestReplies.p")),
+            ("README.md", include_str!("guide/examples/building-blocks/README.md")),
+        ],
+    },
     Example {
         name: "cas-retry",
         main: "Balance.p",
@@ -128,6 +148,8 @@ Topics:
   modeling   What to model: boundaries, atomic steps, interference
   scenarios  Choose scenarios and independent oracles that can fail
   recovery   Crashes, retries and durable state
+  scenario-monitors  Prove a test reached a race
+  spec-patterns  Pin down inputs, replies and progress; test timeouts and convergence
   faults     Model timers, crashes and lossy networks as drivers
   python     Capture real Python calls and check them against P specs
   syntax     P syntax and a complete small model

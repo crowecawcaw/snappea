@@ -281,3 +281,83 @@ fn observation_lint_keeps_only_spec_rules_and_bad_suppressions() {
     let rules: Vec<_> = snappea_lint::lint_observation(&sm).unwrap().into_iter().map(|f| f.rule).collect();
     assert_eq!(rules, ["unobserved-handler", "invalid-suppression"]);
 }
+
+#[test]
+fn assertion_messages_do_not_check_payload_fields() {
+    let model = |body| {
+        format!("event E: (id: int, value: int); spec S observes E {{ start state A {{ on E do (p: (id: int, value: int)) {{ {body} }} }} }}")
+    };
+    for body in [
+        r#"assert p.value > 0, format("request {0}", p.id);"#,
+        r#"assert p.value > 0, format("request {0}", p);"#,
+        r#"if (p.value > 0) { assert p.value == 1, format("request {0}", p.id); }"#,
+    ] {
+        let fs = findings(&[&model(body)]);
+        assert!(fs.iter().any(|f| f.rule == "unused-payload-field" && f.message.contains("p.id")), "{body}: {fs:?}");
+        assert!(
+            !fs.iter().any(|f| f.rule == "unused-payload-field" && f.message.contains("p.value")),
+            "{body}: {fs:?}"
+        );
+    }
+    assert!(!has(&model(r#"assert p.id > 0 && p.value > 0, format("request {0}", p.id);"#), "unused-payload-field"));
+    assert!(!has(&model(r#"assert false, format("unexpected {0}", p);"#), "unused-payload-field"));
+}
+
+#[test]
+fn forbidden_event_handlers_may_log_before_assert_false() {
+    let model = |body| {
+        format!("event E: (id: int, value: int); spec S observes E {{ start state A {{ on E do (p: (id: int, value: int)) {{ {body} }} }} }}")
+    };
+    for body in [
+        r#"print "unexpected event"; assert false;"#,
+        r#"print format("unexpected id {0}", p.id); assert false, "forbidden";"#,
+        r#"{ print "unexpected event"; assert false; }"#,
+    ] {
+        let fs = findings(&[&model(body)]);
+        assert!(
+            !fs.iter().any(|f| matches!(f.rule, "unused-payload-field" | "tautological-assert" | "permissive-monitor")),
+            "{body}: {fs:?}"
+        );
+    }
+    assert!(has(&model(r#"if (p.id < 0) { assert false; }"#), "unused-payload-field"));
+    assert!(has(&model(r#"print Helper(); assert false;"#), "unused-payload-field"));
+}
+
+#[test]
+fn adjacent_announce_and_send_exposes_duplicate_observation() {
+    let model = |body| {
+        format!(
+        "event E: (id: int, value: int); machine Main {{ start state S {{ entry {{ {body} }} }} }} spec Guard observes E {{ start state S {{ on E do (p: (id: int, value: int)) {{ assert p.id == p.value; }} }} }}"
+    )
+    };
+    for body in [
+        "announce E, p; send owner, E, p;",
+        "send owner, E, p; announce E, p;",
+        "announce E, (id = p.id, value = p.value + 1); send this, E, (id = p.id, value = p.value + 1);",
+        "if ($) { announce E, p; send owner, E, p; }",
+        "receive { case E: (p: (id: int, value: int)) { announce E, p; send owner, E, p; } }",
+    ] {
+        let fs: Vec<_> = findings(&[&model(body)]).into_iter().filter(|f| f.rule == "announce-and-send").collect();
+        assert_eq!(fs.len(), 1, "{body}: {fs:?}");
+        assert!(fs[0].message.contains("specs observe sends too"));
+    }
+    for body in [
+        "announce E, p; send owner, E, q;",
+        "announce E, p; p = q; send owner, E, p;",
+        "if ($) { announce E, p; } else { send owner, E, p; }",
+        "announce E, ChoosePayload(); send owner, E, ChoosePayload();",
+        "announce E, p; send ChooseOwner(), E, p;",
+        "announce E, (id = choose(2), value = 1); send owner, E, (id = choose(2), value = 1);",
+        "announce E, p; send owner, Other, p;",
+    ] {
+        assert!(!has(&model(body), "announce-and-send"), "{body}");
+    }
+    let duplicate = model("announce E, p; send owner, E, p;");
+    assert!(!has(&duplicate.replace("spec Guard", "scenario Guard"), "announce-and-send"));
+    assert!(!has(&duplicate.replace("observes E", "observes Other"), "announce-and-send"));
+    let suppressed = model("announce E, p;\n// snappea-lint: allow announce-and-send -- deliberately test duplicate reports\nsend owner, E, p;");
+    assert!(!has(&suppressed, "announce-and-send"));
+    assert!(!has(&suppressed, "invalid-suppression"));
+    let global = "event E; fun Report(owner: machine) { announce E; send owner, E; } spec Guard observes E { start state S { on E do { assert false; } } }";
+    assert!(has(global, "announce-and-send"));
+}

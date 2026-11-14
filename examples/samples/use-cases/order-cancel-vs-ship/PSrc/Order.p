@@ -4,11 +4,11 @@
 // between two steps of one actor.
 
 // To whoever placed the order: it exists now and can be cancelled.
-event eOrderPlaced: (order: int);
-event eFulfil: (order: int, customer: machine);
+event OrderPlaced: (order: int);
+event Fulfil: (order: int, customer: machine);
 // To the customer, once the parcel left and the payment was captured.
-event eShippedNotice: (order: int);
-event eCancelResp: (req: int, outcome: tCancelOutcome);
+event ShippedNotice: (order: int);
+event CancelResp: (req: int, outcome: CancelOutcome);
 
 // Placed -> authorize the card -> Authorized -> hand to the warehouse.
 // If the customer cancelled while the authorization was in flight, the transition to
@@ -27,24 +27,24 @@ machine Checkout {
       payments = input.payments;
       warehouse = input.warehouse;
       order = input.order;
-      send store, eCreate, (client = this, order = order);
+      send store, Create, (client = this, order = order);
     }
-    on eCreated goto Authorizing with {
-      send owner, eOrderPlaced, (order = order,);
-      send payments, eAuthorize, (client = this, order = order);
+    on Created goto Authorizing with {
+      send owner, OrderPlaced, (order = order,);
+      send payments, Authorize, (client = this, order = order);
     }
   }
 
   state Authorizing {
-    on eAuthorizeResp do {
-      send store, eTransition, (client = this, order = order, allowed = Only(Placed), next = Authorized);
+    on AuthorizeResp do {
+      send store, Transition, (client = this, order = order, allowed = Only(Placed), next = Authorized);
     }
-    on eTransitionResp do (r: (order: int, next: tStatus, ok: bool, prior: tStatus)) {
+    on TransitionResp do (r: (order: int, next: Status, ok: bool, prior: Status)) {
       if (r.ok) {
-        send warehouse, eFulfil, (order = order, customer = owner);
+        send warehouse, Fulfil, (order = order, customer = owner);
       } else {
         // Cancelled before the hold was recorded on the order.
-        send payments, eVoid, (order = order,);
+        send payments, Void, (order = order,);
       }
     }
   }
@@ -62,18 +62,18 @@ machine CancelRequest {
       owner = input.owner;
       payments = input.payments;
       req = input.req;
-      send input.store, eTransition, (client = this, order = input.order, allowed = BeforeShipping(), next = Cancelled);
+      send input.store, Transition, (client = this, order = input.order, allowed = BeforeShipping(), next = Cancelled);
     }
-    on eTransitionResp do (r: (order: int, next: tStatus, ok: bool, prior: tStatus)) {
+    on TransitionResp do (r: (order: int, next: Status, ok: bool, prior: Status)) {
       if (r.ok && r.prior != Placed) {
         // The order carried an authorization: release it.
-        send payments, eVoid, (order = r.order,);
+        send payments, Void, (order = r.order,);
       }
       if (r.ok || r.prior == Cancelled) {
-        send owner, eCancelResp, (req = req, outcome = CancelAccepted);
+        send owner, CancelResp, (req = req, outcome = CancelAccepted);
         return;
       }
-      send owner, eCancelResp, (req = req, outcome = CancelTooLate);
+      send owner, CancelResp, (req = req, outcome = CancelTooLate);
     }
   }
 }
@@ -93,27 +93,27 @@ machine Warehouse {
       store = input.store;
       payments = input.payments;
     }
-    on eFulfil do (r: (order: int, customer: machine)) {
+    on Fulfil do (r: (order: int, customer: machine)) {
       customers[r.order] = r.customer;
-      send store, eTransition, (client = this, order = r.order, allowed = Only(Authorized), next = Picked);
+      send store, Transition, (client = this, order = r.order, allowed = Only(Authorized), next = Picked);
     }
-    on eTransitionResp do (r: (order: int, next: tStatus, ok: bool, prior: tStatus)) {
+    on TransitionResp do (r: (order: int, next: Status, ok: bool, prior: Status)) {
       if (!r.ok) {
         // Cancelled first: nothing to ship (restock if already picked).
         return;
       }
       if (r.next == Picked) {
-        send store, eTransition, (client = this, order = r.order, allowed = Only(Picked), next = Shipped);
+        send store, Transition, (client = this, order = r.order, allowed = Only(Picked), next = Shipped);
         return;
       }
-      send payments, eCapture, (client = this, order = r.order);
+      send payments, CapturePayment, (client = this, order = r.order);
     }
-    on eCaptureResp do (r: (order: int, ok: bool)) {
+    on CaptureResp do (r: (order: int, ok: bool)) {
       if (!r.ok) {
-        send payments, eCapture, (client = this, order = r.order);
+        send payments, CapturePayment, (client = this, order = r.order);
         return;
       }
-      send customers[r.order], eShippedNotice, (order = r.order,);
+      send customers[r.order], ShippedNotice, (order = r.order,);
     }
   }
 }

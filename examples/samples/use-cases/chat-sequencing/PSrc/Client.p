@@ -4,9 +4,9 @@
 // connection drops it reconnects at once, resuming after the last seq it displayed.
 
 // From the network: this client's connection dropped.
-event eDisconnected;
+event Disconnected;
 // To the network: open a connection for this client to the server.
-event eConnect: (client: machine, server: machine, after: int);
+event Connect: (client: machine, server: machine, after: int);
 
 machine Client {
   var id: int;
@@ -19,16 +19,16 @@ machine Client {
       id = input.id;
       server = input.server;
       network = input.network;
-      send network, eConnect, (client = this, server = server, after = displayed);
+      send network, Connect, (client = this, server = server, after = displayed);
     }
-    on eDeliver do (d: (sn: int, msg: int)) {
+    on Deliver do (d: (sn: int, msg: int)) {
       if (d.sn == displayed + 1) {
         displayed = d.sn;
-        announce eDisplayed, (client = id, sn = d.sn, msg = d.msg);
+        announce Displayed, (client = id, sn = d.sn, msg = d.msg);
       }
     }
-    on eDisconnected do {
-      send network, eConnect, (client = this, server = server, after = displayed);
+    on Disconnected do {
+      send network, Connect, (client = this, server = server, after = displayed);
     }
   }
 }
@@ -39,8 +39,8 @@ machine Sender {
     entry (input: (server: machine, msgs: seq[int])) {
       var m: int;
       foreach (m in input.msgs) {
-        announce ePosted, (msg = m,);
-        send input.server, ePost, (msg = m,);
+        announce Posted, (msg = m,);
+        send input.server, Post, (msg = m,);
       }
     }
   }

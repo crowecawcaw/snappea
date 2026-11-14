@@ -1,9 +1,9 @@
 // The physical devices, the passengers and the test cases. Only the controller is the
 // design under test; the motor, the door and the passengers are drivers.
 
-// Moves the car one floor per command. Moving takes time: between eMotorStarted and
-// eMotorStopped other machines run.
-event eStep;
+// Moves the car one floor per command. Moving takes time: between MotorStarted and
+// MotorStopped other machines run.
+event Step;
 
 machine Motor {
   var floor: int;
@@ -13,19 +13,19 @@ machine Motor {
     entry (f: int) {
       floor = f;
     }
-    on eMove do (m: (ctl: machine, dir: int)) {
+    on Move do (m: (ctl: machine, dir: int)) {
       ctl = m.ctl;
-      announce eMotorStarted, (dir = m.dir,);
+      announce MotorStarted, (dir = m.dir,);
       floor = floor + m.dir;
-      send this, eStep;
+      send this, Step;
       goto Running;
     }
   }
 
   state Running {
-    on eStep do {
-      announce eMotorStopped, (floor = floor,);
-      send ctl, eArrivedAt, (floor = floor,);
+    on Step do {
+      announce MotorStopped, (floor = floor,);
+      send ctl, ArrivedAt, (floor = floor,);
       goto Stopped, floor;
     }
   }
@@ -40,31 +40,31 @@ machine Door {
     entry (n: int) {
       obstructions = n;
     }
-    on eOpen do (ctl: machine) {
-      announce eDoorOpened;
-      send ctl, eDoorOpenAck;
+    on Open do (ctl: machine) {
+      announce DoorOpened;
+      send ctl, DoorOpenAck;
       goto Open;
     }
   }
 
   state Open {
-    on eClose do (ctl: machine) {
+    on Close do (ctl: machine) {
       if (obstructions > 0) {
         obstructions = obstructions - 1;
-        send ctl, eDoorObstructed;
+        send ctl, DoorObstructed;
         return;
       }
-      announce eDoorClosed;
-      send ctl, eDoorClosedAck;
+      announce DoorClosed;
+      send ctl, DoorClosedAck;
       goto Shut;
     }
   }
 
   // Closed again; a separate state so the obstruction budget is not re-initialised.
   state Shut {
-    on eOpen do (ctl: machine) {
-      announce eDoorOpened;
-      send ctl, eDoorOpenAck;
+    on Open do (ctl: machine) {
+      announce DoorOpened;
+      send ctl, DoorOpenAck;
       goto Open;
     }
   }
@@ -76,8 +76,8 @@ machine Passenger {
     entry (p: (ctl: machine, floors: seq[int])) {
       var f: int;
       foreach (f in p.floors) {
-        announce eRequested, (floor = f,);
-        send p.ctl, eCall, (floor = f,);
+        announce Requested, (floor = f,);
+        send p.ctl, CallRequested, (floor = f,);
       }
     }
   }
@@ -99,7 +99,7 @@ fun Floors2(a: int, b: int): seq[int] {
 // Three floors, the car stopped at floor `first` with doors closed.
 fun StartElevator(first: int, a: seq[int], b: seq[int], obstructions: int) {
   var ctl: Controller;
-  announce eElevatorPlanned, (floor = first, floors = 3, requests = sizeof(a) + sizeof(b));
+  announce ElevatorPlanned, (floor = first, floors = 3, requests = sizeof(a) + sizeof(b));
   ctl = new Controller((motor = new Motor(first), door = new Door(obstructions), floor = first));
   new Passenger((ctl = ctl, floors = a));
   new Passenger((ctl = ctl, floors = b));
@@ -149,7 +149,7 @@ machine BuggyMoveBeforeClosed {
   start state Init {
     entry {
       var ctl: EagerController;
-      announce eElevatorPlanned, (floor = 0, floors = 3, requests = 2);
+      announce ElevatorPlanned, (floor = 0, floors = 3, requests = 2);
       ctl = new EagerController((motor = new Motor(0), door = new Door(0), floor = 0));
       new Passenger((ctl = ctl, floors = Floors2(0, 2)));
     }
@@ -159,28 +159,25 @@ machine BuggyMoveBeforeClosed {
 // Covered: a press for the current floor arrived after the doors opened there, and the
 // doors opened there again before the car moved. (A press after the car started moving
 // does not count: the motor has not reported the new floor yet.)
-scenario ReopenedForLatePress observes eElevatorPlanned, eRequested, eMotorStarted, eMotorStopped, eDoorOpened, eDoorClosed {
+scenario ReopenedForLatePress observes ElevatorPlanned, Requested, MotorStarted, MotorStopped, DoorOpened, DoorClosed {
   var floor: int;
   var opened: bool;
   start hot state Watching {
     // snappea-lint: allow unused-payload-field -- only the start floor matters here
-    on eElevatorPlanned do (p: (floor: int, floors: int, requests: int)) { floor = p.floor; }
-    on eMotorStarted do { opened = false; }
-    on eMotorStopped do (m: (floor: int)) { floor = m.floor; }
-    on eDoorOpened do { opened = true; }
-    on eRequested do (r: (floor: int)) {
+    on ElevatorPlanned do (p: (floor: int, floors: int, requests: int)) { floor = p.floor; }
+    on MotorStarted do { opened = false; }
+    on MotorStopped do (m: (floor: int)) { floor = m.floor; }
+    on DoorOpened do { opened = true; }
+    on Requested do (r: (floor: int)) {
       if (opened && r.floor == floor) { goto WaitReopen; }
     }
-    ignore eDoorClosed;
   }
   hot state WaitReopen {
-    on eDoorOpened goto Covered;
+    on DoorOpened goto Covered;
     // The car left without reopening: this press is not the case we want.
-    on eMotorStarted do { opened = false; goto Watching; }
-    ignore eElevatorPlanned, eRequested, eMotorStopped, eDoorClosed;
+    on MotorStarted do { opened = false; goto Watching; }
   }
   cold state Covered {
-    ignore eElevatorPlanned, eRequested, eMotorStarted, eMotorStopped, eDoorOpened, eDoorClosed;
   }
 }
 
@@ -199,6 +196,6 @@ test tcObstructedDoor [main=ObstructedDoor]:
 test tcGeneratedRides [main=GeneratedRides]:
   assert DoorsAndMotion, RequestsServed in { GeneratedRides, Controller, Motor, Door, Passenger };
 
-// expect-bug: with its doors open
+// snappea: expect-bug "with its doors open"
 test tcBugMoveBeforeClosed [main=BuggyMoveBeforeClosed]:
   assert DoorsAndMotion, RequestsServed in { BuggyMoveBeforeClosed, EagerController, Motor, Door, Passenger };

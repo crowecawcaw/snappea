@@ -7,9 +7,9 @@ machine ReceiveClient {
     entry (s: Store) {
       store = s;
     }
-    // A second eIncrement that arrives while Increment() is blocked waits in the queue:
+    // A second Increment that arrives while Increment() is blocked waits in the queue:
     // this state handles it, so it is kept until the receive returns.
-    on eIncrement do {
+    on Increment do {
       Increment();
     }
   }
@@ -25,9 +25,9 @@ machine ReceiveClient {
 
   fun Get(): (version: int, value: int) {
     var result: (version: int, value: int);
-    send store, eGet, (client = this,);
+    send store, Get, (client = this,);
     receive {
-      case eGetResp: (r: (version: int, value: int)) {
+      case GetResponse: (r: (version: int, value: int)) {
         result = r;
       }
     }
@@ -36,9 +36,9 @@ machine ReceiveClient {
 
   fun Cas(version: int, value: int): bool {
     var ok: bool;
-    send store, eCas, (client = this, version = version, value = value);
+    send store, Cas, (client = this, version = version, value = value);
     receive {
-      case eCasResp: (r: (ok: bool)) {
+      case CasResponse: (r: (ok: bool)) {
         ok = r.ok;
       }
     }

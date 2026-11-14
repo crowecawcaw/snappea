@@ -2,16 +2,16 @@
 // retry or an error only when that attempt's timeout reached the client before its reply.
 
 // Announced by the caller (the test driver) as it calls: a stopwatch handle from Mark().
-event eCalled: int;
+event Called: int;
 // Announced by the client.
-event eAttempt: int;
-event eOutcome: bool;
+event Attempt: int;
+event Outcome: bool;
 // Announced by the server and the timer right after they send (the message is queued).
-event eReceived: int;
-event eReplied: int;
-event eTimerFired: (ev: event, tag: int);
+event Received: int;
+event Replied: int;
+event TimerFired: (ev: event, tag: int);
 
-spec AnswersWithinDeadline observes eCalled, eAttempt, eOutcome, eReceived, eReplied, eTimerFired {
+spec AnswersWithinDeadline observes Called, Attempt, Outcome, Received, Replied, TimerFired {
   var call: int;
   var attempts: int;
   var received: int;
@@ -20,34 +20,34 @@ spec AnswersWithinDeadline observes eCalled, eAttempt, eOutcome, eReceived, eRep
   var replyFirst: map[int, bool];
 
   start state Idle {
-    on eCalled goto Calling with (m: int) { call = m; }
-    on eAttempt do { assert false, "attempt before the call"; }
-    on eOutcome do { assert false, "answer before the call"; }
-    on eReceived do { assert false, "request before the call"; }
-    on eReplied do { assert false, "reply before the call"; }
-    on eTimerFired do { assert false, "timer before the call"; }
+    on Called goto Calling with (m: int) { call = m; }
+    on Attempt do { assert false, "attempt before the call"; }
+    on Outcome do { assert false, "answer before the call"; }
+    on Received do { assert false, "request before the call"; }
+    on Replied do { assert false, "reply before the call"; }
+    on TimerFired do { assert false, "timer before the call"; }
   }
 
   // Hot until the client answers and every attempt reached the server.
   hot state Calling {
-    on eCalled do { assert false, "called twice"; }
-    on eAttempt do (n: int) {
+    on Called do { assert false, "called twice"; }
+    on Attempt do (n: int) {
       assert n == attempts + 1 && n <= 3, format("attempt {0} after {1} attempts; at most 3 allowed", n, attempts);
       if (n > 1) {
         assert n - 1 in replyFirst && !replyFirst[n - 1], format("attempt {0} retried before its timeout", n - 1);
       }
       attempts = n;
     }
-    on eReceived do (n: int) {
+    on Received do (n: int) {
       assert n <= attempts, format("server received attempt {0}, which was never made", n);
       received = received + 1;
       Settle();
     }
-    on eReplied do (n: int) { First(n, true); }
-    on eTimerFired do (t: (ev: event, tag: int)) {
-      if (t.ev == eTimeout) { First(t.tag, false); }
+    on Replied do (n: int) { First(n, true); }
+    on TimerFired do (t: (ev: event, tag: int)) {
+      if (t.ev == Timeout) { First(t.tag, false); }
     }
-    on eOutcome do (ok: bool) {
+    on Outcome do (ok: bool) {
       assert Elapsed(call) <= ms(1000),
         format("answered (ok = {0}) after up to {1} us; the deadline is 1000000 us", ok, Elapsed(call));
       assert attempts in replyFirst && ok == replyFirst[attempts],
@@ -60,11 +60,11 @@ spec AnswersWithinDeadline observes eCalled, eAttempt, eOutcome, eReceived, eRep
 
   // Late replies and timeouts still arrive after the answer; their order no longer matters.
   state Answered {
-    on eCalled do { assert false, "called after the answer"; }
-    on eAttempt do { assert false, "attempt after the answer"; }
-    on eOutcome do { assert false, "answered twice"; }
-    on eReceived do { assert false, "request received after every attempt was"; }
-    ignore eReplied, eTimerFired;
+    on Called do { assert false, "called after the answer"; }
+    on Attempt do { assert false, "attempt after the answer"; }
+    on Outcome do { assert false, "answered twice"; }
+    on Received do { assert false, "request received after every attempt was"; }
+    ignore Replied, TimerFired;
   }
 
   fun Settle() {

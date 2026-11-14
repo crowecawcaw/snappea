@@ -33,7 +33,7 @@ in flight.
   latest one, and the service declares that rollout done (only when it is).
 
 **Atomic steps**: the service handles one message at a time; a node applies a config
-atomically. Each push is a separate `Courier` machine, which is what lets pushes
+atomically. Each push is a separate `BBDelivery` machine, which is what lets pushes
 overtake each other.
 
 ## Files
@@ -41,7 +41,7 @@ overtake each other.
 | File | What it holds |
 | --- | --- |
 | [`PSpec/Contract.p`](PSpec/Contract.p) | `RolloutSafety` and `RolloutCompletes` (progress, hot state) |
-| [`PSrc/ConfigService.p`](PSrc/ConfigService.p) | The service, the node, and `Courier` (one push in flight) |
+| [`PSrc/ConfigService.p`](PSrc/ConfigService.p) | The service, the node, and `BBDelivery` (one push in flight) |
 | [`PSrc/LastArrivalNode.p`](PSrc/LastArrivalNode.p) | Negative control: a node that applies whatever arrives last |
 | [`PTst/Tests.p`](PTst/Tests.p) | The operator, a scenario, the test cases |
 
@@ -49,9 +49,9 @@ overtake each other.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion | pass, exhaustive |
-| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2 | pass, exhaustive when given ~90s (about 112,000 schedules); sampled under shorter budgets |
-| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | **Expected to fail**: `node 0 applied version 2 after version 3` | fail |
+| `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion | pass |
+| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2 | pass|
+| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | **Expected bug**: `node 0 applied version 2 after version 3` | expected bug |
 
 The `RollbackOvertookPush` scenario confirms a node applied version 3 while a push of
 version 2 to it was still in flight (the rollback overtook the bad version).
@@ -61,21 +61,29 @@ version 2 to it was still in flight (the rollback overtook the bad version).
 - **Announce completion.** The first service went quietly back to idle when all acks
   were in. Mutation showed that clearing the ack set, skipping the canary in the
   second stage, or never finishing were all invisible. The service now announces
-  `eRolloutDone`, and the specs check it is true (every node runs that version) and
+  `RolloutDone`, and the specs check it is true (every node runs that version) and
   that it happens (progress waits for it).
 - **Tie applies to pushes.** Without "a node applies only what was pushed to it", the
-  service's `ePushSent` announcement could be removed and the canary gate silently
+  service's `PushSent` announcement could be removed and the canary gate silently
   stopped being checked.
-- **Nodes report what they run at start** (`eNodeStarted`), so the initial version is
+- **Nodes report what they run at start** (`NodeStarted`), so the initial version is
   part of the checked history rather than an unchecked constructor argument.
-- A separate network machine between the service and the couriers doubled the
-  schedules; creating the courier directly keeps the rollback test exhaustive.
+- Each push uses the shared `BBDelivery` building block. Independent sender identities
+  allow a rollback to overtake an earlier push without introducing a central queue.
+  Delivery is an environment assumption, not part of the configuration algorithm.
+
+## Reusing delivery
+
+The project imports the guide's `Network.pproj` and uses `BBDelivery` directly: no
+loss or duplication is needed here. When copying this model outside the repository,
+export `snappea guide example building-blocks --out ./building-blocks` and update
+the project import to that copy. Keep the delivery contract explicit.
 
 ## Run
 
 ```sh
 snappea check tcStagedRollout tcRollbackDuringCanary --timeout 2m --deny mutation
-snappea check tcBugLastArrival      # exits 1: node 0 applied version 2 after version 3
+snappea check tcBugLastArrival      # passes only when the declared failure is found
 ```
 
 ## Bounds and omissions
@@ -95,8 +103,8 @@ Suppressed mutants, both equivalent here:
 
 ## Testing the implementation
 
-Emit `eIssued`, `ePushSent` and `eRolloutDone` from the service, `eNodeStarted` and
-`eApplied` from the node agent. To force the races: hold the version 2 push to the
+Emit `Issued`, `PushSent` and `RolloutDone` from the service, `NodeStarted` and
+`Applied` from the node agent. To force the races: hold the version 2 push to the
 canary in a proxy, issue the rollback, deliver version 3, then release version 2 (the
 node must ignore it); release a canary's version 2 ack after the rollback was issued
 (the service must not advance version 2 to the other nodes).

@@ -224,7 +224,10 @@ fn command_line_errors_exit_with_2() {
         (&["check", "--timeout", "5d"], "error: bad duration '5d' (examples: 90, 90s, 5m, 1h)\n"),
         (&["check", "-j", "0"], "error: '--workers' needs at least 1 worker\n"),
         (&["replay"], "error: no .schedule file given\n"),
-        (&["frobnicate"], "error: unknown command 'frobnicate'\n"),
+        (
+            &["frobnicate"],
+            "error: unknown command 'frobnicate'; commands: check, replay, tests, observe, coverage, guide, version\n",
+        ),
     ] {
         assert_eq!(snappea(&mut h, args), 2, "{:?}", args);
         assert!(h.stderr.starts_with(err), "{:?}: {}", args, h.stderr);
@@ -596,6 +599,46 @@ fn observe_reports_a_misspelled_event_name() {
 
     assert_eq!(snappea(&mut h, &args("loud")), 2);
     assert!(h.stderr.contains("ignore, warn or error"), "{}", h.stderr);
+
+    // an unknown event in a key `--key` did not select says so
+    let mut a = args("error");
+    a.extend(["--key", "other"]);
+    assert_eq!(snappea(&mut h, &a), 2);
+    assert!(h.stdout.contains("first at typo.jsonl:2), in key c (not selected)"), "{}", h.stdout);
+    let report: serde_json::Value = serde_json::from_str(&read(&h, "r.json")).unwrap();
+    assert_eq!(report["specs"][0]["unknown_events"][0]["unselected_key"], "c");
+}
+
+#[test]
+fn unhandled_events_name_the_state_and_the_fix() {
+    let mut h = host();
+    h.add_file(
+        "u.p",
+        "event eIncrement;\n\
+         event eReply: int;\n\
+         machine Client {\n\
+           start state S {\n\
+             entry { receive { case eReply: (x: int) { } } }\n\
+           }\n\
+         }\n\
+         machine Main { start state S { entry { var c: Client; c = new Client(); send c, eIncrement; send c, eReply, 1; } } }\n\
+         spec Sp observes eReply { start state W { } }\n\
+         test tc [main=Main]: { Main, Client };\n\
+         test tcSpec [main=Main]: assert Sp in { Main, Client };\n",
+    );
+    let check = |h: &mut MemHost, tc: &str| {
+        let args = ["--format", "text", "check", "u.p", tc, "--no-mutation", "--warn", "lint"];
+        assert_eq!(snappea(h, &args), 1, "{}{}", h.stdout, h.stderr);
+        h.stdout.clone()
+    };
+    let out = check(&mut h, "tc");
+    assert!(out.contains("error: Client(2) in state 'S' received event 'eIncrement' that it cannot handle"), "{out}");
+    assert!(out.contains("--> u.p:4:"), "{out}");
+    assert!(out.contains("`defer eIncrement;` to keep it for a later state, or `ignore eIncrement;`"), "{out}");
+    assert!(out.contains("The `receive` at u.p:5:"), "{out}");
+    let out = check(&mut h, "tcSpec");
+    assert!(out.contains("spec Sp in state 'W' has no handler for observed event 'eReply'"), "{out}");
+    assert!(out.contains("`ignore eReply;`"), "{out}");
 }
 
 const PING: &str = "event ePing: machine;\n\
@@ -645,13 +688,13 @@ fn check_reports_what_never_ran() {
         h.stdout
     );
     let expected = "Not covered by the test case:\n  \
-         ping.p:7      Server.Ready, on ePing: condition from == this never true\n  \
          ping.p:7      Server.Ready, on ePing: if (from == this) never true\n  \
          ping.p:10     Server.Ready, on eStop: goto Stopped never taken\n  \
          ping.p:13     Server.Stopped entry: never ran\n  \
-         ping.p:20     Client.Init entry: condition i > 0 never true\n  \
          ping.p:21-22  Client.Init entry: not reached: i = i - 1;\n";
     assert!(h.stdout.contains(expected), "{}", h.stdout);
+    assert!(h.stdout.contains("Informational condition coverage (does not fail the check):"), "{}", h.stdout);
+    assert!(h.stdout.contains("No schedule of the selected tests reaches these gaps"), "{}", h.stdout);
     // the JSON result has the same, and all of it
     let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
     assert_eq!(
@@ -911,6 +954,13 @@ fn check_includes_scenario_coverage_in_console_and_json() {
         serde_json::from_str(&read(&h, "PCheckerOutput/tcScenario/scenario_coverage.json")).unwrap();
     assert_eq!(result["scenarios"], serde_json::json!([artifact]));
     assert_eq!(result["test_cases"][0]["scenarios"], result["scenarios"][0]);
+    let entries = artifact["scenarios"].as_array().unwrap();
+    assert!(entries.iter().filter(|s| s["satisfied"] == true).all(|s| s["satisfyingExecution"].is_object()));
+    assert!(entries.iter().filter(|s| s["satisfied"] == false).all(|s| s.get("satisfyingExecution").is_none()));
+    assert!(!h.stdout.contains("Evidence for"));
+    snappea(&mut h, &["check", "scenario.p", "--no-mutation", "--format", "text", "-v"]);
+    assert!(h.stdout.contains("Evidence for"), "{}", h.stdout);
+    assert!(h.stdout.contains("scenario handler/state at scenario.p:"), "{}", h.stdout);
 
     // accepted with a coverage suppression on the scenario
     let text = read(&h, "scenario.p").replace(
@@ -1452,4 +1502,251 @@ fn a_passing_check_reports_where_schedules_branch() {
     assert_eq!(case["search_complete"], true, "{}", case);
     assert!(case.get("incomplete_reason").is_none(), "{}", case);
     assert!(case["branching"]["scheduling_points_with_choice"].is_number(), "{}", case);
+}
+
+#[test]
+fn transition_pair_details_are_verbose_only() {
+    let model = r#"
+        machine Main {
+            var viaA: bool;
+            start state S { entry { if ($) { viaA = true; goto A; } else { goto B; } } }
+            state A { entry { goto B; } }
+            state B { entry { if (viaA) { goto D; } else { goto C; } } }
+            state C { }
+            state D { }
+        }
+        test tc [main=Main]: { Main };
+    "#;
+    for verbose in [false, true] {
+        let mut h = host();
+        h.add_file("pairs.p", model);
+        let mut args = vec!["check", "pairs.p", "--no-mutation", "--warn", "lint", "--json-report", "result.json"];
+        if verbose {
+            args.push("-v");
+        }
+        assert_eq!(snappea(&mut h, &args), 0, "{} {}", h.stdout, h.stderr);
+        assert!(h.stdout.contains("2 transition pairs not taken (informational"), "{}", h.stdout);
+        assert_eq!(h.stdout.contains("never taken consecutively"), verbose, "{}", h.stdout);
+        assert!(!h.stdout.contains("Not covered by the test case:"), "{}", h.stdout);
+        let result: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        assert!(result["coverage"]["uncovered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["what"].as_str().unwrap().contains("never taken consecutively")));
+    }
+}
+
+#[test]
+fn typos_in_commands_options_and_test_names_get_suggestions() {
+    let mut h = host();
+    assert_eq!(snappea(&mut h, &["--format", "text", "chek"]), 2);
+    assert!(h.stderr.contains("unknown command 'chek'; did you mean 'check'?"), "{}", h.stderr);
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "--timout", "5s"]), 2);
+    assert!(h.stderr.contains("unknown option '--timout'; did you mean '--timeout'?"), "{}", h.stderr);
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "coins.p", "tcCoin"]), 2);
+    assert!(h.stdout.contains("did you mean 'tcCoins'?") || h.stderr.contains("did you mean 'tcCoins'?"));
+    assert_eq!(snappea(&mut h, &["--format", "text", "check", "coins.p", "src/"]), 2);
+    let out = format!("{}{}", h.stdout, h.stderr);
+    assert!(out.contains("to check files, pass .p or .pproj paths"), "{out}");
+}
+
+#[test]
+fn auto_explains_per_worker_handoffs_in_text_and_json() {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let mut h = host();
+    h.clock = || START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    h.add_file("range.p", "machine Main { start state S { entry { var n: int; var i: int; while (i < 200) { n = choose(10000); i = i + 1; } } } } test tcMain [main=Main]: { Main };");
+    let args =
+        ["check", "range.p", "--timeout", "1s", "--workers", "2", "--no-mutation", "--warn", "all", "--seed", "7"];
+    assert_eq!(snappea(&mut h, &[&args[..], &["--json"]].concat()), 0, "{}{}", h.stderr, h.stdout);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let case = &v["test_cases"][0];
+    assert_eq!(case["search_complete"], false);
+    let handoffs = case["auto_handoffs"].as_array().unwrap();
+    assert_eq!(handoffs.len(), 2, "{case}");
+    for (i, handoff) in handoffs.iter().enumerate() {
+        assert_eq!(handoff["worker"], i + 1);
+        assert_eq!(handoff["reason"], "retained alternative limit reached");
+        assert!(handoff["after_schedules"].as_u64().unwrap() >= 1);
+        assert!(handoff["choices"].as_u64().unwrap() > 0);
+    }
+    assert_eq!(snappea(&mut h, &[&args[..], &["--format", "text"]].concat()), 0, "{}{}", h.stderr, h.stdout);
+    assert!(
+        h.stdout.contains("auto tcMain: worker 1 switched from exhaustive search to sampling after"),
+        "{}",
+        h.stdout
+    );
+    assert!(h.stdout.contains("retained alternative limit reached"), "{}", h.stdout);
+}
+
+#[test]
+fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
+    for nested in [false, true] {
+        let id = if nested { "mutation-nested" } else { "mutation" };
+        let source = COUNTER
+            .replace(
+                "total = total + n;",
+                &format!("// snappea-lint: allow {id} -- guard scope\nif (n > 0) {{ total = total + n; }}"),
+            )
+            .replace(
+                "announce eTotal, total;",
+                "// snappea-lint: allow mutation:remove-not -- stale example\nannounce eTotal, total;",
+            );
+        let mut h = host();
+        h.add_file("counter.p", &source);
+        assert_eq!(
+            snappea(
+                &mut h,
+                &[
+                    "check",
+                    "mutation",
+                    "counter.p",
+                    "--warn",
+                    "mutation",
+                    "--list-suppressions",
+                    "--json-report",
+                    "result.json"
+                ]
+            ),
+            0,
+            "{}{}",
+            h.stdout,
+            h.stderr
+        );
+        let report: serde_json::Value = serde_json::from_str(&read(&h, "result.json")).unwrap();
+        let mutation = &report["mutation"];
+        let suppressed = mutation["suppressed_details"].as_array().unwrap();
+        assert_eq!(suppressed.len() as u64, mutation["suppressed"].as_u64().unwrap());
+        assert!(suppressed.iter().any(|m| m["change"].as_str().unwrap().contains("whole `if")), "{mutation}");
+        assert_eq!(suppressed.iter().any(|m| m["change"] == "removed `total = total + n;`"), nested, "{mutation}");
+        assert!(suppressed.iter().all(|m| m["reasons"] == serde_json::json!(["guard scope"])));
+        assert_eq!(mutation["stale_suppressions"].as_array().unwrap().len(), 1, "{mutation}");
+        assert!(h.stdout.contains("matches no mutant in the selected model"), "{}", h.stdout);
+        assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
+    }
+}
+
+#[test]
+fn duplicate_announce_and_send_fails_lint_before_checking() {
+    let mut h = host();
+    let source = "event eDone: int;\n\
+        machine Main { start state S { entry { var s: Server; s = new Server(); announce eDone, 42; send s, eDone, 42; } } }\n\
+        machine Server { start state S { ignore eDone; } }\n\
+        spec Guard observes eDone { start state S { on eDone do (n: int) { assert n == 42; } } }\n\
+        test tcMain [main=Main]: assert Guard in { Main, Server };";
+    h.add_file("duplicate.p", source);
+    assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation", "--format", "text"]), 2);
+    assert!(h.stderr.contains("announce-and-send"), "{}{}", h.stdout, h.stderr);
+    assert!(h.stderr.contains("specs observe sends too"), "{}", h.stderr);
+    assert!(!h.stdout.contains("Checking"));
+    h.add_file("duplicate.p", &source.replace("announce eDone, 42; ", ""));
+    assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+}
+
+#[test]
+fn auto_completes_small_collection_models_alone_and_batched_across_seeds() {
+    let mut h = host();
+    h.add_file(
+        "collections.p",
+        r#"
+        event eNext: int;
+        machine Main {
+            var history: map[int,int];
+            start state S {
+                entry { new Sender((dest = this, id = 10)); new Sender((dest = this, id = 20)); send this, eNext, 0; }
+                on eNext do (n:int) {
+                    history[n] = n;
+                    assert sizeof(history) <= 7;
+                    if (n < 4 && $) { send this, eNext, n+1; }
+                }
+            }
+        }
+        machine Sender { start state S { entry (p: (dest: machine, id: int)) { if ($) { send p.dest, eNext, p.id; } else { send p.dest, eNext, p.id+1; } } } }
+        machine Other { start state S { entry { if ($) { print "left"; } } } }
+        test tcOther [main=Other]: { Other };
+        test tcCollection [main=Main]: { Main, Sender };
+    "#,
+    );
+    for seed in ["1", "2", "7"] {
+        for workers in ["1", "4"] {
+            for batched in [false, true] {
+                let mut args = vec![
+                    "check",
+                    "collections.p",
+                    "--no-mutation",
+                    "--warn",
+                    "all",
+                    "--workers",
+                    workers,
+                    "--seed",
+                    seed,
+                    "--json",
+                ];
+                if !batched {
+                    args.push("tcCollection");
+                }
+                assert_eq!(snappea(&mut h, &args), 0, "{}{}", h.stdout, h.stderr);
+                let report: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+                let case =
+                    report["test_cases"].as_array().unwrap().iter().find(|c| c["name"] == "tcCollection").unwrap();
+                assert_eq!(case["search_complete"], true, "seed {seed}, batch {batched}: {case}");
+                assert!(case.get("auto_handoffs").is_none(), "{case}");
+                let fields = case["collection_sizes"].as_array().unwrap();
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0]["field"], "history");
+                assert_eq!(fields[0]["file"], "collections.p");
+                assert!(fields[0]["max"].as_u64().unwrap() > 0);
+                assert!(fields[0]["max"].as_u64().unwrap() <= 7);
+            }
+        }
+    }
+    assert_eq!(
+        snappea(
+            &mut h,
+            &["check", "collections.p", "tcCollection", "--no-mutation", "--warn", "all", "--format", "text"]
+        ),
+        0
+    );
+    assert!(!h.stdout.contains("Sampled collection sizes"));
+    assert_eq!(
+        snappea(
+            &mut h,
+            &["check", "collections.p", "tcCollection", "--no-mutation", "--warn", "all", "--format", "text", "-v"]
+        ),
+        0
+    );
+    assert!(h.stdout.contains("Sampled collection sizes (elements): Main.history"), "{}", h.stdout);
+    assert!(h.stdout.contains("do not prove growth"));
+}
+
+#[test]
+fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
+    let mut h = host();
+    h.add_file(
+        "transition.p",
+        r#"
+        event eTimeout;
+        machine Main { start state S { entry { new Node(); } } }
+        // snappea-lint: allow mutation-nested -- intentional suppression fixture
+        machine Node {
+            start state Leader { entry { Leave(); } on eTimeout do Timeout; }
+            state Follower { ignore eTimeout; }
+            fun Leave() { goto Follower; }
+            fun Timeout() { print "timeout"; }
+        }
+        test tcMain [main=Main]: { Main, Node };
+    "#,
+    );
+    let args = ["check", "mutation", "transition.p", "--warn", "lint", "--deny", "mutation"];
+    assert_eq!(snappea(&mut h, &[&args[..], &["--json"]].concat()), 0, "{}{}", h.stdout, h.stderr);
+    let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let advisory = &json["mutation"]["suppression_advisories"][0];
+    assert_eq!(advisory["event"], "eTimeout");
+    assert_eq!(advisory["source_state"], "Node.Leader");
+    assert_eq!(json["warnings"]["mutation_suppressions"], 1);
+    assert_eq!(snappea(&mut h, &[&args[..], &["--format", "text"]].concat()), 0, "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("warning[suppressed-state-transition]"), "{}", h.stdout);
+    assert!(h.stdout.contains("eTimeout: call Timeout versus ignore"), "{}", h.stdout);
+    assert!(h.stdout.contains("1 mutation suppression advisory"), "{}", h.stdout);
 }

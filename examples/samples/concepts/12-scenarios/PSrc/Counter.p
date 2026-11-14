@@ -2,28 +2,28 @@
 // computes value + 1 and writes it only if the version is unchanged; on a conflict it
 // reads again and retries. The store's handlers are the real atomic primitives.
 
-event eRead: machine;
-event eReadResp: (version: int, value: int);
-event eCas: (client: machine, version: int, value: int);
-event eCasResp: bool;
+event Read: machine;
+event ReadResponse: (version: int, value: int);
+event Cas: (client: machine, version: int, value: int);
+event CasResponse: bool;
 
 machine Store {
   var version: int;
   var value: int;
 
   start state Serving {
-    on eRead do (client: machine) {
-      send client, eReadResp, (version = version, value = value);
+    on Read do (client: machine) {
+      send client, ReadResponse, (version = version, value = value);
     }
-    on eCas do (c: (client: machine, version: int, value: int)) {
+    on Cas do (c: (client: machine, version: int, value: int)) {
       if (c.version != version) {
-        send c.client, eCasResp, false;
+        send c.client, CasResponse, false;
         return;
       }
       version = version + 1;
       value = c.value;
-      announce eWritten, (client = c.client, version = version, value = value);
-      send c.client, eCasResp, true;
+      announce Written, (client = c.client, version = version, value = value);
+      send c.client, CasResponse, true;
     }
   }
 }
@@ -34,21 +34,21 @@ machine Client {
   start state Reading {
     entry (s: Store) {
       store = s;
-      send store, eRead, this;
+      send store, Read, this;
     }
-    on eReadResp do (r: (version: int, value: int)) {
-      send store, eCas, (client = this, version = r.version, value = r.value + 1);
+    on ReadResponse do (r: (version: int, value: int)) {
+      send store, Cas, (client = this, version = r.version, value = r.value + 1);
     }
-    on eCasResp do (ok: bool) {
+    on CasResponse do (ok: bool) {
       if (ok) {
         goto Done;
       }
       // Someone else wrote first: read the new value and try again.
-      send store, eRead, this;
+      send store, Read, this;
     }
   }
 
   state Done {
-    entry { announce eClientDone, this; }
+    entry { announce ClientDone, this; }
   }
 }

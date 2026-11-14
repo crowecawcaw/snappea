@@ -40,24 +40,24 @@ so a crash can land between the write and the reply:
 
 ```p
 state Serving {
-  on eNext do (c: machine) {
+  on Next do (c: machine) {
     client = c;
     last = last + 1;
-    send storage, eWrite, (server = this, value = last);
+    send storage, Write, (server = this, value = last);
     goto Persisting;
   }
-  on eCrash goto Crashed;
+  on Crash goto Crashed;
 }
 state Persisting {
-  on eWriteAck goto Serving with { send client, eTicket, last; ... }
-  on eCrash goto Crashed;
+  on WriteAck goto Serving with { send client, Ticket, last; ... }
+  on Crash goto Crashed;
 }
-state Crashed { entry { send owner, eExited; raise halt; } }
+state Crashed { entry { send owner, Exited; raise halt; } }
 ```
 
 On restart it rebuilds from storage before serving (`Recovering` defers requests until
 then). The driver ([`PTst/Tests.p`](PTst/Tests.p)) is the process manager: it may send one
-`eCrash` at a moment the scheduler picks, then starts a new `Server` on the same
+`Crash` at a moment the scheduler picks, then starts a new `Server` on the same
 `Storage` and tells the clients its address. A client still waiting resends.
 
 ## Test cases
@@ -70,30 +70,34 @@ then). The driver ([`PTst/Tests.p`](PTst/Tests.p)) is the process manager: it ma
 ```sh
 snappea check tcCrashAnywhere --timeout 20s
 snappea check mutation tcCrashAnywhere
-snappea check tcBugMemoryOnly        # exits 1
+snappea check tcBugMemoryOnly        # exits 0 when the declared bug matches
 ```
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 ```text
 ok    tcCrashAnywhere (all 10994 schedules, 2.98s)
       Coverage: 2/2 states, 45/45 statements, 4/4 branches, 14/14 event handlers, ...
       Driver limits (held in all 10994 schedules):
-        no CrashOnce sends eCrash after eRestarted
+        no CrashOnce sends Crash after Restarted
         creates 2 Client, 1 to 2 Server and 1 Storage, never more
-        CrashOnce sends eCrash at most once
+        CrashOnce sends Crash at most once
 ```
 
-The coverage line shows every `on eCrash` handler ran: the crash landed while
+The coverage line shows every `on Crash` handler ran: the crash landed while
 recovering, while idle and while a write was in flight. The driver limits state the
-bound: one crash. With the default 10 s budget shared by test cases the search can stop
-early (`coverage stopped growing`); `--timeout 20s` lets it finish.
+bound: one crash. Auto mode explores the bounded model within the chosen budget.
+Read `search_complete` (or `all N schedules`) before claiming exhaustiveness; increasing
+`--timeout` gives the checker more time, but does not guarantee completion.
 
 The memory-only server fails in the first schedule: it issues ticket 1, crashes,
 restarts from zero and issues ticket 1 again.
 
 ```text
-FAIL  tcBugMemoryOnly (bug found after 1 schedule, 0.01s)
+expected bug  tcBugMemoryOnly (matching declared failure)
       Assertion Failed: PSpec/Contract.p:22:7 ticket 1 issued twice
 ```
 
@@ -104,11 +108,11 @@ backwards, and requires every client to end up holding a ticket issued to it.
 
 ## Common mistakes
 
-- **Resetting fields in an `eCrash` handler instead of ending the machine.** Then the
+- **Resetting fields in an `Crash` handler instead of ending the machine.** Then the
   model decides what a crash forgets, and it is easy to forget too little. A new
   machine forgets everything that is not in storage.
 - **Expecting a crash inside a handler.** Moving the reply before the write (`send
-  client, eTicket` in `Serving`, then the write) still passes here: both sends happen in
+  client, Ticket` in `Serving`, then the write) still passes here: both sends happen in
   the same step, and the model's storage never loses a write that was sent. If your real
   code can crash between two writes, put them in separate handlers.
 - **Always crashing.** With an unconditional crash, a client that never sends its first
@@ -125,7 +129,8 @@ error[unchecked-state]: machine Storage writes field 'highWater' 1 time, but no 
 condition, spec or sent event depends on it, so a wrong value there passes every test case
 ```
 
-With `--warn lint`, the check finds the bug: `Assertion Failed: PSpec/Contract.p:22:7
+For this deliberately broken exercise only, `--warn lint` lets the checker continue
+past that diagnostic and find the bug: `Assertion Failed: PSpec/Contract.p:22:7
 ticket 1 issued twice`.
 
 ## Bounds and omissions
@@ -137,7 +142,7 @@ after its replacement starts (that needs fencing), clients that crash.
 
 ## Testing the implementation
 
-Emit `eIssued` after the reply is sent and `eGotTicket` in the client. To force the
+Emit `Issued` after the reply is sent and `GotTicket` in the client. To force the
 crash points, kill the process (or throw from a fault-injection hook) after the
 storage write commits but before the reply, then restart it and check that the next
 ticket is higher than every ticket handed out.

@@ -8,7 +8,7 @@ machine Network {
   var drops: int;
   start state Serving {
     entry (budget: int) { drops = budget; }
-    on eConnect do (c: (client: machine, server: machine, after: int)) {
+    on Connect do (c: (client: machine, server: machine, after: int)) {
       var mayDrop: bool;
       if (drops > 0) {
         drops = drops - 1;
@@ -26,18 +26,18 @@ machine Connection {
     entry (c: (client: machine, server: machine, after: int, mayDrop: bool)) {
       client = c.client;
       mayDrop = c.mayDrop;
-      send c.server, eSubscribe, (conn = this, after = c.after);
+      send c.server, Subscribe, (conn = this, after = c.after);
     }
-    on eDeliver do (d: (sn: int, msg: int)) {
+    on Deliver do (d: (sn: int, msg: int)) {
       if (mayDrop && $) {
         // Dropped with this message in flight.
-        send client, eDisconnected;
+        send client, Disconnected;
         goto Dropped;
       }
-      send client, eDeliver, d;
+      send client, Deliver, d;
     }
   }
   state Dropped {
-    ignore eDeliver;
+    ignore Deliver;
   }
 }

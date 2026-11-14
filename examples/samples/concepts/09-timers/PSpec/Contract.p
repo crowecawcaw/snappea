@@ -4,17 +4,17 @@
 // request.
 
 // Announced by the driver: what it asked for.
-event eRequested: (id: int, value: int);
+event Requested: (id: int, value: int);
 // Announced by the server when the request reaches it.
-event eReceived: int;
+event Received: int;
 // Announced by the server right after it sends the reply.
-event eServed: int;
+event Served: int;
 // Announced by a timer right after it sends the timeout.
-event eTimerFired: int;
+event TimerFired: int;
 // Announced by the client when it decides a request.
-event eOutcome: (id: int, ok: bool, result: int);
+event Outcome: (id: int, ok: bool, result: int);
 
-spec FirstArrivalDecides observes eRequested, eReceived, eServed, eTimerFired, eOutcome {
+spec FirstArrivalDecides observes Requested, Received, Served, TimerFired, Outcome {
   // id -> value the driver sent
   var requested: map[int, int];
   var received: set[int];
@@ -25,18 +25,18 @@ spec FirstArrivalDecides observes eRequested, eReceived, eServed, eTimerFired, e
   // Hot: a request has not reached the server or has no outcome yet. A client that
   // never sends, or waits forever, fails here at the end of the run.
   start hot state Waiting {
-    on eRequested do (r: (id: int, value: int)) {
+    on Requested do (r: (id: int, value: int)) {
       assert !(r.id in requested), format("request {0} sent twice", r.id);
       requested[r.id] = r.value;
     }
-    on eReceived do (id: int) {
+    on Received do (id: int) {
       assert id in requested && !(id in received), format("request {0} received twice or never sent", id);
       received += (id);
       Settle();
     }
-    on eServed do (id: int) { Arrived(id, true); }
-    on eTimerFired do (id: int) { Arrived(id, false); }
-    on eOutcome do (o: (id: int, ok: bool, result: int)) {
+    on Served do (id: int) { Arrived(id, true); }
+    on TimerFired do (id: int) { Arrived(id, false); }
+    on Outcome do (o: (id: int, ok: bool, result: int)) {
       assert o.id in requested && !(o.id in decided), format("request {0} decided twice or never sent", o.id);
       if (o.ok) {
         assert o.result == requested[o.id] * 2,
@@ -53,11 +53,11 @@ spec FirstArrivalDecides observes eRequested, eReceived, eServed, eTimerFired, e
 
   // Late replies, and timers that fire after their cancel, still arrive here.
   state AllDone {
-    on eRequested do { assert false, "request sent after every request was decided"; }
-    on eReceived do { assert false, "request received after every request was decided"; }
-    on eServed do (id: int) { Arrived(id, true); }
-    on eTimerFired do (id: int) { Arrived(id, false); }
-    on eOutcome do { assert false, "outcome after every request was decided"; }
+    on Requested do { assert false, "request sent after every request was decided"; }
+    on Received do { assert false, "request received after every request was decided"; }
+    on Served do (id: int) { Arrived(id, true); }
+    on TimerFired do (id: int) { Arrived(id, false); }
+    on Outcome do { assert false, "outcome after every request was decided"; }
   }
 
   fun Arrived(id: int, isReply: bool) {

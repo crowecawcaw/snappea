@@ -7,67 +7,58 @@
 //
 // Atomic steps: each machine handles one message at a time. The load balancer's route
 // and deregister are atomic with respect to each other, but a request it routed just
-// before deregistering travels separately (a Courier) and can reach the instance after
+// before deregistering travels separately (a BBDelivery) and can reach the instance after
 // it started draining, or after it was terminated (the connection is refused). Either
 // way the request comes back to the load balancer, which routes it again.
 
-type tWork = (id: int, client: machine);
+type WorkRequest = (id: int, client: machine);
 
-event eRequest: tWork;
-event eResponse: (id: int);
-event eWork: tWork;
+event Request: WorkRequest;
+event Response: (id: int);
+event Work: WorkRequest;
 // Instance -> load balancer: I did not take this request; route it elsewhere.
-event eBounce: tWork;
+event Bounce: WorkRequest;
 // Driver -> load balancer: the instances to put in rotation at start.
-event eJoin: map[int, machine];
-event eDeregister: (inst: int, from: machine);
-event eDeregisterAck: (inst: int);
-event eDrain: machine;
-event eDrained: (inst: int);
-event eTerminate;
+event Join: map[int, machine];
+event Deregister: (inst: int, from: machine);
+event DeregisterAck: (inst: int);
+event Drain: machine;
+event Drained: (inst: int);
+event Terminate;
 // Instance to itself: the request's work is done.
-event eFinish: int;
+event Finish: int;
 // Driver -> autoscaler: remove instance `inst`.
-event eScaleIn: (inst: int);
+event ScaleIn: (inst: int);
 
 machine LoadBalancer {
   // instance id -> instance, for instances in rotation
   var rotation: map[int, machine];
 
   start state Starting {
-    on eJoin goto Routing with (instances: map[int, machine]) {
+    on Join goto Routing with (instances: map[int, machine]) {
       rotation = instances;
     }
-    defer eRequest;
+    defer Request;
   }
 
   state Routing {
-    on eRequest do (w: tWork) { Route(w); }
-    on eBounce do (w: tWork) { Route(w); }
-    on eDeregister do (d: (inst: int, from: machine)) {
+    on Request do (w: WorkRequest) { Route(w); }
+    on Bounce do (w: WorkRequest) { Route(w); }
+    on Deregister do (d: (inst: int, from: machine)) {
       rotation -= (d.inst);
-      announce eDeregistered, (inst = d.inst,);
-      send d.from, eDeregisterAck, (inst = d.inst,);
+      announce Deregistered, (inst = d.inst,);
+      send d.from, DeregisterAck, (inst = d.inst,);
     }
   }
 
   // Any instance in rotation will do (the real policy may be least-connections).
-  fun Route(w: tWork) {
+  fun Route(w: WorkRequest) {
     var ids: seq[int];
     var inst: int;
     ids = keys(rotation);
     inst = ids[choose(sizeof(ids))];
-    announce eRouted, (id = w.id, inst = inst);
-    new Courier((dest = rotation[inst], work = w));
-  }
-}
-
-// One routed request on its own connection to the instance.
-machine Courier {
-  start state Sending {
-    entry (c: (dest: machine, work: tWork)) {
-      send c.dest, eWork, c.work;
-    }
+    announce Routed, (id = w.id, inst = inst);
+    new BBDelivery((destination = rotation[inst], message = Work, payload = w));
   }
 }
 
@@ -87,28 +78,28 @@ machine Instance {
   }
 
   state Serving {
-    on eWork do (w: tWork) {
+    on Work do (w: WorkRequest) {
       inFlight[w.id] = w.client;
-      announce eAccepted, (id = w.id, inst = id);
-      send this, eFinish, w.id;
+      announce Accepted, (id = w.id, inst = id);
+      send this, Finish, w.id;
     }
-    on eFinish do (r: int) { Finish(r); }
-    on eDrain do (from: machine) {
+    on Finish do (r: int) { Finish(r); }
+    on Drain do (from: machine) {
       autoscaler = from;
-      announce eDrainStarted, (inst = id,);
+      announce DrainStarted, (inst = id,);
       ReportIfDrained();
       goto Draining;
     }
   }
 
   state Draining {
-    on eWork do (w: tWork) { Bounce(w); }
-    on eFinish do (r: int) {
+    on Work do (w: WorkRequest) { Bounce(w); }
+    on Finish do (r: int) {
       Finish(r);
       ReportIfDrained();
     }
-    on eTerminate do {
-      announce eTerminated, (inst = id,);
+    on Terminate do {
+      announce Terminated, (inst = id,);
       goto Terminated;
     }
   }
@@ -117,8 +108,8 @@ machine Instance {
   // "connection refused", which the load balancer treats as a bounce: modeled as the
   // bounce reaching the load balancer without the instance announcing anything.
   state Terminated {
-    on eWork do (w: tWork) {
-      send lb, eBounce, w;
+    on Work do (w: WorkRequest) {
+      send lb, Bounce, w;
     }
   }
 
@@ -126,18 +117,18 @@ machine Instance {
     var client: machine;
     client = inFlight[r];
     inFlight -= (r);
-    announce eServed, (id = r, inst = id);
-    send client, eResponse, (id = r,);
+    announce Served, (id = r, inst = id);
+    send client, Response, (id = r,);
   }
 
-  fun Bounce(w: tWork) {
-    announce eBounced, (id = w.id, inst = id);
-    send lb, eBounce, w;
+  fun Bounce(w: WorkRequest) {
+    announce Bounced, (id = w.id, inst = id);
+    send lb, Bounce, w;
   }
 
   fun ReportIfDrained() {
     if (sizeof(inFlight) == 0) {
-      send autoscaler, eDrained, (inst = id,);
+      send autoscaler, Drained, (inst = id,);
     }
   }
 }
@@ -163,32 +154,32 @@ machine Autoscaler {
   }
 
   state Idle {
-    on eScaleIn do (s: (inst: int)) {
+    on ScaleIn do (s: (inst: int)) {
       if (sizeof(live) <= 1) {
         // Removing the last instance would leave requests nowhere to go.
-        announce eScaleInRefused, (inst = s.inst,);
+        announce ScaleInRefused, (inst = s.inst,);
         return;
       }
       target = s.inst;
       live -= (target);
-      send lb, eDeregister, (inst = target, from = this);
+      send lb, Deregister, (inst = target, from = this);
       goto Deregistering;
     }
   }
 
   // One scale-in at a time: later requests wait.
   state Deregistering {
-    on eDeregisterAck goto Draining with {
-      send instances[target], eDrain, this;
+    on DeregisterAck goto Draining with {
+      send instances[target], Drain, this;
     }
-    defer eScaleIn;
+    defer ScaleIn;
   }
 
   state Draining {
-    on eDrained do {
-      send instances[target], eTerminate;
+    on Drained do {
+      send instances[target], Terminate;
       goto Idle;
     }
-    defer eScaleIn;
+    defer ScaleIn;
   }
 }

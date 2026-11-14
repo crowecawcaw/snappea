@@ -2,23 +2,23 @@
 // router announces when it flips reads, and readers announce for each value they get.
 // The specs rebuild both tables from that history; they never read the stores.
 
-event eOldCommitted: (key: int, row: tRow, req: int);
-event eNewApplied: (key: int, row: tRow);
-event eCutover;
-event eReadSeen: (reader: int, key: int, row: tRow);
+event OldCommitted: (key: int, row: Row, req: int);
+event NewApplied: (key: int, row: Row);
+event Cutover;
+event ReadSeen: (reader: int, key: int, row: Row);
 // A writer's call returned: the write is in both stores.
-event eWriteAcked: (req: int);
-event eReadStarted: (reader: int, key: int);
+event WriteAcked: (req: int);
+event ReadStarted: (reader: int, key: int);
 // The old store served a read.
-event eOldRead;
+event OldRead;
 
 // How a key that was never written reads, as the contract defines it.
-fun NoRow(): tRow {
+fun NoRow(): Row {
   return (value = 0, deleted = true, lsn = 0);
 }
 
 // What a client sees for a row: its value, or -1 when there is none.
-fun Visible(row: tRow): int {
+fun Visible(row: Row): int {
   if (row.deleted) { return -1; }
   return row.value;
 }
@@ -34,13 +34,13 @@ fun Visible(row: tRow): int {
 //   started (no stale reads), and a reader never sees a key go back to an older
 //   version, across the cutover too.
 // - After cutover the old store serves no reads.
-spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, eWriteAcked,
-    eReadStarted, eOldRead {
+spec MigrationSafety observes OldCommitted, NewApplied, Cutover, ReadSeen, WriteAcked,
+    ReadStarted, OldRead {
   // lsn -> the key and row old committed at that version
-  var history: map[int, (key: int, row: tRow)];
+  var history: map[int, (key: int, row: Row)];
   var lastLsn: int;
-  var oldRows: map[int, tRow];
-  var newRows: map[int, tRow];
+  var oldRows: map[int, Row];
+  var newRows: map[int, Row];
   var cutover: bool;
   // reader * 100 + key -> newest lsn that reader has seen for that key
   var seen: map[int, int];
@@ -51,7 +51,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
   var floor: map[int, int];
 
   start state Watching {
-    on eOldCommitted do (p: (key: int, row: tRow, req: int)) {
+    on OldCommitted do (p: (key: int, row: Row, req: int)) {
       assert p.row.lsn > lastLsn, format("old store reused version {0}", p.row.lsn);
       lastLsn = p.row.lsn;
       history[p.row.lsn] = (key = p.key, row = p.row);
@@ -63,7 +63,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
         commits[p.req] = (key = p.key, lsn = p.row.lsn);
       }
     }
-    on eWriteAcked do (p: (req: int)) {
+    on WriteAcked do (p: (req: int)) {
       var c: (key: int, lsn: int);
       assert p.req in commits, format("write {0} returned before it committed to old", p.req);
       c = commits[p.req];
@@ -73,7 +73,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
         acked[c.key] = c.lsn;
       }
     }
-    on eReadStarted do (p: (reader: int, key: int)) {
+    on ReadStarted do (p: (reader: int, key: int)) {
       var slot: int;
       slot = p.reader * 100 + p.key;
       floor[slot] = 0;
@@ -81,17 +81,17 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
         floor[slot] = acked[p.key];
       }
     }
-    on eOldRead do {
+    on OldRead do {
       assert !cutover, "cutover broken: old store served a read after cutover";
     }
-    on eNewApplied do (p: (key: int, row: tRow)) {
+    on NewApplied do (p: (key: int, row: Row)) {
       assert Committed(p.key, p.row),
         format("new store holds a version of key {0} that old never committed: {1}", p.key, p.row);
       assert !(p.key in newRows) || p.row.lsn >= newRows[p.key].lsn,
         format("new store moved key {0} back from version {1} to {2}", p.key, newRows[p.key].lsn, p.row.lsn);
       newRows[p.key] = p.row;
     }
-    on eCutover do {
+    on Cutover do {
       var key: int;
       assert !cutover, "cut over twice";
       cutover = true;
@@ -102,7 +102,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
                  Visible(newRows[key]), Visible(oldRows[key]));
       }
     }
-    on eReadSeen do (p: (reader: int, key: int, row: tRow)) {
+    on ReadSeen do (p: (reader: int, key: int, row: Row)) {
       var slot: int;
       assert Committed(p.key, p.row),
         format("reader {0} got a version of key {1} that old never committed: {2}", p.reader, p.key, p.row);
@@ -121,7 +121,7 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
   }
 
   // The never-written row (lsn 0) is a deleted row; anything else must match history.
-  fun Committed(key: int, row: tRow): bool {
+  fun Committed(key: int, row: Row): bool {
     if (row.lsn == 0) { return row == NoRow(); }
     return row.lsn in history && history[row.lsn].key == key && history[row.lsn].row == row;
   }
@@ -131,13 +131,13 @@ spec MigrationSafety observes eOldCommitted, eNewApplied, eCutover, eReadSeen, e
 // it plans, and each write it requests. The spec stays hot until every requested write has returned, every
 // planned read was answered, and reads were cut over to new. A backfill that stops, a
 // drain that never ends or a dual-write that never lands fails here.
-event eMigrationPlanned: (writes: int, seed: map[int, int]);
-event eWriteRequested: tOp;
-event eReadsPlanned: (reader: int, key: int, reads: int);
+event MigrationPlanned: (writes: int, seed: map[int, int]);
+event WriteRequested: Op;
+event ReadsPlanned: (reader: int, key: int, reads: int);
 
-spec MigrationCompletes observes eMigrationPlanned, eWriteRequested, eReadsPlanned, eOldCommitted,
-    eWriteAcked, eCutover, eReadSeen {
-  var requested: map[int, tOp];
+spec MigrationCompletes observes MigrationPlanned, WriteRequested, ReadsPlanned, OldCommitted,
+    WriteAcked, Cutover, ReadSeen {
+  var requested: map[int, Op];
   var committed: set[int];
   // reader -> the key it was asked to read
   var readerKey: map[int, int];
@@ -149,26 +149,26 @@ spec MigrationCompletes observes eMigrationPlanned, eWriteRequested, eReadsPlann
   var cutover: bool;
 
   start state Idle {
-    on eMigrationPlanned do (p: (writes: int, seed: map[int, int])) {
+    on MigrationPlanned do (p: (writes: int, seed: map[int, int])) {
       writesLeft = p.writes;
       seedLeft = p.seed;
       goto Busy;
     }
-    on eOldCommitted do { assert false, "old store written while no migration runs"; }
-    on eWriteRequested do { assert false, "write requested without a plan"; }
-    on eReadsPlanned do { assert false, "reads planned without a plan"; }
-    on eWriteAcked do { assert false, "write returned while no migration runs"; }
-    on eCutover do { assert false, "cutover while no migration runs"; }
-    on eReadSeen do { assert false, "read while no migration runs"; }
+    on OldCommitted do { assert false, "old store written while no migration runs"; }
+    on WriteRequested do { assert false, "write requested without a plan"; }
+    on ReadsPlanned do { assert false, "reads planned without a plan"; }
+    on WriteAcked do { assert false, "write returned while no migration runs"; }
+    on Cutover do { assert false, "cutover while no migration runs"; }
+    on ReadSeen do { assert false, "read while no migration runs"; }
   }
 
   hot state Busy {
-    on eMigrationPlanned do { assert false, "migration planned twice"; }
-    on eWriteRequested do (op: tOp) {
+    on MigrationPlanned do { assert false, "migration planned twice"; }
+    on WriteRequested do (op: Op) {
       assert !(op.req in requested), format("write {0} requested twice", op.req);
       requested[op.req] = op;
     }
-    on eOldCommitted do (p: (key: int, row: tRow, req: int)) {
+    on OldCommitted do (p: (key: int, row: Row, req: int)) {
       // Request 0 is the table's existing data, written as the old store starts.
       if (p.req == 0) {
         assert p.key in seedLeft && seedLeft[p.key] == p.row.value && !p.row.deleted,
@@ -183,25 +183,25 @@ spec MigrationCompletes observes eMigrationPlanned, eWriteRequested, eReadsPlann
       assert !(p.req in committed), format("write {0} committed twice", p.req);
       committed += (p.req);
     }
-    on eWriteAcked do (p: (req: int)) {
+    on WriteAcked do (p: (req: int)) {
       assert p.req in committed, format("write {0} returned before it committed", p.req);
       committed -= (p.req);
       requested -= (p.req);
       writesLeft = writesLeft - 1;
       Check();
     }
-    on eReadsPlanned do (p: (reader: int, key: int, reads: int)) {
+    on ReadsPlanned do (p: (reader: int, key: int, reads: int)) {
       var r: int;
       r = p.reader;
       readerKey[r] = p.key;
       readsLeft[r] = p.reads;
     }
-    on eCutover do {
+    on Cutover do {
       cutover = true;
       Check();
     }
     // snappea-lint: allow unused-payload-field -- MigrationSafety checks the row; this spec counts reads
-    on eReadSeen do (p: (reader: int, key: int, row: tRow)) {
+    on ReadSeen do (p: (reader: int, key: int, row: Row)) {
       assert p.reader in readerKey && readerKey[p.reader] == p.key,
         format("reader {0} read key {1}, which it was not asked to read", p.reader, p.key);
       assert readsLeft[p.reader] > 0, format("reader {0} got more answers than it asked for", p.reader);

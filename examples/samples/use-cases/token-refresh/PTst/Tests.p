@@ -2,18 +2,18 @@
 // tabs, and announce how often each tab's access token expires. Tabs, storage, the
 // lock and the server are the design under test; the network is the environment.
 
-type tWorld = (server: AuthServer, storage: Storage, locks: LockManager, network: Network);
+type BrowserEnvironment = (server: AuthServer, storage: Storage, locks: LockManager, network: Network);
 
-fun LogIn(losses: int): tWorld {
+fun LogIn(losses: int): BrowserEnvironment {
   var server: AuthServer;
-  announce eLoggedIn, 1;
+  announce LoggedIn, 1;
   server = new AuthServer(1);
   return (server = server, storage = new Storage(1), locks = new LockManager(),
           network = new Network((server = server, losses = losses)));
 }
 
-fun OpenTab(w: tWorld, id: int, rounds: int) {
-  announce eTabPlanned, (tab = id, rounds = rounds);
+fun OpenTab(w: BrowserEnvironment, id: int, rounds: int) {
+  announce TabPlanned, (tab = id, rounds = rounds);
   new Tab((storage = w.storage, locks = w.locks, network = w.network, id = id, rounds = rounds, token = 1));
 }
 
@@ -22,7 +22,7 @@ fun OpenTab(w: tWorld, id: int, rounds: int) {
 machine BothTabsExpire {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(0);
       OpenTab(w, 1, 1);
       OpenTab(w, 2, 1);
@@ -35,7 +35,7 @@ machine BothTabsExpire {
 machine LostRefreshResponse {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(1);
       OpenTab(w, 1, 1);
       OpenTab(w, 2, 1);
@@ -48,7 +48,7 @@ machine LostRefreshResponse {
 machine RepeatedExpiry {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(0);
       OpenTab(w, 1, 2);
       OpenTab(w, 2, 1);
@@ -64,23 +64,23 @@ machine RepeatedExpiry {
 machine StolenToken {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(0);
       OpenTab(w, 1, 2);
-      announce eTokenStolen, 1;
-      send w.server, eRefresh, (client = this, tab = this, refresh = 1);
+      announce TokenStolen, 1;
+      send w.server, Refresh, (client = this, tab = this, refresh = 1);
     }
-    ignore eRefreshResp;
+    ignore RefreshResp;
   }
 }
 
 machine BugNoLock {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(0);
-      announce eTabPlanned, (tab = 1, rounds = 1);
-      announce eTabPlanned, (tab = 2, rounds = 1);
+      announce TabPlanned, (tab = 1, rounds = 1);
+      announce TabPlanned, (tab = 2, rounds = 1);
       new UnlockedTab((storage = w.storage, network = w.network, id = 1));
       new UnlockedTab((storage = w.storage, network = w.network, id = 2));
     }
@@ -90,9 +90,9 @@ machine BugNoLock {
 machine BugRetryAfterLostResponse {
   start state Run {
     entry {
-      var w: tWorld;
+      var w: BrowserEnvironment;
       w = LogIn(1);
-      announce eTabPlanned, (tab = 1, rounds = 1);
+      announce TabPlanned, (tab = 1, rounds = 1);
       new RetryingTab((storage = w.storage, locks = w.locks, network = w.network, id = 1));
     }
   }
@@ -100,22 +100,20 @@ machine BugRetryAfterLostResponse {
 
 // Covered: one tab refreshed while the other waited for the lock, and the waiting tab
 // took the stored token instead of refreshing.
-scenario SecondTabReusedStoredToken observes eRotated, eTokenObtained {
+scenario SecondTabReusedStoredToken observes Rotated, TokenObtained {
   var issued: int;
   start hot state Waiting {
-    on eRotated do (p: (from: int, next: int)) { issued = p.next; }
-    on eTokenObtained do (p: (tab: int, token: int)) {
+    on Rotated do (p: (from: int, next: int)) { issued = p.next; }
+    on TokenObtained do (p: (tab: int, token: int)) {
       if (p.token == issued) { goto OneUsed; }
     }
   }
   hot state OneUsed {
-    on eTokenObtained do (p: (tab: int, token: int)) {
+    on TokenObtained do (p: (tab: int, token: int)) {
       if (p.token == issued) { goto Covered; }
     }
-    ignore eRotated;
   }
   cold state Covered {
-    ignore eRotated, eTokenObtained;
   }
 }
 
@@ -131,10 +129,10 @@ test tcStolenToken [main=StolenToken]:
 test tcRepeatedExpiry [main=RepeatedExpiry]:
   assert TokenSafety, TabsServed in { RepeatedExpiry, AuthServer, Storage, LockManager, Network, Tab };
 
-// expect-bug: user logged out by reuse detection
+// snappea: expect-bug "user logged out by reuse detection"
 test tcBugNoLock [main=BugNoLock]:
   assert TokenSafety, TabsServed in { BugNoLock, AuthServer, Storage, LockManager, Network, UnlockedTab };
 
-// expect-bug: user logged out by reuse detection
+// snappea: expect-bug "user logged out by reuse detection"
 test tcBugRetryAfterLostResponse [main=BugRetryAfterLostResponse]:
   assert TokenSafety, TabsServed in { BugRetryAfterLostResponse, AuthServer, Storage, LockManager, Network, RetryingTab };

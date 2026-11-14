@@ -154,6 +154,8 @@ impl CheckerOptions {
 pub struct TestReport {
     pub num_bugs: usize,
     pub bug_reports: Vec<String>,
+    /// Identities aligned with bug_reports; None when a failure has no captured site.
+    pub bug_identities: Vec<Option<super::runtime::BugIdentity>>,
     pub explored_fair_schedules: usize,
     pub explored_unfair_schedules: usize,
     pub total_fair_steps: usize,
@@ -178,6 +180,8 @@ pub struct TestReport {
 /// Coverage of one scenario monitor across a run (`TestReport.Scenario*`).
 #[derive(Debug, Clone, Default)]
 pub struct ScenarioCoverage {
+    /// Shortest observed accepting history, retained only for native reporting.
+    pub witness: Option<super::runtime::ScenarioWitness>,
     pub name: String,
     /// Schedules that satisfied the scenario.
     pub trigger_count: usize,
@@ -207,6 +211,7 @@ impl TestReport {
     pub fn merge(&mut self, other: TestReport) {
         self.num_bugs += other.num_bugs;
         self.bug_reports.extend(other.bug_reports);
+        self.bug_identities.extend(other.bug_identities);
         self.explored_fair_schedules += other.explored_fair_schedules;
         self.explored_unfair_schedules += other.explored_unfair_schedules;
         self.total_fair_steps += other.total_fair_steps;
@@ -224,6 +229,9 @@ impl TestReport {
         self.timelines.extend(other.timelines);
         for s in other.scenarios {
             let cov = self.scenario(&s.name);
+            if let Some(w) = &s.witness {
+                super::runtime::ScenarioWitness::retain_best(&mut cov.witness, w);
+            }
             cov.trigger_count += s.trigger_count;
             cov.satisfying_timelines.extend(s.satisfying_timelines);
             cov.max_states_reached = cov.max_states_reached.max(s.max_states_reached);
@@ -1058,6 +1066,7 @@ impl<'p> Checker<'p> {
                 if let Some(b) = &rt.bug {
                     r.num_bugs += 1;
                     r.bug_reports.push(b.clone());
+                    r.bug_identities.push(rt.bug_identity.clone());
                 }
                 if fair {
                     r.explored_fair_schedules += 1;
@@ -1085,6 +1094,9 @@ impl<'p> Checker<'p> {
                         cov.total_states = sc.total_states;
                     }
                     if sc.satisfied {
+                        if let Some(w) = &sc.witness {
+                            super::runtime::ScenarioWitness::retain_best(&mut cov.witness, w);
+                        }
                         cov.trigger_count += 1;
                         cov.satisfying_timelines.insert(abstract_timeline);
                     }
@@ -1124,6 +1136,9 @@ impl<'p> Checker<'p> {
                 if let Some(c) = rt.coverage.take() {
                     result.coverage = Some(c.into_info());
                 }
+                // Include the final snapshot of a sampled schedule, even when it
+                // finished within one sampling interval or was pruned/bounded.
+                rt.record_collection_sizes();
                 if let Some(mut b) = rt.branching.take() {
                     b.schedules += 1;
                     branching = Some(b);
@@ -1177,6 +1192,11 @@ impl<'p> Checker<'p> {
             unverifiable,
             ..s
         });
+        if let Some(stats) = &mut result.exhaustive {
+            for handoff in &mut stats.auto_handoffs {
+                handoff.worker = index + 1;
+            }
+        }
         result.scheduler_stats = strategy.scheduler_stats();
         result.time_tracked = time.is_some();
         result.branching = branching;
@@ -1222,6 +1242,7 @@ impl<'p> Checker<'p> {
             // reported (the reporting worker's bug comes first)
             result.report.num_bugs = result.report.num_bugs.min(1);
             result.report.bug_reports.truncate(1);
+            result.report.bug_identities.truncate(1);
         }
         let Some(mut bug) = first_bug else { return result };
         if several {

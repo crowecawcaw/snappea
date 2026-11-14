@@ -26,7 +26,7 @@ lie ahead, then turns.
   registered floor is eventually served: the doors open there after the registration.
 - Scheduling (`RequestsServed`): every move goes toward a registered request, and the
   car reverses only when nothing registered lies ahead. Judged when the controller
-  commands the move (`eMoveCommanded`), against what it knew then.
+  commands the move (`MoveCommanded`), against what it knew then.
 
 **Atomic steps**: each controller handler is one step of its control loop. Button
 presses, motor arrival and door acknowledgements interleave with them; the motor's
@@ -45,12 +45,12 @@ movement and the door's closing take time (other machines run in between).
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way | pass; exhaustive (8,360 schedules, ~4s) with some seeds, sampled with others |
-| `tcCallWhileClosing` | Car at 0; both press 0 | The second press lands while the doors open, dwell or close: it needs its own opening | pass, exhaustive |
-| `tcCallWhilePassing` | Car at 2 called to 0; the other presses 1 at any moment | Press before the car reaches 1 (stop there) or after it passed (come back) | pass, exhaustive |
-| `tcObstructedDoor` | Doors blocked twice before closing | The car must wait, then still serve the next floor | pass, exhaustive |
+| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way | pass |
+| `tcCallWhileClosing` | Car at 0; both press 0 | The second press lands while the doors open, dwell or close: it needs its own opening | pass |
+| `tcCallWhilePassing` | Car at 2 called to 0; the other presses 1 at any moment | Press before the car reaches 1 (stop there) or after it passed (come back) | pass |
+| `tcObstructedDoor` | Doors blocked twice before closing | The car must wait, then still serve the next floor | pass |
 | `tcGeneratedRides` | Any start floor, three presses chosen from three floors, 0 or 1 obstruction | Mixed histories | pass, sampled |
-| `tcBugMoveBeforeClosed` | `EagerController` | **Expected to fail**: `car moved from floor 0 with its doors open` | fail |
+| `tcBugMoveBeforeClosed` | `EagerController` | **Expected bug**: `car moved from floor 0 with its doors open` | expected bug |
 
 The `ReopenedForLatePress` scenario confirms the checks reach a press for the current
 floor after the doors opened there, followed by another opening there before the car
@@ -59,9 +59,9 @@ moves.
 ## What building it taught
 
 - **Judge decisions where they are made.** The first scheduling check ran on the motor's
-  `eMotorStarted`, and failed falsely: a press registered between the controller's
+  `MotorStarted`, and failed falsely: a press registered between the controller's
   decision and the motor starting made a correct move look like a reversal. The
-  controller now announces `eMoveCommanded`, and the spec also requires every motor
+  controller now announces `MoveCommanded`, and the spec also requires every motor
   start to match one, so the announcement cannot be dropped.
 - **Count service from registration, not from the press.** A press that lands while
   the doors are already opening at that floor reaches the controller late, and the
@@ -77,13 +77,12 @@ moves.
 
 ```sh
 snappea check tcTwoPassengers tcCallWhileClosing tcCallWhilePassing tcObstructedDoor tcGeneratedRides --timeout 30s --deny mutation
-snappea check tcBugMoveBeforeClosed     # exits 1: car moved from floor 0 with its doors open
+snappea check tcBugMoveBeforeClosed     # passes only when the declared failure is found
 ```
 
-Without `--timeout` the test cases share 10s and may stop before covering every
-schedule. The search order depends on the seed: with some `--seed` values
-`tcTwoPassengers` finishes all 8,360 schedules in seconds, with others it is still
-sampling after minutes. An exhaustive run reports `all N schedules`.
+Search is automatic. A time budget does not guarantee exhaustive checking. Use
+the run's `search_complete` field or `all N schedules` output to distinguish
+completed bounded search from sampling.
 
 ## Bounds and omissions
 
@@ -99,9 +98,9 @@ there and the operators agree.
 
 ## Testing the implementation
 
-Emit `eMotorStarted`/`eMotorStopped` from the motor driver and `eDoorOpened`/
-`eDoorClosed` from the door driver (or their simulators), and `eCallRegistered`/
-`eMoveCommanded` from the controller. Against hardware simulators, delay the door's
+Emit `MotorStarted`/`MotorStopped` from the motor driver and `DoorOpened`/
+`DoorClosed` from the door driver (or their simulators), and `CallRegistered`/
+`MoveCommanded` from the controller. Against hardware simulators, delay the door's
 closed acknowledgement and check the motor stays idle; inject obstruction on close;
 press the current floor's button during the closing delay; press a floor while the
 car is between floors.

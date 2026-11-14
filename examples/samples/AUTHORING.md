@@ -35,17 +35,25 @@ cargo build -p snappea --bin snappea
 python3 examples/samples/check_samples.py <group>/<name> --workers 2
 ```
 
-The script requires, for each project:
+The script runs native checks over every declared test, then mutation testing:
 
-- every test case **not** marked as an expected bug passes `snappea check <tests>`
-  (no lint finding; every statement, handler and `if` outcome covered) and
-  `snappea check mutation <tests>` (every mutant detected or suppressed with a reason);
-- every test case marked `// expect-bug: <text>` (on the line directly before its
-  `test` declaration) fails, and its bug report contains `<text>`. Use a distinctive
-  assertion message, so the test fails for the intended reason, not any reason.
+- Positive tests must pass lint and aggregate coverage. Mutation testing must detect
+  every non-suppressed mutant using positive tests.
+- Negative controls use `// snappea: expect-bug "distinctive failure message"`
+  immediately before the test declaration. Every run on seeds 1, 2 and 3 must find
+  the matching failure. A different failure or no failure fails the check.
+- Expected failures contribute driver coverage, but cannot fill gaps in the passing
+  design's coverage or detect mutants. The checker reports their design coverage
+  separately. Ordinary `snappea check` commands honor the same declarations.
 
-Prefer exhaustive search (`all N schedules` in the output) for the core race; a
-generated test may be sampled. Keep each test case under a few seconds.
+The harness saves native JSON reports and replay artifacts under each sample's
+`PCheckerOutput/samples/`. Read failure-identity advisories: matching a broad message
+on three seeds does not prove that all three reached the intended defect.
+
+Use auto search. Prefer a small, focused test for the core race and broader concurrent
+workloads for exploration. Describe a run as exhaustive only when its report says
+`search_complete`; a time budget or a particular seed does not guarantee completion.
+Keep bounds grounded in the application contract, not in a desire for a green check.
 
 ## Quality bar
 
@@ -59,7 +67,7 @@ generated test may be sampled. Keep each test case under a few seconds.
   show that removing a reply or a send goes unnoticed.
 - **Drivers announce intent.** Drivers (the test's main machine, machines under
   `PTst/`, machines marked `// snappea: driver`) are not mutated. Announce from the
-  driver what it asked for (`eRequested(id, args)`) and, before starting, how much
+  driver what it asked for (`Requested(id, args)`) and, before starting, how much
   work it plans, so a spec can require that work to finish with the right results.
 - **Real atomicity only.** One handler models one real atomic primitive. Split
   read → decide → write across messages wherever the real system can interleave.
@@ -69,14 +77,31 @@ generated test may be sampled. Keep each test case under a few seconds.
   (before and after expiry, sale, crash).
 - **Negative control.** Where cheap, include a plausible broken variant as separate
   machines (so its code is excluded from the passing tests' coverage) and a
-  `tcBug*` test marked `// expect-bug:`.
+  `tcBug*` test with a native `expect-bug` declaration.
 - **Suppressions carry reasons** and are rare. An undetected mutant is usually a
   missing assertion or scenario; suppress only equivalent mutants.
 - **New lints** (`unchecked-state`, `unchecked-event`, `no-progress-spec`) flag fields
   and events no check depends on, and tests that wait for replies with no hot spec.
   Fix them by checking the value or adding a progress spec, not by suppressing.
-- **Scenario monitors** must `ignore` every observed event a state does not handle;
-  an unhandled event in any monitor is a runtime error.
+- **Scenario monitors describe evidence.** They ignore unrelated observed events
+  implicitly. Use explicit handlers only when an event changes the scenario's
+  meaning. Safety and progress specs still fail on unhandled observed events.
+- **Use domain names.** Name events `Request`, `LeaseExpired`, or `PaymentCaptured`,
+  without an `e` prefix. Prefer names that distinguish intent, commitment and reply.
+  Keep names consistent in source, README examples and observed execution logs.
+- **Model the environment explicitly.** Drivers include clients and fault injectors;
+  a driver marker is appropriate for those roles, not a way to exclude the algorithm
+  from mutation testing. State delivery, failure and timing assumptions.
+- **Reuse ordinary P building blocks.** Import the
+  [network and reply blocks](../../crates/snappea/src/cli/guide/examples/building-blocks/README.md)
+  where their contract fits. Keep domain-specific specs where they clarify the
+  obligation. Repository samples can import the canonical projects; when copying a
+  sample out of the repo, export and commit the blocks with
+  `snappea guide example building-blocks --out vendor`, then adjust `IncludeProject`.
+- **Review exceptions as feedback.** Before adding an ignore or suppression, check
+  for a missing assertion, a missing race, an equivalent mutant, or a tool limitation.
+  Explain intentional stale-message handling in the state where it matters. Do not
+  manufacture redundant checks or design state solely to silence tooling.
 
 ## README
 

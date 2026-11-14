@@ -3,15 +3,15 @@
 // through a router, which drains in-flight reads and writes before it flips: once
 // the flip happens, no read can still be served from old and no write is half done.
 
-event eBeginWrite: machine;
-event eWriteGranted;
-event eEndWrite;
-event eRoute: (client: machine, key: int);
-event eReadDone;
-event eCutoverReq: machine;
-event eCutoverDone;
+event BeginWrite: machine;
+event WriteGranted;
+event EndWrite;
+event Route: (client: machine, key: int);
+event ReadDone;
+event CutoverReq: machine;
+event CutoverDone;
 // To whoever started the migration (the test driver).
-event eMigrationDone;
+event MigrationDone;
 
 machine Router {
   var oldStore: OldStore;
@@ -30,21 +30,21 @@ machine Router {
   }
 
   state Live {
-    on eBeginWrite do (writer: machine) {
+    on BeginWrite do (writer: machine) {
       writes = writes + 1;
-      send writer, eWriteGranted;
+      send writer, WriteGranted;
     }
-    on eEndWrite do { writes = writes - 1; }
-    on eRoute do (r: (client: machine, key: int)) {
+    on EndWrite do { writes = writes - 1; }
+    on Route do (r: (client: machine, key: int)) {
       reads = reads + 1;
       if (readsFromNew) {
-        send newStore, eReadRow, r;
+        send newStore, ReadRow, r;
       } else {
-        send oldStore, eReadRow, r;
+        send oldStore, ReadRow, r;
       }
     }
-    on eReadDone do { reads = reads - 1; }
-    on eCutoverReq do (m: machine) {
+    on ReadDone do { reads = reads - 1; }
+    on CutoverReq do (m: machine) {
       migrator = m;
       goto Draining;
     }
@@ -53,12 +53,12 @@ machine Router {
   // New reads and writes wait; in-flight ones finish. Then flip, atomically.
   state Draining {
     entry { TryCutover(); }
-    defer eBeginWrite, eRoute;
-    on eEndWrite do {
+    defer BeginWrite, Route;
+    on EndWrite do {
       writes = writes - 1;
       TryCutover();
     }
-    on eReadDone do {
+    on ReadDone do {
       reads = reads - 1;
       TryCutover();
     }
@@ -67,14 +67,14 @@ machine Router {
   fun TryCutover() {
     if (writes == 0 && reads == 0) {
       readsFromNew = true;
-      announce eCutover;
-      send migrator, eCutoverDone;
+      announce Cutover;
+      send migrator, CutoverDone;
       goto Live;
     }
   }
 }
 
-type tOp = (req: int, key: int, value: int, deleted: bool);
+type Op = (req: int, key: int, value: int, deleted: bool);
 
 // An application writer: each write goes to old (which assigns the version), then to
 // new with that version, inside a write slot from the router.
@@ -82,11 +82,11 @@ machine Writer {
   var router: machine;
   var oldStore: OldStore;
   var newStore: machine;
-  var ops: seq[tOp];
-  var op: tOp;
+  var ops: seq[Op];
+  var op: Op;
 
   start state Next {
-    entry (input: (router: machine, oldStore: OldStore, newStore: machine, ops: seq[tOp])) {
+    entry (input: (router: machine, oldStore: OldStore, newStore: machine, ops: seq[Op])) {
       router = input.router;
       oldStore = input.oldStore;
       newStore = input.newStore;
@@ -100,19 +100,19 @@ machine Writer {
       if (sizeof(ops) == 0) { goto Finished; }
       op = ops[0];
       ops -= (0);
-      send router, eBeginWrite, this;
+      send router, BeginWrite, this;
     }
-    on eWriteGranted do {
-      send oldStore, eOldWrite, (client = this, req = op.req, key = op.key, value = op.value, deleted = op.deleted);
+    on WriteGranted do {
+      send oldStore, OldWrite, (client = this, req = op.req, key = op.key, value = op.value, deleted = op.deleted);
     }
-    on eOldWritten do (w: (req: int, lsn: int)) {
-      send newStore, eNewWrite, (client = this, key = op.key,
+    on OldWritten do (w: (req: int, lsn: int)) {
+      send newStore, NewWrite, (client = this, key = op.key,
                                  row = (value = op.value, deleted = op.deleted, lsn = w.lsn));
     }
-    on eNewWritten goto Writing with {
+    on NewWritten goto Writing with {
       // Both stores have it: the application call returns now.
-      announce eWriteAcked, (req = op.req,);
-      send router, eEndWrite;
+      announce WriteAcked, (req = op.req,);
+      send router, EndWrite;
     }
   }
 
@@ -135,9 +135,9 @@ machine Reader {
       left = input.reads;
       Next();
     }
-    on eRow do (r: (key: int, row: tRow)) {
-      announce eReadSeen, (reader = id, key = r.key, row = r.row);
-      send router, eReadDone;
+    on Row do (r: (key: int, row: Row)) {
+      announce ReadSeen, (reader = id, key = r.key, row = r.row);
+      send router, ReadDone;
       Next();
     }
   }
@@ -145,8 +145,8 @@ machine Reader {
   fun Next() {
     if (left > 0) {
       left = left - 1;
-      announce eReadStarted, (reader = id, key = key);
-      send router, eRoute, (client = this, key = key);
+      announce ReadStarted, (reader = id, key = key);
+      send router, Route, (client = this, key = key);
     }
   }
 }
@@ -168,21 +168,21 @@ machine Migrator {
       todo = input.scan;
       Next();
     }
-    on eRow do (r: (key: int, row: tRow)) {
-      send newStore, eCopy, (client = this, key = r.key, row = r.row);
+    on Row do (r: (key: int, row: Row)) {
+      send newStore, Copy, (client = this, key = r.key, row = r.row);
     }
-    on eNewWritten do { Next(); }
-    on eCutoverDone do {
-      send owner, eMigrationDone;
+    on NewWritten do { Next(); }
+    on CutoverDone do {
+      send owner, MigrationDone;
     }
   }
 
   fun Next() {
     if (sizeof(todo) == 0) {
-      send router, eCutoverReq, this;
+      send router, CutoverReq, this;
       return;
     }
-    send oldStore, eReadRow, (client = this, key = todo[0]);
+    send oldStore, ReadRow, (client = this, key = todo[0]);
     todo -= (0);
   }
 }

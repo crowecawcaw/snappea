@@ -2,11 +2,11 @@
 // a warehouse that ships once the order is paid. Cancel and ship race; the service
 // decides each one atomically, so exactly one of them wins after payment.
 
-event ePlace: (order: int, amount: int);
-event ePay: int;
-event eCancel;
-event eReadyToShip: machine;
-event eShip;
+event Place: (order: int, amount: int);
+event Pay: int;
+event Cancel;
+event ReadyToShip: machine;
+event Ship;
 
 machine OrderService {
   var id: int;
@@ -19,38 +19,38 @@ machine OrderService {
     entry (w: machine) {
       warehouse = w;
     }
-    on ePlace do (p: (order: int, amount: int)) {
+    on Place do (p: (order: int, amount: int)) {
       id = p.order;
       amount = p.amount;
-      announce eOrderPlaced, (order = p.order, amount = p.amount);
+      announce OrderPlaced, (order = p.order, amount = p.amount);
     }
-    on ePay do (paidAmount: int) {
+    on Pay do (paidAmount: int) {
       if (closed) { return; }
       paid = true;
-      announce eOrderPaid, (order = id, amount = paidAmount);
-      send warehouse, eReadyToShip, this;
+      announce OrderPaid, (order = id, amount = paidAmount);
+      send warehouse, ReadyToShip, this;
     }
-    on eCancel do {
+    on Cancel do {
       if (closed) { return; }
       closed = true;
       if (paid) {
-        announce eOrderCancelled, (order = id, refunded = amount);
+        announce OrderCancelled, (order = id, refunded = amount);
       } else {
-        announce eOrderCancelled, (order = id, refunded = 0);
+        announce OrderCancelled, (order = id, refunded = 0);
       }
     }
-    on eShip do {
+    on Ship do {
       if (closed) { return; }
       closed = true;
-      announce eOrderShipped, id;
+      announce OrderShipped, id;
     }
   }
 }
 
 machine Warehouse {
   start state Waiting {
-    on eReadyToShip do (service: machine) {
-      send service, eShip;
+    on ReadyToShip do (service: machine) {
+      send service, Ship;
     }
   }
 }

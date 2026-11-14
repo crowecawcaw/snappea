@@ -9,38 +9,38 @@
 // A put that lands between the two finds no waiter to wake, and the consumer then parks
 // beside an item nobody will tell it about.
 
-event eTryTake: (client: machine, consumer: int);
-event eTakeResult: (ok: bool, item: int);
-event eWait: (client: machine, consumer: int);
-event eWake;
+event TryTake: (client: machine, consumer: int);
+event TakeResult: (ok: bool, item: int);
+event Wait: (client: machine, consumer: int);
+event Wake;
 
 machine RacyQueue {
   var items: seq[int];
   var waiters: seq[(client: machine, consumer: int)];
 
   start state Serving {
-    on eTryTake do (r: (client: machine, consumer: int)) {
+    on TryTake do (r: (client: machine, consumer: int)) {
       var item: int;
       if (sizeof(items) > 0) {
         item = items[0];
         items -= (0);
-        announce eTaken, (consumer = r.consumer, item = item);
-        send r.client, eTakeResult, (ok = true, item = item);
+        announce Taken, (consumer = r.consumer, item = item);
+        send r.client, TakeResult, (ok = true, item = item);
       } else {
-        send r.client, eTakeResult, (ok = false, item = 0);
+        send r.client, TakeResult, (ok = false, item = 0);
       }
     }
-    on eWait do (w: (client: machine, consumer: int)) {
+    on Wait do (w: (client: machine, consumer: int)) {
       // BUG: registers without looking at the queue again.
       waiters += (sizeof(waiters), w);
-      announce eSleeping, w.consumer;
+      announce Sleeping, w.consumer;
     }
-    on ePut do (item: int) {
+    on Put do (item: int) {
       items += (sizeof(items), item);
-      announce eQueued, item;
+      announce Queued, item;
       if (sizeof(waiters) > 0) {
-        announce eWoken, waiters[0].consumer;
-        send waiters[0].client, eWake;
+        announce Woken, waiters[0].consumer;
+        send waiters[0].client, Wake;
         waiters -= (0);
       }
     }
@@ -53,14 +53,16 @@ machine RacyConsumer {
       var taken: int;
       var ok: bool;
       while (taken < p.wants) {
-        send p.queue, eTryTake, (client = this, consumer = p.consumer);
-        receive { case eTakeResult: (r: (ok: bool, item: int)) { ok = r.ok; } }
+        send p.queue, TryTake, (client = this, consumer = p.consumer);
+        // The contract checks item values at Taken; this consumer models waiting,
+        // not application work on the returned value.
+        receive { case TakeResult: (r: (ok: bool, item: int)) { ok = r.ok; } }
         if (ok) {
           taken = taken + 1;
         } else {
           // Another critical section: the put that would wake us can run before this.
-          send p.queue, eWait, (client = this, consumer = p.consumer);
-          receive { case eWake: { } }
+          send p.queue, Wait, (client = this, consumer = p.consumer);
+          receive { case Wake: { } }
         }
       }
     }

@@ -7,26 +7,26 @@ machine NaiveCache {
   var value: int;
 
   start state Serving {
-    on eCacheGet do (g: (client: machine)) {
+    on CacheGet do (g: (client: machine)) {
       if (present) {
-        announce eCacheHit, (value = value,);
-        send g.client, eCacheGetResp, (hit = true, value = value, lease = 0);
+        announce CacheHit, (value = value,);
+        send g.client, CacheGetResponse, (hit = true, value = value, lease = 0);
         return;
       }
-      announce eCacheMiss;
-      send g.client, eCacheGetResp, (hit = false, value = 0, lease = 0);
+      announce CacheMiss;
+      send g.client, CacheGetResponse, (hit = false, value = 0, lease = 0);
     }
-    on eCacheSet do (s: (client: machine, lease: int, value: int)) {
+    on CacheSet do (s: (client: machine, lease: int, value: int)) {
       // BUG: no lease, so a set computed before the last delete still lands.
       present = true;
       value = s.value;
-      announce eCacheFilled, (value = value,);
-      send s.client, eCacheSetResp;
+      announce CacheFilled, (value = value,);
+      send s.client, CacheSetResponse;
     }
-    on eCacheDelete do (d: (client: machine)) {
+    on CacheDelete do (d: (client: machine)) {
       present = false;
-      announce eInvalidated;
-      send d.client, eCacheDeleteResp;
+      announce Invalidated;
+      send d.client, CacheDeleteResponse;
     }
   }
 }

@@ -50,7 +50,7 @@ if (dropsLeft > 0 && $) {
 }
 ```
 
-When the bag empties after a loss, it sends the sender `eTimeout`. That encodes an
+When the bag empties after a loss, it sends the sender `Timeout`. That encodes an
 assumption: the retransmission timeout is longer than any delivery, so it fires only
 when something was really lost (see `09-timers` for timeouts that race replies).
 
@@ -58,9 +58,9 @@ The receiver ([`PSrc/Endpoints.p`](PSrc/Endpoints.p)) delivers each id once but
 acknowledges every copy, because the first acknowledgement may have been lost:
 
 ```p
-on eData do (d: tMsg) {
-  if (!(d.id in delivered)) { delivered += (d.id); announce eDelivered, d.id; }
-  send net, eNetSend, (dest = d.from, ev = eAck, msg = (from = this, id = d.id));
+on Data do (d: Msg) {
+  if (!(d.id in delivered)) { delivered += (d.id); announce Delivered, d.id; }
+  send net, NetSend, (dest = d.from, ev = Ack, msg = d.id);
 }
 ```
 
@@ -78,16 +78,19 @@ delivered and acknowledged by the end.
 
 ```sh
 snappea check tcLostPackets tcDuplicatedPacket --deny mutation
-snappea check tcBugNoDedup        # exits 1
+snappea check tcBugNoDedup        # exits 0 when the declared bug matches
 ```
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 ```text
 ok    tcLostPackets (all 97 schedules, 0.03s)
       note: every schedule reaches nearly the same states, so this test checks little more than one run would
       Driver limits (held in all 97 schedules):
-        Network sends eTimeout at most twice
+        Network sends Timeout at most twice
         ...
 ok    tcDuplicatedPacket (all 585 schedules, 0.23s)
 Coverage of all test cases: 3/3 states, 64/64 statements, 18/18 branches, 9/9 event handlers, ...
@@ -96,7 +99,7 @@ Mutation testing: 30 of 30 mutants detected (0.2s)
 
 The note on `tcLostPackets` is expected: the sender has one packet in flight at a time,
 so losses change *which* packet is retransmitted but leave little to interleave. The
-driver limits state the fault bound (`eTimeout at most twice`): two losses, no more.
+driver limits state the fault bound (`Timeout at most twice`): two losses, no more.
 
 ## Common mistake: one test with every fault
 
@@ -108,7 +111,7 @@ design treats specially.
 
 ## Try this
 
-Acknowledge only the first copy (move the `send net, eNetSend, (... ev = eAck ...)` into
+Acknowledge only the first copy (move the `send net, NetSend, (... ev = Ack ...)` into
 the `if`). When the acknowledgement is lost, the retransmission is ignored and the
 sender waits forever:
 
@@ -124,9 +127,14 @@ duplicate per test. Timeouts never fire while packets are in flight. Not modeled
 corrupted packets, network partitions longer than the retry budget, several senders
 sharing a receiver's deduplication table, and bounding that table's size.
 
+For other models, import the [network building block](../../../../crates/snappea/src/cli/guide/examples/building-blocks/README.md)
+instead of copying a courier. This tutorial keeps its small transport visible because
+its timeout contract is different: it fires only after the packet bag drains. The
+reusable block allows independently delayed delivery and does not supply a timer.
+
 ## Testing the implementation
 
-Emit `eDelivered` where the receiver hands a message to the application and `eAcked`
+Emit `Delivered` where the receiver hands a message to the application and `Acked`
 where the sender accepts an acknowledgement. Put a fault-injecting proxy (or a fake
 transport) between them that drops the first acknowledgement and replays a stale copy
 of message 1 after message 2.

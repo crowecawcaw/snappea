@@ -4,31 +4,31 @@
 
 machine ArgumentOrderWorker {
   var db: Database;
-  var t: tTransfer;
+  var t: Transfer;
 
   start state LockingFirst {
-    entry (w: (db: Database, transfer: tTransfer)) {
+    entry (w: (db: Database, transfer: Transfer)) {
       db = w.db;
       t = w.transfer;
       // BUG: lock order depends on the call's arguments, not on the accounts.
-      send db, eLock, (worker = this, transfer = t.transfer, account = t.src);
+      send db, Lock, (worker = this, transfer = t.transfer, account = t.src);
     }
-    on eLocked goto LockingSecond;
+    on Locked goto LockingSecond;
   }
 
   state LockingSecond {
     entry {
-      send db, eLock, (worker = this, transfer = t.transfer, account = t.dst);
+      send db, Lock, (worker = this, transfer = t.transfer, account = t.dst);
     }
-    on eLocked goto Committing;
+    on Locked goto Committing;
   }
 
   state Committing {
     entry {
-      send db, eCommit, (worker = this, transfer = t);
+      send db, Commit, (worker = this, transfer = t);
     }
-    on eCommitted do {
-      announce eTransferDone, t.transfer;
+    on Committed do {
+      announce TransferDone, t.transfer;
     }
   }
 }

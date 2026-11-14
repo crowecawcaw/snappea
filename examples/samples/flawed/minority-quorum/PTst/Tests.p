@@ -1,14 +1,14 @@
 // Drivers start a cluster, then make some nodes' election timers fire
-// (eStartElection, with the membership), as after a leader failure.
+// (StartElection, with the membership), as after a leader failure.
 
 fun StartCandidates(nodes: map[int, machine], candidates: seq[int]) {
   var c: int;
-  announce eClusterStarted, sizeof(nodes);
+  announce ClusterStarted, sizeof(nodes);
   foreach (c in candidates) {
-    announce eCandidateStarted, c;
+    announce CandidateStarted, c;
   }
   foreach (c in candidates) {
-    send nodes[c], eStartElection, nodes;
+    send nodes[c], StartElection, nodes;
   }
 }
 
@@ -54,9 +54,9 @@ machine SplitVote {
 // RPC to an unreachable host does after its timeout.
 machine Unreachable {
   start state Cut {
-    on eRequestVote do (r: tVoteReq) {
-      announce eRequestFailed, (term = r.term, voter = r.voter, candidate = r.candidate);
-      send r.from, eVoteResp, (granted = false,);
+    on RequestVote do (r: VoteReq) {
+      announce RequestFailed, (term = r.term, voter = r.voter, candidate = r.candidate);
+      send r.from, VoteResp, (granted = false,);
     }
   }
 }
@@ -87,11 +87,11 @@ fun Partition(nodes: map[int, machine]) {
   left += (2);
   right += (3);
   right += (4);
-  announce eClusterStarted, sizeof(nodes);
-  announce eCandidateStarted, 1;
-  announce eCandidateStarted, 3;
-  send nodes[1], eStartElection, ViewFrom(nodes, left, cut);
-  send nodes[3], eStartElection, ViewFrom(nodes, right, cut);
+  announce ClusterStarted, sizeof(nodes);
+  announce CandidateStarted, 1;
+  announce CandidateStarted, 3;
+  send nodes[1], StartElection, ViewFrom(nodes, left, cut);
+  send nodes[3], StartElection, ViewFrom(nodes, right, cut);
 }
 
 machine PartitionHalfQuorum {
@@ -145,28 +145,27 @@ machine OddCluster {
 
 // Covered: a split vote in which both candidates stood in the same term and neither
 // won. The fix's answer to a 2-2 split is "no leader this term".
-scenario SplitVoteNobodyWins observes eElectionEnded {
+scenario SplitVoteNobodyWins observes ElectionEnded {
   start hot state WaitFirstLoss {
-    on eElectionEnded do (p: (term: int, candidate: int, won: bool)) {
+    on ElectionEnded do (p: (term: int, candidate: int, won: bool)) {
       if (!p.won) { goto WaitSecondLoss; }
     }
   }
   hot state WaitSecondLoss {
-    on eElectionEnded do (p: (term: int, candidate: int, won: bool)) {
+    on ElectionEnded do (p: (term: int, candidate: int, won: bool)) {
       if (!p.won) { goto Covered; }
     }
   }
   cold state Covered {
-    ignore eElectionEnded;
   }
 }
 
-// expect-bug: split brain: term 1 has two leaders
+// snappea: expect-bug "split brain: term 1 has two leaders"
 test tcBugSplitVote [main=SplitVoteHalfQuorum]:
   assert OneLeaderPerTerm, ElectionsEnd in
   { SplitVoteHalfQuorum, HalfQuorumNode };
 
-// expect-bug: split brain: term 1 has two leaders
+// snappea: expect-bug "split brain: term 1 has two leaders"
 test tcBugPartition [main=PartitionHalfQuorum]:
   assert OneLeaderPerTerm, ElectionsEnd in
   { PartitionHalfQuorum, HalfQuorumNode, Unreachable };

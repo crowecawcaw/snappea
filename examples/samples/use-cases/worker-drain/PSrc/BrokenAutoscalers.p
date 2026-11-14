@@ -17,19 +17,19 @@ machine HastyAutoscaler {
   }
 
   state Idle {
-    on eScaleIn do (s: (inst: int)) {
+    on ScaleIn do (s: (inst: int)) {
       target = s.inst;
-      send lb, eDeregister, (inst = target, from = this);
+      send lb, Deregister, (inst = target, from = this);
       goto Deregistering;
     }
-    ignore eDrained;
+    ignore Drained;
   }
 
   state Deregistering {
-    on eDeregisterAck goto Idle with {
-      send instances[target], eDrain, this;
-      // BUG: does not wait for eDrained.
-      send instances[target], eTerminate;
+    on DeregisterAck goto Idle with {
+      send instances[target], Drain, this;
+      // BUG: does not wait for Drained.
+      send instances[target], Terminate;
     }
   }
 }
@@ -51,19 +51,19 @@ machine EarlyDrainAutoscaler {
   }
 
   state Idle {
-    on eScaleIn do (s: (inst: int)) {
+    on ScaleIn do (s: (inst: int)) {
       target = s.inst;
-      send lb, eDeregister, (inst = target, from = this);
+      send lb, Deregister, (inst = target, from = this);
       // BUG: drains before the load balancer acknowledged the deregistration.
-      send instances[target], eDrain, this;
+      send instances[target], Drain, this;
       goto Waiting;
     }
   }
 
   state Waiting {
-    on eDrained do {
-      send instances[target], eTerminate;
+    on Drained do {
+      send instances[target], Terminate;
     }
-    ignore eDeregisterAck;
+    ignore DeregisterAck;
   }
 }

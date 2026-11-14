@@ -9,17 +9,17 @@ machine Client {
     entry (input: (server: machine, id: int, checkHealth: bool)) {
       server = input.server;
       checkHealth = input.checkHealth;
-      announce eRequested, (id = input.id,);
-      send server, eRequest, (client = this, id = input.id);
+      announce Requested, (id = input.id,);
+      send server, Request, (client = this, id = input.id);
     }
-    on eResponse do {
+    on Response do {
       // A response proves the server is serving, so a health check now must be answered.
       if (checkHealth) {
-        announce eHealthCheckDue;
-        send server, eHealthCheck, (probe = this,);
+        announce HealthCheckDue;
+        send server, HealthCheck, (probe = this,);
       }
     }
-    ignore eHealthy;
+    ignore Healthy;
   }
 }
 
@@ -27,9 +27,9 @@ machine Client {
 machine Probe {
   start state Checking {
     entry (server: machine) {
-      send server, eHealthCheck, (probe = this,);
+      send server, HealthCheck, (probe = this,);
     }
-    ignore eHealthy;
+    ignore Healthy;
   }
 }
 
@@ -54,6 +54,6 @@ machine StartupRaceNoDefer {
 test tcStartupRace [main=StartupRace]:
   assert ServedAfterInit in { StartupRace, Client, Probe, Server, Storage };
 
-// expect-bug: eRequest' that cannot be handled
+// snappea: expect-bug "Request' that it cannot handle"
 test tcBugNoDefer [main=StartupRaceNoDefer]:
   assert ServedAfterInit in { StartupRaceNoDefer, Client, Probe, NoDeferServer, Storage };

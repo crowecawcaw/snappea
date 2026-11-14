@@ -6,20 +6,20 @@ fun OpenAccounts(n: int): Database {
   var id: int;
   id = 1;
   while (id <= n) {
-    announce eAccountOpened, (account = id, balance = 10);
+    announce AccountOpened, (account = id, balance = 10);
     balances[id] = 10;
     id = id + 1;
   }
   return new Database(balances);
 }
 
-fun StartFlawed(db: Database, t: tTransfer) {
-  announce eTransferRequested, t;
+fun StartFlawed(db: Database, t: Transfer) {
+  announce TransferRequested, t;
   new ArgumentOrderWorker((db = db, transfer = t));
 }
 
-fun StartFixed(db: Database, t: tTransfer) {
-  announce eTransferRequested, t;
+fun StartFixed(db: Database, t: Transfer) {
+  announce TransferRequested, t;
   new OrderedWorker((db = db, transfer = t));
 }
 
@@ -29,7 +29,7 @@ machine OppositeTransfersFlawed {
     entry {
       var db: Database;
       db = OpenAccounts(2);
-      announce eTransfersPlanned, 2;
+      announce TransfersPlanned, 2;
       StartFlawed(db, (transfer = 1, src = 1, dst = 2, amount = 3));
       StartFlawed(db, (transfer = 2, src = 2, dst = 1, amount = 4));
     }
@@ -41,7 +41,7 @@ machine OppositeTransfers {
     entry {
       var db: Database;
       db = OpenAccounts(2);
-      announce eTransfersPlanned, 2;
+      announce TransfersPlanned, 2;
       StartFixed(db, (transfer = 1, src = 1, dst = 2, amount = 3));
       StartFixed(db, (transfer = 2, src = 2, dst = 1, amount = 4));
     }
@@ -57,7 +57,7 @@ machine CycleOfThree {
     entry {
       var db: Database;
       db = OpenAccounts(3);
-      announce eTransfersPlanned, 3;
+      announce TransfersPlanned, 3;
       StartFixed(db, (transfer = 1, src = 1, dst = 2, amount = 3));
       StartFixed(db, (transfer = 2, src = 2, dst = 3, amount = 4));
       StartFixed(db, (transfer = 3, src = 3, dst = 1, amount = 5));
@@ -70,7 +70,7 @@ machine CycleOfThreeFlawed {
     entry {
       var db: Database;
       db = OpenAccounts(3);
-      announce eTransfersPlanned, 3;
+      announce TransfersPlanned, 3;
       StartFlawed(db, (transfer = 1, src = 1, dst = 2, amount = 3));
       StartFlawed(db, (transfer = 2, src = 2, dst = 3, amount = 4));
       StartFlawed(db, (transfer = 3, src = 3, dst = 1, amount = 5));
@@ -78,12 +78,12 @@ machine CycleOfThreeFlawed {
   }
 }
 
-// expect-bug: liveness bug in hot state 'TransferPending'
+// snappea: expect-bug "liveness bug in hot state 'TransferPending'"
 test tcBugOppositeTransfers [main=OppositeTransfersFlawed]:
   assert TransfersIsolated, TransfersComplete in
   { OppositeTransfersFlawed, Database, ArgumentOrderWorker };
 
-// expect-bug: liveness bug in hot state 'TransferPending'
+// snappea: expect-bug "liveness bug in hot state 'TransferPending'"
 test tcBugCycleOfThree [main=CycleOfThreeFlawed]:
   assert TransfersIsolated, TransfersComplete in
   { CycleOfThreeFlawed, Database, ArgumentOrderWorker };

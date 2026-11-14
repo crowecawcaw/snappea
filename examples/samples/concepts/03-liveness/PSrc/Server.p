@@ -1,12 +1,12 @@
 // The design: a server that hands one request at a time to a worker. While the worker
 // is busy, new requests wait in the server's queue (defer) until it is idle again.
 
-type tRequest = (client: machine, id: int);
+type Request = (client: machine, id: int);
 
-event eRequest: tRequest;
-event eResponse: (id: int);
-event eJob: tRequest;
-event eJobDone: tRequest;
+event Request: Request;
+event Response: (id: int);
+event Job: Request;
+event JobDone: Request;
 
 machine Server {
   var worker: Worker;
@@ -19,17 +19,17 @@ machine Server {
   }
 
   state Idle {
-    on eRequest do (r: tRequest) {
-      send worker, eJob, r;
+    on Request do (r: Request) {
+      send worker, Job, r;
       goto Busy;
     }
   }
 
   state Busy {
     // Keep new requests queued until the worker is free.
-    defer eRequest;
-    on eJobDone do (r: tRequest) {
-      send r.client, eResponse, (id = r.id,);
+    defer Request;
+    on JobDone do (r: Request) {
+      send r.client, Response, (id = r.id,);
       goto Idle;
     }
   }
@@ -43,8 +43,8 @@ machine Worker {
     entry (s: machine) {
       server = s;
     }
-    on eJob do (r: tRequest) {
-      send server, eJobDone, r;
+    on Job do (r: Request) {
+      send server, JobDone, r;
     }
   }
 }

@@ -7,18 +7,18 @@ machine BookingService {
   var fails: bool;
   start state Serving {
     entry (f: bool) { fails = f; }
-    on eReserve do (r: (saga: machine, step: tStep)) {
+    on Reserve do (r: (saga: machine, step: BookingStep)) {
       if (fails) {
-        announce eReserveFailed, r.step;
-        send r.saga, eReserveResp, (step = r.step, ok = false);
+        announce ReserveFailed, r.step;
+        send r.saga, ReserveResp, (step = r.step, ok = false);
         return;
       }
-      announce eReserved, r.step;
-      send r.saga, eReserveResp, (step = r.step, ok = true);
+      announce Reserved, r.step;
+      send r.saga, ReserveResp, (step = r.step, ok = true);
     }
-    on eRelease do (r: (saga: machine, step: tStep)) {
-      announce eReleased, r.step;
-      send r.saga, eReleaseResp;
+    on Release do (r: (saga: machine, step: BookingStep)) {
+      announce Released, r.step;
+      send r.saga, ReleaseResp;
     }
   }
 }
@@ -27,17 +27,17 @@ machine BookingService {
 machine CancellingUser {
   start state Asking {
     entry (saga: machine) {
-      announce eCancelRequested;
-      send saga, eUserCancel, this;
+      announce CancelRequested;
+      send saga, UserCancel, this;
     }
-    on eCancelResp do (accepted: bool) { announce eCancelAnswered, accepted; }
+    on CancelResp do (accepted: bool) { announce CancelAnswered, accepted; }
   }
 }
 
 // failAt: the step whose service declines (none if failAt is 3).
 fun StartSaga(owner: machine, failAt: int, withCancel: bool): TripSaga {
-  var services: map[tStep, machine];
-  announce eSagaPlanned, withCancel;
+  var services: map[BookingStep, machine];
+  announce SagaPlanned, withCancel;
   services[Flight] = new BookingService(failAt == 0);
   services[Hotel] = new BookingService(failAt == 1);
   services[Car] = new BookingService(failAt == 2);
@@ -49,7 +49,7 @@ fun StartSaga(owner: machine, failAt: int, withCancel: bool): TripSaga {
 machine FailureAtEachStep {
   start state Run {
     entry { StartSaga(this, choose(4), false); }
-    ignore eSagaDone;
+    ignore SagaDone;
   }
 }
 
@@ -59,7 +59,7 @@ machine FailureAtEachStep {
 machine CancelRacesSaga {
   start state Run {
     entry { new CancellingUser(StartSaga(this, 3, true)); }
-    ignore eSagaDone;
+    ignore SagaDone;
   }
 }
 
@@ -68,7 +68,7 @@ machine CancelRacesSaga {
 machine CancelRacesFailure {
   start state Run {
     entry { new CancellingUser(StartSaga(this, 2, true)); }
-    ignore eSagaDone;
+    ignore SagaDone;
   }
 }
 
@@ -78,24 +78,26 @@ machine CancelAfterBooked {
   var saga: TripSaga;
   start state Run {
     entry { saga = StartSaga(this, 3, true); }
-    on eSagaDone do { new CancellingUser(saga); }
+    on SagaDone do { new CancellingUser(saga); }
   }
 }
 
 // For the negative control: a car service that holds the reservation request until
 // the driver lets it commit, so the cancel deterministically arrives while the car,
 // the last step, is in flight.
-event eCarRequested;
-event eCarGo;
+event CarRequested;
+event CarGo;
 machine SlowCarService {
   var driver: machine;
   start state Waiting {
     entry (d: machine) { driver = d; }
-    on eReserve do (r: (saga: machine, step: tStep)) {
-      send driver, eCarRequested;
-      receive { case eCarGo: { } }
-      announce eReserved, r.step;
-      send r.saga, eReserveResp, (step = r.step, ok = true);
+    on Reserve do (r: (saga: machine, step: BookingStep)) {
+      send driver, CarRequested;
+      receive { case CarGo: { } }
+      // snappea-lint: allow coverage -- expected failure stops the negative control before this late reservation commits
+      announce Reserved, r.step;
+      // snappea-lint: allow coverage -- expected failure stops the negative control before its late reply
+      send r.saga, ReserveResp, (step = r.step, ok = true);
     }
   }
 }
@@ -107,16 +109,17 @@ machine BugForgetsInFlightStep {
   var car: machine;
   start state Run {
     entry {
-      var services: map[tStep, machine];
-      announce eSagaPlanned, true;
+      var services: map[BookingStep, machine];
+      announce SagaPlanned, true;
       car = new SlowCarService(this);
       services[Flight] = new BookingService(false);
       services[Hotel] = new BookingService(false);
       services[Car] = car;
       saga = new ForgetfulSaga((owner = this, services = services));
     }
-    on eCarRequested do { new CancellingUser(saga); }
-    on eSagaDone do { send car, eCarGo; }
+    on CarRequested do { new CancellingUser(saga); }
+    // snappea-lint: allow coverage -- the spec rejects SagaEnded before the broken saga can send SagaDone
+    on SagaDone do { send car, CarGo; }
   }
 }
 
@@ -134,6 +137,6 @@ test tcCancelRacesFailure [main=CancelRacesFailure]:
 test tcCancelAfterBooked [main=CancelAfterBooked]:
   assert NoOrphans, SagaEnds in (union Saga, { CancelAfterBooked });
 
-// expect-bug: saga ended with the car reservation still in flight
+// snappea: expect-bug "saga ended with the Car reservation still in flight"
 test tcBugForgetsInFlightStep [main=BugForgetsInFlightStep]:
   assert NoOrphans, SagaEnds in { BugForgetsInFlightStep, ForgetfulSaga, BookingService, SlowCarService, CancellingUser };

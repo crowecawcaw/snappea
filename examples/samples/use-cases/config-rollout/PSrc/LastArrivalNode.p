@@ -11,16 +11,16 @@ machine LastArrivalNode {
       id = input.id;
       version = input.version;
       content = input.content;
-      announce eNodeStarted, (node = id, version = version, content = content);
+      announce NodeStarted, (node = id, version = version, content = content);
     }
-    on ePush do (p: tPush) {
+    on PushConfig do (p: ConfigPush) {
       // BUG: no comparison with the version already running.
       if (p.version != version) {
         version = p.version;
         content = p.content;
-        announce eApplied, (node = id, version = version, content = content);
+        announce Applied, (node = id, version = version, content = content);
       }
-      send p.service, eAck, (node = id, version = p.version);
+      send p.service, Ack, (node = id, version = p.version);
     }
   }
 }

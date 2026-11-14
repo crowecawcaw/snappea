@@ -44,7 +44,7 @@ messages in time order, pruning orders that cannot happen. Both are optional; se
 The caller starts the stopwatch as it calls ([`PTst/Tests.p`](PTst/Tests.p)):
 
 ```p
-announce eCalled, Mark();
+announce Called, Mark();
 new Client((server = new Server(), policy = (timeout = timeout, backoff = Backoff())));
 ```
 
@@ -69,17 +69,20 @@ it answers and every attempt reaches the server.
 ```sh
 snappea check tcRetryWithinDeadline --timeout 20s
 snappea check mutation tcRetryWithinDeadline
-snappea check tcBugRetryOverDeadline     # exits 1, with or without --timed
+snappea check tcBugRetryOverDeadline     # exits 0 when the declared bug matches, with or without --timed
 ```
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 ```text
 ok    tcRetryWithinDeadline (61744 schedules, time limit reached, 20.0s)
       Coverage: 3/3 states, 53/53 statements, 14/14 branches, 10/10 event handlers, 16/16 condition outcomes, ...
 Mutation testing: 30 of 30 mutants detected (0.2s)
 
-FAIL  tcBugRetryOverDeadline (bug found after 1 schedule, 0.01s)
+expected bug  tcBugRetryOverDeadline (matching declared failure)
       Assertion Failed: PSpec/Budget.p:51:7 answered (ok = False) after up to 1050000 us; the deadline is 1000000 us
 ```
 
@@ -107,7 +110,7 @@ the "reply after timeout" race in the checked behaviour.
 
 ## Try this
 
-Delete `if (a != attempt) { return; }` from `Client.Trying`'s `eResp` handler. A late
+Delete `if (a != attempt) { return; }` from `Client.Trying`'s `Response` handler. A late
 reply to attempt 1 or 2 now answers attempt 3:
 
 ```text
@@ -123,7 +126,7 @@ jitter on backoff, a deadline propagated to the server, clock skew.
 
 ## Testing the implementation
 
-Emit `eAttempt` and `eOutcome` with timestamps from the client and check them with
+Emit `Attempt` and `Outcome` with timestamps from the client and check them with
 `snappea observe`, whose specs read log timestamps through the same `Mark`/`Elapsed`
 functions (see docs/observe.md, "Time and latency budgets"). To hit the worst case in a
 test, drop every reply with a fake server and a fake clock.

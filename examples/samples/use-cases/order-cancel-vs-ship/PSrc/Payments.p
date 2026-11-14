@@ -10,11 +10,11 @@
 // environment, so it is marked as a driver and its failures are the test's choices.
 // Its announcements are the commit points the contract observes.
 
-event eAuthorize: (client: machine, order: int);
-event eAuthorizeResp: (order: int);
-event eCapture: (client: machine, order: int);
-event eCaptureResp: (order: int, ok: bool);
-event eVoid: (order: int);
+event Authorize: (client: machine, order: int);
+event AuthorizeResp: (order: int);
+event CapturePayment: (client: machine, order: int);
+event CaptureResp: (order: int, ok: bool);
+event Void: (order: int);
 
 // snappea: driver
 machine Payments {
@@ -25,32 +25,32 @@ machine Payments {
     entry (budget: int) {
       failures = budget;
     }
-    on eAuthorize do (r: (client: machine, order: int)) {
-      announce eAuthorized, (order = r.order,);
-      send r.client, eAuthorizeResp, (order = r.order,);
+    on Authorize do (r: (client: machine, order: int)) {
+      announce PaymentAuthorized, (order = r.order,);
+      send r.client, AuthorizeResp, (order = r.order,);
     }
-    on eCapture do (r: (client: machine, order: int)) {
+    on CapturePayment do (r: (client: machine, order: int)) {
       if (failures > 0 && $) {
         failures = failures - 1;
         if ($) {
           // Committed, but the reply is lost on the way back.
           Capture(r.order);
         }
-        send r.client, eCaptureResp, (order = r.order, ok = false);
+        send r.client, CaptureResp, (order = r.order, ok = false);
         return;
       }
       Capture(r.order);
-      send r.client, eCaptureResp, (order = r.order, ok = true);
+      send r.client, CaptureResp, (order = r.order, ok = true);
     }
-    on eVoid do (r: (order: int)) {
-      announce eVoided, (order = r.order,);
+    on Void do (r: (order: int)) {
+      announce Voided, (order = r.order,);
     }
   }
 
   fun Capture(order: int) {
     if (!(order in captured)) {
       captured += (order);
-      announce eCaptured, (order = order,);
+      announce Captured, (order = order,);
     }
   }
 }

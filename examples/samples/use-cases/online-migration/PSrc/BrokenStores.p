@@ -5,28 +5,28 @@
 // updated it lands after the writer's dual-write and overwrites the newer value.
 // tcBugBlindBackfill shows it.
 machine BlindCopyNewStore {
-  var rows: map[int, tRow];
+  var rows: map[int, Row];
 
   start state Serving {
-    on eNewWrite do (w: (client: machine, key: int, row: tRow)) {
+    on NewWrite do (w: (client: machine, key: int, row: Row)) {
       if (w.row.lsn > RowOf(rows, w.key).lsn) {
         Put(w.key, w.row);
       }
-      send w.client, eNewWritten, (key = w.key,);
+      send w.client, NewWritten, (key = w.key,);
     }
-    on eCopy do (w: (client: machine, key: int, row: tRow)) {
+    on Copy do (w: (client: machine, key: int, row: Row)) {
       // BUG: no version check.
       Put(w.key, w.row);
-      send w.client, eNewWritten, (key = w.key,);
+      send w.client, NewWritten, (key = w.key,);
     }
-    on eReadRow do (r: (client: machine, key: int)) {
-      send r.client, eRow, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, key: int)) {
+      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 
-  fun Put(key: int, row: tRow) {
+  fun Put(key: int, row: Row) {
     rows[key] = row;
-    announce eNewApplied, (key = key, row = row);
+    announce NewApplied, (key = key, row = row);
   }
 }
 
@@ -35,30 +35,30 @@ machine BlindCopyNewStore {
 // so a copy of the pre-delete row read before the delete inserts it again.
 // tcBugResurrectedDelete shows it.
 machine InsertIfAbsentNewStore {
-  var rows: map[int, tRow];
+  var rows: map[int, Row];
 
   start state Serving {
-    on eNewWrite do (w: (client: machine, key: int, row: tRow)) {
+    on NewWrite do (w: (client: machine, key: int, row: Row)) {
       if (w.row.deleted) {
         // Announced as the delete it applied; readers see no row either way.
         rows -= (w.key);
-        announce eNewApplied, (key = w.key, row = w.row);
+        announce NewApplied, (key = w.key, row = w.row);
       } else {
         rows[w.key] = w.row;
-        announce eNewApplied, (key = w.key, row = w.row);
+        announce NewApplied, (key = w.key, row = w.row);
       }
-      send w.client, eNewWritten, (key = w.key,);
+      send w.client, NewWritten, (key = w.key,);
     }
-    on eCopy do (w: (client: machine, key: int, row: tRow)) {
+    on Copy do (w: (client: machine, key: int, row: Row)) {
       // BUG: "absent" cannot tell "never copied" from "deleted since".
       if (!(w.key in rows)) {
         rows[w.key] = w.row;
-        announce eNewApplied, (key = w.key, row = w.row);
+        announce NewApplied, (key = w.key, row = w.row);
       }
-      send w.client, eNewWritten, (key = w.key,);
+      send w.client, NewWritten, (key = w.key,);
     }
-    on eReadRow do (r: (client: machine, key: int)) {
-      send r.client, eRow, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, key: int)) {
+      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 }
@@ -78,22 +78,22 @@ machine EagerRouter {
       oldStore = input.oldStore;
       newStore = input.newStore;
     }
-    on eBeginWrite do (writer: machine) {
-      send writer, eWriteGranted;
+    on BeginWrite do (writer: machine) {
+      send writer, WriteGranted;
     }
-    ignore eEndWrite, eReadDone;
-    on eRoute do (r: (client: machine, key: int)) {
+    ignore EndWrite, ReadDone;
+    on Route do (r: (client: machine, key: int)) {
       if (readsFromNew) {
-        send newStore, eReadRow, r;
+        send newStore, ReadRow, r;
       } else {
-        send oldStore, eReadRow, r;
+        send oldStore, ReadRow, r;
       }
     }
-    on eCutoverReq do (m: machine) {
+    on CutoverReq do (m: machine) {
       // BUG: in-flight reads and writes are not drained first.
       readsFromNew = true;
-      announce eCutover;
-      send m, eCutoverDone;
+      announce Cutover;
+      send m, CutoverDone;
     }
   }
 }

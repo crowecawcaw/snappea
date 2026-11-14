@@ -23,14 +23,14 @@ machine BothOffCall {
       var store: machine;
       var doctors: set[int];
       doctors = Roster(2);
-      announce eRosterStarted, (onCall = doctors, requests = 2);
+      announce RosterStarted, (onCall = doctors, requests = 2);
       store = new SnapshotStore(InitialRows(doctors));
-      announce eOffCallRequested, 1;
+      announce OffCallRequested, 1;
       new Doctor((owner = this, doctor = 1, store = store, doctors = doctors));
-      announce eOffCallRequested, 2;
+      announce OffCallRequested, 2;
       new Doctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
-    ignore eDoctorDone;
+    ignore DoctorDone;
   }
 }
 
@@ -40,14 +40,14 @@ machine RosterBothOffCall {
       var store: machine;
       var doctors: set[int];
       doctors = Roster(2);
-      announce eRosterStarted, (onCall = doctors, requests = 2);
+      announce RosterStarted, (onCall = doctors, requests = 2);
       store = new SnapshotStore(InitialRows(doctors));
-      announce eOffCallRequested, 1;
+      announce OffCallRequested, 1;
       new RosterDoctor((owner = this, doctor = 1, store = store, doctors = doctors));
-      announce eOffCallRequested, 2;
+      announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
-    ignore eDoctorDone;
+    ignore DoctorDone;
   }
 }
 
@@ -59,14 +59,14 @@ machine RosterTwoOfThree {
       var store: machine;
       var doctors: set[int];
       doctors = Roster(3);
-      announce eRosterStarted, (onCall = doctors, requests = 2);
+      announce RosterStarted, (onCall = doctors, requests = 2);
       store = new SnapshotStore(InitialRows(doctors));
-      announce eOffCallRequested, 1;
+      announce OffCallRequested, 1;
       new RosterDoctor((owner = this, doctor = 1, store = store, doctors = doctors));
-      announce eOffCallRequested, 2;
+      announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
-    ignore eDoctorDone;
+    ignore DoctorDone;
   }
 }
 
@@ -79,19 +79,19 @@ machine RosterOneAfterAnother {
   start state First {
     entry {
       doctors = Roster(2);
-      announce eRosterStarted, (onCall = doctors, requests = 2);
+      announce RosterStarted, (onCall = doctors, requests = 2);
       store = new SnapshotStore(InitialRows(doctors));
-      announce eOffCallRequested, 1;
+      announce OffCallRequested, 1;
       new RosterDoctor((owner = this, doctor = 1, store = store, doctors = doctors));
     }
-    on eDoctorDone goto Second;
+    on DoctorDone goto Second;
   }
   state Second {
     entry {
-      announce eOffCallRequested, 2;
+      announce OffCallRequested, 2;
       new RosterDoctor((owner = this, doctor = 2, store = store, doctors = doctors));
     }
-    ignore eDoctorDone;
+    ignore DoctorDone;
   }
 }
 
@@ -104,13 +104,13 @@ machine RosterUnrelatedCommit {
       var store: machine;
       var doctors: set[int];
       doctors = Roster(2);
-      announce eRosterStarted, (onCall = doctors, requests = 1);
+      announce RosterStarted, (onCall = doctors, requests = 1);
       store = new SnapshotStore(InitialRows(doctors));
-      announce eOffCallRequested, 1;
+      announce OffCallRequested, 1;
       new RosterDoctor((owner = this, doctor = 1, store = store, doctors = doctors));
       new PhoneUpdate(store);
     }
-    ignore eDoctorDone;
+    ignore DoctorDone;
   }
 }
 
@@ -120,13 +120,13 @@ machine PhoneUpdate {
     entry (store: machine) {
       var writes: map[int, int];
       writes[100] = 5550100;
-      send store, eSnapshotRead, this;
+      send store, SnapshotRead, this;
       receive {
-        case eSnapshot: (s: tSnapshot) {
-          send store, eCommit, (client = this, ts = s.ts, writes = writes);
+        case Snapshot: (s: Snapshot) {
+          send store, Commit, (client = this, ts = s.ts, writes = writes);
         }
       }
-      receive { case eCommitResult: (ok: bool) { assert ok, "an unrelated transaction aborted"; } }
+      receive { case CommitResult: (ok: bool) { assert ok, "an unrelated transaction aborted"; } }
     }
   }
 }
@@ -143,6 +143,6 @@ test tcFixedBothOffCall [main=RosterBothOffCall]:
 test tcFixedTwoOfThree [main=RosterTwoOfThree]:
   assert AlwaysSomeoneOnCall in { RosterTwoOfThree, SnapshotStore, RosterDoctor };
 
-// expect-bug: nobody is on call
+// snappea: expect-bug "nobody is on call"
 test tcBugWriteSkew [main=BothOffCall]:
   assert AlwaysSomeoneOnCall in { BothOffCall, SnapshotStore, Doctor };

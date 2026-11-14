@@ -44,13 +44,13 @@ A read-through is three of them, so a write and delete can land in between.
 
 | Test | Drives | Why it matters |
 | --- | --- | --- |
-| `tcStaleFillRace` | One reader (one read) and one writer, then the probe | The core race, every schedule: a fill computed before the write arrives after the delete |
+| `tcStaleFillRace` | One reader (one read) and one writer, then the probe | The core race: a fill computed before the write arrives after the delete |
 | `tcTwoReadersOneWriter` | Two readers and one writer, then the probe | A second miss replaces the first lease; hits on a filled cache while a write is in flight |
 | `tcGeneratedWorkload` | Readers read once or twice, the writer writes once or twice | Repeated invalidation, leases revoked by either write |
 | `tcReadWriteRead` | Fill, then a completed write, then a read, in order | Lifecycle boundary: the entry filled before the write must not be served after it |
-| `tcBugNaiveCache` | The core race against `NaiveCache` | **Expected to fail**: `cache holds stale value 0 at quiescence; database has 1` |
+| `tcBugNaiveCache` | The core race against `NaiveCache` | **Expected bug**: `cache holds stale value 0 at quiescence; database has 1` |
 
-After the clients finish, the driver announces `eQuiesced` and runs a probe reader that
+After the clients finish, the driver announces `Quiesced` and runs a probe reader that
 reads twice. That turns "stale indefinitely" into a finite check: a stale entry is
 served to the probe, and a cache that refuses every fill never serves the probe's
 second read.
@@ -59,12 +59,12 @@ second read.
 
 ```sh
 snappea check tcStaleFillRace tcTwoReadersOneWriter tcGeneratedWorkload tcReadWriteRead --deny mutation
-snappea check tcBugNaiveCache      # exits 1 with the stale value above
+snappea check tcBugNaiveCache      # passes only when the declared failure is found
 ```
 
-`tcStaleFillRace` (650 schedules) and `tcReadWriteRead` explore every schedule. The
-two-reader tests are sampled: every ordering of two readers and a writer is about
-90,000 schedules (about 40 s).
+The small stale-fill and lifecycle tests isolate the core races. The generated
+and multi-reader tests explore a larger space and may be sampled. Check each
+run's `search_complete` field; a passing sampled run is not an exhaustive result.
 
 ## Bounds and omissions
 
@@ -81,16 +81,16 @@ revoked by any of them), and multiple keys.
   every check passed. Announcing `fromCache` with each read result, and requiring the
   probe's second read to come from the cache, made "the cache is used" checkable.
 - Mirroring the cache's contents in the spec (fills, invalidations, hits, misses)
-  caught a dropped `eInvalidated` announcement and a miss reported while filled.
+  caught a dropped `Invalidated` announcement and a miss reported while filled.
 - A broad `allow mutation` on the lease counter hid a real mutant (removing the
   increment makes every lease 0, so a revoked lease matches again). Scope suppressions
   to the kind: `allow mutation:swap-operator`.
 
 ## Testing the implementation
 
-Emit `eDbCommitted` after the database commit, `eCacheHit`, `eCacheMiss`,
-`eCacheFilled` and `eInvalidated` from the cache client wrapper after each call
-returns, and `eReadStarted`/`eReadReturned`/`eWriteDone` from the application. To force
+Emit `DatabaseCommitted` after the database commit, `CacheHit`, `CacheMiss`,
+`CacheFilled` and `Invalidated` from the cache client wrapper after each call
+returns, and `ReadStarted`/`ReadReturned`/`WriteDone` from the application. To force
 the race, block the reader between its database read and its cache set until the
 writer's delete has returned, then release it: the set must be refused, and a
 following read must miss.

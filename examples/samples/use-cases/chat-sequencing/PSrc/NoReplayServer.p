@@ -7,16 +7,16 @@ machine NoReplayServer {
   var conns: set[machine];
 
   start state Serving {
-    on ePost do (p: (msg: int)) {
+    on Post do (p: (msg: int)) {
       var c: machine;
       next = next + 1;
-      announce eSequenced, (sn = next, msg = p.msg);
+      announce Sequenced, (sn = next, msg = p.msg);
       foreach (c in conns) {
-        send c, eDeliver, (sn = next, msg = p.msg);
+        send c, Deliver, (sn = next, msg = p.msg);
       }
     }
     // BUG: `after` is ignored; nothing is replayed.
-    on eSubscribe do (s: (conn: machine, after: int)) {
+    on Subscribe do (s: (conn: machine, after: int)) {
       conns += (s.conn);
     }
   }

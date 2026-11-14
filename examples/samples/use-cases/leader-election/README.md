@@ -59,14 +59,14 @@ durable; everything else is volatile.
 | `tcFourNodesOneDown` | Four nodes, one never answers; node 1 stands | Exactly at the boundary: two votes of four are half, not a majority, and must not win; three must |
 | `tcDeposedLeader` | Node 1 stands in term 1, node 3 (restarted at term 5) in term 6; a client request to node 1 at any moment | A leader that sees a higher term in a request or a reply must stop accepting requests |
 | `tcGeneratedElection` | One or two candidates, maybe a crash and restart of a non-candidate | Crashes at any moment, including between granting one candidate and seeing the other |
-| `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | **Expected to fail**: `node 3 voted twice in term 1: for 2 and for 1` |
+| `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | **Expected bug**: `node 3 voted twice in term 1: for 2 and for 1` |
 
 ## Run
 
 ```sh
 snappea check tcTwoCandidates tcSplitVote tcHigherTermReply tcStaleVoteReply tcOneNodeDown \
   tcFourNodesOneDown tcDeposedLeader tcGeneratedElection --timeout 30s --deny mutation
-snappea check tcBugVoteNotPersisted      # exits 1 with the double vote above
+snappea check tcBugVoteNotPersisted      # passes when it finds the double vote above
 ```
 
 `tcTwoCandidates` (8k schedules), `tcStaleVoteReply`, `tcOneNodeDown` and
@@ -78,18 +78,21 @@ sampled: the uncontested rounds pick any node, so their search does not finish i
 ## Bounds and omissions
 
 Three nodes (four in `tcFourNodesOneDown`), at most two contested candidates, at most
-one crash. A crash and its restart are one step, and only a follower crashes: requests
+one crash. A crash and its restart are one step; only a node that never stands
+for election crashes. Requests
 to a crashed node are retried, so they are modeled as delayed, not lost. Not modeled:
 the log, heartbeats, pre-vote, and message loss without retry. A leader's only action
 is accepting a client request, which is how `tcDeposedLeader` observes a missed
-step-down. A *candidate* that misses one acts exactly like a follower (it counts only
-replies for its own term, refuses clients, stands again on its next timeout), so those
-two `goto Follower` lines carry mutation suppressions.
+step-down. Within this fault boundary, a candidate that misses its step-down has
+the same outcomes as a follower: it refuses clients, counts replies for its own term,
+and stands again on timeout. Two `goto Follower` suppressions cover that bounded
+equivalence. The tool still warns that `Crash` is handled differently in these states;
+that warning matters if the environment is extended to crash former candidates.
 Raft persists `votedFor` so a retried request from the same candidate is granted again;
 with no retries, "voted in this term" is the whole rule here.
 
 The uncontested round is the progress assumption made concrete: a candidate that hears
-every reply without winning tells the driver (`eRoundLost`), and once every candidate of
+every reply without winning tells the driver (`RoundLost`), and once every candidate of
 the round has, the driver fires one node's timer alone. Without such an assumption a
 bounded checker can always find split votes that repeat until the bound.
 
@@ -99,24 +102,34 @@ bounded checker can always find split votes that repeat until the bound.
   its round ("heard every reply, lost") before counting the grant in that same last
   reply, so it reported a loss and then became leader. The check "never report losing a
   term you won" exists because the driver announces what it was told
-  (`eLossReported`).
-- Safety alone left 30 mutants alive. Announcing every answer (`eAnswered`, not only
+  (`LossReported`).
+- Safety alone left 30 mutants alive. Announcing every answer (`VoteAnswered`, not only
   grants) let `CandidaciesConclude` check that "heard all replies" is true, and
-  announcing each node's starting disk state (`eDisk`) made restored terms checkable.
+  announcing each node's starting disk state (`Disk`) made restored terms checkable.
 - `tcOneNodeDown` is the only test where unanimity and majority differ.
 - An earlier version suppressed the leader's step-down mutants as unobservable
   ("voting only"). They were not equivalent: a deposed leader kept accepting work.
-  Giving the leader one observable action (`eClientAnswered`) and a scenario that
+  Giving the leader one observable action (`ClientAnswered`) and a scenario that
   deposes it (`tcDeposedLeader`) replaced six suppressions with assertions. A
   hard-coded `votes >= 2` needed a coverage suppression; the general majority rule
   with a four-node test checks the even-size boundary instead.
 
 ## Testing the implementation
 
-Emit `eStood` after the candidate persists its term and self-vote, `eAnswered` after a
-voter persists and before it replies, `eBecameLeader` on the role change, and
-`eClientAnswered` where a node accepts or redirects a client write. To force
+Emit `ElectionStarted` after the candidate persists its term and self-vote, `VoteAnswered` after a
+voter persists and before it replies, `BecameLeader` on the role change, and
+`ClientAnswered` where a node accepts or redirects a client write. To force
 the persistence race: let node 3 grant node 1, crash and restart node 3 before node 2's
 request reaches it (hold that request in a test transport), then deliver it. The
 restarted node must refuse. To force a deposed leader: once node 1 leads, deliver a
 RequestVote with a higher term to it, then send it a client write; it must redirect.
+
+Negative controls declare `// snappea: expect-bug "message"`. A matching bug
+passes the test; a different failure or no discovered bug fails it. Check their
+failure identity across seeds with `snappea check 'tcBug*' --no-mutation
+--expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
+not fill coverage gaps or detect mutants in the correct design.
+
+Search is complete only when this run reports `all N schedules` (or JSON
+`search_complete: true`). A timeout, seed, or historical schedule count does not
+guarantee completeness. An incomplete passing run is sampled evidence.

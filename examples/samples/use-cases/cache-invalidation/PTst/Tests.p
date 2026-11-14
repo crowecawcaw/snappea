@@ -1,18 +1,18 @@
 // Drivers. Readers and the writer run the application's algorithm, so they live in
 // PSrc; only these setup machines are drivers.
 
-type tWorkload = (cache: machine, reads: seq[int], writes: seq[int]);
+type WorkloadConfig = (cache: machine, reads: seq[int], writes: seq[int]);
 
 // Runs the readers (reads[i] reads for reader i + 1) and one writer concurrently. When
 // all have finished it announces quiescence and runs a probe reader that reads twice:
 // the first read may fill the cache, the second must hit with the database's value.
 machine Workload {
-  var w: tWorkload;
+  var w: WorkloadConfig;
   var db: Database;
   var running: int;
 
   start state Concurrent {
-    entry (input: tWorkload) {
+    entry (input: WorkloadConfig) {
       var i: int;
       var ops: int;
       w = input;
@@ -22,7 +22,7 @@ machine Workload {
         ops = ops + w.reads[i];
         i = i + 1;
       }
-      announce eWorkPlanned, ops;
+      announce WorkPlanned, ops;
       i = 0;
       while (i < sizeof(w.reads)) {
         new Reader((owner = this, cache = w.cache, db = db, id = i + 1, reads = w.reads[i]));
@@ -31,7 +31,7 @@ machine Workload {
       new Writer((owner = this, cache = w.cache, db = db, writes = w.writes));
       running = sizeof(w.reads) + 1;
     }
-    on eClientDone do {
+    on ClientDone do {
       running = running - 1;
       if (running == 0) { goto Probe; }
     }
@@ -39,11 +39,11 @@ machine Workload {
 
   state Probe {
     entry {
-      announce eQuiesced;
-      announce eWorkPlanned, 2;
+      announce Quiesced;
+      announce WorkPlanned, 2;
       new Reader((owner = this, cache = w.cache, db = db, id = 99, reads = 2));
     }
-    on eClientDone do { announce eProbeDone; }
+    on ClientDone do { announce ProbeDone; }
   }
 }
 
@@ -107,18 +107,18 @@ machine ReadWriteRead {
     entry {
       cache = new LeaseCache();
       db = new Database();
-      announce eWorkPlanned, 4;
+      announce WorkPlanned, 4;
       new Reader((owner = this, cache = cache, db = db, id = 1, reads = 2));
     }
-    on eClientDone goto Write;
+    on ClientDone goto Write;
   }
   state Write {
     entry { new Writer((owner = this, cache = cache, db = db, writes = Seq1(1))); }
-    on eClientDone goto SecondRead;
+    on ClientDone goto SecondRead;
   }
   state SecondRead {
     entry { new Reader((owner = this, cache = cache, db = db, id = 1, reads = 1)); }
-    ignore eClientDone;
+    ignore ClientDone;
   }
 }
 
@@ -146,7 +146,7 @@ test tcReadWriteRead [main=ReadWriteRead]:
   assert CacheFresh, OperationsFinish in
   { ReadWriteRead, Database, LeaseCache, Reader, Writer };
 
-// expect-bug: stale value
+// snappea: expect-bug "stale value"
 test tcBugNaiveCache [main=BuggyStaleFillRace]:
   assert CacheFresh, OperationsFinish in
   { BuggyStaleFillRace, Workload, Database, NaiveCache, Reader, Writer };

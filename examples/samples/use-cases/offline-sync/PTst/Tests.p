@@ -5,12 +5,12 @@
 //   Reliable:   delivers it.
 //   LoseReply:  drops it; the client times out and resends.
 //   DelayReply: delivers it late; the client times out, resends, and gets both replies.
-enum tFault { Reliable, LoseReply, DelayReply }
+enum Fault { Reliable, LoseReply, DelayReply }
 
 // One user's offline change. `edit` names it; client `client` makes it.
-type tOp = (client: int, edit: int, isDelete: bool, fault: tFault);
+type Op = (client: int, edit: int, isDelete: bool, fault: Fault);
 
-fun InitialNote(): tNote {
+fun InitialNote(): Note {
   var c: set[int];
   c += (0);
   return (version = 1, content = c, deleted = false);
@@ -18,61 +18,51 @@ fun InitialNote(): tNote {
 
 // The network between one client and the server. It forwards requests and replies, and
 // applies its fault to the first update reply: the client then sees a timeout, and the
-// reply is lost or handed to a Courier that delivers it later.
+// reply is lost or handed to a BBDelivery that delivers it later.
 machine LossyLink {
   var server: machine;
   var client: machine;
   var clientId: int;
-  var fault: tFault;
+  var fault: Fault;
 
   start state Forwarding {
-    entry (input: (server: machine, fault: tFault)) {
+    entry (input: (server: machine, fault: Fault)) {
       server = input.server;
       fault = input.fault;
     }
-    on eUpdate do (u: tUpdate) {
+    on Update do (u: Update) {
       client = u.client;
       clientId = u.clientId;
-      send server, eUpdate, (client = this, clientId = u.clientId, req = u.req, base = u.base,
+      send server, Update, (client = this, clientId = u.clientId, req = u.req, base = u.base,
                              content = u.content, deleted = u.deleted);
     }
-    on eUpdateOk do (r: (req: int, version: int)) {
-      if (TimedOut(eUpdateOk, r)) { return; }
-      send client, eUpdateOk, r;
+    on UpdateOk do (r: (req: int, version: int)) {
+      if (TimedOut(UpdateOk, r)) { return; }
+      send client, UpdateOk, r;
     }
-    on eUpdateConflict do (r: (req: int, server: tNote)) {
-      if (TimedOut(eUpdateConflict, r)) { return; }
-      send client, eUpdateConflict, r;
+    on UpdateConflict do (r: (req: int, server: Note)) {
+      if (TimedOut(UpdateConflict, r)) { return; }
+      send client, UpdateConflict, r;
     }
-    on eFetch do (c: machine) {
+    on Fetch do (c: machine) {
       client = c;
-      send server, eFetch, this;
+      send server, Fetch, this;
     }
-    on eFetchResp do (n: tNote) {
-      send client, eFetchResp, n;
+    on FetchResp do (n: Note) {
+      send client, FetchResp, n;
     }
   }
 
   // Applies the fault to this reply, once. Returns whether the reply was taken away.
-  fun TimedOut(e: event, payload: any): bool {
+  fun TimedOut(reply: event, payload: any): bool {
     if (fault == Reliable) { return false; }
-    announce eTimedOut, (client = clientId,);
-    send client, eSyncTimeout;
+    announce RequestTimedOut, (client = clientId,);
+    send client, SyncTimeout;
     if (fault == DelayReply) {
-      new Courier((dest = client, e = e, payload = payload));
+      new BBDelivery((destination = client, message = reply, payload = payload));
     }
     fault = Reliable;
     return true;
-  }
-}
-
-// Delivers one late reply. A separate sender, so the reply can arrive at any point
-// after the timeout, before or after anything the link sends later.
-machine Courier {
-  start state Carrying {
-    entry (d: (dest: machine, e: event, payload: any)) {
-      send d.dest, d.e, d.payload;
-    }
   }
 }
 
@@ -83,14 +73,14 @@ machine SyncDriver {
   var idle: int;
 
   start state Running {
-    entry (input: (server: machine, ops: seq[tOp])) {
-      var op: tOp;
-      var initial: tNote;
+    entry (input: (server: machine, ops: seq[Op])) {
+      var op: Op;
+      var initial: Note;
       var server: machine;
       initial = InitialNote();
-      announce eSyncPlanned, (clients = sizeof(input.ops), initial = initial);
+      announce SyncPlanned, (clients = sizeof(input.ops), initial = initial);
       foreach (op in input.ops) {
-        announce eOpPlanned, (client = op.client, edit = op.edit, isDelete = op.isDelete);
+        announce OpPlanned, (client = op.client, edit = op.edit, isDelete = op.isDelete);
         // Only a client with a faulty reply talks through a link, which keeps the other
         // schedules small.
         server = input.server;
@@ -101,20 +91,20 @@ machine SyncDriver {
           note = initial, edit = op.edit, isDelete = op.isDelete)));
       }
     }
-    on eClientIdle do {
+    on ClientIdle do {
       var c: SyncClient;
       idle = idle + 1;
       if (idle == sizeof(clients)) {
         foreach (c in clients) {
-          send c, ePull;
+          send c, Pull;
         }
       }
     }
   }
 }
 
-fun Ops2(a: tOp, b: tOp): seq[tOp] {
-  var ops: seq[tOp];
+fun Ops2(a: Op, b: Op): seq[Op] {
+  var ops: seq[Op];
   ops += (0, a);
   ops += (1, b);
   return ops;
@@ -175,9 +165,9 @@ machine SlowReply {
 machine GeneratedSync {
   start state Init {
     entry {
-      var ops: seq[tOp];
+      var ops: seq[Op];
       var i: int;
-      var fault: tFault;
+      var fault: Fault;
       while (i < 3) {
         fault = Reliable;
         if ($) { fault = LoseReply; } else if ($) { fault = DelayReply; }
@@ -202,7 +192,7 @@ machine BuggyLastWriterWins {
 machine BuggyNoRequestIds {
   start state Init {
     entry {
-      var ops: seq[tOp];
+      var ops: seq[Op];
       ops += (0, (client = 1, edit = 11, isDelete = false, fault = LoseReply));
       new SyncDriver((server = new ForgetfulServer(InitialNote()), ops = ops));
     }
@@ -212,71 +202,63 @@ machine BuggyNoRequestIds {
 // The SlowReply scenario with a client that treats every conflict as fresh. It is its
 // own driver, so SyncDriver stays free of branches only this test would take.
 machine BuggyStaleReply {
-  var idle: int;
-  var clients: seq[machine];
   start state Running {
     entry {
-      var initial: tNote;
+      var initial: Note;
       var server: machine;
       initial = InitialNote();
       server = new NoteServer(initial);
-      announce eSyncPlanned, (clients = 2, initial = initial);
-      announce eOpPlanned, (client = 1, edit = 11, isDelete = false);
-      announce eOpPlanned, (client = 2, edit = 21, isDelete = false);
-      clients += (0, new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = DelayReply)),
-        id = 1, note = initial, edit = 11, isDelete = false)));
-      clients += (1, new SyncClient((owner = this, server = server, id = 2, note = initial, edit = 21, isDelete = false)));
+      announce SyncPlanned, (clients = 2, initial = initial);
+      announce OpPlanned, (client = 1, edit = 11, isDelete = false);
+      announce OpPlanned, (client = 2, edit = 21, isDelete = false);
+      new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = DelayReply)),
+        id = 1, note = initial, edit = 11, isDelete = false));
+      new SyncClient((owner = this, server = server, id = 2, note = initial, edit = 21, isDelete = false));
     }
-    on eClientIdle do {
-      var c: machine;
-      idle = idle + 1;
-      if (idle == 2) {
-        foreach (c in clients) { send c, ePull; }
-      }
-    }
+    // This control checks the stale-conflict safety failure, before a final pull.
+    ignore ClientIdle;
   }
 }
 
 // Covered: a delete landed first and a concurrent edit brought the note back.
-scenario EditRestoresDeletedNote observes eAccepted {
+scenario EditRestoresDeletedNote observes Accepted {
   start hot state WaitDelete {
-    on eAccepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
+    on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       if (a.deleted) { goto WaitRestore; }
     }
   }
   hot state WaitRestore {
-    on eAccepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
+    on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       if (!a.deleted) { goto Covered; }
     }
   }
   cold state Covered {
-    ignore eAccepted;
   }
 }
 
 test tcTwoEditorsSameBase [main=TwoEditorsSameBase]:
-  assert NoLostUpdates, SyncCompletes in { TwoEditorsSameBase, SyncDriver, LossyLink, Courier, NoteServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { TwoEditorsSameBase, SyncDriver, LossyLink, BBDelivery, NoteServer, SyncClient };
 
 test tcLostReplyRetry [main=LostReplyRetry]:
-  assert NoLostUpdates, SyncCompletes in { LostReplyRetry, SyncDriver, LossyLink, Courier, NoteServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { LostReplyRetry, SyncDriver, LossyLink, BBDelivery, NoteServer, SyncClient };
 
 test tcSlowReply [main=SlowReply]:
-  assert NoLostUpdates, SyncCompletes in { SlowReply, SyncDriver, LossyLink, Courier, NoteServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { SlowReply, SyncDriver, LossyLink, BBDelivery, NoteServer, SyncClient };
 
 test tcEditVsDelete [main=EditVsDelete]:
-  assert NoLostUpdates, SyncCompletes in { EditVsDelete, SyncDriver, LossyLink, Courier, NoteServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { EditVsDelete, SyncDriver, LossyLink, BBDelivery, NoteServer, SyncClient };
 
 test tcGeneratedSync [main=GeneratedSync]:
-  assert NoLostUpdates, SyncCompletes in { GeneratedSync, SyncDriver, LossyLink, Courier, NoteServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { GeneratedSync, SyncDriver, LossyLink, BBDelivery, NoteServer, SyncClient };
 
-// expect-bug: based on version 1 overwrote version 2
+// snappea: expect-bug "based on version 1 overwrote version 2"
 test tcBugLastWriterWins [main=BuggyLastWriterWins]:
-  assert NoLostUpdates, SyncCompletes in { BuggyLastWriterWins, SyncDriver, LossyLink, Courier, LastWriterWinsServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { BuggyLastWriterWins, SyncDriver, LossyLink, BBDelivery, LastWriterWinsServer, SyncClient };
 
-// expect-bug: conflicted with itself
+// snappea: expect-bug "conflicted with itself"
 test tcBugNoRequestIds [main=BuggyNoRequestIds]:
-  assert NoLostUpdates, SyncCompletes in { BuggyNoRequestIds, SyncDriver, LossyLink, Courier, ForgetfulServer, SyncClient };
+  assert NoLostUpdates, SyncCompletes in { BuggyNoRequestIds, SyncDriver, LossyLink, BBDelivery, ForgetfulServer, SyncClient };
 
-// expect-bug: took a late reply as fresh
+// snappea: expect-bug "took a late reply as fresh"
 test tcBugStaleReply [main=BuggyStaleReply]:
-  assert NoLostUpdates, SyncCompletes in { BuggyStaleReply, LossyLink, Courier, NoteServer, SyncClient, NaiveSyncClient };
+  assert NoLostUpdates, SyncCompletes in { BuggyStaleReply, LossyLink, BBDelivery, NoteServer, SyncClient, NaiveSyncClient };

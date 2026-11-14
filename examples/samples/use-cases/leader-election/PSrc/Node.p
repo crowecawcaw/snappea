@@ -11,7 +11,7 @@
 // candidate is granted again; this model has no retries, so "voted in this term" is
 // the whole rule.)
 //
-// Crash: eCrash is a crash followed by a restart, in one step, and only followers
+// Crash: Crash is a crash followed by a restart, in one step, and only followers
 // crash in these tests. RequestVote is retried until answered, so requests sent while
 // the node was down count as delayed, not lost, and the time it spent down is just
 // more message delay, which the scheduler already explores. What a crash can break is
@@ -19,22 +19,22 @@
 
 // The election timer fired. The timer service hands the candidate the current
 // membership (its peers) and whom to tell if it loses.
-event eTimeout: (peers: seq[machine], driver: machine);
-event eVoteReq: (term: int, candidate: machine, cid: int);
+event ElectionTimeout: (peers: seq[machine], driver: machine);
+event VoteReq: (term: int, candidate: machine, cid: int);
 // reqTerm: the term the request was for; term: the voter's term after handling it.
-event eVoteResp: (reqTerm: int, term: int, granted: bool);
-event eCrash;
+event VoteResp: (reqTerm: int, term: int, granted: bool);
+event Crash;
 // To the timer service: this node heard every reply to its candidacy for `term` and
 // did not win. When every candidate of a round has lost, the service lets one timer
 // fire alone.
-event eRoundLost: (id: int, term: int);
+event RoundLost: (id: int, term: int);
 
 // A client request, such as a write, that only the leader may accept. The node
-// announces its answer (eClientAnswered); the reply to the client is not modeled.
-event eClientReq;
+// announces its answer (ClientAnswered); the reply to the client is not modeled.
+event ClientReq;
 
 // Durable state a node starts from (all zero for a fresh node).
-type tDisk = (id: int, term: int, votedTerm: int);
+type Disk = (id: int, term: int, votedTerm: int);
 
 machine Node {
   // Durable.
@@ -51,7 +51,7 @@ machine Node {
   var leaderTerm: int;
 
   start state Init {
-    entry (d: tDisk) {
+    entry (d: Disk) {
       id = d.id;
       term = d.term;
       votedTerm = d.votedTerm;
@@ -60,14 +60,14 @@ machine Node {
   }
 
   state Follower {
-    on eTimeout goto Candidate;
+    on ElectionTimeout goto Candidate;
     // A follower that adopts a higher term stays a follower.
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
-    on eClientReq do { Answer(false); }
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
+    on ClientReq do { Answer(false); }
     // Crash and restart. A follower's volatile fields are unused until its next
     // candidacy resets them, and durable fields survive, so nothing changes.
-    ignore eCrash;
+    ignore Crash;
   }
 
   state Candidate {
@@ -77,23 +77,23 @@ machine Node {
       driver = t.driver;
       term = term + 1;
       votedTerm = term;
-      announce eStood, (id = id, term = term);
+      announce ElectionStarted, (id = id, term = term);
       electionTerm = term;
       votes = 1;
       replies = 0;
       foreach (p in peers) {
-        send p, eVoteReq, (term = term, candidate = this, cid = id);
+        send p, VoteReq, (term = term, candidate = this, cid = id);
       }
     }
     // A new timeout starts a new election in a higher term; replies to the old one are stale.
-    on eTimeout goto Candidate;
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
+    on ElectionTimeout goto Candidate;
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
-        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
+        // snappea-lint: allow mutation:remove-statement -- equivalent for the tested events: term gates voting and clients; crash injection excludes candidates and former candidates
         goto Follower;
       }
     }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
       // Count the grant before HandleReply concludes the round, so the last reply can
       // be the winning one. Only grants for the current term count: a reply to an
       // older candidacy is stale.
@@ -103,29 +103,29 @@ machine Node {
         if (votes * 2 > sizeof(peers) + 1) { leaderTerm = term; }
       }
       if (HandleReply(p)) {
-        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
+        // snappea-lint: allow mutation:remove-statement -- equivalent for the tested events: term gates voting and clients; crash injection excludes candidates and former candidates
         goto Follower;
       }
       if (leaderTerm == term) { goto Leader; }
     }
-    on eClientReq do { Answer(false); }
+    on ClientReq do { Answer(false); }
   }
 
   state Leader {
     entry {
-      announce eBecameLeader, (id = id, term = term);
+      announce BecameLeader, (id = id, term = term);
     }
     // A leader's heartbeats keep its own timer from firing.
-    ignore eTimeout;
+    ignore ElectionTimeout;
     // Only the leader accepts client requests. A leader that missed a step-down would
     // accept them in a term it did not win.
-    on eClientReq do { Answer(true); }
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
+    on ClientReq do { Answer(true); }
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
         goto Follower;
       }
     }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
       if (HandleReply(p)) {
         goto Follower;
       }
@@ -135,7 +135,7 @@ machine Node {
   // Accept a client request as leader, or refuse it (a real node would redirect to
   // the leader it knows). The answer is the commit point.
   fun Answer(accepted: bool) {
-    announce eClientAnswered, (id = id, term = term, accepted = accepted);
+    announce ClientAnswered, (id = id, term = term, accepted = accepted);
   }
 
   // Returns true when a higher term means this node must step down to follower.
@@ -150,8 +150,8 @@ machine Node {
       votedTerm = term;
       grant = true;
     }
-    announce eAnswered, (voter = id, candidate = r.cid, reqTerm = r.term, term = term, granted = grant);
-    send r.candidate, eVoteResp, (reqTerm = r.term, term = term, granted = grant);
+    announce VoteAnswered, (voter = id, candidate = r.cid, reqTerm = r.term, term = term, granted = grant);
+    send r.candidate, VoteResp, (reqTerm = r.term, term = term, granted = grant);
     return stepDown;
   }
 
@@ -161,8 +161,8 @@ machine Node {
     if (p.reqTerm == electionTerm) {
       replies = replies + 1;
       if (replies == sizeof(peers)) {
-        announce eHeardAll, (id = id, term = electionTerm);
-        if (leaderTerm != electionTerm) { send driver, eRoundLost, (id = id, term = electionTerm); }
+        announce HeardAll, (id = id, term = electionTerm);
+        if (leaderTerm != electionTerm) { send driver, RoundLost, (id = id, term = electionTerm); }
       }
     }
     if (p.term > term) {

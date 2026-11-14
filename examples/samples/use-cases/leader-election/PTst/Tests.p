@@ -2,7 +2,7 @@
 
 // timeouts: indexes of nodes whose timers fire together in the contested round.
 // crash: index of a node that crashes once and restarts, or -1.
-type tElection = (nodes: seq[machine], timeouts: seq[int], crash: int);
+type ElectionSetup = (nodes: seq[machine], timeouts: seq[int], crash: int);
 
 // Fires the contested round's timeouts and crashes one voter at a moment the scheduler
 // picks. When every candidate has heard back from the whole cluster and none won, one node's timer fires alone: the "eventually one candidate
@@ -12,23 +12,23 @@ machine Election {
   var waiting: int;
 
   start state Contested {
-    entry (e: tElection) {
+    entry (e: ElectionSetup) {
       var i: int;
       nodes = e.nodes;
-      announce eElectionsStarted;
+      announce ElectionsStarted;
       foreach (i in e.timeouts) {
         Timeout(this, nodes, i);
       }
       // Sent last, but the candidates' requests race with it, so the crash can land
       // before, between or after the requests in the victim's queue.
       if (e.crash >= 0) {
-        send nodes[e.crash], eCrash;
+        send nodes[e.crash], Crash;
       }
       waiting = sizeof(e.timeouts);
     }
     // A winner never reports, so this waits forever once someone has won.
-    on eRoundLost do (r: (id: int, term: int)) {
-      announce eLossReported, r;
+    on RoundLost do (r: (id: int, term: int)) {
+      announce LossReported, r;
       waiting = waiting - 1;
       if (waiting == 0) { goto Uncontested; }
     }
@@ -38,8 +38,8 @@ machine Election {
   // the highest term, and so has everyone else: fire one timer alone again.
   state Uncontested {
     entry { Timeout(this, nodes, choose(3)); }
-    on eRoundLost do (r: (id: int, term: int)) {
-      announce eLossReported, r;
+    on RoundLost do (r: (id: int, term: int)) {
+      announce LossReported, r;
       goto Uncontested;
     }
   }
@@ -53,18 +53,18 @@ fun Timeout(driver: machine, nodes: seq[machine], i: int) {
     if (j != i) { peers += (sizeof(peers), nodes[j]); }
     j = j + 1;
   }
-  send nodes[i], eTimeout, (peers = peers, driver = driver);
+  send nodes[i], ElectionTimeout, (peers = peers, driver = driver);
 }
 
 // Starts a node from durable state, telling the specs what that state is.
-fun NewNode(d: tDisk): machine {
-  announce eDisk, d;
+fun NewNode(d: Disk): machine {
+  announce Disk, d;
   return new Node(d);
 }
 
 fun ThreeNodes(): seq[machine] {
   var nodes: seq[machine];
-  announce eClusterSize, 3;
+  announce ClusterSize, 3;
   while (sizeof(nodes) < 3) { nodes += (sizeof(nodes), NewNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0))); }
   return nodes;
 }
@@ -93,7 +93,7 @@ machine SplitVote {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 3;
+      announce ClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 1, votedTerm = 1)));
@@ -114,7 +114,7 @@ machine HigherTermReply {
       var t: seq[int];
       var term2: int;
       if ($) { term2 = 5; }
-      announce eClusterSize, 3;
+      announce ClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = term2, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 5, votedTerm = 0)));
@@ -127,7 +127,7 @@ machine HigherTermReply {
 // A peer that is down for good: requests to it are never answered.
 machine Unreachable {
   start state Down {
-    ignore eVoteReq;
+    ignore VoteReq;
   }
 }
 
@@ -137,14 +137,14 @@ machine OneNodeDown {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 3;
+      announce ClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, new Unreachable());
-      announce eElectionsStarted;
+      announce ElectionsStarted;
       Timeout(this, nodes, 0);
     }
-    ignore eRoundLost;
+    ignore RoundLost;
   }
 }
 
@@ -155,15 +155,15 @@ machine FourNodesOneDown {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 4;
+      announce ClusterSize, 4;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 0, votedTerm = 0)));
       nodes += (3, new Unreachable());
-      announce eElectionsStarted;
+      announce ElectionsStarted;
       Timeout(this, nodes, 0);
     }
-    ignore eRoundLost;
+    ignore RoundLost;
   }
 }
 
@@ -201,11 +201,11 @@ machine StaleVoteReply {
     entry {
       var nodes: seq[machine];
       nodes = ThreeNodes();
-      announce eElectionsStarted;
+      announce ElectionsStarted;
       Timeout(this, nodes, 0);
       Timeout(this, nodes, 0);
     }
-    ignore eRoundLost;
+    ignore RoundLost;
   }
 }
 
@@ -213,8 +213,8 @@ machine StaleVoteReply {
 machine Prober {
   start state Probing {
     entry (node: machine) {
-      announce eProbeSent;
-      send node, eClientReq;
+      announce ProbeSent;
+      send node, ClientReq;
     }
   }
 }
@@ -228,17 +228,17 @@ machine DeposedLeader {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 3;
+      announce ClusterSize, 3;
       nodes += (0, NewNode((id = 1, term = 0, votedTerm = 0)));
       nodes += (1, NewNode((id = 2, term = 0, votedTerm = 0)));
       nodes += (2, NewNode((id = 3, term = 5, votedTerm = 0)));
-      announce eElectionsStarted;
+      announce ElectionsStarted;
       Timeout(this, nodes, 0);
       Timeout(this, nodes, 2);
       new Prober(nodes[0]);
     }
     // Node 1 loses when node 3's term reaches it first; no further round is needed.
-    ignore eRoundLost;
+    ignore RoundLost;
   }
 }
 
@@ -248,9 +248,9 @@ machine BuggyTwoCandidatesVoterCrash {
   start state Init {
     entry {
       var nodes: seq[machine];
-      announce eClusterSize, 3;
+      announce ClusterSize, 3;
       while (sizeof(nodes) < 3) {
-        announce eDisk, (id = sizeof(nodes) + 1, term = 0, votedTerm = 0);
+        announce Disk, (id = sizeof(nodes) + 1, term = 0, votedTerm = 0);
         nodes += (sizeof(nodes), new ForgetfulNode((id = sizeof(nodes) + 1, term = 0, votedTerm = 0)));
       }
       new Election((nodes = nodes, timeouts = Indexes2(0, 1), crash = 2));
@@ -292,7 +292,7 @@ test tcStaleVoteReply [main=StaleVoteReply]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { StaleVoteReply, Node };
 
-// expect-bug: voted twice in term
+// snappea: expect-bug "voted twice in term"
 test tcBugVoteNotPersisted [main=BuggyTwoCandidatesVoterCrash]:
   assert ElectionSafety, SomeLeaderElected, CandidaciesConclude in
   { BuggyTwoCandidatesVoterCrash, Election, ForgetfulNode };

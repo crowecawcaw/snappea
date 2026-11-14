@@ -7,43 +7,43 @@
 //                               else conflict with the current copy.
 // Everything else (the client's offline edit, the merge, the retry) interleaves.
 
-type tUpdate = (client: machine, clientId: int, req: int, base: int, content: set[int], deleted: bool);
+type Update = (client: machine, clientId: int, req: int, base: int, content: set[int], deleted: bool);
 
-event eUpdate: tUpdate;
-event eUpdateOk: (req: int, version: int);
-event eUpdateConflict: (req: int, server: tNote);
-event eFetch: machine;
-event eFetchResp: tNote;
+event Update: Update;
+event UpdateOk: (req: int, version: int);
+event UpdateConflict: (req: int, server: Note);
+event Fetch: machine;
+event FetchResp: Note;
 
 machine NoteServer {
-  var note: tNote;
+  var note: Note;
   // request id -> version it produced; makes a retried request idempotent
   var applied: map[int, int];
 
   start state Serving {
-    entry (initial: tNote) {
+    entry (initial: Note) {
       note = initial;
     }
-    on eUpdate do (u: tUpdate) {
+    on Update do (u: Update) {
       if (u.req in applied) {
-        announce eReplayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
+        announce Replayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
         // The client lost our reply and retried: answer as before, change nothing.
-        send u.client, eUpdateOk, (req = u.req, version = applied[u.req]);
+        send u.client, UpdateOk, (req = u.req, version = applied[u.req]);
         return;
       }
       if (u.base != note.version) {
-        announce eConflicted, (client = u.clientId, req = u.req, base = u.base, current = note.version);
-        send u.client, eUpdateConflict, (req = u.req, server = note);
+        announce Conflicted, (client = u.clientId, req = u.req, base = u.base, current = note.version);
+        send u.client, UpdateConflict, (req = u.req, server = note);
         return;
       }
       note = (version = note.version + 1, content = u.content, deleted = u.deleted);
       applied[u.req] = note.version;
-      announce eAccepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
+      announce Accepted, (client = u.clientId, req = u.req, base = u.base, version = note.version,
                            content = note.content, deleted = note.deleted);
-      send u.client, eUpdateOk, (req = u.req, version = note.version);
+      send u.client, UpdateOk, (req = u.req, version = note.version);
     }
-    on eFetch do (c: machine) {
-      send c, eFetchResp, note;
+    on Fetch do (c: machine) {
+      send c, FetchResp, note;
     }
   }
 }

@@ -60,7 +60,7 @@ violates no safety rule. Each fix is a pattern worth copying:
 
 - **A progress spec with hot states** (`CheckoutsEnd`) makes "every checkout ends"
   checkable, so a dropped reply fails.
-- **The driver announces intent** (`eCheckoutsPlanned`, `eCheckoutStarted` with the
+- **The driver announces intent** (`CheckoutsPlanned`, `CheckoutStarted` with the
   seat it wants). Drivers are not mutated, so the spec still knows what should
   happen when the customer code is broken. Without this, removing `seat = input.seat`
   went unnoticed: every customer silently contended for seat 0.
@@ -73,7 +73,7 @@ violates no safety rule. Each fix is a pattern worth copying:
 
 ```sh
 snappea check tcTwoCustomersOneSeat tcCancelRacesRehold tcGeneratedCheckouts tcHoldAfterSale --timeout 30s --deny mutation
-snappea check tcBugConfirmIgnoresExpiry      # exits 1 with the oversell above
+snappea check tcBugConfirmIgnoresExpiry      # expected bug (exit 0): the oversell above
 ```
 
 With `--timeout 30s`, `tcTwoCustomersOneSeat` (about 28,000 schedules, 11s),
@@ -91,8 +91,8 @@ and the database.
 
 ## Testing the implementation
 
-Emit `eHeld`, `eHoldRejected`, `eExpired`, `eHoldReleased`, `eSold` and
-`eConfirmRejected` from the store after each transaction commits, and `eCharged`/`eRefunded` from the payment
+Emit `Held`, `HoldRejected`, `Expired`, `HoldReleased`, `Sold` and
+`ConfirmRejected` from the store after each transaction commits, and `Charged`/`Refunded` from the payment
 client. To reach the race in a test, block the payment call until the expiry job has
 run and a second customer holds the seat, then let the first confirmation proceed. For the stale timer, cancel hold 1, let customer 2
 hold the seat, then run hold 1's expiry job and check hold 2 still has the seat.

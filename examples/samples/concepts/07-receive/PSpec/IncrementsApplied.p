@@ -1,15 +1,15 @@
 // Contract: every increment the application asks for is applied exactly once, so the
 // committed values go 1, 2, 3, ... up to the number of increments requested.
 
-event eIncrementsPlanned: int;
-event eCommitted: (value: int);
+event IncrementsPlanned: int;
+event Committed: (value: int);
 
-spec IncrementsApplied observes eIncrementsPlanned, eCommitted {
+spec IncrementsApplied observes IncrementsPlanned, Committed {
   var planned: int;
   var committed: int;
 
   start state Setup {
-    on eIncrementsPlanned do (n: int) {
+    on IncrementsPlanned do (n: int) {
       planned = n;
       goto Applying;
     }
@@ -17,7 +17,7 @@ spec IncrementsApplied observes eIncrementsPlanned, eCommitted {
 
   // Hot until every requested increment has committed.
   hot state Applying {
-    on eCommitted do (c: (value: int)) {
+    on Committed do (c: (value: int)) {
       committed = committed + 1;
       assert committed <= planned, format("{0} increments committed, only {1} requested", committed, planned);
       assert c.value == committed,

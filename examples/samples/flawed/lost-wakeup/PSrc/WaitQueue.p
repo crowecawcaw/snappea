@@ -5,32 +5,32 @@
 // atomically. (Re-checking the queue after registering, before parking, also works.)
 // A woken consumer tries again, since another consumer may have taken the item first.
 
-event eTakeOrWait: (client: machine, consumer: int);
-event eItem: int;
+event TakeOrWait: (client: machine, consumer: int);
+event Item: int;
 
 machine WaitQueue {
   var items: seq[int];
   var waiters: seq[(client: machine, consumer: int)];
 
   start state Serving {
-    on eTakeOrWait do (r: (client: machine, consumer: int)) {
+    on TakeOrWait do (r: (client: machine, consumer: int)) {
       var item: int;
       if (sizeof(items) > 0) {
         item = items[0];
         items -= (0);
-        announce eTaken, (consumer = r.consumer, item = item);
-        send r.client, eItem, item;
+        announce Taken, (consumer = r.consumer, item = item);
+        send r.client, Item, item;
       } else {
         waiters += (sizeof(waiters), r);
-        announce eSleeping, r.consumer;
+        announce Sleeping, r.consumer;
       }
     }
-    on ePut do (item: int) {
+    on Put do (item: int) {
       items += (sizeof(items), item);
-      announce eQueued, item;
+      announce Queued, item;
       if (sizeof(waiters) > 0) {
-        announce eWoken, waiters[0].consumer;
-        send waiters[0].client, eWake;
+        announce Woken, waiters[0].consumer;
+        send waiters[0].client, Wake;
         waiters -= (0);
       }
     }
@@ -42,10 +42,10 @@ machine WaitingConsumer {
     entry (p: (queue: machine, consumer: int, wants: int)) {
       var taken: int;
       while (taken < p.wants) {
-        send p.queue, eTakeOrWait, (client = this, consumer = p.consumer);
+        send p.queue, TakeOrWait, (client = this, consumer = p.consumer);
         receive {
-          case eItem: (item: int) { taken = taken + 1; }
-          case eWake: { }
+          case Item: (item: int) { taken = taken + 1; }
+          case Wake: { }
         }
       }
     }

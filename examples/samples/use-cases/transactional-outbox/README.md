@@ -65,7 +65,7 @@ at-least-once either way, so the design tolerates duplicates instead.
 
 ```sh
 snappea check tcTwoRelays tcRelayCrashAfterPublish tcOrdersWhileRelayRuns --timeout 30s
-snappea check tcBugDualWrite tcBugNoDedup   # each exits 1 as above
+snappea check tcBugDualWrite tcBugNoDedup   # both expected bugs match (exit 0)
 ```
 
 With `--timeout`, each passing test explores every schedule in about two seconds or
@@ -85,8 +85,8 @@ arriving after its id is purged would be applied twice).
 
 ## Testing the implementation
 
-Emit `eOrderCommitted`/`eOrderAborted` after the order transaction, `eMarkedSent`
-after the mark, `eApplied` after the consumer's transaction, and `eBrokerReceived`
+Emit `OrderCommitted`/`OrderAborted` after the order transaction, `MarkedSent`
+after the mark, `Applied` after the consumer's transaction, and `BrokerReceived`
 from a test broker; check them against the three specs. To force the crash, make the
 test broker's ack kill the relay process (or throw before the mark), restart it, and
 check the second publish is deduplicated. Run two relay instances against one

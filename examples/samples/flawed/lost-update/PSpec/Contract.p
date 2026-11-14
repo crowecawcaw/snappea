@@ -2,27 +2,27 @@
 // reads or retries, so it judges the flawed and the fixed design by the same rule.
 
 // The driver announces how many deposits it will make, then each one it starts.
-event eDepositsPlanned: int;
-event eDepositRequested: (id: int, amount: int);
+event DepositsPlanned: int;
+event DepositRequested: (id: int, amount: int);
 // The store announces each write at the moment it commits, with the balance it stored.
-event eBalanceWritten: (id: int, balance: int);
+event BalanceWritten: (id: int, balance: int);
 // The client announces that its deposit call returned.
-event eDepositReturned: (id: int, balance: int);
+event DepositReturned: (id: int, balance: int);
 
 // Safety: every committed deposit is added to the balance exactly once, on top of
 // every deposit committed before it. A write that overwrites an earlier deposit
 // leaves the balance short of the sum, which is a lost update.
-spec NoLostUpdate observes eDepositRequested, eBalanceWritten {
+spec NoLostUpdate observes DepositRequested, BalanceWritten {
   var requested: map[int, int];
   var committed: set[int];
   var expected: int;
 
   start state Watching {
-    on eDepositRequested do (p: (id: int, amount: int)) {
+    on DepositRequested do (p: (id: int, amount: int)) {
       assert !(p.id in requested), format("deposit {0} requested twice", p.id);
       requested[p.id] = p.amount;
     }
-    on eBalanceWritten do (p: (id: int, balance: int)) {
+    on BalanceWritten do (p: (id: int, balance: int)) {
       assert p.id in requested, format("deposit {0} written but never requested", p.id);
       assert !(p.id in committed), format("deposit {0} applied twice", p.id);
       committed += (p.id);
@@ -36,32 +36,33 @@ spec NoLostUpdate observes eDepositRequested, eBalanceWritten {
 
 // Progress: every deposit the driver starts returns, after it committed, and reports
 // the balance its own write stored. Hot until every planned deposit has returned.
-spec DepositsReturn observes eDepositsPlanned, eDepositRequested, eBalanceWritten, eDepositReturned {
+spec DepositsReturn observes DepositsPlanned, DepositRequested, BalanceWritten, DepositReturned {
   var pending: set[int];
   // id -> balance its committed write stored
   var written: map[int, int];
   var unfinished: int;
 
   start state Idle {
-    on eDepositsPlanned do (n: int) {
+    on DepositsPlanned do (n: int) {
       assert n > 0, "planned no deposits";
       unfinished = n;
       goto Busy;
     }
-    on eDepositRequested do { assert false, "deposit started without a plan"; }
-    on eBalanceWritten do { assert false, "write with no deposit in progress"; }
-    on eDepositReturned do { assert false, "deposit returned with none in progress"; }
+    on DepositRequested do { assert false, "deposit started without a plan"; }
+    on BalanceWritten do { assert false, "write with no deposit in progress"; }
+    on DepositReturned do { assert false, "deposit returned with none in progress"; }
   }
 
   hot state Busy {
-    on eDepositsPlanned do { assert false, "deposits planned twice"; }
+    on DepositsPlanned do { assert false, "deposits planned twice"; }
+
     // snappea-lint: allow unused-payload-field -- amounts are checked by NoLostUpdate
-    on eDepositRequested do (p: (id: int, amount: int)) { pending += (p.id); }
-    on eBalanceWritten do (p: (id: int, balance: int)) {
+    on DepositRequested do (p: (id: int, amount: int)) { pending += (p.id); }
+    on BalanceWritten do (p: (id: int, balance: int)) {
       assert p.id in pending, format("deposit {0} written but not in progress", p.id);
       written[p.id] = p.balance;
     }
-    on eDepositReturned do (p: (id: int, balance: int)) {
+    on DepositReturned do (p: (id: int, balance: int)) {
       assert p.id in pending, format("deposit {0} returned twice or never started", p.id);
       assert p.id in written, format("deposit {0} returned before it committed", p.id);
       assert p.balance == written[p.id],

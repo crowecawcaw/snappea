@@ -6,12 +6,12 @@
 //   release: held(token) -> free, only for the caller's own token
 //   expire:  held(token) -> free, only if that token still holds it
 
-event eAcquire: (client: machine, id: int);
-event eAcquireResp: (granted: bool, token: int);
-event eRelease: (client: machine, token: int);
-event eReleaseResp;
+event Acquire: (client: machine, id: int);
+event AcquireResp: (granted: bool, token: int);
+event Release: (client: machine, token: int);
+event ReleaseResp;
 // From a lease's timer: its time to live has passed.
-event eLeaseExpire: int;
+event LeaseExpire: int;
 
 machine LockService {
   var lastToken: int;
@@ -19,30 +19,30 @@ machine LockService {
   var holder: int;
 
   start state Serving {
-    on eAcquire do (r: (client: machine, id: int)) {
+    on Acquire do (r: (client: machine, id: int)) {
       if (holder != 0) {
-        announce eBusy, r.id;
-        send r.client, eAcquireResp, (granted = false, token = 0);
+        announce Busy, r.id;
+        send r.client, AcquireResp, (granted = false, token = 0);
         return;
       }
       lastToken = lastToken + 1;
       holder = lastToken;
-      announce eGranted, (id = r.id, token = holder);
+      announce Granted, (id = r.id, token = holder);
       new LeaseTimer((lock = this, token = holder));
-      send r.client, eAcquireResp, (granted = true, token = holder);
+      send r.client, AcquireResp, (granted = true, token = holder);
     }
-    on eRelease do (r: (client: machine, token: int)) {
+    on Release do (r: (client: machine, token: int)) {
       // A holder whose lease already expired must not free its successor's lease.
       if (r.token == holder) {
         holder = 0;
-        announce eReleased, r.token;
+        announce Released, r.token;
       }
-      send r.client, eReleaseResp;
+      send r.client, ReleaseResp;
     }
-    on eLeaseExpire do (token: int) {
+    on LeaseExpire do (token: int) {
       if (token == holder) {
         holder = 0;
-        announce eExpired, token;
+        announce Expired, token;
       }
     }
   }
@@ -53,7 +53,7 @@ machine LockService {
 machine LeaseTimer {
   start state Armed {
     entry (t: (lock: machine, token: int)) {
-      send t.lock, eLeaseExpire, t.token;
+      send t.lock, LeaseExpire, t.token;
     }
   }
 }

@@ -60,7 +60,7 @@ every test; only the network differs.
 Both bug tests fail with:
 
 ```text
-Assertion Failed: PSpec/Contract.p:51:7 split brain: term 1 has two leaders (node 1 and node 3)
+Assertion Failed: split brain: term 1 has two leaders (node 1 and node 3)
 ```
 
 `tcBugPartition`, from `PCheckerOutput/tcBugPartition/bug.txt`: the network splits
@@ -101,18 +101,22 @@ cluster tolerates one failure, like a 3-node one; clusters usually have an odd s
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcBugPartition` | 4 nodes partitioned 2-2, candidates 1 and 3, quorum `n / 2` | Split brain from a partition | **Fails**: `split brain: term 1 has two leaders` |
-| `tcBugSplitVote` | 4 connected nodes, candidates 1 and 3, quorum `n / 2` | Split brain from message order alone | **Fails**: same message |
-| `tcFixedPartition` | The partition, majority quorum | Neither side elects a leader, and both give up | Passes, all 4143 schedules |
-| `tcFixedSplitVote` | The split vote, majority quorum | One leader with 3 votes, or nobody | Passes, all 2016 schedules |
-| `tcFixedOddCluster` | One candidate among 3 nodes | Boundary: quorum 2 of 3 must elect it | Passes, all 39 schedules |
+| `tcBugPartition` | 4 nodes partitioned 2-2, candidates 1 and 3, quorum `n / 2` | Split brain from a partition | **Expected bug**: `split brain: term 1 has two leaders` |
+| `tcBugSplitVote` | 4 connected nodes, candidates 1 and 3, quorum `n / 2` | Split brain from message order alone | **Expected bug**: same message |
+| `tcFixedPartition` | The partition, majority quorum | Neither side elects a leader, and both give up | Passes |
+| `tcFixedSplitVote` | The split vote, majority quorum | One leader with 3 votes, or nobody | Passes |
+| `tcFixedOddCluster` | One candidate among 3 nodes | Boundary: quorum 2 of 3 must elect it | Passes |
 
 ## Run
 
 ```sh
 snappea check tcFixedPartition tcFixedSplitVote tcFixedOddCluster --deny mutation --timeout 20s
-snappea check tcBugPartition tcBugSplitVote   # exit 1 with the split brain above
+snappea check tcBugPartition tcBugSplitVote   # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -125,7 +129,7 @@ term, membership changes, crashes and durable vote storage.
 
 ## Testing the implementation
 
-Emit `eCandidacy`, `eVoteGranted`/`eVoteDenied` and `eElectionEnded` from the
+Emit `Candidacy`, `VoteGranted`/`VoteDenied` and `ElectionEnded` from the
 election code. To force the race, run four nodes in-process with a fault-injecting
 transport, drop traffic between {1, 2} and {3, 4}, and fire the election timers of
 nodes 1 and 3; assert at most one leader per term. Also unit-test the quorum function

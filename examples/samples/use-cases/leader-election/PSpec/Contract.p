@@ -4,22 +4,22 @@
 // and what it was told.
 
 // Driver: how many nodes the cluster has (reachable or not), before any node starts.
-event eClusterSize: int;
+event ClusterSize: int;
 // Driver: a node starts from this durable state.
-event eDisk: (id: int, term: int, votedTerm: int);
+event Disk: (id: int, term: int, votedTerm: int);
 // A node stood for election in `term`, voting for itself.
-event eStood: (id: int, term: int);
+event ElectionStarted: (id: int, term: int);
 // A node answered a RequestVote for `reqTerm`; `term` is its term afterwards.
-event eAnswered: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool);
-event eBecameLeader: (id: int, term: int);
+event VoteAnswered: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool);
+event BecameLeader: (id: int, term: int);
 // A candidate has heard a reply from every peer for its candidacy in `term`.
-event eHeardAll: (id: int, term: int);
+event HeardAll: (id: int, term: int);
 // Driver: a candidate reported that it lost its candidacy in `term`.
-event eLossReported: (id: int, term: int);
+event LossReported: (id: int, term: int);
 // Driver: it sent a client request ...
-event eProbeSent;
+event ProbeSent;
 // ... and node `id` accepted or refused it, in `term`.
-event eClientAnswered: (id: int, term: int, accepted: bool);
+event ClientAnswered: (id: int, term: int, accepted: bool);
 
 // Safety:
 //  - a node never votes twice in one term (its own candidacy counts as a vote);
@@ -32,8 +32,8 @@ event eClientAnswered: (id: int, term: int, accepted: bool);
 //  - after losing, a node stands next in a term above every term it was told of;
 //  - a node accepts a client request only as leader of its current term (a deposed
 //    leader must stop), and refuses it otherwise.
-spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLeader, eLossReported,
-    eClientAnswered {
+spec ElectionSafety observes ClusterSize, Disk, ElectionStarted, VoteAnswered, BecameLeader, LossReported,
+    ClientAnswered {
   // Votes needed to win: more than half the cluster.
   var majority: int;
   // term * 10 + voter -> candidate it voted for
@@ -54,15 +54,15 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
   var stoodTerm: map[int, int];
 
   start state Watching {
-    on eClusterSize do (n: int) {
+    on ClusterSize do (n: int) {
       assert majority == 0, "cluster size announced twice";
       majority = n / 2 + 1;
     }
-    on eDisk do (d: (id: int, term: int, votedTerm: int)) {
+    on Disk do (d: (id: int, term: int, votedTerm: int)) {
       termOf[d.id] = d.term;
       if (d.votedTerm > 0) { Vote(d.id, d.votedTerm, d.id); }
     }
-    on eStood do (s: (id: int, term: int)) {
+    on ElectionStarted do (s: (id: int, term: int)) {
       if (s.id in floor) {
         assert s.term > floor[s.id],
           format("node {0} stood in term {1} although it had been told of term {2}", s.id, s.term, floor[s.id]);
@@ -73,7 +73,7 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
       Vote(s.id, s.term, s.id);
       stoodTerm[s.id] = s.term;
     }
-    on eAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
+    on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
       if (a.granted) {
         assert a.reqTerm == a.term,
           format("node {0} granted a vote for term {1} while in term {2}", a.voter, a.reqTerm, a.term);
@@ -90,7 +90,7 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
         answeredTerm[a.reqTerm * 10 + a.candidate] = a.term;
       }
     }
-    on eBecameLeader do (l: (id: int, term: int)) {
+    on BecameLeader do (l: (id: int, term: int)) {
       assert !(l.term in leaderOf),
         format("two leaders in term {0}: {1} and {2}", l.term, leaderOf[l.term], l.id);
       assert majority > 0, "a leader was elected before the cluster size was announced";
@@ -98,7 +98,7 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
         format("node {0} became leader of term {1} without a majority of votes", l.id, l.term);
       leaderOf[l.term] = l.id;
     }
-    on eLossReported do (r: (id: int, term: int)) {
+    on LossReported do (r: (id: int, term: int)) {
       var key: int;
       key = r.term * 10 + r.id;
       assert !(r.term in leaderOf && leaderOf[r.term] == r.id),
@@ -108,7 +108,7 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
       floor[r.id] = termOf[r.id];
       if (answeredTerm[key] > floor[r.id]) { floor[r.id] = answeredTerm[key]; }
     }
-    on eClientAnswered do (a: (id: int, term: int, accepted: bool)) {
+    on ClientAnswered do (a: (id: int, term: int, accepted: bool)) {
       // A node that adopted a higher term and kept acting as leader would accept in a
       // term it did not win.
       if (a.accepted) {
@@ -143,27 +143,27 @@ spec ElectionSafety observes eClusterSize, eDisk, eStood, eAnswered, eBecameLead
 // This holds because the driver keeps its promise: at most one crash, every request is
 // eventually answered, and if every candidate of the contested round loses, one
 // node's timer fires alone after every earlier message was handled.
-event eElectionsStarted;
+event ElectionsStarted;
 
-spec SomeLeaderElected observes eElectionsStarted, eBecameLeader {
+spec SomeLeaderElected observes ElectionsStarted, BecameLeader {
   start state Idle {
-    on eElectionsStarted goto Electing;
-    on eBecameLeader do { assert false, "leader elected before elections started"; }
+    on ElectionsStarted goto Electing;
+    on BecameLeader do { assert false, "leader elected before elections started"; }
   }
   hot state Electing {
-    on eElectionsStarted do { assert false, "elections started twice"; }
-    on eBecameLeader goto Elected;
+    on ElectionsStarted do { assert false, "elections started twice"; }
+    on BecameLeader goto Elected;
   }
   state Elected {
-    on eElectionsStarted do { assert false, "elections started twice"; }
-    ignore eBecameLeader;
+    on ElectionsStarted do { assert false, "elections started twice"; }
+    ignore BecameLeader;
   }
 }
 
 // Progress: every candidacy hears back from both peers (each RequestVote is answered,
 // by followers, candidates and leaders alike), unless the same node has since started
 // a newer candidacy. Not selected where a peer is deliberately unreachable.
-spec CandidaciesConclude observes eClusterSize, eStood, eAnswered, eHeardAll {
+spec CandidaciesConclude observes ClusterSize, ElectionStarted, VoteAnswered, HeardAll {
   // Replies a candidacy waits for: one per peer.
   var peers: int;
   // candidate -> term of its latest candidacy still waiting for replies
@@ -175,18 +175,18 @@ spec CandidaciesConclude observes eClusterSize, eStood, eAnswered, eHeardAll {
   // every answer to a superseded candidacy comes before the answers that close the
   // newer one.
   start state Quiet {
-    on eClusterSize do (n: int) { peers = n - 1; }
-    on eStood do (s: (id: int, term: int)) { Stood(s.id, s.term); }
-    on eAnswered do { assert false, "a request was answered while no candidacy was open"; }
-    on eHeardAll do { assert false, "a candidate heard all replies while no candidacy was open"; }
+    on ClusterSize do (n: int) { peers = n - 1; }
+    on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
+    on VoteAnswered do { assert false, "a request was answered while no candidacy was open"; }
+    on HeardAll do { assert false, "a candidate heard all replies while no candidacy was open"; }
   }
 
   hot state Waiting {
-    on eStood do (s: (id: int, term: int)) { Stood(s.id, s.term); }
-    on eAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
+    on ElectionStarted do (s: (id: int, term: int)) { Stood(s.id, s.term); }
+    on VoteAnswered do (a: (voter: int, candidate: int, reqTerm: int, term: int, granted: bool)) {
       Answered(a);
     }
-    on eHeardAll do (h: (id: int, term: int)) { Heard(h.id, h.term); }
+    on HeardAll do (h: (id: int, term: int)) { Heard(h.id, h.term); }
   }
 
   fun Stood(id: int, term: int) {
@@ -215,19 +215,19 @@ spec CandidaciesConclude observes eClusterSize, eStood, eAnswered, eHeardAll {
 }
 
 // Progress: the client request is answered, accepted or refused.
-spec ProbeAnswered observes eProbeSent, eClientAnswered {
+spec ProbeAnswered observes ProbeSent, ClientAnswered {
   start state Idle {
-    on eProbeSent goto Waiting;
-    on eClientAnswered do { assert false, "a client request was answered before it was sent"; }
+    on ProbeSent goto Waiting;
+    on ClientAnswered do { assert false, "a client request was answered before it was sent"; }
   }
 
   hot state Waiting {
-    on eProbeSent do { assert false, "more than one client request sent"; }
-    on eClientAnswered goto Answered;
+    on ProbeSent do { assert false, "more than one client request sent"; }
+    on ClientAnswered goto Answered;
   }
 
   state Answered {
-    on eProbeSent do { assert false, "more than one client request sent"; }
-    on eClientAnswered do { assert false, "more answers than client requests"; }
+    on ProbeSent do { assert false, "more than one client request sent"; }
+    on ClientAnswered do { assert false, "more answers than client requests"; }
   }
 }

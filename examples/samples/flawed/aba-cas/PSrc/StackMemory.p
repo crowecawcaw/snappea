@@ -10,16 +10,16 @@
 // while a thread was between its loads and its swap, the swap still succeeds and
 // installs the next pointer the thread read before the change.
 
-event eLoadNext: (client: machine, node: int);
-event eNextValue: int;
-event eStoreNext: (node: int, next: int);
+event LoadNext: (client: machine, node: int);
+event NextValue: int;
+event StoreNext: (node: int, next: int);
 
-event eLoadTop: machine;
-event eTopValue: int;
-event eCasTop: (client: machine, tid: int, expected: int, desired: int);
-event eCasResult: bool;
+event LoadTop: machine;
+event TopValue: int;
+event CasTop: (client: machine, tid: int, expected: int, desired: int);
+event CasResult: bool;
 // Tells whoever started the thread (the test driver) that its operations are over.
-event eThreadDone: int;
+event ThreadDone: int;
 
 // Builds the list from the initial stack (top first). Shared by both memory variants.
 fun LinkStack(stack: seq[int], next: map[int, int]) : map[int, int] {
@@ -44,16 +44,16 @@ machine StackMemory {
       next = LinkStack(stack, next);
       top = stack[0];
     }
-    on eLoadTop do (client: machine) { send client, eTopValue, top; }
-    on eLoadNext do (r: (client: machine, node: int)) { send r.client, eNextValue, next[r.node]; }
-    on eStoreNext do (w: (node: int, next: int)) { next[w.node] = w.next; }
-    on eCasTop do (c: (client: machine, tid: int, expected: int, desired: int)) {
+    on LoadTop do (client: machine) { send client, TopValue, top; }
+    on LoadNext do (r: (client: machine, node: int)) { send r.client, NextValue, next[r.node]; }
+    on StoreNext do (w: (node: int, next: int)) { next[w.node] = w.next; }
+    on CasTop do (c: (client: machine, tid: int, expected: int, desired: int)) {
       if (top == c.expected) {
         top = c.desired;
-        announce eTopSwapped, (tid = c.tid, top = top, next = next);
-        send c.client, eCasResult, true;
+        announce TopSwapped, (tid = c.tid, top = top, next = next);
+        send c.client, CasResult, true;
       } else {
-        send c.client, eCasResult, false;
+        send c.client, CasResult, false;
       }
     }
   }
@@ -68,8 +68,8 @@ machine StackThread {
   var owned: seq[int];
 
   start state Run {
-    entry (input: (owner: machine, tid: int, mem: machine, plan: tPlan)) {
-      var op: tOp;
+    entry (input: (owner: machine, tid: int, mem: machine, plan: ThreadPlan)) {
+      var op: Operation;
       tid = input.tid;
       mem = input.mem;
       owner = input.owner;
@@ -77,7 +77,7 @@ machine StackThread {
       foreach (op in input.plan.ops) {
         if (op == Pop) { Pop(); } else { Push(); }
       }
-      send owner, eThreadDone, tid;
+      send owner, ThreadDone, tid;
     }
   }
 
@@ -86,18 +86,18 @@ machine StackThread {
     var next: int;
     var ok: bool;
     while (!ok) {
-      send mem, eLoadTop, this;
-      receive { case eTopValue: (v: int) { top = v; } }
-      send mem, eLoadNext, (client = this, node = top);
-      receive { case eNextValue: (v: int) { next = v; } }
+      send mem, LoadTop, this;
+      receive { case TopValue: (v: int) { top = v; } }
+      send mem, LoadNext, (client = this, node = top);
+      receive { case NextValue: (v: int) { next = v; } }
       // BUG: between the loads above and this swap, other threads can pop this node,
       // pop its successor, and push this node back. The swap sees the same pointer and
       // installs `next`, a node that is no longer on the stack.
-      send mem, eCasTop, (client = this, tid = tid, expected = top, desired = next);
-      receive { case eCasResult: (r: bool) { ok = r; } }
+      send mem, CasTop, (client = this, tid = tid, expected = top, desired = next);
+      receive { case CasResult: (r: bool) { ok = r; } }
     }
     owned += (sizeof(owned), top);
-    announce eOpDone, (tid = tid, op = Pop, node = top);
+    announce OpDone, (tid = tid, op = Pop, node = top);
   }
 
   fun Push() {
@@ -107,12 +107,12 @@ machine StackThread {
     node = owned[0];
     owned -= (0);
     while (!ok) {
-      send mem, eLoadTop, this;
-      receive { case eTopValue: (v: int) { top = v; } }
-      send mem, eStoreNext, (node = node, next = top);
-      send mem, eCasTop, (client = this, tid = tid, expected = top, desired = node);
-      receive { case eCasResult: (r: bool) { ok = r; } }
+      send mem, LoadTop, this;
+      receive { case TopValue: (v: int) { top = v; } }
+      send mem, StoreNext, (node = node, next = top);
+      send mem, CasTop, (client = this, tid = tid, expected = top, desired = node);
+      receive { case CasResult: (r: bool) { ok = r; } }
     }
-    announce eOpDone, (tid = tid, op = Push, node = node);
+    announce OpDone, (tid = tid, op = Push, node = node);
   }
 }

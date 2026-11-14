@@ -16,7 +16,8 @@ sample shows how to model that and check the client handles both.
 
 ## The concept
 
-P has no clock. A timer is a separate machine that sends `eTimeout` on a turn the
+This sample uses an untimed model. A timer is a separate machine that sends
+`Timeout` on a turn the
 scheduler picks, so the checker tries the timeout **before and after** every reply.
 That is the right abstraction for most designs: you do not know which comes first, and
 the client must be correct either way. (For deadlines measured in milliseconds, see
@@ -32,9 +33,9 @@ is already queued wins and a later one loses:
 
 ```p
 start state Armed {
-  entry (t: (holder: machine, tag: int)) { ...; send this, eFire; }
-  on eFire goto Fired;        // sends eTimeout to the holder
-  on eCancel goto Cancelled;
+  entry (t: (holder: machine, tag: int)) { ...; send this, Fire; }
+  on Fire goto Fired;        // sends Timeout to the holder
+  on Cancel goto Cancelled;
 }
 ```
 
@@ -42,12 +43,12 @@ The client ([`PSrc/Client.p`](PSrc/Client.p)) tags the request and its timer wit
 request id and drops anything for an earlier request:
 
 ```p
-on eReply do (r: (id: int, result: int)) {
+on Reply do (r: (id: int, result: int)) {
   if (r.id != current) { return; }   // late reply to a request that timed out
-  send timer, eCancel;               // best effort
+  send timer, Cancel;               // best effort
   Decide(true, r.result);
 }
-on eTimeout do (tag: int) {
+on Timeout do (tag: int) {
   if (tag != current) { return; }    // a cancelled timer that fired anyway
   Decide(false, 0);
 }
@@ -68,17 +69,20 @@ the inbox.
 
 ```sh
 snappea check tcTimeoutRace --deny mutation
-snappea check tcBugStaleReply        # exits 1
+snappea check tcBugStaleReply        # exits 0 when the declared bug matches
 ```
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 ```text
 ok    tcTimeoutRace (all 1111 schedules, 0.27s)
       Coverage: 2/2 states, 55/55 statements, 14/14 branches, 12/12 event handlers, ...
       Driver limits (held in all 1111 schedules):
         creates 1 Server, 1 Client and 2 Timer, never more
-        Server sends eReply at most twice
+        Server sends Reply at most twice
 ...
 Mutation testing: 39 of 39 mutants detected, 1 suppressed (0.3s)
 ```
@@ -89,7 +93,7 @@ client fails in a schedule where request 1 times out, request 2 is sent, and the
 late reply to request 1 arrives:
 
 ```text
-FAIL  tcBugStaleReply (bug found after 99 schedules, 0.04s)
+expected bug  tcBugStaleReply (matching declared failure)
       Assertion Failed: PSpec/Contract.p:42:9 request 2 returned 2, but the server computes 4 for it
 ```
 
@@ -100,7 +104,7 @@ request is a wrong result, not an invisible one.
 
 - **Announcing before the `send`.** The scheduler can switch machines at a `send`, so an
   `announce` placed before it can be followed by other machines' sends that reach the
-  inbox first. Move `announce eServed` above the `send` in `Server` and `tcTimeoutRace`
+  inbox first. Move `announce Served` above the `send` in `Server` and `tcTimeoutRace`
   fails with `request 2 reported ok = False, but the other message arrived first`,
   a false alarm from the model, not the client.
 - **Expecting the cancel to be checked.** The design is correct whether or not the cancel
@@ -113,7 +117,7 @@ request is a wrong result, not an invisible one.
 
 ## Try this
 
-Delete `if (tag != current) { return; }` in `Client`'s `eTimeout` handler. A timer for
+Delete `if (tag != current) { return; }` in `Client`'s `Timeout` handler. A timer for
 request 1 that fired after its cancel now ends request 2:
 
 ```text
@@ -129,6 +133,6 @@ durations (any timeout may beat any reply), several clients sharing a server.
 
 ## Testing the implementation
 
-Emit `eReceived` and `eServed` from the server, `eTimerFired` from the timer callback and
-`eOutcome` from the client. To force the race in a test, use a fake clock: fire the
+Emit `Received` and `Served` from the server, `TimerFired` from the timer callback and
+`Outcome` from the client. To force the race in a test, use a fake clock: fire the
 timeout, then deliver the held reply; and complete a call, then fire its cancelled timer.

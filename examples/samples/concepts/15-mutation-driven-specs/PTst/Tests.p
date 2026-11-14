@@ -2,11 +2,11 @@
 machine Client {
   start state Asking {
     entry (input: (account: Account, id: int, amount: int)) {
-      announce eRequested, (id = input.id, amount = input.amount);
-      send input.account, eWithdraw, (client = this, id = input.id, amount = input.amount);
+      announce Requested, (id = input.id, amount = input.amount);
+      send input.account, Withdraw, (client = this, id = input.id, amount = input.amount);
     }
-    on eWithdrawResp do (r: (id: int, ok: bool, balance: int)) {
-      announce eAnswered, (id = r.id, ok = r.ok);
+    on WithdrawResponse do (r: (id: int, ok: bool, balance: int)) {
+      announce Answered, (id = r.id, ok = r.ok);
     }
   }
 }
@@ -23,7 +23,7 @@ machine TwoWithdrawals {
       amounts += (1, 4);
       amounts += (2, 6);
       amounts += (3, 10);
-      announce eOpened, (balance = 10, withdrawals = 2);
+      announce Opened, (balance = 10, withdrawals = 2);
       account = new Account(10);
       new Client((account = account, id = 1, amount = amounts[choose(4)]));
       new Client((account = account, id = 2, amount = amounts[choose(4)]));

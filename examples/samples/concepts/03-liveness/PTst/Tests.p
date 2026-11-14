@@ -3,10 +3,10 @@
 machine Client {
   start state Asking {
     entry (input: (server: machine, id: int)) {
-      announce eRequested, (id = input.id,);
-      send input.server, eRequest, (client = this, id = input.id);
+      announce Requested, (id = input.id,);
+      send input.server, Request, (client = this, id = input.id);
     }
-    on eResponse goto Answered;
+    on Response goto Answered;
   }
   state Answered {}
 }
@@ -37,6 +37,6 @@ machine TwoClientsDroppingServer {
 test tcTwoClients [main=TwoClients]:
   assert RequestsAnswered in { TwoClients, Client, Server, Worker };
 
-// expect-bug: liveness bug in hot state 'Waiting'
+// snappea: expect-bug "liveness bug in hot state 'Waiting'"
 test tcBugDropsWhileBusy [main=TwoClientsDroppingServer]:
   assert RequestsAnswered in { TwoClientsDroppingServer, Client, DroppingServer, Worker };

@@ -143,7 +143,7 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
     for p in a.positional.iter().filter(|p| is_source_arg(p)) {
         if p.to_lowercase().ends_with(".pproj") {
             if let Some(q) = &input.pproj {
-                return Err(format!("two project files given: '{}' and '{}'", q, p));
+                return Err(format!("two project files given: '{}' and '{}'; pass one .pproj", q, p));
             }
             input.pproj = Some(p.clone());
         } else {
@@ -212,7 +212,7 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         return Err("'--p-trace' cannot be combined with live input (--live, --stdin)".into());
     }
     if live.len() > 1 && cfg.sequence.is_none() {
-        return Err("several live inputs need --sequence to order their lines".into());
+        return Err("several live inputs need --sequence to order their lines; name a whole-number field every line carries, e.g. `--sequence seq`".into());
     }
     if live.is_empty() && (cfg.sequence.is_some() || cfg.record) {
         return Err("'--sequence' and '--record' apply to live input (--live, --stdin)".into());
@@ -255,7 +255,11 @@ fn run(host: &mut dyn Host, cmd: Command) -> Outcome {
         .map_err(|m| fail(con.inner, &m))?;
     let observer = driver::prepare(spec_program, &cfg, Vec::new()).map_err(|m| fail(con.inner, &m))?;
     if !cfg.live.is_empty() && observer.parser().log_delimiter().replace("\\n", "\n") != "\n" {
-        return Err(fail(con.inner, "live input needs a parser of newline-delimited entries"));
+        let m = format!(
+            "live input needs a parser of newline-delimited entries; parser '{}' is not one. Use the default JSON-lines parser, or read the logs as files instead of live",
+            observer.parser().name()
+        );
+        return Err(fail(con.inner, &m));
     }
     let host = con.inner;
     let specs = observer.specs();

@@ -1,20 +1,20 @@
 // Drivers. Customers are part of the design under test (they run the checkout
 // algorithm), so only these setup machines are drivers.
 
-fun StartCustomers(owner: machine, store: machine, checkouts: seq[tCheckout]) {
+fun StartCustomers(owner: machine, store: machine, checkouts: seq[Checkout]) {
   var payments: Payments;
-  var c: tCheckout;
+  var c: Checkout;
   payments = new Payments();
-  announce eCheckoutsPlanned, sizeof(checkouts);
+  announce CheckoutsPlanned, sizeof(checkouts);
   foreach (c in checkouts) {
     StartCheckout(owner, store, payments, c);
   }
 }
 
-fun StartCheckout(owner: machine, store: machine, payments: Payments, c: tCheckout) {
+fun StartCheckout(owner: machine, store: machine, payments: Payments, c: Checkout) {
   // The driver announces each checkout it starts, so CheckoutsEnd can demand that it
   // ends with the outcome the store's decisions justify.
-  announce eCheckoutStarted, c;
+  announce CheckoutStarted, c;
   new Customer((owner = owner, store = store, payments = payments, seat = c.seat,
                 hold = c.hold, abandons = c.abandons, cancels = c.cancels));
 }
@@ -25,12 +25,12 @@ fun StartCheckout(owner: machine, store: machine, payments: Payments, c: tChecko
 machine TwoCustomersOneSeat {
   start state Init {
     entry {
-      var checkouts: seq[tCheckout];
+      var checkouts: seq[Checkout];
       checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = false));
       checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
       StartCustomers(this, new SeatStore(), checkouts);
     }
-    ignore eCheckoutDone;
+    ignore CheckoutDone;
   }
 }
 
@@ -40,7 +40,7 @@ machine TwoCustomersOneSeat {
 machine GeneratedCheckouts {
   start state Init {
     entry {
-      var checkouts: seq[tCheckout];
+      var checkouts: seq[Checkout];
       var i: int;
       while (i < 3) {
         checkouts += (i, (hold = i + 1, seat = choose(2), abandons = $, cancels = false));
@@ -48,7 +48,7 @@ machine GeneratedCheckouts {
       }
       StartCustomers(this, new SeatStore(), checkouts);
     }
-    ignore eCheckoutDone;
+    ignore CheckoutDone;
   }
 }
 
@@ -62,16 +62,16 @@ machine HoldAfterSale {
     entry {
       store = new SeatStore();
       payments = new Payments();
-      announce eCheckoutsPlanned, 2;
+      announce CheckoutsPlanned, 2;
       StartCheckout(this, store, payments, (hold = 1, seat = 7, abandons = false, cancels = false));
     }
-    on eCheckoutDone goto Second;
+    on CheckoutDone goto Second;
   }
   state Second {
     entry {
       StartCheckout(this, store, payments, (hold = 2, seat = 7, abandons = false, cancels = false));
     }
-    ignore eCheckoutDone;
+    ignore CheckoutDone;
   }
 }
 
@@ -82,48 +82,43 @@ machine HoldAfterSale {
 machine CancelRacesRehold {
   start state Init {
     entry {
-      var checkouts: seq[tCheckout];
+      var checkouts: seq[Checkout];
       checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = true));
       checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
       StartCustomers(this, new SeatStore(), checkouts);
     }
-    ignore eCheckoutDone;
+    ignore CheckoutDone;
   }
 }
 
 machine BuggyTwoCustomersOneSeat {
   start state Init {
     entry {
-      var checkouts: seq[tCheckout];
+      var checkouts: seq[Checkout];
       checkouts += (0, (hold = 1, seat = 7, abandons = false, cancels = false));
       checkouts += (1, (hold = 2, seat = 7, abandons = false, cancels = false));
       StartCustomers(this, new UnfencedSeatStore(), checkouts);
     }
-    ignore eCheckoutDone;
+    ignore CheckoutDone;
   }
 }
 
 // Covered: the first customer's hold expired while paying, so their confirmation is
 // rejected and they are refunded, and the seat went to someone else.
-scenario ExpiredWhilePaying observes eCharged, eExpired, eConfirmRejected, eRefunded {
+scenario ExpiredWhilePaying observes Charged, Expired, ConfirmRejected, Refunded {
   start hot state WaitCharge {
-    on eCharged goto WaitExpiry;
-    ignore eExpired, eConfirmRejected, eRefunded;
+    on Charged goto WaitExpiry;
   }
   hot state WaitExpiry {
-    on eExpired goto WaitRejection;
-    ignore eCharged, eConfirmRejected, eRefunded;
+    on Expired goto WaitRejection;
   }
   hot state WaitRejection {
-    on eConfirmRejected goto WaitRefund;
-    ignore eCharged, eExpired, eRefunded;
+    on ConfirmRejected goto WaitRefund;
   }
   hot state WaitRefund {
-    on eRefunded goto Covered;
-    ignore eCharged, eExpired, eConfirmRejected;
+    on Refunded goto Covered;
   }
   cold state Covered {
-    ignore eCharged, eExpired, eConfirmRejected, eRefunded;
   }
 }
 
@@ -143,7 +138,7 @@ test tcHoldAfterSale [main=HoldAfterSale]:
   assert SeatsSoldOnce, ChargesResolved, CheckoutsEnd in
   { HoldAfterSale, SeatStore, ExpiryTimer, Payments, Customer };
 
-// expect-bug: which does not hold it
+// snappea: expect-bug "which does not hold it"
 test tcBugConfirmIgnoresExpiry [main=BuggyTwoCustomersOneSeat]:
   assert SeatsSoldOnce, ChargesResolved, CheckoutsEnd in
   { BuggyTwoCustomersOneSeat, UnfencedSeatStore, ExpiryTimer, Payments, Customer };

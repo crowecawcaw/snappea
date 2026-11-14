@@ -238,6 +238,37 @@ impl Scope {
         scope
     }
 
+    /// Partition one test into driver code and design/spec code. Shared helpers stay
+    /// with the design, so a negative control cannot cover them for a passing test.
+    pub fn partition_drivers(prog: &Program, tc: &TestCase, drivers: &[bool]) -> (Scope, Scope) {
+        let all = Scope::test_case(prog, tc);
+        let (_, main) = prog.test_case_module(tc);
+        let is_driver = |i: usize| main.is_some_and(|m| m.idx() == i) || drivers.get(i).copied().unwrap_or(false);
+        let mut driver = Scope::of(
+            prog,
+            all.machines.iter().enumerate().filter(|(i, yes)| **yes && is_driver(*i)).map(|(i, _)| MachineId(i as u32)),
+        );
+        let design = Scope::of(
+            prog,
+            all.machines
+                .iter()
+                .enumerate()
+                .filter(|(i, yes)| **yes && !is_driver(*i))
+                .map(|(i, _)| MachineId(i as u32)),
+        );
+        driver.exclude(&design);
+        (driver, design)
+    }
+
+    /// Remove another scope, including shared helper functions.
+    pub fn exclude(&mut self, other: &Scope) {
+        for (a, b) in [(&mut self.machines, &other.machines), (&mut self.funs, &other.funs)] {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x &= !*y;
+            }
+        }
+    }
+
     /// Adds the machines and functions of `other`.
     pub fn add(&mut self, other: &Scope) {
         for (a, b) in [(&mut self.machines, &other.machines), (&mut self.funs, &other.funs)] {
@@ -254,6 +285,7 @@ impl Scope {
 /// What ran in a run, for any scope: the probes and the `(state, event)` handlers.
 #[derive(Debug, Clone, Default)]
 pub struct Hits {
+    queue_policies: FxHashSet<(StateId, EventId)>,
     probes: ProbeSet,
     handled: FxHashSet<(StateId, EventId)>,
     transition_pairs: FxHashSet<(StateId, StateId, StateId)>,
@@ -274,11 +306,17 @@ impl Hits {
             }
         }
         Hits {
+            queue_policies: info.queue_policies.clone(),
             probes: info.probes.clone(),
             handled,
             transition_pairs: info.transition_pairs.clone(),
             states: info.monitor_states.clone(),
         }
+    }
+
+    /// Whether an event encountered this state’s ignore or defer policy.
+    pub fn queue_policy(&self, state: StateId, event: EventId) -> bool {
+        self.queue_policies.contains(&(state, event))
     }
 
     /// Whether code coverage probe `id` ran.
@@ -287,6 +325,7 @@ impl Hits {
     }
 
     pub fn add(&mut self, other: &Hits) {
+        self.queue_policies.extend(other.queue_policies.iter().copied());
         self.probes.union(&other.probes);
         self.handled.extend(other.handled.iter().copied());
         self.transition_pairs.extend(other.transition_pairs.iter().copied());
@@ -309,6 +348,30 @@ pub struct CodeMap {
 }
 
 impl CodeMap {
+    /// Only the hits represented by this map. Used when negative controls contribute
+    /// driver coverage but must not fill positive design coverage gaps.
+    pub fn restrict_hits(&self, hits: &Hits) -> Hits {
+        let mut probes = ProbeSet::default();
+        for (id, point) in self.probe_point.iter().enumerate() {
+            if point.is_some() && hits.probes.contains(id as u32) {
+                probes.insert(id as u32);
+            }
+        }
+        Hits {
+            // Restricted hits are suite coverage only; queue policies are not required coverage points.
+            queue_policies: Default::default(),
+            probes,
+            handled: hits.handled.iter().filter(|k| self.handler_point.contains_key(k)).copied().collect(),
+            transition_pairs: hits
+                .transition_pairs
+                .iter()
+                .filter(|k| self.transition_point.contains_key(k))
+                .copied()
+                .collect(),
+            states: hits.states.iter().filter(|k| self.state_point.contains_key(k)).copied().collect(),
+        }
+    }
+
     /// The points of `scope`, from `probes` (the probes of the program's code). Code that
     /// must never run (`assert false`, and what starts with it) has no point.
     pub fn new(prog: &Program, probes: &[Probe], scope: &Scope) -> CodeMap {
@@ -406,6 +469,9 @@ impl CodeMap {
         for (a, b) in &edges {
             for (_, c) in edges.range((*b, StateId(0))..=(*b, StateId(u32::MAX))) {
                 let st = prog.state(*b);
+                if prog.machine(st.machine).is_spec() {
+                    continue;
+                }
                 let context = prog.machine(st.machine).name.clone();
                 let missed = format!(
                     "{} -> {} -> {} never taken consecutively",
@@ -510,6 +576,30 @@ impl CodeMap {
             v.dedup();
         }
         (open, accepted)
+    }
+
+    /// Unsuppressed advisory gaps, grouped without classifying rendered messages.
+    pub fn advisory_uncovered(
+        &self,
+        coverage: &CodeCoverage,
+        suppressions: &[(Span, String)],
+    ) -> (Vec<Uncovered>, Vec<Uncovered>) {
+        let (mut conditions, mut pairs) = (Vec::new(), Vec::new());
+        for (i, gap) in coverage.uncovered_points() {
+            if self.suppression(i as usize, suppressions).is_some() {
+                continue;
+            }
+            match self.points[i as usize].kind {
+                PointKind::ConditionTrue | PointKind::ConditionFalse => conditions.push(gap),
+                PointKind::TransitionPair => pairs.push(gap),
+                _ => {}
+            }
+        }
+        for gaps in [&mut conditions, &mut pairs] {
+            gaps.sort();
+            gaps.dedup();
+        }
+        (conditions, pairs)
     }
 
     /// Required points not reached by any selected test and not covered by a scoped

@@ -42,8 +42,8 @@ nothing; every request gets an answer.
 entry {
   var amount: int;
   amount = choose(4);
-  announce eWithdrawRequested, amount;
-  send account, eWithdraw, (client = this, amount = amount);
+  announce WithdrawRequested, amount;
+  send account, Withdraw, (client = this, amount = amount);
 }
 ```
 
@@ -52,7 +52,7 @@ timeout, a lost message, a crash) is a choice inside the machine that stands for
 
 ```p
 if ($) {
-  send w.client, eUnavailable;
+  send w.client, Unavailable;
 } else if (w.amount <= balance) {
   ...
 ```
@@ -70,6 +70,9 @@ since both are already explored.
 | --- | --- | --- | --- |
 | `tcTwoWithdrawals` | Two withdrawals of 0-3 from a balance of 2, each may time out | Boundary (exactly the balance), refusal, a timeout before or after a success | passes, all 52 schedules |
 
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
+
 ## Run it
 
 ```sh
@@ -82,7 +85,7 @@ ok    tcTwoWithdrawals (all 52 schedules, 0.01s)
       Coverage: 3/3 states, 30/30 statements, 8/8 branches, 7/7 event handlers, ...
       Driver limits (held in all 52 schedules):
         creates 1 Account, never more
-        TwoWithdrawals sends eWithdraw exactly twice
+        TwoWithdrawals sends Withdraw exactly twice
         Account is always created with 2
 Mutation testing: 13 of 13 mutants detected (0.0s)
 ```
@@ -98,13 +101,13 @@ Mutation testing: 13 of 13 mutants detected (0.0s)
 ## Common mistake: a fixed input
 
 Replace `amount = choose(4);` with `amount = 1;`. The run is now 6 schedules, the
-driver limits gain `eWithdraw is always sent with amount = 1`, and the check fails on
+driver limits gain `Withdraw is always sent with amount = 1`, and the check fails on
 coverage, because no request is ever refused:
 
 ```text
 Not covered by the test case:
-  PSrc/Account.p:21       Account.Serving, on eWithdraw: if (w.amount <= balance) never false
-  PSpec/Withdrawals.p:28  WithdrawalsMatchBalance.Pending, on eWithdrawResp: if (amount <= expected) never false
+  PSrc/Account.p:21       Account.Serving, on Withdraw: if (w.amount <= balance) never false
+  PSpec/Withdrawals.p:28  WithdrawalsMatchBalance.Pending, on WithdrawResponse: if (amount <= expected) never false
 Coverage requirements were not met for 4 points.
 ```
 
@@ -132,6 +135,6 @@ database did nothing; a timeout after the write committed is a different, harder
 
 ## In your implementation
 
-Emit `eWithdrawRequested` when the client sends a withdrawal and `eWithdrawResp` or
-`eUnavailable` when it gets the answer (one client at a time, so the order is safe).
+Emit `WithdrawRequested` when the client sends a withdrawal and `WithdrawResponse` or
+`Unavailable` when it gets the answer (one client at a time, so the order is safe).
 To reach the timeout case, inject a database timeout with a fault-injection wrapper.

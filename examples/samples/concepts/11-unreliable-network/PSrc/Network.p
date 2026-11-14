@@ -4,19 +4,19 @@
 //
 // The network is the environment, not the design under test: its faults are test input.
 
-type tPacket = (dest: machine, ev: event, msg: tMsg);
-event eNetSend: tPacket;
+type Packet = (dest: machine, ev: event, msg: any);
+event NetSend: Packet;
 // From the sender: where to deliver timeouts.
-event eSetTimer: machine;
+event SetTimer: machine;
 // Sent to the sender when a packet was lost and nothing is in flight: the
 // retransmission timer fires.
-event eTimeout;
+event Timeout;
 // Internal: deliver the next packet.
-event eStep;
+event Step;
 
 // snappea: driver
 machine Network {
-  var bag: set[tPacket];
+  var bag: set[Packet];
   var timerOwner: machine;
   var dropsLeft: int;
   var duplicatesLeft: int;
@@ -29,19 +29,19 @@ machine Network {
       dropsLeft = config.drops;
       duplicatesLeft = config.duplicates;
     }
-    on eNetSend do (p: tPacket) {
+    on NetSend do (p: Packet) {
       bag += (p);
       if (!stepping) {
         stepping = true;
-        send this, eStep;
+        send this, Step;
       }
     }
-    on eStep do { DeliverOne(); }
-    on eSetTimer do (owner: machine) { timerOwner = owner; }
+    on Step do { DeliverOne(); }
+    on SetTimer do (owner: machine) { timerOwner = owner; }
   }
 
   fun DeliverOne() {
-    var p: tPacket;
+    var p: Packet;
     // Any packet in flight can go next: this is reordering.
     p = choose(bag);
     if (dropsLeft > 0 && $) {
@@ -57,7 +57,7 @@ machine Network {
       send p.dest, p.ev, p.msg;
     }
     if (sizeof(bag) > 0) {
-      send this, eStep;
+      send this, Step;
       return;
     }
     stepping = false;
@@ -65,7 +65,7 @@ machine Network {
     // are assumed longer than any delivery, so they never fire while packets are in flight.
     if (lost) {
       lost = false;
-      send timerOwner, eTimeout;
+      send timerOwner, Timeout;
     }
   }
 }

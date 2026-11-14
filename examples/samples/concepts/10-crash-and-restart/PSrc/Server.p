@@ -2,12 +2,12 @@
 // it crashes. A crash ends this machine (`raise halt`); the restart is a new machine that
 // must rebuild what it needs from Storage.
 
-event eNext: machine;
-event eTicket: int;
+event Next: machine;
+event Ticket: int;
 // From the process manager (the test driver): the process dies now.
-event eCrash;
+event Crash;
 // To the process manager: the process exited, start a new one.
-event eExited;
+event Exited;
 
 machine Server {
   var storage: Storage;
@@ -20,39 +20,39 @@ machine Server {
     entry (input: (storage: Storage, owner: machine)) {
       storage = input.storage;
       owner = input.owner;
-      send storage, eRead, this;
+      send storage, Read, this;
     }
-    on eReadResp do (highWater: int) {
+    on ReadResponse do (highWater: int) {
       last = highWater;
       goto Serving;
     }
-    defer eNext;
-    on eCrash goto Crashed;
+    defer Next;
+    on Crash goto Crashed;
   }
 
   state Serving {
-    on eNext do (c: machine) {
+    on Next do (c: machine) {
       client = c;
       last = last + 1;
       // Persist before replying: a ticket the client holds must never be handed out again.
-      send storage, eWrite, (server = this, value = last);
+      send storage, Write, (server = this, value = last);
       goto Persisting;
     }
-    on eCrash goto Crashed;
+    on Crash goto Crashed;
   }
 
   state Persisting {
-    on eWriteAck goto Serving with {
-      send client, eTicket, last;
-      announce eIssued, (client = client, ticket = last);
+    on WriteAck goto Serving with {
+      send client, Ticket, last;
+      announce Issued, (client = client, ticket = last);
     }
-    defer eNext;
-    on eCrash goto Crashed;
+    defer Next;
+    on Crash goto Crashed;
   }
 
   state Crashed {
     entry {
-      send owner, eExited;
+      send owner, Exited;
       raise halt;
     }
   }

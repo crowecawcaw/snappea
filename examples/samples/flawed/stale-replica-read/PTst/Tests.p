@@ -5,22 +5,22 @@
 // and its second to replica 1 (the unlucky routing for monotonic reads); with one
 // replica, every read goes to it.
 
-fun Ops1(a: tOp) : seq[tOp] {
-  var s: seq[tOp];
+fun Ops1(a: Operation) : seq[Operation] {
+  var s: seq[Operation];
   s += (0, a);
   return s;
 }
 
-fun Ops2(a: tOp, b: tOp) : seq[tOp] {
-  var s: seq[tOp];
+fun Ops2(a: Operation, b: Operation) : seq[Operation] {
+  var s: seq[Operation];
   s += (0, a);
   s += (1, b);
   return s;
 }
 
 // Read-your-writes: one session writes twice, then reads: it must see its second write.
-fun WriteThenRead() : map[int, seq[tOp]] {
-  var plans: map[int, seq[tOp]];
+fun WriteThenRead() : map[int, seq[Operation]] {
+  var plans: map[int, seq[Operation]];
   plans[1] = Ops2(Write, Write);
   plans[1] += (2, Read);
   return plans;
@@ -28,8 +28,8 @@ fun WriteThenRead() : map[int, seq[tOp]] {
 
 // Monotonic reads: session 1 writes once; session 2 reads twice, and may see the write
 // on its first read.
-fun ReadTwiceWhileWriting() : map[int, seq[tOp]] {
-  var plans: map[int, seq[tOp]];
+fun ReadTwiceWhileWriting() : map[int, seq[Operation]] {
+  var plans: map[int, seq[Operation]];
   plans[1] = Ops1(Write);
   plans[2] = Ops2(Read, Read);
   return plans;
@@ -37,8 +37,8 @@ fun ReadTwiceWhileWriting() : map[int, seq[tOp]] {
 
 // Both sessions write, then read: a read's token can be ahead of a replica by two log
 // records, so the replica keeps holding it after applying the first.
-fun TwoWritersReading() : map[int, seq[tOp]] {
-  var plans: map[int, seq[tOp]];
+fun TwoWritersReading() : map[int, seq[Operation]] {
+  var plans: map[int, seq[Operation]];
   plans[1] = Ops2(Write, Read);
   plans[2] = Ops2(Write, Read);
   return plans;
@@ -78,13 +78,13 @@ fun Shippers(replicas: seq[machine]) : seq[machine] {
 
 machine LoadBalancedReads {
   start state Init {
-    entry (p: (plans: map[int, seq[tOp]], replicas: int)) {
-      var plans: map[int, seq[tOp]];
+    entry (p: (plans: map[int, seq[Operation]], replicas: int)) {
+      var plans: map[int, seq[Operation]];
       var replicas: seq[machine];
       var primary: machine;
       var s: int;
       plans = p.plans;
-      announce eSessionsPlanned, plans;
+      announce SessionsPlanned, plans;
       replicas = Replicas(p.replicas);
       primary = new Primary(Shippers(replicas));
       foreach (s in keys(plans)) {
@@ -96,13 +96,13 @@ machine LoadBalancedReads {
 
 machine TokenReads {
   start state Init {
-    entry (p: (plans: map[int, seq[tOp]], replicas: int)) {
-      var plans: map[int, seq[tOp]];
+    entry (p: (plans: map[int, seq[Operation]], replicas: int)) {
+      var plans: map[int, seq[Operation]];
       var replicas: seq[machine];
       var primary: machine;
       var s: int;
       plans = p.plans;
-      announce eSessionsPlanned, plans;
+      announce SessionsPlanned, plans;
       replicas = SessionReplicas(p.replicas);
       primary = new Primary(Shippers(replicas));
       foreach (s in keys(plans)) {
@@ -130,10 +130,10 @@ test tcFixedMonotonicReads [main=FixedMonotonicReads]:
 test tcFixedTwoWriters [main=FixedTwoWriters]:
   assert SessionGuarantees in { FixedTwoWriters, TokenReads, Primary, LogShipper, SessionReplica, TokenSession };
 
-// expect-bug: read-your-writes violated
+// snappea: expect-bug "read-your-writes violated"
 test tcBugReadYourWrites [main=BugReadYourWrites]:
   assert SessionGuarantees in { BugReadYourWrites, LoadBalancedReads, Primary, LogShipper, Replica, Session };
 
-// expect-bug: monotonic reads violated
+// snappea: expect-bug "monotonic reads violated"
 test tcBugMonotonicReads [main=BugMonotonicReads]:
   assert SessionGuarantees in { BugMonotonicReads, LoadBalancedReads, Primary, LogShipper, Replica, Session };

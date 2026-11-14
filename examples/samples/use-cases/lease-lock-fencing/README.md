@@ -53,9 +53,9 @@ scheduler picks.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcTwoClientsContend` | Two clients ask once each; leases expire at any point | Busy answers, expiry between grant and write, late write before or after the successor's | pass, exhaustive |
-| `tcHolderCrashes` | Client 1 dies holding the lease; client 2 tries twice | Only expiry frees the lock; a lost timer leaves the lease live forever (progress) | pass, exhaustive |
-| `tcPausedHolderWritesLate` | Client 1 parks after its grant; its lease expires; client 2 acquires, writes twice, releases; then client 1 wakes and writes | The GC-pause story forced in order; the late write must be fenced; same-token writes accepted; client 1's late release must not free anything | pass, exhaustive |
+| `tcTwoClientsContend` | Two clients ask once each; leases expire at any point | Busy answers, expiry between grant and write, late write before or after the successor's | pass, bounded search |
+| `tcHolderCrashes` | Client 1 dies holding the lease; client 2 tries twice | Only expiry frees the lock; a lost timer leaves the lease live forever (progress) | pass, bounded search |
+| `tcPausedHolderWritesLate` | Client 1 parks after its grant; its lease expires; client 2 acquires, writes twice, releases; then client 1 wakes with two writes planned | The GC-pause story forced in order; the late write must be fenced and the remaining write abandoned; same-token writes accepted; client 1's late release must not free anything | pass, bounded search |
 | `tcBugStorageIgnoresTokens` | The pause story with `UnfencedStorage` | Negative control | fails: `write with token 1 accepted after token 2: superseded holder wrote` |
 
 The `LateWriteFenced` scenario confirms the checks reach: expiry, a successor's write,
@@ -65,7 +65,7 @@ then a refused late write.
 
 ```sh
 snappea check tcTwoClientsContend tcHolderCrashes tcPausedHolderWritesLate --timeout 30s
-snappea check tcBugStorageIgnoresTokens   # exits 1 with the late write above
+snappea check tcBugStorageIgnoresTokens   # passes when it finds the late write above
 ```
 
 With `--timeout 30s`, `tcTwoClientsContend` explores every schedule (about 22,000)
@@ -84,8 +84,18 @@ lost messages.
 
 ## Testing the implementation
 
-Emit `eGranted`, `eBusy`, `eReleased`, `eExpired` from the lock service after each
-state change, and `eWriteAccepted`/`eWriteRejected` from storage after its
+Emit `Granted`, `Busy`, `Released`, `Expired` from the lock service after each
+state change, and `WriteAccepted`/`WriteRejected` from storage after its
 conditional write; check them against `FencedWrites`. To force the GC-pause race,
 block client 1 after acquire (a latch in the test), advance the lock service's clock
 past the TTL, run client 2 to completion, then release the latch.
+
+Negative controls declare `// snappea: expect-bug "message"`. A matching bug
+passes the test; a different failure or no discovered bug fails it. Check their
+failure identity across seeds with `snappea check 'tcBug*' --no-mutation
+--expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
+not fill coverage gaps or detect mutants in the correct design.
+
+Search is complete only when this run reports `all N schedules` (or JSON
+`search_complete: true`). A timeout, seed, or historical schedule count does not
+guarantee completeness. An incomplete passing run is sampled evidence.

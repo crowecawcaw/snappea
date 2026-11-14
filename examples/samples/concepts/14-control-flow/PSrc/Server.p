@@ -1,13 +1,13 @@
 // A server with a fixed number of session slots. When a new connection arrives and every
 // slot is taken, it evicts the current holder and refuses the newcomer, which may retry.
-// A slot is freed only when its connection says goodbye (eFin).
+// A slot is freed only when its connection says goodbye (Fin).
 
-enum tReason { ByClient, Evicted, Rejected }
+enum Reason { ByClient, Evicted, CapacityRefused }
 
-event eSyn: machine;
-event eSynAck: (ok: bool, session: int);
-event eFin: int;
-event eReset: tReason;
+event Syn: machine;
+event SynAck: (ok: bool, session: int);
+event Fin: int;
+event Reset: Reason;
 
 machine Server {
   // slot -> connection holding it, or null when free
@@ -19,22 +19,22 @@ machine Server {
         slots += (sizeof(slots), null);
       }
     }
-    on eSyn do (conn: machine) {
+    on Syn do (conn: machine) {
       var slot: int;
       slot = FreeSlot();
       if (slot < 0) {
-        announce eRejected, conn;
+        announce Rejected, conn;
         // Make room for the next attempt: evict the oldest holder.
-        send slots[0], eReset, Evicted;
-        send conn, eSynAck, (ok = false, session = -1);
+        send slots[0], Reset, Evicted;
+        send conn, SynAck, (ok = false, session = -1);
         return;
       }
       slots[slot] = conn;
-      announce eAccepted, (conn = conn, session = slot);
-      send conn, eSynAck, (ok = true, session = slot);
+      announce Accepted, (conn = conn, session = slot);
+      send conn, SynAck, (ok = true, session = slot);
     }
-    on eFin do (session: int) {
-      announce eFreed, session;
+    on Fin do (session: int) {
+      announce Freed, session;
       slots[session] = null;
     }
   }

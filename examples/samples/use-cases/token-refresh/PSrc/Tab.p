@@ -37,63 +37,64 @@ machine Tab {
     entry {
       if (rounds == 0) { goto Finished; }
       rounds = rounds - 1;
-      send locks, eAcquire, this;
+      send locks, Acquire, this;
     }
-    on eGranted do {
-      send storage, eLoad, this;
+    on Granted do {
+      send storage, Load, this;
     }
-    on eLoaded do (s: tSession) {
+    on Loaded do (s: Session) {
       if (s.lost) {
         GiveUp();
       } else if (s.token != token) {
         // Another tab refreshed while we waited for the lock.
         Use(s.token);
       } else {
-        send network, eSendRefresh, (tab = this, refresh = s.token);
+        send network, SendRefresh, (tab = this, refresh = s.token);
         goto Refreshing;
       }
     }
   }
 
   state Refreshing {
-    on eRefreshResp do (r: (tab: machine, ok: bool, token: int)) {
+    on RefreshResp do (r: (tab: machine, ok: bool, token: int)) {
+      assert r.tab == this, "refresh response belongs to another tab";
       if (!r.ok) {
         // Revoked (someone presented a stolen token): the user is logged out.
         MarkLost();
       } else {
         fresh = r.token;
-        send storage, eSave, (client = this, session = (token = fresh, lost = false));
+        send storage, Save, (client = this, session = (token = fresh, lost = false));
         goto Storing;
       }
     }
-    on eRefreshTimeout do { MarkLost(); }
+    on RefreshTimeout do { MarkLost(); }
   }
 
   state Storing {
-    on eSaved do { Use(fresh); }
+    on Saved do { Use(fresh); }
   }
 
   state Losing {
-    on eSaved do { GiveUp(); }
+    on Saved do { GiveUp(); }
   }
 
   state Finished { }
 
   fun Use(t: int) {
     token = t;
-    announce eTokenObtained, (tab = id, token = t);
-    send locks, eRelease;
+    announce TokenObtained, (tab = id, token = t);
+    send locks, Release;
     goto Locking;
   }
 
   fun MarkLost() {
-    send storage, eSave, (client = this, session = (token = 0, lost = true));
+    send storage, Save, (client = this, session = (token = 0, lost = true));
     goto Losing;
   }
 
   fun GiveUp() {
-    announce eSessionLost, (tab = id,);
-    send locks, eRelease;
+    announce SessionLost, (tab = id,);
+    send locks, Release;
     // snappea-lint: allow mutation:remove-statement -- equivalent: Finished handles nothing, and neither does staying in Locking or Losing once no event is coming
     goto Finished;
   }

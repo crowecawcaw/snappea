@@ -6,7 +6,7 @@ machine TwoWithdrawals {
 
   start state Init {
     entry {
-      announce eOpened, 2;
+      announce Opened, 2;
       account = new Account(2);
       goto Withdrawing;
     }
@@ -17,11 +17,11 @@ machine TwoWithdrawals {
       var amount: int;
       amount = choose(4);
       made = made + 1;
-      announce eWithdrawRequested, amount;
-      send account, eWithdraw, (client = this, amount = amount);
+      announce WithdrawRequested, amount;
+      send account, Withdraw, (client = this, amount = amount);
     }
-    on eWithdrawResp do { Next(); }
-    on eUnavailable do { Next(); }
+    on WithdrawResponse do { Next(); }
+    on Unavailable do { Next(); }
   }
 
   state Done {}

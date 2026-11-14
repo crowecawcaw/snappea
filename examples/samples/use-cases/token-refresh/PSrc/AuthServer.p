@@ -5,8 +5,8 @@
 //
 // One handler is one atomic step on the family's row.
 
-event eRefresh: (client: machine, tab: machine, refresh: int);
-event eRefreshResp: (tab: machine, ok: bool, token: int);
+event Refresh: (client: machine, tab: machine, refresh: int);
+event RefreshResp: (tab: machine, ok: bool, token: int);
 
 machine AuthServer {
   // the only refresh token currently accepted
@@ -17,19 +17,19 @@ machine AuthServer {
     entry (initial: int) {
       current = initial;
     }
-    on eRefresh do (r: (client: machine, tab: machine, refresh: int)) {
+    on Refresh do (r: (client: machine, tab: machine, refresh: int)) {
       if (!revoked && r.refresh == current) {
         current = current + 1;
-        announce eRotated, (from = r.refresh, next = current);
-        send r.client, eRefreshResp, (tab = r.tab, ok = true, token = current);
+        announce Rotated, (from = r.refresh, next = current);
+        send r.client, RefreshResp, (tab = r.tab, ok = true, token = current);
         return;
       }
       if (!revoked) {
         // Reuse of a rotated-out token: assume it was stolen.
         revoked = true;
-        announce eFamilyRevoked, (refresh = r.refresh,);
+        announce FamilyRevoked, (refresh = r.refresh,);
       }
-      send r.client, eRefreshResp, (tab = r.tab, ok = false, token = 0);
+      send r.client, RefreshResp, (tab = r.tab, ok = false, token = 0);
     }
   }
 }

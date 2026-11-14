@@ -97,8 +97,64 @@ impl<'a> Errors<'a> {
         .help("pass one argument per parameter, in declaration order")
     }
 
+    /// `goto S` with a different number of arguments than state `S`'s entry takes.
+    pub fn goto_argument_count(&self, span: Span, state: &str, actual: usize, expected: usize, ty: &str) -> Diagnostic {
+        let d = Diagnostic::new(
+            span,
+            format!("goto, function or constructor call expected {} arguments, got {}", expected, actual),
+        );
+        match (expected, actual) {
+            (1, 0) => d.help(format!(
+                "state '{state}' takes an entry parameter of type {ty}: pass one with `goto {state}, v;`, \
+                 or keep the value in a machine variable and drop the parameter from the entry of '{state}', \
+                 so it can be entered with a plain `goto {state};`"
+            )),
+            (0, _) => d.help(format!(
+                "state '{state}' has no entry parameter: remove the argument (`goto {state};`), \
+                 or give its entry one: `entry (v: T) {{ ... }}`"
+            )),
+            _ => d.help(format!(
+                "state '{state}' takes one entry parameter: pass a single value, e.g. a tuple `goto {state}, (a, b);`"
+            )),
+        }
+    }
+
+    /// A `receive` case whose parameter does not match its event's payload: the upstream
+    /// message reads "got <payload>, expected <parameter>".
+    pub fn receive_case_payload(
+        &self,
+        span: Span,
+        event: &str,
+        payload: &PType,
+        param: &PType,
+        prog: &Program,
+    ) -> Diagnostic {
+        let d = self.type_mismatch(span, payload, &[param], prog);
+        let p = format_type(payload, prog);
+        if param.is_same_type_as(&PType::Null, prog) {
+            d.help(format!(
+                "event '{event}' carries a payload of type {p}, and this case takes no parameter; \
+                 take it as one: `case {event}: (v: {p}) {{ ... }}`"
+            ))
+        } else if payload.is_same_type_as(&PType::Null, prog) {
+            d.help(format!(
+                "event '{event}' carries no payload; remove the case's parameter: `case {event}: {{ ... }}`"
+            ))
+        } else {
+            d.help(format!(
+                "event '{event}' carries a payload of type {p}; declare the case's parameter with that type"
+            ))
+        }
+    }
+
     pub fn missing_declaration(&self, span: Span, kind: &str, name: &str) -> Diagnostic {
         let d = Diagnostic::new(span, format!("could not find {} '{}'", kind, name));
+        if kind == "function" && name == "sender" {
+            return d.help(
+                "P has no sender(): pass the sending machine in the payload, \
+                 e.g. `event eReq: (client: machine, id: int);` and `send server, eReq, (client = this, id = 1);`",
+            );
+        }
         match self.similar_name(name) {
             Some(s) => d.help(format!("did you mean '{}'? Otherwise declare the {} before using it", s, kind)),
             None => d.help(format!("declare the {} before using it, or check the spelling", kind)),
@@ -215,11 +271,30 @@ impl<'a> Errors<'a> {
     }
 
     pub fn incomparable_types(&self, span: Span, lhs: &PType, rhs: &PType, prog: &Program) -> Diagnostic {
-        Diagnostic::new(
+        let d = Diagnostic::new(
             span,
             format!("types {} and {} are incomparable", lhs.original_repr(prog), rhs.original_repr(prog)),
-        )
-        .help("compare values of the same type; convert one side first, e.g. `e to int` for an enum or `n to float` for an int")
+        );
+        let null = PType::Null;
+        let other = match (lhs.is_same_type_as(&null, prog), rhs.is_same_type_as(&null, prog)) {
+            (true, false) => Some(rhs),
+            (false, true) => Some(lhs),
+            _ => None,
+        };
+        if let Some(t) = other {
+            let name = t.original_repr(prog);
+            return match t.canonicalize(prog) {
+                PType::Permission(_) => d.help(format!(
+                    "a {name} value cannot be compared with null; compare with its default instead, \
+                     `x == default({name})`, or declare the variable as `machine` to use `x == null`"
+                )),
+                _ => d.help(format!(
+                    "{name} values are never null: a variable starts at `default({name})`; compare with that, \
+                     or keep a separate bool that says whether it is set"
+                )),
+            };
+        }
+        d.help("compare values of the same type; convert one side first, e.g. `e to int` for an enum or `n to float` for an int")
     }
 
     pub fn misplaced_this(&self, span: Span) -> Diagnostic {
@@ -296,7 +371,9 @@ impl<'a> Errors<'a> {
     }
 
     pub fn invalid_bind(&self, span: Span, msg: &str) -> Diagnostic {
-        Diagnostic::new(span, format!("invalid bind: {}", msg))
+        Diagnostic::new(span, format!("invalid bind: {}", msg)).help(
+            "bind the interface to a machine that receives every event the interface lists and takes the same payload: `{ I -> M }`",
+        )
     }
 
     pub fn not_closed(&self, span: Span, msg: &str) -> Diagnostic {
@@ -331,18 +408,25 @@ impl<'a> Errors<'a> {
 
     pub fn invalid_hide_event(&self, span: Span, msg: &str) -> Diagnostic {
         Diagnostic::new(span, format!("invalid hide event: {}", msg))
+            .help("hide only events that machines inside the module both send and receive; leave the others public")
     }
 
     pub fn invalid_hide_interface(&self, span: Span, msg: &str) -> Diagnostic {
         Diagnostic::new(span, format!("invalid hide interface: {}", msg))
+            .help("hide only interfaces the module both creates and binds; leave the others public")
     }
 
     pub fn invalid_rename(&self, span: Span, msg: &str) -> Diagnostic {
-        Diagnostic::new(span, format!("invalid rename: {}", msg))
+        Diagnostic::new(span, format!("invalid rename: {}", msg)).help(
+            "rename an interface the module creates or binds to a new interface with the same receive set: `rename I to J in M`",
+        )
     }
 
     pub fn invalid_composition(&self, span: Span, msg: &str) -> Diagnostic {
-        Diagnostic::new(span, format!("invalid composition: {}", msg))
+        Diagnostic::new(span, format!("invalid composition: {}", msg)).help(
+            "the composed modules must not overlap in what they bind, send, create or monitor; \
+             move the shared part into one of them, or combine them with `union` instead of `compose`",
+        )
     }
 
     pub fn internal_error(&self, span: Span, msg: &str) -> Diagnostic {
@@ -429,6 +513,19 @@ impl<'a> Errors<'a> {
             machine
         )
     }
+}
+
+/// The candidate closest to `name`, if it is close enough to be a likely misspelling of
+/// it: for "did you mean" hints on names, commands and options.
+pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let limit = (name.chars().count() / 3).max(1);
+    candidates
+        .into_iter()
+        .filter(|c| *c != name)
+        .map(|c| (if c.eq_ignore_ascii_case(name) { 0 } else { edit_distance(c, name) }, c))
+        .filter(|(d, c)| *d <= limit && *d < c.chars().count().min(name.chars().count()))
+        .min()
+        .map(|(_, c)| c)
 }
 
 /// Levenshtein distance over chars.

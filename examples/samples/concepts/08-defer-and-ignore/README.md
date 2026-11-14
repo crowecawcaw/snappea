@@ -43,19 +43,19 @@ serving.
 
 ```p
 start state Initializing {
-  defer eRequest;        // a request must not be lost: serve it once ready
-  ignore eHealthCheck;   // "not ready yet" is the answer: no reply
-  entry (storage: Storage) { send storage, eLoad, (server = this,); }
-  on eLoaded do (l: (config: int)) {
+  defer Request;        // a request must not be lost: serve it once ready
+  ignore HealthCheck;   // "not ready yet" is the answer: no reply
+  entry (storage: Storage) { send storage, Load, (server = this,); }
+  on Loaded do (l: (config: int)) {
     config = l.config;
-    announce eReady;
+    announce Ready;
     goto Serving;
   }
 }
 
 state Serving {
-  on eRequest do (r: (client: machine, id: int)) { send r.client, eResponse, (id = r.id, config = config); }
-  on eHealthCheck do (h: (probe: machine)) { send h.probe, eHealthy; }
+  on Request do (r: (client: machine, id: int)) { send r.client, Response, (id = r.id, config = config); }
+  on HealthCheck do (h: (probe: machine)) { send h.probe, Healthy; }
 }
 ```
 
@@ -66,7 +66,7 @@ state Serving {
   would report a state that may no longer hold. (The spec here accepts either,
   because a late "healthy" is still true; the choice is about the real probe.)
 
-The drivers ignore replies they do not use (`ignore eResponse;`, `ignore eHealthy;`)
+The drivers ignore replies they do not use (`ignore Response;`, `ignore Healthy;`)
 for the same reason: each machine must say what it does with every event it can get.
 
 ## Test cases
@@ -74,14 +74,17 @@ for the same reason: each machine must say what it does with every event it can 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcStartupRace` | 2 clients and a probe start with the server; client 1 checks health after its response | Requests and checks before, during and after initialization | passes, all 3,661 schedules |
-| `tcBugNoDefer` | Same, with `NoDeferServer` (no `defer eRequest`) | A request arriving before the configuration | **fails**: `NoDeferServer(3) received event 'PImplementation.eRequest' that cannot be handled.` |
+| `tcBugNoDefer` | Same, with `NoDeferServer` (no `defer Request`) | A request arriving before the configuration | **expected bug**: `NoDeferServer(3) in state 'Initializing' received event 'Request' that it cannot handle` |
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
 ```sh
 cd examples/samples/concepts/08-defer-and-ignore
 snappea check tcStartupRace --deny mutation
-snappea check tcBugNoDefer             # exits 1
+snappea check tcBugNoDefer             # exits 0 when the declared bug matches
 ```
 
 ```text
@@ -89,17 +92,17 @@ ok    tcStartupRace (all 3661 schedules, 0.98s)
       Coverage: 3/3 states, 39/39 statements, 4/4 branches, 15/15 event handlers, ...
 Mutation testing: 8 of 8 mutants detected (0.1s)
 
-FAIL  tcBugNoDefer (bug found after 1 schedule, 0.00s)
-      NoDeferServer(3) received event 'PImplementation.eRequest' that cannot be handled.
+expected bug  tcBugNoDefer (matching declared failure)
+      NoDeferServer(3) in state 'Initializing' received event 'Request' that it cannot handle
       Replay: snappea replay PCheckerOutput/tcBugNoDefer/bug.schedule
 ```
 
-The message names the machine and the event, not the state. Replay the schedule to see
-it: `NoDeferServer` was still in `Initializing`.
+The message names the machine, state and event, and suggests handling, deferring or
+ignoring it. Replay the schedule to inspect why the request arrived before initialization.
 
 ## Common mistake: `ignore` to silence the error
 
-The quickest way to make "cannot be handled" go away is `ignore eRequest;`. The run no
+The quickest way to make "cannot be handled" go away is `ignore Request;`. The run no
 longer crashes, and the request is gone. Only a progress spec notices:
 
 ```text
@@ -113,12 +116,12 @@ busy server.
 
 ## Try this
 
-Delete `ignore eHealthCheck;` from `Server`'s `Initializing` state. The probe's early
+Delete `ignore HealthCheck;` from `Server`'s `Initializing` state. The probe's early
 check now has nowhere to go:
 
 ```text
 FAIL  tcStartupRace (bug found after 49 schedules, 0.04s)
-      Server(3) received event 'PImplementation.eHealthCheck' that cannot be handled.
+      Server(3) received event 'PImplementation.HealthCheck' that cannot be handled.
 ```
 
 It took 49 schedules: in most orders the probe's check arrives after the server is
@@ -131,7 +134,7 @@ Storage failures and retries of the load are not modeled.
 
 ## In your implementation
 
-Emit `eReady` where the server finishes loading, `eRequested` and `eResponse` from the
-clients' request wrapper, and `eHealthCheckDue`/`eHealthy` from a probe that checks
+Emit `Ready` where the server finishes loading, `Requested` and `Response` from the
+clients' request wrapper, and `HealthCheckDue`/`Healthy` from a probe that checks
 only after a successful request. To force the race, delay the storage read in a test
 and send requests and a health check before releasing it.

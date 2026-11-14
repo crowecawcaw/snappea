@@ -50,7 +50,7 @@ apply and ack are separate steps, so timeouts, redeliveries and crashes interlea
 | `tcWorkerCrash` | One job, two workers, one worker crashes at any point | Crash before apply, between apply and ack, or after ack: the job is redelivered, effect recorded once |
 | `tcMoreWorkersThanJobs` | Three workers, two jobs | A waiting worker is released only when the last job completes |
 | `tcGenerated` | Two jobs, slow delivery with a possible duplicate timer, maybe a crash | Redelivery of one job while the other is in flight; sampled |
-| `tcBugAckByJobId` | `AckByIdQueue` in the slow-worker race | **Expected to fail**: `job 1 was completed by an ack with stale receipt 1` |
+| `tcBugAckByJobId` | `AckByIdQueue` in the slow-worker race | **Expected bug**: `job 1 was completed by an ack with stale receipt 1` |
 
 The consequence in the negative control: the first worker's late ack deletes the job
 while the second worker holds the current delivery. If that second attempt then failed,
@@ -60,12 +60,11 @@ nobody would retry it, and the queue reports success for work it cannot vouch fo
 
 ```sh
 snappea check tcSlowWorker tcWorkerCrash tcMoreWorkersThanJobs tcGenerated --timeout 30s --deny mutation
-snappea check tcBugAckByJobId      # exits 1 with the stale ack above
+snappea check tcBugAckByJobId      # passes when it finds the stale ack above
 ```
 
-The core races are exhaustive: `tcSlowWorker` (34k schedules, about 15 s) and
-`tcWorkerCrash` (20k). `tcMoreWorkersThanJobs` (three workers) and `tcGenerated` are
-sampled; the three-worker test has over 180k schedules.
+`tcSlowWorker` and `tcWorkerCrash` isolate the core races. The larger
+`tcMoreWorkersThanJobs` and `tcGenerated` explore combinations of those behaviors.
 
 ## Bounds and omissions
 
@@ -80,7 +79,7 @@ sink failures, and a job whose effect is not idempotent.
 
 - The first version had no obligation for workers to stop, so dropping the
   "no more jobs" reply or the long-poll wake-up went unnoticed. `JobsComplete` now
-  requires every live worker to stop, and every ack to be answered (`eAckSent`).
+  requires every live worker to stop, and every ack to be answered (`AckSent`).
 - Crashing a worker only via the timer service made "the queue never starts a timer"
   invisible: no timer, no crash. The injector now crashes a worker independently and
   fires the timers of everything it held.
@@ -89,8 +88,18 @@ sink failures, and a job whose effect is not idempotent.
 
 ## Testing the implementation
 
-Emit `eDelivered`, `eVisibilityExpired`, `eAcked` and `eAckRejected` from the queue (or
-a wrapper around its client) and `eEffectApplied`/`eEffectRecorded` from the sink's
+Emit `Delivered`, `VisibilityExpired`, `Acked` and `AckRejected` from the queue (or
+a wrapper around its client) and `EffectApplied`/`EffectRecorded` from the sink's
 transaction. To force the stale ack: set a short visibility timeout, block worker A
 after it applies the job until worker B has received the job, then let A ack. A's ack
 must fail and B's must succeed.
+
+Negative controls declare `// snappea: expect-bug "message"`. A matching bug
+passes the test; a different failure or no discovered bug fails it. Check their
+failure identity across seeds with `snappea check 'tcBug*' --no-mutation
+--expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
+not fill coverage gaps or detect mutants in the correct design.
+
+Search is complete only when this run reports `all N schedules` (or JSON
+`search_complete: true`). A timeout, seed, or historical schedule count does not
+guarantee completeness. An incomplete passing run is sampled evidence.

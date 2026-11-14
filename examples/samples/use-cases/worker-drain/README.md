@@ -30,15 +30,15 @@ to the load balancer, which routes it to an instance still in rotation.
   scale-in request ends with the instance terminated or the request refused.
 
 **Atomic steps**: each machine handles one message at a time. Each routed request is a
-separate `Courier`, so it can arrive after later messages from other machines (the
-drain command). Processing a request takes time (the instance's `eFinish` to itself).
+separate `BBDelivery`, so it can arrive after later messages from other machines (the
+drain command). Processing a request takes time (the instance's `Finish` to itself).
 
 ## Files
 
 | File | What it holds |
 | --- | --- |
 | [`PSpec/Contract.p`](PSpec/Contract.p) | `DrainSafety` (safety), `RequestsAndScaleInsFinish` (progress, hot state) |
-| [`PSrc/Fleet.p`](PSrc/Fleet.p) | Load balancer, courier, instance, autoscaler |
+| [`PSrc/Fleet.p`](PSrc/Fleet.p) | Load balancer, instance, autoscaler |
 | [`PSrc/BrokenAutoscalers.p`](PSrc/BrokenAutoscalers.p) | Negative controls: terminate without waiting for drained; drain before the deregistration ack |
 | [`PTst/Tests.p`](PTst/Tests.p) | Clients, the scale-in trigger, a scenario, the test cases |
 
@@ -47,8 +47,8 @@ drain command). Processing a request takes time (the instance's `eFinish` to its
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
 | `tcScaleInUnderLoad` | Two clients, one request each, instance 0 removed | Requests in flight on the draining instance and on the other one | pass, sampled |
-| `tcLateRequestDuringDrain` | One request at any moment relative to removing instance 1 | Routed before deregistration, arriving while draining or after termination: refused and rerouted | pass, exhaustive (about 4,900 schedules, ~2s) |
-| `tcLastInstanceRefused` | Remove 0, then 1; a client sends two requests | The second scale-in is refused; requests still served | pass, exhaustive (about 17,500 schedules, ~8s) |
+| `tcLateRequestDuringDrain` | One request at any moment relative to removing instance 1 | Routed before deregistration, arriving while draining or after termination: refused and rerouted | pass; check search completion |
+| `tcLastInstanceRefused` | Remove 0, then 1; a client sends two requests | The second scale-in is refused; requests still served | pass; check search completion |
 | `tcBugTerminateEarly` | `HastyAutoscaler` | **Expected to fail**: `instance 0 terminated with request 1 in flight` | fail |
 | `tcBugDrainBeforeDeregistered` | `EarlyDrainAutoscaler` | **Expected to fail**: `instance 0 started draining while the load balancer still routes to it` | fail |
 
@@ -57,8 +57,8 @@ then served elsewhere.
 
 ## What building it taught
 
-- **Track each delivery.** Mutation showed the load balancer's `eRouted` and the
-  instance's `eBounced` announcements could be dropped unnoticed. The safety spec now
+- **Track each delivery.** Mutation showed the load balancer's `Routed` and the
+  instance's `Bounced` announcements could be dropped unnoticed. The safety spec now
   pairs every accept or refusal with the routing that sent it, and allows routing a
   request again only after a refusal or a termination.
 - **A terminated instance must not speak.** Modeling "connection refused" as the
@@ -72,26 +72,32 @@ then served elsewhere.
 
 ```sh
 snappea check tcScaleInUnderLoad tcLateRequestDuringDrain tcLastInstanceRefused --timeout 30s --deny mutation
-snappea check tcBugTerminateEarly             # exits 1: ... terminated with request 1 in flight
-snappea check tcBugDrainBeforeDeregistered    # exits 1: ... started draining while the load balancer still routes to it
+snappea check tcBugTerminateEarly             # expected bug (exit 0): ... terminated with request 1 in flight
+snappea check tcBugDrainBeforeDeregistered    # expected bug (exit 0): ... started draining while the load balancer still routes to it
 ```
 
-Without `--timeout` the test cases share 10s, too little for `tcLastInstanceRefused`
-to cover every schedule. An exhaustive run reports `all N schedules`.
+Search completion depends on the budget and explored interleavings. The checker
+reports incomplete runs explicitly; `all N schedules` means the bounded search
+finished. Neither coverage nor mutation detection implies exhaustive search.
 
 ## Bounds and omissions
 
 Two instances, one or two clients, at most two requests, one or two scale-in requests
-handled one at a time. Messages are delayed but not lost; requests always finish. Not
+handled one at a time. Requests target distinct, existing instances; duplicate or
+unknown instance removals are outside this model. Messages are delayed but not lost; requests always finish. Not
 modeled: drain timeouts (a request that never finishes blocks the scale-in forever),
 health checks, scale-out, client retries on timeout, connection draining inside the
 load balancer itself.
 
 ## Testing the implementation
 
-Emit `eRouted`/`eDeregistered` from the load balancer, `eAccepted`/`eServed`/
-`eBounced`/`eDrainStarted`/`eTerminated` from the instance, and `eScaleInRefused` from
+Emit `Routed`/`Deregistered` from the load balancer, `Accepted`/`Served`/
+`Bounced`/`DrainStarted`/`Terminated` from the instance, and `ScaleInRefused` from
 the autoscaler. To force the race: hold a request in a proxy between the load balancer
 and the instance, deregister and drain the instance, then release the request (it must
 be refused and rerouted); terminate after release and check the load balancer reroutes
 on connection refused; hold a slow request in flight and check termination waits.
+
+The project imports the reusable `BBDelivery` building block from the guide. Each
+delivery gets an independent sender, allowing a request to arrive after drain.
+When copying this model outside the repository, export `snappea guide example building-blocks`, then update the project include to its `Network.pproj`.

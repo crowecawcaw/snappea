@@ -39,10 +39,10 @@ charges again.
 
 ## The counterexample
 
-`snappea check tcBugDoubleClick` fails with:
+`snappea check tcBugDoubleClick` finds the declared bug:
 
 ```text
-Assertion Failed: PSpec/Contract.p:31:7 double charge: key 7 charged twice (charges 1 and 2)
+Assertion Failed: double charge: key 7 charged twice (charges 1 and 2)
 ```
 
 From `PCheckerOutput/tcBugDoubleClick/bug.txt`:
@@ -84,21 +84,25 @@ same.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcBugDoubleClick` | Two concurrent requests, same key, flawed design | The race itself | **Fails**: `double charge: key 7 charged twice (charges 1 and 2)` |
-| `tcFixedDoubleClick` | Same, fixed design | The duplicate waits and returns charge 1 | Passes, all 385 schedules |
-| `tcFixedTripleClick` | Three concurrent requests, same key | Two waiters on one in-progress key must both be released | Passes, all 4666 schedules |
-| `tcFixedMixedKeys` | Two duplicates and one other key, concurrent | Another key must not wait or share a result | Passes, all 15981 schedules |
-| `tcFixedRetryAfterDone` | A retry after the first request returned, with a new key | Lifecycle boundary: answer from the stored result | Passes, all 225 schedules |
+| `tcBugDoubleClick` | Two concurrent requests, same key, flawed design | The race itself | **Expected bug**: `double charge: key 7 charged twice (charges 1 and 2)` |
+| `tcFixedDoubleClick` | Same, fixed design | The duplicate waits and returns charge 1 | Passes |
+| `tcFixedTripleClick` | Three concurrent requests, same key | Two waiters on one in-progress key must both be released | Passes |
+| `tcFixedMixedKeys` | Two duplicates and one other key, concurrent | Another key must not wait or share a result | Passes |
+| `tcFixedRetryAfterDone` | A retry after the first request returned, with a new key | Lifecycle boundary: answer from the stored result | Passes |
 
 ## Run
 
 ```sh
 snappea check tcFixedDoubleClick tcFixedTripleClick tcFixedMixedKeys tcFixedRetryAfterDone --deny mutation --timeout 20s
-snappea check tcBugDoubleClick        # exits 1 with the double charge above
+snappea check tcBugDoubleClick        # succeeds only when the declared bug is found
 ```
 
 One mutant is suppressed: `nextCharge + 1` → `nextCharge - 1` in `Gateway`, because
 charge ids are only compared for equality and counting down keeps them unique.
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -110,7 +114,7 @@ different amount (the spec rejects it as a driver error).
 
 ## Testing the implementation
 
-Emit `eCharged` from the gateway client after the gateway confirms, and `eReplied`
+Emit `Charged` from the gateway client after the gateway confirms, and `Replied`
 when the API returns. To force the race, block the gateway stub on a latch, send the
 duplicate request, then release the latch: the flawed code calls the stub twice;
 the fixed code calls it once and both responses carry the same charge id.

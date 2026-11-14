@@ -4,14 +4,14 @@
 // content) abandons the current rollout and starts over at the canary.
 //
 // Real atomic steps: the service handles one message at a time (one leader); a node
-// applies a config atomically. Each push travels on its own connection (a Courier),
+// applies a config atomically. Each push travels on its own connection (a BBDelivery),
 // so pushes can be delayed and two pushes to one node can arrive in either order.
 
-type tPush = (service: machine, version: int, content: int);
+type ConfigPush = (service: machine, version: int, content: int);
 
-event eIssue: (version: int, content: int);
-event ePush: tPush;
-event eAck: (node: int, version: int);
+event Issue: (version: int, content: int);
+event PushConfig: ConfigPush;
+event Ack: (node: int, version: int);
 
 
 machine ConfigService {
@@ -30,14 +30,14 @@ machine ConfigService {
 
   // Every node acknowledged the current version (or nothing was issued yet).
   state Idle {
-    on eIssue do (i: (version: int, content: int)) { Start(i.version, i.content); }
+    on Issue do (i: (version: int, content: int)) { Start(i.version, i.content); }
     // An ack for a version this service already moved past.
-    ignore eAck;
+    ignore Ack;
   }
 
   state Canary {
-    on eIssue do (i: (version: int, content: int)) { Start(i.version, i.content); }
-    on eAck do (a: (node: int, version: int)) {
+    on Issue do (i: (version: int, content: int)) { Start(i.version, i.content); }
+    on Ack do (a: (node: int, version: int)) {
       var n: int;
       if (a.version != version) {
         // Late ack for a superseded version: it says nothing about this one. (Only
@@ -54,12 +54,12 @@ machine ConfigService {
   }
 
   state Rest {
-    on eIssue do (i: (version: int, content: int)) { Start(i.version, i.content); }
-    on eAck do (a: (node: int, version: int)) {
+    on Issue do (i: (version: int, content: int)) { Start(i.version, i.content); }
+    on Ack do (a: (node: int, version: int)) {
       if (a.version != version) { return; }
       acked += (a.node);
       if (sizeof(acked) == sizeof(nodes) - 1) {
-        announce eRolloutDone, (version = version,);
+        announce RolloutDone, (version = version,);
         // snappea-lint: allow mutation:remove-statement -- once every ack is in, Rest and Idle handle every event alike
         goto Idle;
       }
@@ -70,14 +70,15 @@ machine ConfigService {
     version = v;
     content = c;
     acked = default(set[int]);
-    announce eIssued, (version = v, content = c);
+    announce Issued, (version = v, content = c);
     Push(0);
     goto Canary;
   }
 
   fun Push(n: int) {
-    announce ePushSent, (node = n, version = version);
-    new Courier((dest = nodes[n], push = (service = this, version = version, content = content)));
+    announce PushSent, (node = n, version = version);
+    new BBDelivery((destination = nodes[n], message = PushConfig,
+      payload = (service = this, version = version, content = content)));
   }
 }
 
@@ -93,25 +94,16 @@ machine Node {
       id = input.id;
       version = input.version;
       content = input.content;
-      announce eNodeStarted, (node = id, version = version, content = content);
+      announce NodeStarted, (node = id, version = version, content = content);
     }
-    on ePush do (p: tPush) {
+    on PushConfig do (p: ConfigPush) {
       // snappea-lint: allow mutation:swap-operator -- each version is pushed to each node once, so a push never equals the running version
       if (p.version > version) {
         version = p.version;
         content = p.content;
-        announce eApplied, (node = id, version = version, content = content);
+        announce Applied, (node = id, version = version, content = content);
       }
-      send p.service, eAck, (node = id, version = p.version);
-    }
-  }
-}
-
-// One push in flight on its own connection.
-machine Courier {
-  start state Sending {
-    entry (d: (dest: machine, push: tPush)) {
-      send d.dest, ePush, d.push;
+      send p.service, Ack, (node = id, version = p.version);
     }
   }
 }

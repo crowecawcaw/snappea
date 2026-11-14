@@ -9,18 +9,18 @@
 //   release: held(hold) -> free (the customer clicked cancel)
 // Everything between them (the payment, the timer) can interleave.
 
-type tHoldReq = (client: Customer, seat: int, hold: int);
-type tHoldRef = (client: Customer, seat: int, hold: int);
+type HoldRequest = (client: Customer, seat: int, hold: int);
+type HoldReference = (client: Customer, seat: int, hold: int);
 
-event eHoldReq: tHoldReq;
-event eHoldResp: (hold: int, ok: bool);
-event eConfirmReq: tHoldRef;
-event eConfirmResp: (hold: int, ok: bool);
+event HoldReq: HoldRequest;
+event HoldResp: (hold: int, ok: bool);
+event ConfirmReq: HoldReference;
+event ConfirmResp: (hold: int, ok: bool);
 // From the hold's expiry timer.
-event eExpire: (seat: int, hold: int);
+event Expire: (seat: int, hold: int);
 // The customer cancels its own hold; the store answers once the cancel is done.
-event eReleaseReq: (client: Customer, seat: int, hold: int);
-event eReleaseResp;
+event ReleaseReq: (client: Customer, seat: int, hold: int);
+event ReleaseResp;
 
 // The fixed design: confirm succeeds only while this hold still holds the seat.
 machine SeatStore {
@@ -29,44 +29,44 @@ machine SeatStore {
   var sold: set[int];
 
   start state Serving {
-    on eHoldReq do (r: tHoldReq) {
+    on HoldReq do (r: HoldRequest) {
       if (r.seat in held || r.seat in sold) {
-        announce eHoldRejected, (seat = r.seat, hold = r.hold);
-        send r.client, eHoldResp, (hold = r.hold, ok = false);
+        announce HoldRejected, (seat = r.seat, hold = r.hold);
+        send r.client, HoldResp, (hold = r.hold, ok = false);
         return;
       }
       held[r.seat] = r.hold;
-      announce eHeld, (seat = r.seat, hold = r.hold);
+      announce Held, (seat = r.seat, hold = r.hold);
       new ExpiryTimer((store = this, seat = r.seat, hold = r.hold));
-      send r.client, eHoldResp, (hold = r.hold, ok = true);
+      send r.client, HoldResp, (hold = r.hold, ok = true);
     }
-    on eConfirmReq do (r: tHoldRef) {
+    on ConfirmReq do (r: HoldReference) {
       if (r.seat in held && held[r.seat] == r.hold) {
         held -= (r.seat);
         sold += (r.seat);
-        announce eSold, (seat = r.seat, hold = r.hold);
-        send r.client, eConfirmResp, (hold = r.hold, ok = true);
+        announce Sold, (seat = r.seat, hold = r.hold);
+        send r.client, ConfirmResp, (hold = r.hold, ok = true);
       } else {
-        announce eConfirmRejected, (seat = r.seat, hold = r.hold);
-        send r.client, eConfirmResp, (hold = r.hold, ok = false);
+        announce ConfirmRejected, (seat = r.seat, hold = r.hold);
+        send r.client, ConfirmResp, (hold = r.hold, ok = false);
       }
     }
-    on eExpire do (e: (seat: int, hold: int)) {
+    on Expire do (e: (seat: int, hold: int)) {
       // The timer of a hold that was cancelled fires late, possibly while a later
       // hold has the seat: compare the hold id, not just the seat.
       if (e.seat in held && held[e.seat] == e.hold) {
         held -= (e.seat);
-        announce eExpired, (seat = e.seat, hold = e.hold);
+        announce Expired, (seat = e.seat, hold = e.hold);
       }
     }
-    on eReleaseReq do (r: (client: Customer, seat: int, hold: int)) {
+    on ReleaseReq do (r: (client: Customer, seat: int, hold: int)) {
       // A cancel that arrives after the hold expired, possibly while a later hold has
       // the seat, must not free it either.
       if (r.seat in held && held[r.seat] == r.hold) {
         held -= (r.seat);
-        announce eHoldReleased, (seat = r.seat, hold = r.hold);
+        announce HoldReleased, (seat = r.seat, hold = r.hold);
       }
-      send r.client, eReleaseResp;
+      send r.client, ReleaseResp;
     }
   }
 }
@@ -76,7 +76,7 @@ machine SeatStore {
 machine ExpiryTimer {
   start state Armed {
     entry (t: (store: machine, seat: int, hold: int)) {
-      send t.store, eExpire, (seat = t.seat, hold = t.hold);
+      send t.store, Expire, (seat = t.seat, hold = t.hold);
     }
   }
 }

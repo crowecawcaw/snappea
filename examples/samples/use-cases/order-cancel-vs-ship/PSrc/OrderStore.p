@@ -6,48 +6,46 @@
 // The reply says whether the row changed and what status it had before, so the
 // caller can tell "already cancelled" from "already shipped".
 
-enum tStatus { Placed, Authorized, Picked, Shipped, Cancelled }
+enum Status { Placed, Authorized, Picked, Shipped, Cancelled }
 
-event eCreate: (client: machine, order: int);
-event eCreated: (order: int);
-event eTransition: (client: machine, order: int, allowed: set[tStatus], next: tStatus);
-event eTransitionResp: (order: int, next: tStatus, ok: bool, prior: tStatus);
+event Create: (client: machine, order: int);
+event Created: (order: int);
+event Transition: (client: machine, order: int, allowed: set[Status], next: Status);
+event TransitionResp: (order: int, next: Status, ok: bool, prior: Status);
 
 machine OrderStore {
-  var status: map[int, tStatus];
+  var status: map[int, Status];
 
   start state Serving {
-    on eCreate do (r: (client: machine, order: int)) {
+    on Create do (r: (client: machine, order: int)) {
       status[r.order] = Placed;
-      announce eOrderCreated, (order = r.order,);
-      send r.client, eCreated, (order = r.order,);
+      announce OrderCreated, (order = r.order,);
+      send r.client, Created, (order = r.order,);
     }
-    on eTransition do (r: (client: machine, order: int, allowed: set[tStatus], next: tStatus)) {
-      var prior: tStatus;
+    on Transition do (r: (client: machine, order: int, allowed: set[Status], next: Status)) {
+      var prior: Status;
       prior = status[r.order];
       if (prior in r.allowed) {
         status[r.order] = r.next;
-        announce eStatusChanged, (order = r.order, from = prior, next = r.next);
-        send r.client, eTransitionResp, (order = r.order, next = r.next, ok = true, prior = prior);
+        announce StatusChanged, (order = r.order, from = prior, next = r.next);
+        send r.client, TransitionResp, (order = r.order, next = r.next, ok = true, prior = prior);
         return;
       }
-      // snappea-lint: allow mutation:remove-statement -- observation only: dropping it removes a check, not behavior
-      announce eTransitionRefused, (order = r.order, next = r.next, prior = prior);
-      send r.client, eTransitionResp, (order = r.order, next = r.next, ok = false, prior = prior);
+      send r.client, TransitionResp, (order = r.order, next = r.next, ok = false, prior = prior);
     }
   }
 }
 
 // The WHERE clauses each writer uses.
-fun Only(s: tStatus): set[tStatus] {
-  var allowed: set[tStatus];
+fun Only(s: Status): set[Status] {
+  var allowed: set[Status];
   allowed += (s);
   return allowed;
 }
 
 // Cancel succeeds only before the parcel ships.
-fun BeforeShipping(): set[tStatus] {
-  var allowed: set[tStatus];
+fun BeforeShipping(): set[Status] {
+  var allowed: set[Status];
   allowed += (Placed);
   allowed += (Authorized);
   allowed += (Picked);

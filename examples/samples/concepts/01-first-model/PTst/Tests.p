@@ -4,7 +4,7 @@ machine Main {
     entry {
       var counter: Counter;
       counter = new Counter();
-      announce ePingsPlanned, 4;
+      announce PingsPlanned, 4;
       new Client((counter = counter, pings = 2));
       new Client((counter = counter, pings = 2));
     }

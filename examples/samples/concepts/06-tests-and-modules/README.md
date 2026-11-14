@@ -50,15 +50,14 @@ test tcTwoCallers [main=TwoCallers]:
 test tcOneMoreThanLimit [main=OneMoreThanLimit]:
   assert UniqueIds, RequestsAnswered in (union Allocation, Callers, { OneMoreThanLimit });
 
-// snappea-lint: allow no-progress-spec -- negative control for UniqueIds; ...
-// expect-bug: id 0 given twice
+// snappea: expect-bug "id 0 given twice"
 test tcBugWrapsAround [main=OneMoreThanLimit]:
   assert UniqueIds in (union WrappingAllocation, Callers, { OneMoreThanLimit });
 ```
 
 The negative control checks only the spec its bug is about, so it cannot fail for an
-unrelated reason. The linter normally requires a progress spec in a test whose driver
-waits for replies; the suppression says why this one has none.
+unrelated reason. Native `expect-bug` intent permits a safety-only negative control.
+The check succeeds only when the failure message matches, and retains the replay.
 
 **Drivers outside `PTst`.** `Caller` models the design's users and lives next to the
 design in `PSrc`. The comment on the line before it marks it as a driver, like the
@@ -70,7 +69,7 @@ machine Caller { ... }
 ```
 
 Drivers are not mutated (they are the test, not the design), and the checker lists
-the limits they kept ("each Caller sends eAlloc exactly once").
+the limits they kept ("each Caller sends Alloc exactly once").
 
 ## Test cases
 
@@ -78,11 +77,14 @@ the limits they kept ("each Caller sends eAlloc exactly once").
 | --- | --- | --- | --- |
 | `tcTwoCallers` | 2 callers, 1 request each, 3 ids | Contention: concurrent requests get different ids | passes, all 53 schedules |
 | `tcOneMoreThanLimit` | 1 caller, 4 requests, 3 ids | Boundary: the last id, then a refusal | passes, all 4 schedules |
-| `tcBugWrapsAround` | Same as above, `WrappingAllocator` bound in | Negative control: reusing ids instead of refusing | **fails**: `id 0 given twice` |
+| `tcBugWrapsAround` | Same as above, `WrappingAllocator` bound in | Negative control: reusing ids instead of refusing | **expected bug**: `id 0 given twice` |
 
-`tcOneMoreThanLimit` is sequential, so the checker notes that its schedules all reach
-nearly the same states. That is expected for a boundary test: its job is to reach the
-boundary, while `tcTwoCallers` explores the interleavings.
+`tcOneMoreThanLimit` is sequential. Its `// snappea: boundary -- ...` directive
+explains the focused boundary and suppresses only the low-diversity note; all checks
+still apply. `tcTwoCallers` explores the interleavings.
+
+Schedule counts, timings and report excerpts below are illustrative. Use the current
+run's completion status to decide whether it explored all schedules.
 
 ## Run it
 
@@ -90,7 +92,7 @@ boundary, while `tcTwoCallers` explores the interleavings.
 cd examples/samples/concepts/06-tests-and-modules
 snappea tests                                   # list the test cases
 snappea check tcTwoCallers tcOneMoreThanLimit --deny mutation
-snappea check tcBugWrapsAround                  # exits 1
+snappea check tcBugWrapsAround                  # exits 0 when the declared bug matches
 ```
 
 ## Coverage adds up across the selected test cases
@@ -114,14 +116,14 @@ fails, because two callers never run out of ids:
 
 ```text
 Not covered by the test case:
-  PSpec/Ids.p:23       UniqueIds.Checking, on eNoIdsLeft: never handled
-  PSrc/Allocator.p:17  Allocator.Serving, on eAlloc: if (next < limit) never false
+  PSpec/Ids.p:23       UniqueIds.Checking, on NoIdsLeft: never handled
+  PSrc/Allocator.p:17  Allocator.Serving, on Alloc: if (next < limit) never false
   ...
 Coverage requirements were not met for 10 points.
 ```
 
-So run the passing test cases together in CI, and run a broken variant's test on its
-own (it is meant to fail, and machines only it uses are left out of the totals).
+Run all test cases together in CI. Matching expected bugs contribute driver coverage;
+their design/spec coverage is reported separately and cannot fill passing-test gaps.
 Mutation testing also runs each mutant against every selected test case that ran the
 changed code: `tcOneMoreThanLimit` is what catches `next < limit` turned into
 `next <= limit`.
@@ -144,7 +146,7 @@ nothing but runtime errors.
 Bind the broken allocator into the contention test too:
 `(union WrappingAllocation, Callers, { TwoCallers })` in `tcTwoCallers`. No
 assertion fails, since two requests never exhaust three ids; the check fails on
-coverage instead: `WrappingAllocator.Serving, on eAlloc: if (next == limit) never
+coverage instead: `WrappingAllocator.Serving, on Alloc: if (next == limit) never
 true`. A broken variant needs a test that reaches the case it gets wrong.
 
 ## Bounds
@@ -154,7 +156,7 @@ allocator.
 
 ## In your implementation
 
-Emit `eIdResp` (with the id) and `eNoIdsLeft` from the allocator where it commits the
-counter, and `eIdRequested` from callers. One set of specs serves every test: a
+Emit `IdResponse` (with the id) and `NoIdsLeft` from the allocator where it commits the
+counter, and `IdRequested` from callers. One set of specs serves every test: a
 contention test, a boundary test that exhausts the ids, and a test with a fault you
 inject on purpose.

@@ -46,17 +46,17 @@ What storage can promise is that an old leader never overwrites a newer one.
 | [`PTst/Tests.p`](PTst/Tests.p) | Drivers, a crashing node, a scenario, test cases |
 
 **Modeling time.** There is no clock. The lease timer is a machine that sends one
-`eExpire` at a moment the scheduler picks, so the checker tries expiry at every
+`Expire` at a moment the scheduler picks, so the checker tries expiry at every
 point: before the holder hears of its grant, between its writes, after it released.
-The pause is the node sending itself `eResume` between the lease check and the
+The pause is the node sending itself `Resume` between the lease check and the
 write; any number of other steps can run before it is delivered.
 
 ## The counterexample
 
-`snappea check tcBugStaleLeaderWrite` fails with:
+`snappea check tcBugStaleLeaderWrite` finds the declared bug:
 
 ```text
-Assertion Failed: PSpec/Contract.p:45:7 stale write: storage accepted value 11 from node 1 under lease 1 after a write under lease 2
+Assertion Failed: stale write: storage accepted value 11 from node 1 under lease 1 after a write under lease 2
 ```
 
 From `PCheckerOutput/tcBugStaleLeaderWrite/bug.txt` (node 1 plans values 10 and 11,
@@ -95,9 +95,9 @@ fenced this way.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcBugStaleLeaderWrite` | Two nodes, unfenced storage | The stale write | **Fails**: `stale write: storage accepted value 11 from node 1 under lease 1 after a write under lease 2` |
-| `tcFixedTwoLeaders` | Two nodes, fenced; node 1 writes twice | Old leader fenced; a leader's second write under the same token is still accepted | Passes, all 14018 schedules |
-| `tcFixedLeaderCrashes` | A node takes the lease and dies; another must lead | Lifecycle boundary: expiry is the only way out | Passes, all 3197 schedules |
+| `tcBugStaleLeaderWrite` | Two nodes, unfenced storage | The stale write | **Expected bug**: `stale write: storage accepted value 11 from node 1 under lease 1 after a write under lease 2` |
+| `tcFixedTwoLeaders` | Two nodes, fenced; node 1 writes twice | Old leader fenced; a leader's second write under the same token is still accepted | Passes |
+| `tcFixedLeaderCrashes` | A node takes the lease and dies; another must lead | Lifecycle boundary: expiry is the only way out | Passes |
 
 The `OldLeaderFenced` scenario confirms a rejection happens in `tcFixedTwoLeaders`.
 
@@ -105,12 +105,18 @@ The `OldLeaderFenced` scenario confirms a rejection happens in `tcFixedTwoLeader
 
 ```sh
 snappea check tcFixedTwoLeaders tcFixedLeaderCrashes --deny mutation --timeout 20s
-snappea check tcBugStaleLeaderWrite    # exits 1 with the stale write above
+snappea check tcBugStaleLeaderWrite    # succeeds only when the declared bug is found
 ```
 
-Two mutation suppressions, both with the same reason: removing the node's release, or
-the lock service's handling of it, only means the lease ends at its timer instead of
-earlier, and the model has no time to tell those apart.
+Removing release handling is indistinguishable from waiting for expiry in this
+untimed model. Accepting a stale timer is likewise indistinguishable from the
+current lease's own timer firing. The corresponding mutations are suppressed
+individually; the protocol still checks tokens. Use a timed model to check the
+lease duration itself.
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -120,8 +126,8 @@ fence, or a quorum must), a crashed node coming back.
 
 ## Testing the implementation
 
-Emit `eLeaseGranted`/`eLeaseEnded` from the lock client and `eWriteAccepted`/
-`eWriteRejected` from storage. To force the race, give the lock a very short lease,
+Emit `LeaseGranted`/`LeaseEnded` from the lock client and `WriteAccepted`/
+`WriteRejected` from storage. To force the race, give the lock a very short lease,
 block the first leader after its lease check (a hook or a debugger breakpoint), let
 the lease expire and a second leader write, then unblock: unfenced storage takes the
 stale write, fenced storage rejects it.

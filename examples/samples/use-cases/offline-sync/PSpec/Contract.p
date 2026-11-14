@@ -3,28 +3,28 @@
 // modeled as the set of edit ids it contains, so "an edit was lost" is checkable: a
 // later version that does not contain it, without the user having seen it.
 
-type tNote = (version: int, content: set[int], deleted: bool);
+type Note = (version: int, content: set[int], deleted: bool);
 
 // Server, at its commit point: update `req` from `client`, based on `base`, became
 // version `version` with this content.
-event eAccepted: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool);
+event Accepted: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool);
 // Server, when it answers a request it already applied with the version it produced.
-event eReplayed: (client: int, req: int, base: int, version: int);
+event Replayed: (client: int, req: int, base: int, version: int);
 // Server, when it refuses an update because its base is not the current version.
-event eConflicted: (client: int, req: int, base: int, current: int);
+event Conflicted: (client: int, req: int, base: int, current: int);
 
 // Driver: the note every client starts from, and how many clients will sync.
-event eSyncPlanned: (clients: int, initial: tNote);
+event SyncPlanned: (clients: int, initial: Note);
 // Driver: what each client's user did offline. `edit` names the change.
-event eOpPlanned: (client: int, edit: int, isDelete: bool);
+event OpPlanned: (client: int, edit: int, isDelete: bool);
 // Client: its user's change is resolved. applied=false only for a delete the client
 // dropped because the note changed after the user last saw it.
-event eOpDone: (client: int, edit: int, applied: bool, version: int);
+event OpDone: (client: int, edit: int, applied: bool, version: int);
 // Test network: this client's update timed out, so it will resend once. The reply
 // may be lost or only late.
-event eTimedOut: (client: int);
+event RequestTimedOut: (client: int);
 // Client: its local copy after a final pull.
-event eSynced: (client: int, note: tNote);
+event Synced: (client: int, note: Note);
 
 // Safety: no edit is silently lost, and conflicts are real.
 // Each accepted update must be based on the current version, so its author saw every
@@ -32,25 +32,26 @@ event eSynced: (client: int, note: tNote);
 // delete supersedes the content explicitly, and only the version its user saw. A
 // conflict is legitimate only when the base really is stale, and never for a request
 // the server already applied (a retried request must not conflict with itself).
-spec NoLostUpdates observes eSyncPlanned, eAccepted, eConflicted, eReplayed {
-  var current: tNote;
+spec NoLostUpdates observes SyncPlanned, Accepted, Conflicted, Replayed {
+  var current: Note;
   // request -> the version it produced
   var applied: map[int, int];
 
   start state Init {
     // snappea-lint: allow unused-payload-field -- SyncCompletes checks the client count
-    on eSyncPlanned do (p: (clients: int, initial: tNote)) {
+    on SyncPlanned do (p: (clients: int, initial: Note)) {
       current = p.initial;
       goto Watching;
     }
-    on eAccepted do { assert false, "update accepted before the note existed"; }
-    on eConflicted do { assert false, "conflict before the note existed"; }
-    on eReplayed do { assert false, "replay before the note existed"; }
+    on Accepted do { assert false, "update accepted before the note existed"; }
+    on Conflicted do { assert false, "conflict before the note existed"; }
+    on Replayed do { assert false, "replay before the note existed"; }
   }
 
   state Watching {
-    on eSyncPlanned do { assert false, "sync planned twice"; }
-    on eAccepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
+    on SyncPlanned do { assert false, "sync planned twice"; }
+    // snappea-lint: allow unused-payload-field -- SyncCompletes associates the client with its planned operation
+    on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       var e: int;
       assert !(a.req in applied), format("request {0} applied twice", a.req);
       assert a.base == current.version,
@@ -70,12 +71,13 @@ spec NoLostUpdates observes eSyncPlanned, eAccepted, eConflicted, eReplayed {
       current = (version = a.version, content = a.content, deleted = a.deleted);
     }
     // snappea-lint: allow unused-payload-field -- SyncCompletes checks the client and base
-    on eReplayed do (r: (client: int, req: int, base: int, version: int)) {
+    on Replayed do (r: (client: int, req: int, base: int, version: int)) {
       assert r.req in applied, format("request {0} replayed but never applied", r.req);
       assert r.version == applied[r.req],
         format("request {0} replayed as version {1}, it produced version {2}", r.req, r.version, applied[r.req]);
     }
-    on eConflicted do (c: (client: int, req: int, base: int, current: int)) {
+    // snappea-lint: allow unused-payload-field -- SyncCompletes checks which client receives the conflict
+    on Conflicted do (c: (client: int, req: int, base: int, current: int)) {
       assert !(c.req in applied),
         format("request {0} conflicted with itself: it was already applied", c.req);
       assert c.base != current.version,
@@ -93,8 +95,8 @@ spec NoLostUpdates observes eSyncPlanned, eAccepted, eConflicted, eReplayed {
 // newer version a conflict reported to it. A reply can arrive after its timeout, so a
 // client may see several conflicts; a push on a version it already pushed, or on an
 // older one, means it took a late reply as fresh.
-spec SyncCompletes observes eSyncPlanned, eOpPlanned, eAccepted, eConflicted, eReplayed, eOpDone, eSynced, eTimedOut {
-  var current: tNote;
+spec SyncCompletes observes SyncPlanned, OpPlanned, Accepted, Conflicted, Replayed, OpDone, Synced, RequestTimedOut {
+  var current: Note;
   var clients: int;
   var initialVersion: int;
   // edit -> what the user did, removed when resolved
@@ -106,53 +108,53 @@ spec SyncCompletes observes eSyncPlanned, eOpPlanned, eAccepted, eConflicted, eR
   // client -> timeouts not yet answered by a resend
   var resends: map[int, int];
   // client -> its accepted update
-  var accepted: map[int, tNote];
+  var accepted: map[int, Note];
   var synced: set[int];
 
   start state Init {
-    on eSyncPlanned do (p: (clients: int, initial: tNote)) {
+    on SyncPlanned do (p: (clients: int, initial: Note)) {
       assert p.clients > 0, "planned no clients";
       clients = p.clients;
       current = p.initial;
       initialVersion = p.initial.version;
       goto Syncing;
     }
-    on eOpPlanned do { assert false, "op planned before the sync"; }
-    on eAccepted do { assert false, "update accepted before the sync"; }
-    on eConflicted do { assert false, "conflict before the sync"; }
-    on eOpDone do { assert false, "op done before the sync"; }
-    on eSynced do { assert false, "pull before the sync"; }
-    on eTimedOut do { assert false, "timeout before the sync"; }
-    on eReplayed do { assert false, "replay before the sync"; }
+    on OpPlanned do { assert false, "op planned before the sync"; }
+    on Accepted do { assert false, "update accepted before the sync"; }
+    on Conflicted do { assert false, "conflict before the sync"; }
+    on OpDone do { assert false, "op done before the sync"; }
+    on Synced do { assert false, "pull before the sync"; }
+    on RequestTimedOut do { assert false, "timeout before the sync"; }
+    on Replayed do { assert false, "replay before the sync"; }
   }
 
   hot state Syncing {
-    on eSyncPlanned do { assert false, "sync planned twice"; }
-    on eOpPlanned do (p: (client: int, edit: int, isDelete: bool)) {
+    on SyncPlanned do { assert false, "sync planned twice"; }
+    on OpPlanned do (p: (client: int, edit: int, isDelete: bool)) {
       assert !(p.edit in open), format("edit {0} planned twice", p.edit);
       open[p.edit] = (client = p.client, isDelete = p.isDelete);
       reported[p.client] = default(set[int]);
       resends[p.client] = 0;
     }
     // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids
-    on eAccepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
+    on Accepted do (a: (client: int, req: int, base: int, version: int, content: set[int], deleted: bool)) {
       CheckBase(a.client, a.base);
       current = (version = a.version, content = a.content, deleted = a.deleted);
       accepted[a.client] = current;
     }
     // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids
-    on eConflicted do (c: (client: int, req: int, base: int, current: int)) {
+    on Conflicted do (c: (client: int, req: int, base: int, current: int)) {
       CheckBase(c.client, c.base);
       reported[c.client] += (c.current);
     }
     // snappea-lint: allow unused-payload-field -- NoLostUpdates checks request ids and versions
-    on eReplayed do (r: (client: int, req: int, base: int, version: int)) {
+    on Replayed do (r: (client: int, req: int, base: int, version: int)) {
       CheckBase(r.client, r.base);
     }
-    on eTimedOut do (t: (client: int)) {
+    on RequestTimedOut do (t: (client: int)) {
       resends[t.client] = resends[t.client] + 1;
     }
-    on eOpDone do (d: (client: int, edit: int, applied: bool, version: int)) {
+    on OpDone do (d: (client: int, edit: int, applied: bool, version: int)) {
       var mine: (client: int, isDelete: bool);
       assert d.edit in open, format("edit {0} resolved twice or never planned", d.edit);
       mine = open[d.edit];
@@ -179,7 +181,7 @@ spec SyncCompletes observes eSyncPlanned, eOpPlanned, eAccepted, eConflicted, eR
       }
       open -= (d.edit);
     }
-    on eSynced do (s: (client: int, note: tNote)) {
+    on Synced do (s: (client: int, note: Note)) {
       assert sizeof(open) == 0, format("client {0} pulled before every change was resolved", s.client);
       assert !(s.client in synced), format("client {0} pulled twice", s.client);
       // The pull follows the resend on the same path, so the server has answered it.
@@ -194,14 +196,14 @@ spec SyncCompletes observes eSyncPlanned, eOpPlanned, eAccepted, eConflicted, eR
   }
 
   state Converged {
-    on eSyncPlanned do { assert false, "sync planned twice"; }
-    on eOpPlanned do { assert false, "op planned after convergence"; }
-    on eAccepted do { assert false, "update accepted after every client converged"; }
-    on eConflicted do { assert false, "conflict after every client converged"; }
-    on eOpDone do { assert false, "op done after every client converged"; }
-    on eSynced do { assert false, "pull after every client converged"; }
-    on eTimedOut do { assert false, "timeout after every client converged"; }
-    on eReplayed do { assert false, "replay after every client converged"; }
+    on SyncPlanned do { assert false, "sync planned twice"; }
+    on OpPlanned do { assert false, "op planned after convergence"; }
+    on Accepted do { assert false, "update accepted after every client converged"; }
+    on Conflicted do { assert false, "conflict after every client converged"; }
+    on OpDone do { assert false, "op done after every client converged"; }
+    on Synced do { assert false, "pull after every client converged"; }
+    on RequestTimedOut do { assert false, "timeout after every client converged"; }
+    on Replayed do { assert false, "replay after every client converged"; }
   }
 
   fun CheckBase(client: int, base: int) {

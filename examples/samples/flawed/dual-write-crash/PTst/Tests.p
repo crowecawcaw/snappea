@@ -6,14 +6,14 @@
 // committed.
 machine Client {
   start state Run {
-    entry (p: (service: machine, changes: seq[tChange])) {
-      var c: tChange;
+    entry (p: (service: machine, changes: seq[Change])) {
+      var c: Change;
       foreach (c in p.changes) {
-        announce eUpdateRequested, c;
-        send p.service, eUpdate, (client = this, change = c);
+        announce UpdateRequested, c;
+        send p.service, Update, (client = this, change = c);
         receive {
-          case eUpdateResp: (id: int) { announce eUpdateAnswered, (id = id, ok = true); }
-          case eReset: (id: int) { announce eUpdateAnswered, (id = id, ok = false); }
+          case UpdateResp: (id: int) { announce UpdateAnswered, (id = id, ok = true); }
+          case Reset: (id: int) { announce UpdateAnswered, (id = id, ok = false); }
         }
       }
     }
@@ -24,13 +24,13 @@ machine Client {
 machine Crasher {
   start state Run {
     entry (target: machine) {
-      if ($) { send target, eCrash; }
+      if ($) { send target, Crash; }
     }
   }
 }
 
-fun Changes(first: int, n: int) : seq[tChange] {
-  var s: seq[tChange];
+fun Changes(first: int, n: int) : seq[Change] {
+  var s: seq[Change];
   while (sizeof(s) < n) {
     s += (sizeof(s), (id = first + sizeof(s), value = 100 + first + sizeof(s)));
   }
@@ -43,7 +43,7 @@ machine DualWriteCrash {
   start state Init {
     entry {
       var service: machine;
-      announce eUpdatesPlanned, 1;
+      announce UpdatesPlanned, 1;
       service = new DualWriteService((db = new OrdersDb(), broker = new EventStream()));
       new Client((service = service, changes = Changes(1, 1)));
       new Crasher(service);
@@ -58,7 +58,7 @@ machine OutboxServiceCrash {
     entry {
       var db: machine;
       var service: machine;
-      announce eUpdatesPlanned, 1;
+      announce UpdatesPlanned, 1;
       db = new OutboxDb();
       new OutboxRelay((db = db, broker = new EventStream()));
       service = new OutboxService(db);
@@ -76,7 +76,7 @@ machine StaleCommitResult {
   start state Init {
     entry {
       var service: machine;
-      announce eUpdatesPlanned, 2;
+      announce UpdatesPlanned, 2;
       service = new OutboxService(new CrashAfterCommit(new OutboxDb()));
       new Client((service = service, changes = Changes(1, 2)));
     }
@@ -91,13 +91,13 @@ machine CrashAfterCommit {
 
   start state Forwarding {
     entry (d: machine) { db = d; }
-    on eCommitWithOutbox do (r: (from: machine, epoch: int, change: tChange)) {
+    on CommitWithOutbox do (r: (from: machine, epoch: int, change: Change)) {
       service = r.from;
-      send db, eCommitWithOutbox, (from = this, epoch = r.epoch, change = r.change);
+      send db, CommitWithOutbox, (from = this, epoch = r.epoch, change = r.change);
     }
-    on eCommitResult do (e: int) {
-      send service, eCrash;
-      send service, eCommitResult, e;
+    on CommitResult do (e: int) {
+      send service, Crash;
+      send service, CommitResult, e;
     }
   }
 }
@@ -109,7 +109,7 @@ machine OutboxTwoUpdates {
     entry {
       var db: machine;
       var service: machine;
-      announce eUpdatesPlanned, 2;
+      announce UpdatesPlanned, 2;
       db = new OutboxDb();
       new OutboxRelay((db = db, broker = new EventStream()));
       service = new OutboxService(db);
@@ -127,7 +127,7 @@ machine OutboxRelayCrash {
       var db: machine;
       var service: machine;
       var relay: machine;
-      announce eUpdatesPlanned, 1;
+      announce UpdatesPlanned, 1;
       db = new OutboxDb();
       relay = new OutboxRelay((db = db, broker = new EventStream()));
       service = new OutboxService(db);
@@ -139,16 +139,15 @@ machine OutboxRelayCrash {
 
 // Covered: the broker accepted the same change twice (the relay crashed after the
 // broker accepted it and before marking it).
-scenario DeliveredTwice observes eDelivered {
+scenario DeliveredTwice observes Delivered {
   var seen: set[int];
   start hot state WaitDuplicate {
-    on eDelivered do (c: tChange) {
+    on Delivered do (c: Change) {
       if (c.id in seen) { goto Covered; }
       seen += (c.id);
     }
   }
   cold state Covered {
-    ignore eDelivered;
   }
 }
 
@@ -167,7 +166,7 @@ test tcFixedRelayCrash [main=OutboxRelayCrash]:
   assert CommittedChangesPublished, UpdatesAnswered in
   { OutboxRelayCrash, OutboxDb, OutboxService, OutboxRelay, EventStream, Client, Crasher };
 
-// expect-bug: CommittedNotPublished
+// snappea: expect-bug "CommittedNotPublished"
 test tcBugCrashBetweenWriteAndPublish [main=DualWriteCrash]:
   assert CommittedChangesPublished, UpdatesAnswered in
   { DualWriteCrash, OrdersDb, DualWriteService, EventStream, Client, Crasher };

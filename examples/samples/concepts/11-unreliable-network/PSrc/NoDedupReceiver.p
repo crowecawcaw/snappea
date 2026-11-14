@@ -8,10 +8,10 @@ machine NoDedupReceiver {
     entry (n: Network) {
       net = n;
     }
-    on eData do (d: tMsg) {
+    on Data do (d: Msg) {
       // BUG: no check whether d.id was already delivered.
-      announce eDelivered, d.id;
-      send net, eNetSend, (dest = d.from, ev = eAck, msg = (from = this, id = d.id));
+      announce Delivered, d.id;
+      send net, NetSend, (dest = d.from, ev = Ack, msg = d.id);
     }
   }
 }

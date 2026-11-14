@@ -11,20 +11,20 @@
 // commits breaks an invariant that spans rows.
 
 // Tells whoever started the client (the test driver) that the request is over.
-event eDoctorDone;
+event DoctorDone;
 
 machine Doctor {
   start state Run {
     entry (p: (owner: machine, doctor: int, store: machine, doctors: set[int])) {
-      var snap: tSnapshot;
+      var snap: Snapshot;
       var d: int;
       var count: int;
       var writes: map[int, int];
       var decided: bool;
       var granted: bool;
       while (!decided) {
-        send p.store, eSnapshotRead, this;
-        receive { case eSnapshot: (s: tSnapshot) { snap = s; } }
+        send p.store, SnapshotRead, this;
+        receive { case Snapshot: (s: Snapshot) { snap = s; } }
         count = 0;
         foreach (d in p.doctors) { count = count + snap.rows[d]; }
         if (count < 2) {
@@ -32,13 +32,13 @@ machine Doctor {
           decided = true;
         } else {
           writes[p.doctor] = 0;
-          send p.store, eCommit, (client = this, ts = snap.ts, writes = writes);
+          send p.store, Commit, (client = this, ts = snap.ts, writes = writes);
           // On a conflict, start over with a fresh snapshot.
-          receive { case eCommitResult: (ok: bool) { decided = ok; granted = ok; } }
+          receive { case CommitResult: (ok: bool) { decided = ok; granted = ok; } }
         }
       }
-      announce eOffCallAnswered, (doctor = p.doctor, granted = granted);
-      send p.owner, eDoctorDone;
+      announce OffCallAnswered, (doctor = p.doctor, granted = granted);
+      send p.owner, DoctorDone;
     }
   }
 }

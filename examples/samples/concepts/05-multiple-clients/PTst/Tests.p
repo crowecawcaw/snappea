@@ -4,10 +4,10 @@ fun StartClients(capacity: int, clients: int) {
   var server: PermitServer;
   var id: int;
   server = new PermitServer(capacity);
-  announce eClientsPlanned, (capacity = capacity, clients = clients);
+  announce ClientsPlanned, (capacity = capacity, clients = clients);
   id = 1;
   while (id <= clients) {
-    announce eClientStarted, (id = id,);
+    announce ClientStarted, (id = id,);
     new Client((server = server, id = id));
     id = id + 1;
   }

@@ -14,17 +14,17 @@ machine UnlockedTab {
       storage = input.storage;
       network = input.network;
       id = input.id;
-      send storage, eLoad, this;
+      send storage, Load, this;
     }
-    on eLoaded do (s: tSession) {
-      send network, eSendRefresh, (tab = this, refresh = s.token);
+    on Loaded do (s: Session) {
+      send network, SendRefresh, (tab = this, refresh = s.token);
     }
-    on eRefreshResp do (r: (tab: machine, ok: bool, token: int)) {
+    on RefreshResp do (r: (tab: machine, ok: bool, token: int)) {
       fresh = r.token;
-      send storage, eSave, (client = this, session = (token = fresh, lost = false));
+      send storage, Save, (client = this, session = (token = fresh, lost = false));
     }
-    on eSaved do {
-      announce eTokenObtained, (tab = id, token = fresh);
+    on Saved do {
+      announce TokenObtained, (tab = id, token = fresh);
     }
   }
 }
@@ -46,26 +46,26 @@ machine RetryingTab {
       locks = input.locks;
       network = input.network;
       id = input.id;
-      send locks, eAcquire, this;
+      send locks, Acquire, this;
     }
-    on eGranted do {
-      send storage, eLoad, this;
+    on Granted do {
+      send storage, Load, this;
     }
-    on eLoaded do (s: tSession) {
+    on Loaded do (s: Session) {
       refresh = s.token;
-      send network, eSendRefresh, (tab = this, refresh = refresh);
+      send network, SendRefresh, (tab = this, refresh = refresh);
     }
-    on eRefreshTimeout do {
+    on RefreshTimeout do {
       // BUG: the server may already have rotated this token.
-      send network, eSendRefresh, (tab = this, refresh = refresh);
+      send network, SendRefresh, (tab = this, refresh = refresh);
     }
-    on eRefreshResp do (r: (tab: machine, ok: bool, token: int)) {
+    on RefreshResp do (r: (tab: machine, ok: bool, token: int)) {
       fresh = r.token;
-      send storage, eSave, (client = this, session = (token = fresh, lost = false));
+      send storage, Save, (client = this, session = (token = fresh, lost = false));
     }
-    on eSaved do {
-      announce eTokenObtained, (tab = id, token = fresh);
-      send locks, eRelease;
+    on Saved do {
+      announce TokenObtained, (tab = id, token = fresh);
+      send locks, Release;
     }
   }
 }

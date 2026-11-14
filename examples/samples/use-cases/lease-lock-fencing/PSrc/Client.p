@@ -6,20 +6,20 @@
 //   Normal:  write, release
 //   Pauses:  park until the driver resumes it (a long GC pause), then write, release
 //   Crashes: die holding the lease; only expiry frees the lock
-enum tBehavior { Normal, Pauses, Crashes }
-enum tOutcome { Wrote, Fenced, GaveUp, Crashed }
+enum Behavior { Normal, Pauses, Crashes }
+enum Outcome { Wrote, Fenced, GaveUp, Crashed }
 
 // Test hooks for a deterministic pause: the client parks after its grant and waits.
-event eParked: int;
-event eResume;
-event eClientDone: (id: int, outcome: tOutcome);
+event Parked: int;
+event Resume;
+event ClientDone: (id: int, outcome: Outcome);
 
 machine Client {
   var owner: machine;
   var lock: LockService;
   var storage: machine;
   var id: int;
-  var behavior: tBehavior;
+  var behavior: Behavior;
   var writes: int;
   var maxAttempts: int;
   var attempts: int;
@@ -27,7 +27,7 @@ machine Client {
 
   start state Acquiring {
     entry (input: (owner: machine, lock: LockService, storage: machine, id: int,
-                   behavior: tBehavior, writes: int, maxAttempts: int)) {
+                   behavior: Behavior, writes: int, maxAttempts: int)) {
       owner = input.owner;
       lock = input.lock;
       storage = input.storage;
@@ -37,12 +37,12 @@ machine Client {
       maxAttempts = input.maxAttempts;
       TryAcquire();
     }
-    on eAcquireResp do (r: (granted: bool, token: int)) {
+    on AcquireResp do (r: (granted: bool, token: int)) {
       if (r.granted) {
         token = r.token;
         if (behavior == Crashes) { goto Done, Crashed; }
         if (behavior == Pauses) {
-          send owner, eParked, id;
+          send owner, Parked, id;
           goto Paused;
         }
         goto Writing;
@@ -56,36 +56,36 @@ machine Client {
   }
 
   state Paused {
-    on eResume goto Writing;
+    on Resume goto Writing;
   }
 
   // Write `writes` times with the same token (a retried or multi-part write), stopping
   // at the first rejection, then release.
   state Writing {
     entry {
-      send storage, eWrite, (client = this, id = id, token = token);
+      send storage, Write, (client = this, id = id, token = token);
     }
-    on eWriteResp do (ok: bool) {
+    on WriteResp do (ok: bool) {
       writes = writes - 1;
       if (ok && writes > 0) { goto Writing; }
       // Release even when fenced: the lease may still be ours if it never expired.
-      send lock, eRelease, (client = this, token = token);
-      receive { case eReleaseResp: { } }
+      send lock, Release, (client = this, token = token);
+      receive { case ReleaseResp: { } }
       if (ok) { goto Done, Wrote; }
       goto Done, Fenced;
     }
   }
 
   state Done {
-    entry (outcome: tOutcome) {
+    entry (outcome: Outcome) {
       // Specs observe sent events too, so this one send reports the outcome to both.
       // (A crashed client reporting is test bookkeeping: the driver needs to know.)
-      send owner, eClientDone, (id = id, outcome = outcome);
+      send owner, ClientDone, (id = id, outcome = outcome);
     }
   }
 
   fun TryAcquire() {
     attempts = attempts + 1;
-    send lock, eAcquire, (client = this, id = id);
+    send lock, Acquire, (client = this, id = id);
   }
 }

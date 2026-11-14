@@ -47,10 +47,10 @@ From `tcBugPointerOnlyCas` (the stack starts as 1 → 2 → 3):
    3. Node 2, which thread 2 still owns, is back on the stack, and the next pop hands
    it out twice.
 
-The check fails with:
+The negative control finds this declared bug:
 
 ```text
-Assertion Failed: PSpec/StackContract.p:70:7 after thread 1 committed node 1, memory links up the stack (2, 3), but the committed operations give (3)
+Assertion Failed: after thread 1 committed node 1, memory links up the stack (2, 3), but the committed operations give (3)
 ```
 
 ## Why ordinary tests miss it
@@ -84,10 +84,10 @@ reusing a node another thread might still be reading.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFixedAbaInterleaving` | Fixed design; thread 1 pops, thread 2 pops, pops, pushes back | Every interleaving of the ABA history, including the stall | passes, all schedules |
-| `tcFixedForcedAba` | Fixed design; `SwapHolder` holds thread 1's swap until thread 2 is done | The ABA stall in one schedule, so mutation testing sees a missing tag at once | passes, all schedules |
-| `tcFixedPushPopContention` | Fixed design; one-element stack, thread 1 pushes two nodes, thread 2 pops and pushes back | Push/pop swaps collide both ways; both retry loops run; a thread pushing twice uses two nodes | passes, all schedules |
-| `tcBugPointerOnlyCas` | Flawed design, forced stall | **Expected to fail**: `but the committed operations give` | fails after 1 schedule |
+| `tcFixedAbaInterleaving` | Fixed design; thread 1 pops, thread 2 pops, pops, pushes back | Every interleaving of the ABA history, including the stall | passes |
+| `tcFixedForcedAba` | Fixed design; `SwapHolder` holds thread 1's swap until thread 2 is done | The ABA stall in one schedule, so mutation testing sees a missing tag at once | passes |
+| `tcFixedPushPopContention` | Fixed design; one-element stack, thread 1 pushes two nodes, thread 2 pops and pushes back | Push/pop swaps collide both ways; both retry loops run; a thread pushing twice uses two nodes | passes |
+| `tcBugPointerOnlyCas` | Flawed design, forced stall | **Expected bug**: `but the committed operations give` | Expected bug found |
 
 The forced test exists because a mutant (say, the tag never bumped) gets at most about a
 thousand schedules. The ABA schedule is one of a few thousand in
@@ -99,8 +99,12 @@ hundred schedules.
 
 ```sh
 snappea check AbaCas.pproj 'tcFixed*' --deny mutation
-snappea check AbaCas.pproj tcBugPointerOnlyCas   # exits 1 with the assertion above
+snappea check AbaCas.pproj tcBugPointerOnlyCas   # succeeds only when the declared bug is found
 ```
+
+The negative controls use native `snappea: expect-bug` declarations. A matching
+failure passes the test; no failure or a different failure fails it. Search coverage
+depends on the budget: claim exhaustion only when the current run reports completion.
 
 ## Bounds and omissions
 
@@ -114,8 +118,8 @@ tag on every swap works.
 
 ## Testing the implementation
 
-Emit `eTopSwapped` (thread, new top, and a snapshot of the list) right after each
-successful swap, and `eOpDone` when an operation returns; the spec then checks real
+Emit `TopSwapped` (thread, new top, and a snapshot of the list) right after each
+successful swap, and `OpDone` when an operation returns; the spec then checks real
 runs. To force the race, do what `SwapHolder` does: put a hook between the loads and
 the swap in the pop path, block thread 1 there, run thread 2's pop, pop, push to
 completion, then release thread 1. With a pointer-only swap the next pop returns a

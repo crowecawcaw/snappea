@@ -7,7 +7,7 @@ fun Plan(): seq[int] {
   ids += (1, 2);
   planned += (1);
   planned += (2);
-  announce eMessagesPlanned, planned;
+  announce MessagesPlanned, planned;
   return ids;
 }
 
@@ -48,6 +48,6 @@ test tcLostPackets [main=LostPackets]:
 test tcDuplicatedPacket [main=DuplicatedPacket]:
   assert ExactlyOnce in { DuplicatedPacket, Network, Sender, Receiver };
 
-// expect-bug: delivered twice
+// snappea: expect-bug "delivered twice"
 test tcBugNoDedup [main=DuplicatedPacketNoDedup]:
   assert ExactlyOnce in { DuplicatedPacketNoDedup, Network, Sender, NoDedupReceiver };

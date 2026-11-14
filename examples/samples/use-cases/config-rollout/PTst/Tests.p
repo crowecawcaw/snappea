@@ -1,5 +1,5 @@
 // The operator and the test cases. The service, the nodes and the couriers (the
-// network) are the design under test; the operator is a driver.
+// network) define delivery assumptions; the service and nodes are the design under test.
 
 // Issues each (version, content) in order, one at a time, at moments the scheduler
 // picks: a later issue can land while the previous rollout is anywhere.
@@ -8,7 +8,7 @@ machine Operator {
     entry (o: (service: machine, issues: seq[(version: int, content: int)])) {
       var i: (version: int, content: int);
       foreach (i in o.issues) {
-        send o.service, eIssue, i;
+        send o.service, Issue, i;
       }
     }
   }
@@ -19,7 +19,7 @@ fun StartRollout(issues: seq[(version: int, content: int)]) {
   var nodes: seq[machine];
   var n: int;
   var service: ConfigService;
-  announce eRolloutPlanned, (nodes = 3, version = 1, content = 100, issues = sizeof(issues));
+  announce RolloutPlanned, (nodes = 3, version = 1, content = 100, issues = sizeof(issues));
   while (n < 3) {
     nodes += (n, new Node((id = n, version = 1, content = 100)));
     n = n + 1;
@@ -63,7 +63,7 @@ machine BuggyLastArrival {
       var issues: seq[(version: int, content: int)];
       issues = Issues1(2, 200);
       issues += (1, (version = 3, content = 100));
-      announce eRolloutPlanned, (nodes = 3, version = 1, content = 100, issues = 2);
+      announce RolloutPlanned, (nodes = 3, version = 1, content = 100, issues = 2);
       while (n < 3) {
         nodes += (n, new LastArrivalNode((id = n, version = 1, content = 100)));
         n = n + 1;
@@ -76,29 +76,28 @@ machine BuggyLastArrival {
 // Covered: a node received the rollback before the bad version's delayed push. Version 2
 // was pushed to the node but not applied when version 3 was, so that push was still in
 // flight: the rollback overtook it.
-scenario RollbackOvertookPush observes ePushSent, eApplied {
+scenario RollbackOvertookPush observes PushSent, Applied {
   // nodes with a push of version 2 that has not arrived
   var pending2: set[int];
   start hot state Watching {
-    on ePushSent do (p: (node: int, version: int)) {
+    on PushSent do (p: (node: int, version: int)) {
       if (p.version == 2) { pending2 += (p.node); }
     }
-    on eApplied do (a: (node: int, version: int, content: int)) {
+    on Applied do (a: (node: int, version: int, content: int)) {
       if (a.version == 2) { pending2 -= (a.node); }
       if (a.version == 3 && a.node in pending2) { goto Covered; }
     }
   }
   cold state Covered {
-    ignore ePushSent, eApplied;
   }
 }
 
 test tcStagedRollout [main=StagedRollout]:
-  assert RolloutSafety, RolloutCompletes in { StagedRollout, ConfigService, Node, Courier, Operator };
+  assert RolloutSafety, RolloutCompletes in { StagedRollout, ConfigService, Node, BBDelivery, Operator };
 
 test tcRollbackDuringCanary [main=RollbackDuringCanary]:
-  assert RolloutSafety, RolloutCompletes in { RollbackDuringCanary, ConfigService, Node, Courier, Operator };
+  assert RolloutSafety, RolloutCompletes in { RollbackDuringCanary, ConfigService, Node, BBDelivery, Operator };
 
-// expect-bug: applied version 2 after version 3
+// snappea: expect-bug "applied version 2 after version 3"
 test tcBugLastArrival [main=BuggyLastArrival]:
-  assert RolloutSafety, RolloutCompletes in { BuggyLastArrival, ConfigService, LastArrivalNode, Courier, Operator };
+  assert RolloutSafety, RolloutCompletes in { BuggyLastArrival, ConfigService, LastArrivalNode, BBDelivery, Operator };

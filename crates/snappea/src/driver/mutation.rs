@@ -47,7 +47,6 @@ use crate::driver::check::{engine_options, CheckConfig};
 use crate::driver::progress::{Phase, Tracker};
 use crate::host::{Host, Job};
 use crate::sema::{Program, TestCase};
-use crate::syntax::Span;
 
 /// Most schedules a mutant gets on each test case that runs its code; the learned budget
 /// (see [`budget`]) is often less.
@@ -173,6 +172,11 @@ pub enum Verdict {
 pub struct Report {
     pub mutants: Vec<Mutant>,
     pub verdicts: Vec<Verdict>,
+    pub suppression_details: Vec<Value>,
+    pub stale_suppressions: Vec<Value>,
+    pub blanket_suppressions: usize,
+    /// Different event handling behind suppressed goto mutations; advisory only.
+    pub suppression_advisories: Vec<Value>,
     pub seconds: f64,
     pub time_limit_reached: bool,
     /// Schedules each undetected mutant could get on each test case (see [`budget`]).
@@ -300,6 +304,22 @@ impl Report {
             skipped,
             self.seconds
         )];
+        for advisory in self.suppression_advisories.iter().take(shown) {
+            out.push(format!(
+                "warning[{}]: {}:{}: {}",
+                advisory["rule"].as_str().unwrap_or_default(),
+                advisory["file"].as_str().unwrap_or_default(),
+                advisory["line"],
+                advisory["message"].as_str().unwrap_or_default()
+            ));
+            out.push(format!("  hint: {}", advisory["help"].as_str().unwrap_or_default()));
+        }
+        if self.suppression_advisories.len() > shown {
+            out.push(format!(
+                "  ... {} more suppression advisories (--json lists all)",
+                self.suppression_advisories.len() - shown
+            ));
+        }
         let bound = self.step_bound();
         if bound > 0 {
             out.push(format!(
@@ -409,6 +429,35 @@ impl Report {
         out
     }
 
+    pub fn suppression_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for item in &self.suppression_details {
+            let reasons =
+                item["reasons"].as_array().unwrap().iter().map(|r| r.as_str().unwrap()).collect::<Vec<_>>().join("; ");
+            lines.push(format!(
+                "  {}:{} [{}] {} (suppressed: {})",
+                item["file"].as_str().unwrap(),
+                item["line"],
+                item["mutation"].as_str().unwrap(),
+                item["change"].as_str().unwrap(),
+                reasons
+            ));
+        }
+        for item in &self.stale_suppressions {
+            lines.push(format!(
+                "  {}:{} [{}] matches no mutant in the selected model (reason: {})",
+                item["file"].as_str().unwrap_or(""),
+                item["line"],
+                item["kind"].as_str().unwrap(),
+                item["reason"].as_str().unwrap()
+            ));
+        }
+        if !lines.is_empty() {
+            lines.insert(0, "Mutation suppressions:".into());
+        }
+        lines
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "mutants": self.tested(),
@@ -466,6 +515,9 @@ impl Report {
             }).collect::<Vec<_>>(),
             "detected_by_step_bound": self.step_bound(),
             "suppressed": self.suppressed(),
+            "suppressed_details": self.suppression_details,
+            "stale_suppressions": self.stale_suppressions,
+            "suppression_advisories": self.suppression_advisories,
             "undetected_inside_undetected": self.subsumed(),
             "not_tested": self.not_tested(),
             "time_limit_reached": self.time_limit_reached,
@@ -488,7 +540,7 @@ pub fn run(
     prog: &Program,
     cfg: &CheckConfig,
     passed: &[(TestCase, Hits)],
-    suppressed: &[(Span, String)],
+    suppressed: &[snappea_lint::MutationSuppression],
     drivers: &[bool],
     time_limit: f64,
     deepen: bool,
@@ -499,24 +551,29 @@ pub fn run(
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
     let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
-    let mutants: Vec<Mutant> = mutation::mutants(prog, &funs, &probes)
-        .into_iter()
-        .filter(|m| passed.iter().any(|(_, h)| h.ran(m.probe)))
+    let mut all_mutants = mutation::mutants(prog, &funs, &probes);
+    all_mutants.extend(mutation::queue_mutants(prog, &tests, drivers));
+    let stale_suppressions = suppressed
+        .iter()
+        .filter(|s| !all_mutants.iter().any(|m| s.matches(m.span, m.change.name())))
+        .map(|s| {
+            let loc = prog.sources.location(s.span);
+            json!({"file": loc.file, "line": loc.line, "kind": s.kind, "reason": s.reason, "nested": s.nested})
+        })
         .collect();
+    let mutants: Vec<Mutant> = all_mutants.into_iter().filter(|m| passed.iter().any(|(_, h)| m.reached(h))).collect();
     let faults = crate::checker::equivalent::FaultModel::new(prog, &tests);
     let mut states: Vec<State> = mutants
         .iter()
         .map(|m| {
-            let allowed = |id: &str| id == "mutation" || id.strip_prefix("mutation:") == Some(m.change.name());
-            let inside = |s: &Span| s.file == m.span.file && s.start <= m.span.start && m.span.end <= s.end;
             // only the test cases where the change would change a value can notice it
             let covering: Vec<usize> = (0..passed.len()).filter(|t| m.changed(&passed[*t].1)).collect();
             let reached = match covering.is_empty() {
-                true => (0..passed.len()).filter(|t| passed[*t].1.ran(m.probe)).collect(),
+                true => (0..passed.len()).filter(|t| m.reached(&passed[*t].1)).collect(),
                 false => Vec::new(),
             };
             let exact = vec![false; covering.len()];
-            let suppressed = suppressed.iter().any(|(s, id)| inside(s) && allowed(id));
+            let suppressed = suppressed.iter().any(|s| s.matches(m.span, m.change.name()));
             State {
                 reached,
                 suppressed,
@@ -673,7 +730,16 @@ pub fn run(
         }
     }
     let verdicts = verdicts(&states, &parent, passed, standard);
+    let suppression_details = mutants.iter().zip(&verdicts).filter(|(_, v)| **v == Verdict::Suppressed).map(|(m, _)| {
+        let reasons: Vec<_> = suppressed.iter().filter(|s| s.matches(m.span, m.change.name())).map(|s| s.reason.as_str()).collect();
+        json!({"file": m.file, "line": m.line, "mutation": m.change.name(), "change": m.description, "reasons": reasons})
+    }).collect();
+    let suppression_advisories = super::mutation_suppression::advisories(prog, &mutants, &verdicts);
     let report = Report {
+        suppression_advisories,
+        suppression_details,
+        stale_suppressions,
+        blanket_suppressions: suppressed.iter().filter(|s| s.kind == "mutation").count(),
         mutants,
         verdicts,
         seconds: host.now() - start,

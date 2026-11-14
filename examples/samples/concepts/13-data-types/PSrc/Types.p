@@ -1,17 +1,17 @@
 // The data model of a small shopping cart service.
 
 // Enums: a fixed set of named values. Each has an integer value (Apple = 0, Pear = 1).
-enum tSku { Apple, Pear }
-enum tResult { Paid, OutOfStock, EmptyCart }
+enum Sku { Apple, Pear }
+enum Result { Paid, OutOfStock, EmptyCart }
 
 // Type aliases name a type once. A named tuple has fields; a map has keys and values.
-type tLine = (sku: tSku, qty: int);
+type Line = (sku: Sku, qty: int);
 // sku -> quantity
-type tCart = map[tSku, int];
-type tReceipt = (cart: int, result: tResult, total: int, lines: seq[tLine]);
+type Cart = map[Sku, int];
+type Receipt = (cart: int, result: Result, total: int, lines: seq[Line]);
 
 // Price in cents. `sku to int` converts the enum to its integer value to index a sequence.
-fun Price(sku: tSku): int {
+fun Price(sku: Sku): int {
   var table: seq[int];
   table += (0, 50);
   table += (1, 80);

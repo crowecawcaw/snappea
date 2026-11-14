@@ -58,7 +58,7 @@ answer is the classic orphan.
 
 ```sh
 snappea check tcFailureAtEachStep tcCancelRacesSaga tcCancelRacesFailure tcCancelAfterBooked
-snappea check tcBugForgetsInFlightStep    # exits 1 with the orphan above
+snappea check tcBugForgetsInFlightStep    # expected bug (exit 0): the orphan above
 ```
 
 Each passing test explores every schedule in well under a second.
@@ -74,8 +74,8 @@ failed releases, and several sagas competing for the same inventory.
 
 ## Testing the implementation
 
-Emit `eStepStarted`, `eCancelAccepted`, `eCancelRefused` and `eSagaEnded` from the
-orchestrator, and `eReserved`, `eReserveFailed`, `eReleased` from fake services; check
+Emit `StepStarted`, `CancelAccepted`, `CancelRefused` and `SagaEnded` from the
+orchestrator, and `Reserved`, `ReserveFailed`, `Released` from fake services; check
 them against `NoOrphans` and `SagaEnds`. To force the in-flight race, make the fake
 car service block its reply, send the cancel, and release the reply only after the
 orchestrator has handled the cancel.

@@ -7,10 +7,10 @@ machine TwoDepositsBlind {
     entry {
       var store: BlindStore;
       store = new BlindStore();
-      announce eDepositsPlanned, 2;
-      announce eDepositRequested, (id = 1, amount = 5);
+      announce DepositsPlanned, 2;
+      announce DepositRequested, (id = 1, amount = 5);
       new ReadModifyWriteClient((store = store, id = 1, amount = 5));
-      announce eDepositRequested, (id = 2, amount = 3);
+      announce DepositRequested, (id = 2, amount = 3);
       new ReadModifyWriteClient((store = store, id = 2, amount = 3));
     }
   }
@@ -21,10 +21,10 @@ machine TwoDepositsCas {
     entry {
       var store: VersionedStore;
       store = new VersionedStore();
-      announce eDepositsPlanned, 2;
-      announce eDepositRequested, (id = 1, amount = 5);
+      announce DepositsPlanned, 2;
+      announce DepositRequested, (id = 1, amount = 5);
       new CasClient((store = store, id = 1, amount = 5));
-      announce eDepositRequested, (id = 2, amount = 3);
+      announce DepositRequested, (id = 2, amount = 3);
       new CasClient((store = store, id = 2, amount = 3));
     }
   }
@@ -38,10 +38,10 @@ machine ThreeDepositsCas {
       var store: VersionedStore;
       var id: int;
       store = new VersionedStore();
-      announce eDepositsPlanned, 3;
+      announce DepositsPlanned, 3;
       id = 1;
       while (id <= 3) {
-        announce eDepositRequested, (id = id, amount = id);
+        announce DepositRequested, (id = id, amount = id);
         new CasClient((store = store, id = id, amount = id));
         id = id + 1;
       }
@@ -49,7 +49,7 @@ machine ThreeDepositsCas {
   }
 }
 
-// expect-bug: lost update: deposit
+// snappea: expect-bug "lost update: deposit"
 test tcBugLostUpdate [main=TwoDepositsBlind]:
   assert NoLostUpdate, DepositsReturn in
   { TwoDepositsBlind, BlindStore, ReadModifyWriteClient };

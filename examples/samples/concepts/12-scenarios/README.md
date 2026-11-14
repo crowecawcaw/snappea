@@ -21,11 +21,11 @@ A scenario looks like a spec, with `scenario` instead of `spec`:
 
 - **hot** states are steps still to happen; the start state is hot;
 - a **cold** state is the goal: a schedule that enters it *covers* the scenario;
-- every observed event a state does not move on must be **`ignore`d**, or the monitor
-  fails with an unhandled event.
+- an unhandled observed event leaves the scenario in its current state. Ordinary
+  design machines and specs still require an explicit event policy.
 
 Scenarios observe sent events as well as announced ones, so they can watch the
-design's own messages (`eCasResp` here) without extra announcements.
+design's own messages (`CasResponse` here) without extra announcements.
 
 Write one for each race your design discussion names ("both read the same version",
 "the timer fires after the reply", "the crash lands mid-write"), and check it is covered.
@@ -37,20 +37,21 @@ only proves the checker went there.
 [`PTst/Tests.p`](PTst/Tests.p):
 
 ```p
-scenario ConflictThenRetry observes eCasResp, eWritten {
+scenario ConflictThenRetry observes CasResponse, Written {
   start hot state WaitConflict {
-    on eCasResp do (ok: bool) { if (!ok) { goto WaitRetry; } }
-    ignore eWritten;          // the winner's write: not what we wait for
+    on CasResponse do (ok: bool) { if (!ok) { goto WaitRetry; } }
   }
   hot state WaitRetry {
-    on eWritten goto Retried; // with two clients, this is the loser's retry
-    ignore eCasResp;
+    on Written goto Retried; // with two clients, this is the loser's retry
   }
-  cold state Retried { ignore eCasResp, eWritten; }
+  cold state Retried { }
 }
 ```
 
 `RefusedTwice` waits for two refusals in one run, which needs three clients.
+The stronger interpretation of `ConflictThenRetry` as the losing client's retry depends
+on the two-client bound. With three clients, its witness proves a refusal followed by
+a commit, without identifying which client committed.
 
 ## Test cases
 
@@ -67,6 +68,9 @@ snappea check tcTwoClients           # shows RefusedTwice as a gap
 ```
 
 ## What the checker shows
+
+Output excerpts illustrate the report; counts, timings and source lines vary with
+the checker version and run budget. Read the current result before claiming exhaustiveness.
 
 With only the two-client test selected:
 
@@ -96,7 +100,8 @@ totals: scenarios are not part of them, but they still run in every test.
 
 - **A gap does not fail the check.** `snappea check tcTwoClients` exits 0 with the gap
   above. Read the scenario summary, or look for `"satisfied": false` in the JSON.
-- **Forgetting `ignore`.** Delete `ignore eWritten;` from `WaitConflict` (see below).
+- **Mistaking a prefix for the race.** Reaching `WaitRetry` is partial progress; only
+  reaching `Retried` establishes that the later write occurred.
 - **A scenario with no cold state, or a cold start state**, can never be meaningful;
   the lints `scenario-never-accepts` and `scenario-cold-start` reject both.
 - **Asserting in a scenario.** Put checks in a spec. A covered scenario says the race
@@ -104,13 +109,10 @@ totals: scenarios are not part of them, but they still run in every test.
 
 ## Try this
 
-Delete `ignore eWritten;` in `ConflictThenRetry.WaitConflict`. The first write, which
-always comes before any conflict, has nowhere to go:
-
-```text
-FAIL  tcTwoClients (bug found after 1 schedule, 0.00s)
-      PImplementation.ConflictThenRetry received event 'PImplementation.eWritten' that cannot be handled.
-```
+Run only `tcTwoClients`, then run both tests. Compare the missing
+`RefusedTwice` goal with its best partial-progress trace and the satisfying witness
+from `tcThreeClients`. Each witness shows the event sequence that moved the monitor;
+use it to check that the scenario means the race you intended.
 
 ## Bounds and omissions
 
@@ -119,6 +121,6 @@ messages, crashes, clients giving up after a retry limit.
 
 ## Testing the implementation
 
-Emit `eWritten` from the store after each committed compare-and-swap and `eClientDone`
+Emit `Written` from the store after each committed compare-and-swap and `ClientDone`
 when a client finishes. To reproduce `ConflictThenRetry`, pause one client between its
 read and its compare-and-swap until another client has written.

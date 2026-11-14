@@ -12,12 +12,12 @@
 // Real atomic primitives: commit change + outbox row (one transaction), read the
 // unpublished rows, mark one row published, the broker accepting a message.
 
-event eCommitWithOutbox: (from: machine, epoch: int, change: tChange);
-event eSubscribe: machine;
-event eOutboxChanged;
-event eReadOutbox: (from: machine, epoch: int);
-event eOutboxRows: (epoch: int, rows: seq[tChange]);
-event eMarkPublished: int;
+event CommitWithOutbox: (from: machine, epoch: int, change: Change);
+event Subscribe: machine;
+event OutboxChanged;
+event ReadOutbox: (from: machine, epoch: int);
+event OutboxRows: (epoch: int, rows: seq[Change]);
+event MarkPublished: int;
 
 machine OutboxDb {
   // Unpublished outbox rows: change id -> value.
@@ -25,24 +25,24 @@ machine OutboxDb {
   var relay: machine;
 
   start state Serving {
-    on eSubscribe do (r: machine) { relay = r; }
-    on eCommitWithOutbox do (r: (from: machine, epoch: int, change: tChange)) {
+    on Subscribe do (r: machine) { relay = r; }
+    on CommitWithOutbox do (r: (from: machine, epoch: int, change: Change)) {
       outbox[r.change.id] = r.change.value;
-      announce eCommitted, r.change;
-      send r.from, eCommitResult, r.epoch;
+      announce Committed, r.change;
+      send r.from, CommitResult, r.epoch;
       // Like LISTEN/NOTIFY: wakes the relay instead of it polling. Before the relay
       // subscribes there is no one to wake; its first read finds this row.
-      if (relay != null) { send relay, eOutboxChanged; }
+      if (relay != null) { send relay, OutboxChanged; }
     }
-    on eReadOutbox do (r: (from: machine, epoch: int)) {
-      var rows: seq[tChange];
+    on ReadOutbox do (r: (from: machine, epoch: int)) {
+      var rows: seq[Change];
       var id: int;
       foreach (id in keys(outbox)) {
         rows += (sizeof(rows), (id = id, value = outbox[id]));
       }
-      send r.from, eOutboxRows, (epoch = r.epoch, rows = rows);
+      send r.from, OutboxRows, (epoch = r.epoch, rows = rows);
     }
-    on eMarkPublished do (id: int) { outbox -= (id); }
+    on MarkPublished do (id: int) { outbox -= (id); }
   }
 }
 
@@ -50,7 +50,7 @@ machine OutboxService {
   var db: machine;
   var epoch: int;
   var client: machine;
-  var change: tChange;
+  var change: Change;
 
   start state Init {
     entry (d: machine) {
@@ -60,28 +60,28 @@ machine OutboxService {
   }
 
   state Ready {
-    on eUpdate goto Committing with (r: (client: machine, change: tChange)) {
+    on Update goto Committing with (r: (client: machine, change: Change)) {
       client = r.client;
       change = r.change;
-      send db, eCommitWithOutbox, (from = this, epoch = epoch, change = change);
+      send db, CommitWithOutbox, (from = this, epoch = epoch, change = change);
     }
     // A crash between requests loses nothing.
     // A result addressed to the process before a crash.
-    ignore eCrash, eCommitResult;
+    ignore Crash, CommitResult;
   }
 
   state Committing {
-    defer eUpdate;
-    on eCommitResult do (e: int) {
+    defer Update;
+    on CommitResult do (e: int) {
       if (e == epoch) {
         // The outbox row committed with the change; the relay will publish it.
-        send client, eUpdateResp, change.id;
+        send client, UpdateResp, change.id;
         goto Ready;
       }
     }
     // snappea-lint: allow mutation:empty-body -- the fault model: without this body the crash simply did not happen, which is an allowed history
-    on eCrash do {
-      send client, eReset, change.id;
+    on Crash do {
+      send client, Reset, change.id;
       // snappea-lint: allow mutation:swap-operator -- counting down works as well: a restart only needs an epoch it never used before
       epoch = epoch + 1;
       goto Ready;
@@ -93,35 +93,36 @@ machine OutboxRelay {
   var db: machine;
   var broker: machine;
   var epoch: int;
-  var pending: seq[tChange];
+  var pending: seq[Change];
 
   start state Init {
     entry (p: (db: machine, broker: machine)) {
       db = p.db;
       broker = p.broker;
-      send db, eSubscribe, this;
+      send db, Subscribe, this;
       ReadOutbox();
     }
   }
 
   state Reading {
-    // A row committed while this read is in flight is found by the next read.
-    defer eOutboxChanged;
-    on eOutboxRows do (r: (epoch: int, rows: seq[tChange])) {
+    // The database sends notifications and snapshots in FIFO order. A notification
+    // before this read response is already represented in that snapshot.
+    ignore OutboxChanged;
+    on OutboxRows do (r: (epoch: int, rows: seq[Change])) {
       if (r.epoch == epoch) {
         pending = r.rows;
         PublishNext();
       }
     }
-    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
-    on eCrash do { Restart(); }
+    // snappea-lint: allow mutation:empty-body -- the fault model: skipping it is the history where the relay did not crash
+    on Crash do { Restart(); }
     // An acknowledgement addressed to the process before a crash.
-    ignore ePublishAck;
+    ignore PublishAck;
   }
 
   state Publishing {
-    defer eOutboxChanged;
-    on ePublishAck do (a: (epoch: int, id: int)) {
+    defer OutboxChanged;
+    on PublishAck do (a: (epoch: int, id: int)) {
       // A stale acknowledgement is always for the oldest unmarked row, which is also the
       // row a restarted relay publishes first (reads return rows in id order), so the
       // check below never changes the outcome here; it guards against that ordering
@@ -129,24 +130,24 @@ machine OutboxRelay {
       // snappea-lint: allow mutation:condition-true -- equivalent: see the comment above
       if (a.epoch == epoch) {
         // The process can die here: published, not yet marked.
-        send db, eMarkPublished, a.id;
+        send db, MarkPublished, a.id;
         pending -= (0);
         PublishNext();
       }
     }
-    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
-    on eCrash do { Restart(); }
+    // snappea-lint: allow mutation:empty-body -- the fault model: skipping it is the history where the relay did not crash
+    on Crash do { Restart(); }
   }
 
   state Idle {
-    on eOutboxChanged do { ReadOutbox(); }
-    // snappea-lint: allow mutation -- the fault model: skipping it is the history where the relay did not crash
-    on eCrash do { Restart(); }
-    ignore eOutboxRows, ePublishAck;
+    on OutboxChanged do { ReadOutbox(); }
+    // snappea-lint: allow mutation:empty-body -- the fault model: skipping it is the history where the relay did not crash
+    on Crash do { Restart(); }
+    ignore OutboxRows, PublishAck;
   }
 
   fun ReadOutbox() {
-    send db, eReadOutbox, (from = this, epoch = epoch);
+    send db, ReadOutbox, (from = this, epoch = epoch);
     goto Reading;
   }
 
@@ -154,7 +155,7 @@ machine OutboxRelay {
     if (sizeof(pending) == 0) {
       goto Idle;
     } else {
-      send broker, ePublish, (from = this, epoch = epoch, change = pending[0]);
+      send broker, Publish, (from = this, epoch = epoch, change = pending[0]);
       goto Publishing;
     }
   }

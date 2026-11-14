@@ -1,0 +1,4 @@
+<Project>
+  <ProjectName>BBNetwork</ProjectName>
+  <InputFiles><PFile>Network.p</PFile></InputFiles>
+</Project>

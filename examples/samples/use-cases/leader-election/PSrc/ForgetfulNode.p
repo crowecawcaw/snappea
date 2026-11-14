@@ -17,7 +17,7 @@ machine ForgetfulNode {
   var leaderTerm: int;
 
   start state Init {
-    entry (d: tDisk) {
+    entry (d: Disk) {
       id = d.id;
       term = d.term;
       votedTerm = d.votedTerm;
@@ -26,13 +26,13 @@ machine ForgetfulNode {
   }
 
   state Follower {
-    on eTimeout goto Candidate;
+    on ElectionTimeout goto Candidate;
     // A follower that adopts a higher term stays a follower.
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
-    on eClientReq do { Answer(false); }
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) { HandleVoteReq(r); }
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) { HandleReply(p); }
+    on ClientReq do { Answer(false); }
     // BUG: the vote was kept only in memory, so a crash and restart forgets it.
-    on eCrash do { votedTerm = 0; }
+    on Crash do { votedTerm = 0; }
   }
 
   state Candidate {
@@ -42,23 +42,22 @@ machine ForgetfulNode {
       driver = t.driver;
       term = term + 1;
       votedTerm = term;
-      announce eStood, (id = id, term = term);
+      announce ElectionStarted, (id = id, term = term);
       electionTerm = term;
       votes = 1;
       replies = 0;
       foreach (p in peers) {
-        send p, eVoteReq, (term = term, candidate = this, cid = id);
+        send p, VoteReq, (term = term, candidate = this, cid = id);
       }
     }
     // A new timeout starts a new election in a higher term; replies to the old one are stale.
-    on eTimeout goto Candidate;
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
+    on ElectionTimeout goto Candidate;
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
-        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
         goto Follower;
       }
     }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
       // Count the grant before HandleReply concludes the round, so the last reply can
       // be the winning one. Only grants for the current term count: a reply to an
       // older candidacy is stale.
@@ -68,29 +67,28 @@ machine ForgetfulNode {
         if (votes * 2 > sizeof(peers) + 1) { leaderTerm = term; }
       }
       if (HandleReply(p)) {
-        // snappea-lint: allow mutation:remove-statement -- a candidate that saw a higher term acts like a follower: it counts only replies for its own term, refuses clients and stands again on its next timeout
         goto Follower;
       }
       if (leaderTerm == term) { goto Leader; }
     }
-    on eClientReq do { Answer(false); }
+    on ClientReq do { Answer(false); }
   }
 
   state Leader {
     entry {
-      announce eBecameLeader, (id = id, term = term);
+      announce BecameLeader, (id = id, term = term);
     }
     // A leader's heartbeats keep its own timer from firing.
-    ignore eTimeout;
+    ignore ElectionTimeout;
     // Only the leader accepts client requests. A leader that missed a step-down would
     // accept them in a term it did not win.
-    on eClientReq do { Answer(true); }
-    on eVoteReq do (r: (term: int, candidate: machine, cid: int)) {
+    on ClientReq do { Answer(true); }
+    on VoteReq do (r: (term: int, candidate: machine, cid: int)) {
       if (HandleVoteReq(r)) {
         goto Follower;
       }
     }
-    on eVoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
+    on VoteResp do (p: (reqTerm: int, term: int, granted: bool)) {
       if (HandleReply(p)) {
         goto Follower;
       }
@@ -100,7 +98,7 @@ machine ForgetfulNode {
   // Accept a client request as leader, or refuse it (a real node would redirect to
   // the leader it knows). The answer is the commit point.
   fun Answer(accepted: bool) {
-    announce eClientAnswered, (id = id, term = term, accepted = accepted);
+    announce ClientAnswered, (id = id, term = term, accepted = accepted);
   }
 
   // Returns true when a higher term means this node must step down to follower.
@@ -115,8 +113,8 @@ machine ForgetfulNode {
       votedTerm = term;
       grant = true;
     }
-    announce eAnswered, (voter = id, candidate = r.cid, reqTerm = r.term, term = term, granted = grant);
-    send r.candidate, eVoteResp, (reqTerm = r.term, term = term, granted = grant);
+    announce VoteAnswered, (voter = id, candidate = r.cid, reqTerm = r.term, term = term, granted = grant);
+    send r.candidate, VoteResp, (reqTerm = r.term, term = term, granted = grant);
     return stepDown;
   }
 
@@ -126,8 +124,8 @@ machine ForgetfulNode {
     if (p.reqTerm == electionTerm) {
       replies = replies + 1;
       if (replies == sizeof(peers)) {
-        announce eHeardAll, (id = id, term = electionTerm);
-        if (leaderTerm != electionTerm) { send driver, eRoundLost, (id = id, term = electionTerm); }
+        announce HeardAll, (id = id, term = electionTerm);
+        if (leaderTerm != electionTerm) { send driver, RoundLost, (id = id, term = electionTerm); }
       }
     }
     if (p.term > term) {

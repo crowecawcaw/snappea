@@ -47,15 +47,16 @@ The network (`Connection`, in PTst) is the environment.
 | --- | --- | --- |
 | `tcDropAndResume` | Two senders, one client whose first connection may drop | Drop with a message in flight; a post during the resume handshake; duplicates and overtaking live messages after the resume |
 | `tcTwoClients` | Two senders, two clients, one connection may drop | The other client keeps receiving live while one catches up; sampled |
-| `tcBugNoReplay` | `NoReplayServer` in the core race | **Expected to fail**: `EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'` (a client never displays a message posted before it subscribed or lost on the dropped connection) |
+| `tcBugNoReplay` | `NoReplayServer` in the core race | **Expected bug**: `EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'` (a client never displays a message posted before it subscribed or lost on the dropped connection) |
 
-All orderings of `tcDropAndResume` are explored (17k schedules, about 5 s).
+`tcDropAndResume` isolates the reconnect race. Inspect `search_complete` for each
+run; a passing run can still have sampled the bounded schedule space.
 
 ## Run
 
 ```sh
 snappea check tcDropAndResume tcTwoClients --deny mutation
-snappea check tcBugNoReplay      # exits 1: a client never catches up
+snappea check tcBugNoReplay      # passes only when the declared failure is found
 ```
 
 ## Bounds and omissions
@@ -80,8 +81,8 @@ duplicates, which the client skips; the contract says nothing about bandwidth.
 
 ## Testing the implementation
 
-Emit `eSequenced` when the server commits a message to the log, `eDisplayed` from the
-client's render path, and `ePosted` from the sender. To force the handshake race,
+Emit `Sequenced` when the server commits a message to the log, `Displayed` from the
+client's render path, and `Posted` from the sender. To force the handshake race,
 hold the server's replay read until a new message has been posted and pushed live on
 the new connection; to force the drop, close the socket right after the server writes
 a message to it.

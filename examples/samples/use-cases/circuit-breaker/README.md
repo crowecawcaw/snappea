@@ -13,7 +13,7 @@ A client-side circuit breaker protects a flaky dependency. Closed: every call go
 through; K consecutive failures open it (a success resets the count). Open: calls are
 rejected at once until a cooldown timer fires. Half-open: exactly one trial call goes
 through; others are rejected while it is in flight. Trial success closes the breaker,
-trial failure reopens it. The breaker state is an `enum tBreakerState`.
+trial failure reopens it. The breaker state is an `enum BreakerState`.
 
 **Contract**
 
@@ -45,12 +45,12 @@ cooldown carries the period that started it; both make stale events harmless.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcConcurrentCallers` | Two callers, three calls, two failures then success, K=2 | Calls in flight when the breaker opens; rejections; the trial | pass, exhaustive |
-| `tcHalfOpenRace` | One failure opens (K=1); then two callers race | Two callers in half-open: exactly one trial | pass, exhaustive |
+| `tcConcurrentCallers` | Two callers, three calls, two failures then success, K=2 | Calls in flight when the breaker opens; rejections; the trial | pass |
+| `tcHalfOpenRace` | One failure opens (K=1); then two callers race | Two callers in half-open: exactly one trial | pass |
 | `tcLateFailure` | Three failures, one answer slow; then a successful trial and one failure | The slow failure lands after the breaker reclosed and must not count | pass, sampled |
-| `tcSuccessResetsCount` | One caller: F, T, F, F, trial T, F, F | A success resets the count; the count restarts after reclosing | pass, exhaustive |
-| `tcDuplicateCooldown` | Every cooldown delivered twice, arbitrarily late; first trial fails | A stale cooldown during the trial or the next open period must not open a window | pass, exhaustive |
-| `tcBugHalfOpenAdmitsAll` | `AdmitAllBreaker` in the half-open race | **Expected to fail**: `call 30 sent while a half-open trial was in flight` | fail |
+| `tcSuccessResetsCount` | One caller: F, T, F, F, trial T, F, F | A success resets the count; the count restarts after reclosing | pass |
+| `tcDuplicateCooldown` | Every cooldown delivered twice, arbitrarily late; first trial fails | A stale cooldown during the trial or the next open period must not open a window | pass |
+| `tcBugHalfOpenAdmitsAll` | `AdmitAllBreaker` in the half-open race | **Expected bug**: `call 30 sent while a half-open trial was in flight` | expected bug |
 
 The `LateResultAfterReclose` scenario confirms `tcLateFailure` reaches a result sent
 before the breaker opened arriving after it closed again.
@@ -58,7 +58,7 @@ before the breaker opened arriving after it closed again.
 ## What building it taught
 
 - **Announce the result before the transition, then send.** The breaker announces
-  `eResultSeen` and any transition before it replies to the caller. A send is a
+  `CallResultObserved` and any transition before it replies to the caller. A send is a
   scheduling point; announcing after it lets other events slip between "result seen"
   and "state changed", and the spec could no longer require the transition next.
 - **Removing `failures = 0` on a transition survived** until `tcSuccessResetsCount`
@@ -76,14 +76,12 @@ before the breaker opened arriving after it closed again.
 
 ```sh
 snappea check tcConcurrentCallers tcHalfOpenRace tcLateFailure tcSuccessResetsCount tcDuplicateCooldown --timeout 30s --deny mutation
-snappea check tcBugHalfOpenAdmitsAll      # exits 1: call 30 sent while a half-open trial was in flight
+snappea check tcBugHalfOpenAdmitsAll      # passes only when the declared failure is found
 ```
 
-The `--timeout` matters: without it the test cases share 10s, and the tests marked
-exhaustive above may stop before covering every schedule. Each completes in under 10s
-(`tcConcurrentCallers`, the largest, explores about 19,000 schedules), but the search
-order depends on the seed: with some `--seed` values `tcHalfOpenRace` (2,500
-schedules) is only sampled within 30s. An exhaustive run reports `all N schedules`.
+Search is automatic. `--timeout` sets the budget per test; it is not a proof of
+completion. Inspect `search_complete` in JSON or the `all N schedules` text before
+claiming every schedule was checked.
 
 ## Bounds and omissions
 
@@ -100,8 +98,8 @@ is unobservable.
 
 ## Testing the implementation
 
-Emit `eDispatched`, `eShortCircuited`, `eResultSeen` and `eBreakerChanged` from the
-breaker under its lock, `eDepAnswered` from a dependency stub, `eCooldownElapsed`
+Emit `CallDispatched`, `CallRejected`, `CallResultObserved` and `BreakerChanged` from the
+breaker under its lock, `DepAnswered` from a dependency stub, `CooldownElapsed`
 from the timer. To force the races: block a failing dependency call until the breaker
 has opened and reclosed, then release it; fire the cooldown callback twice; start two
 callers on a barrier right after the cooldown fires.

@@ -1,17 +1,17 @@
 // The parts both designs share: the client-facing events, and the broker with its
 // downstream consumer.
 
-event eUpdate: (client: machine, change: tChange);
-event eUpdateResp: int;
+event Update: (client: machine, change: Change);
+event UpdateResp: int;
 // The connection dropped because the service crashed mid-request: the client cannot
 // tell whether the change committed.
-event eReset: int;
+event Reset: int;
 // From the fault injector (a test driver): the process restarts now, losing everything
 // it held in memory. The database and the broker keep what they stored.
-event eCrash;
+event Crash;
 
-event ePublish: (from: machine, epoch: int, change: tChange);
-event ePublishAck: (epoch: int, id: int);
+event Publish: (from: machine, epoch: int, change: Change);
+event PublishAck: (epoch: int, id: int);
 
 // The broker and its one downstream consumer, as one machine: the broker is durable and
 // delivers every accepted message to the consumer in order, so the hop between them
@@ -21,12 +21,12 @@ machine EventStream {
   var seen: set[int];
 
   start state Accepting {
-    on ePublish do (p: (from: machine, epoch: int, change: tChange)) {
-      announce eDelivered, p.change;
-      send p.from, ePublishAck, (epoch = p.epoch, id = p.change.id);
+    on Publish do (p: (from: machine, epoch: int, change: Change)) {
+      announce Delivered, p.change;
+      send p.from, PublishAck, (epoch = p.epoch, id = p.change.id);
       if (!(p.change.id in seen)) {
         seen += (p.change.id);
-        announce eApplied, p.change;
+        announce Applied, p.change;
       }
     }
   }

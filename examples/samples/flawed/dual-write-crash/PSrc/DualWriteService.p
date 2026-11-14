@@ -12,15 +12,15 @@
 // Real atomic primitives: the database commit (one transaction), the broker accepting a
 // message. The service's in-memory request state is lost on a crash.
 
-event eCommit: (from: machine, epoch: int, change: tChange);
-event eCommitResult: int;
+event Commit: (from: machine, epoch: int, change: Change);
+event CommitResult: int;
 
 machine OrdersDb {
 
   start state Serving {
-    on eCommit do (r: (from: machine, epoch: int, change: tChange)) {
-      announce eCommitted, r.change;
-      send r.from, eCommitResult, r.epoch;
+    on Commit do (r: (from: machine, epoch: int, change: Change)) {
+      announce Committed, r.change;
+      send r.from, CommitResult, r.epoch;
     }
   }
 }
@@ -32,7 +32,7 @@ machine DualWriteService {
   // process before a crash is recognised and dropped, as a new connection would.
   var epoch: int;
   var client: machine;
-  var change: tChange;
+  var change: Change;
 
   start state Init {
     entry (p: (db: machine, broker: machine)) {
@@ -43,41 +43,43 @@ machine DualWriteService {
   }
 
   state Ready {
-    on eUpdate goto Committing with (r: (client: machine, change: tChange)) {
+    on Update goto Committing with (r: (client: machine, change: Change)) {
       client = r.client;
       change = r.change;
-      send db, eCommit, (from = this, epoch = epoch, change = change);
+      send db, Commit, (from = this, epoch = epoch, change = change);
     }
     // A crash between requests loses nothing.
     // Replies addressed to the process before a crash.
-    ignore eCrash, eCommitResult, ePublishAck;
+    ignore Crash, CommitResult, PublishAck;
   }
 
   state Committing {
-    defer eUpdate;
-    on eCommitResult do (e: int) {
+    defer Update;
+    on CommitResult do (e: int) {
       if (e == epoch) {
         // BUG: the commit is durable, the publish below is not yet.
-        send broker, ePublish, (from = this, epoch = epoch, change = change);
+        send broker, Publish, (from = this, epoch = epoch, change = change);
         goto Publishing;
       }
     }
-    on eCrash do { Crash(); }
+    on Crash do { Crash(); }
   }
 
   state Publishing {
-    defer eUpdate;
-    on ePublishAck do (a: (epoch: int, id: int)) {
+    defer Update;
+    // One publish is in flight per epoch; the epoch identifies its response.
+    // The broker also returns id for the outbox relay, which can publish many rows.
+    on PublishAck do (a: (epoch: int, id: int)) {
       if (a.epoch == epoch) {
-        send client, eUpdateResp, change.id;
+        send client, UpdateResp, change.id;
         goto Ready;
       }
     }
-    on eCrash do { Crash(); }
+    on Crash do { Crash(); }
   }
 
   fun Crash() {
-    send client, eReset, change.id;
+    send client, Reset, change.id;
     epoch = epoch + 1;
     goto Ready;
   }

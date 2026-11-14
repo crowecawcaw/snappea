@@ -14,7 +14,7 @@ machine Room {
       var server: machine;
       var network: machine;
       var i: int;
-      announce ePlanned, (msgs = 2, clients = r.clients);
+      announce Planned, (msgs = 2, clients = r.clients);
       server = r.server;
       network = new Network(r.drops);
       while (i < r.clients) {
@@ -56,6 +56,6 @@ machine BuggyDropAndResume {
   }
 }
 
-// expect-bug: EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'
+// snappea: expect-bug "EveryoneCatchesUp detected liveness bug in hot state 'CatchingUp'"
 test tcBugNoReplay [main=BuggyDropAndResume]:
   assert InOrderNoGaps, EveryoneCatchesUp in { BuggyDropAndResume, Room, NoReplayServer, Network, Connection, Client, Sender };

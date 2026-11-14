@@ -10,12 +10,12 @@
 // Real atomic primitives: taking a snapshot and reading from it (one handler), commit
 // with the conflict check (one handler). Between them, other transactions commit.
 
-type tSnapshot = (ts: int, rows: map[int, int]);
+type Snapshot = (ts: int, rows: map[int, int]);
 
-event eSnapshotRead: machine;
-event eSnapshot: tSnapshot;
-event eCommit: (client: machine, ts: int, writes: map[int, int]);
-event eCommitResult: bool;
+event SnapshotRead: machine;
+event Snapshot: Snapshot;
+event Commit: (client: machine, ts: int, writes: map[int, int]);
+event CommitResult: bool;
 
 machine SnapshotStore {
   // Committed state, and the commit log: entry i is the set of rows commit i+1 wrote.
@@ -27,10 +27,10 @@ machine SnapshotStore {
     // Begin a transaction and run its query at the snapshot (one round trip). Since
     // reads at a snapshot never change, splitting several reads across messages would
     // add no interleaving.
-    on eSnapshotRead do (client: machine) {
-      send client, eSnapshot, (ts = sizeof(log), rows = rows);
+    on SnapshotRead do (client: machine) {
+      send client, Snapshot, (ts = sizeof(log), rows = rows);
     }
-    on eCommit do (c: (client: machine, ts: int, writes: map[int, int])) {
+    on Commit do (c: (client: machine, ts: int, writes: map[int, int])) {
       var i: int;
       var row: int;
       var written: set[int];
@@ -39,7 +39,7 @@ machine SnapshotStore {
         foreach (row in keys(c.writes)) {
           // snappea-lint: allow mutation:condition-true -- aborting on any concurrent commit is stricter than SI and still correct (the client retries); the contract cannot tell
           if (row in log[i]) {
-            send c.client, eCommitResult, false;
+            send c.client, CommitResult, false;
             return;
           }
         }
@@ -50,8 +50,8 @@ machine SnapshotStore {
         written += (row);
       }
       log += (sizeof(log), written);
-      announce eCommitted, c.writes;
-      send c.client, eCommitResult, true;
+      announce Committed, c.writes;
+      send c.client, CommitResult, true;
     }
   }
 }

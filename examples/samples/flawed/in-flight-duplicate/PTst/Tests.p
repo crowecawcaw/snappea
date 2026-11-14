@@ -2,13 +2,13 @@
 // worker, as a load balancer would. Two requests with the same key model a double
 // click, or a client that retried because the first response was slow.
 
-fun SendFlawed(client: machine, table: KeyTable, gateway: Gateway, r: tRequest) {
-  announce eRequested, r;
+fun SendFlawed(client: machine, table: KeyTable, gateway: Gateway, r: Request) {
+  announce Requested, r;
   new LookupThenRecordWorker((client = client, table = table, gateway = gateway, request = r));
 }
 
-fun SendFixed(client: machine, table: ClaimTable, gateway: Gateway, r: tRequest) {
-  announce eRequested, r;
+fun SendFixed(client: machine, table: ClaimTable, gateway: Gateway, r: Request) {
+  announce Requested, r;
   new ClaimingWorker((client = client, table = table, gateway = gateway, request = r));
 }
 
@@ -19,11 +19,11 @@ machine DoubleClickFlawed {
       var gateway: Gateway;
       table = new KeyTable();
       gateway = new Gateway();
-      announce eRequestsPlanned, 2;
+      announce RequestsPlanned, 2;
       SendFlawed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFlawed(this, table, gateway, (req = 2, key = 7, amount = 10));
     }
-    ignore eChargeResult;
+    ignore ChargeResult;
   }
 }
 
@@ -35,11 +35,11 @@ machine DoubleClick {
       var gateway: Gateway;
       table = new ClaimTable();
       gateway = new Gateway();
-      announce eRequestsPlanned, 2;
+      announce RequestsPlanned, 2;
       SendFixed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
     }
-    ignore eChargeResult;
+    ignore ChargeResult;
   }
 }
 
@@ -52,12 +52,12 @@ machine MixedKeys {
       var gateway: Gateway;
       table = new ClaimTable();
       gateway = new Gateway();
-      announce eRequestsPlanned, 3;
+      announce RequestsPlanned, 3;
       SendFixed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 8, amount = 20));
     }
-    ignore eChargeResult;
+    ignore ChargeResult;
   }
 }
 
@@ -70,12 +70,12 @@ machine TripleClick {
       var gateway: Gateway;
       table = new ClaimTable();
       gateway = new Gateway();
-      announce eRequestsPlanned, 3;
+      announce RequestsPlanned, 3;
       SendFixed(this, table, gateway, (req = 1, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 7, amount = 10));
     }
-    ignore eChargeResult;
+    ignore ChargeResult;
   }
 }
 
@@ -89,21 +89,21 @@ machine RetryAfterDone {
     entry {
       table = new ClaimTable();
       gateway = new Gateway();
-      announce eRequestsPlanned, 3;
+      announce RequestsPlanned, 3;
       SendFixed(this, table, gateway, (req = 1, key = 7, amount = 10));
     }
-    on eChargeResult goto Retry;
+    on ChargeResult goto Retry;
   }
   state Retry {
     entry {
       SendFixed(this, table, gateway, (req = 2, key = 7, amount = 10));
       SendFixed(this, table, gateway, (req = 3, key = 8, amount = 20));
     }
-    ignore eChargeResult;
+    ignore ChargeResult;
   }
 }
 
-// expect-bug: double charge: key 7 charged twice
+// snappea: expect-bug "double charge: key 7 charged twice"
 test tcBugDoubleClick [main=DoubleClickFlawed]:
   assert ChargedOnce, EveryRequestAnswered in
   { DoubleClickFlawed, KeyTable, Gateway, LookupThenRecordWorker };

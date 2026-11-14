@@ -266,6 +266,63 @@ fn p_type_name(class: &str) -> String {
     .to_string()
 }
 
+/// What went wrong, where, and the fix, when `machine` in `state` gets `event` and the
+/// state has no handler for it. `spec` names the spec or scenario monitor, `actor` the
+/// machine instance (e.g. `Client(2)`). The location is the state's declaration.
+pub fn unhandled_event(
+    prog: &Program,
+    machine: MachineId,
+    actor: &str,
+    state: Option<crate::sema::StateId>,
+    event: crate::sema::EventId,
+) -> (String, Option<Span>, String) {
+    let decl = prog.machine(machine);
+    let ev = &prog.event(event).name;
+    let state_name = state.map(|s| prog.state(s).name.clone());
+    let at = state.map(|s| prog.state(s).span);
+    let in_state = state_name.as_ref().map_or(String::new(), |s| format!(" in state '{}'", s));
+    if decl.is_spec() {
+        let what = format!("spec {}{} has no handler for observed event '{}'", decl.name, in_state, ev);
+        let help = format!(
+            "a spec must handle every event it observes in every state: add `on {ev} do {{ ... }}` \
+             (or `on {ev} goto S;`) to the state, or `ignore {ev};` if this state does not care about it"
+        );
+        return (what, at, help);
+    }
+    let what = format!("{}{} received event '{}' that it cannot handle", actor, in_state, ev);
+    let mut help = format!(
+        "handle it in the state with `on {ev} do {{ ... }}` or `on {ev} goto S;`; \
+         `defer {ev};` to keep it for a later state, or `ignore {ev};` to drop it"
+    );
+    // a `receive` takes only its cases' events, and only while it waits
+    let mut waits: Vec<(Span, Vec<crate::sema::EventId>)> = Vec::new();
+    for f in crate::checker::checked::machine_funs(prog, machine) {
+        if let Some(b) = &prog.fun(f).body {
+            crate::checker::checked::visit_stmts(b, &mut |s| {
+                if let crate::sema::StmtKind::Receive { cases } = &s.kind {
+                    waits.push((s.span, cases.iter().map(|(e, _)| *e).collect()));
+                }
+            });
+        }
+    }
+    waits.sort_by_key(|(sp, _)| (sp.file.0, sp.start));
+    if let Some((w, _)) = waits.iter().find(|(_, evs)| evs.contains(&event)) {
+        help.push_str(&format!(
+            ". The `receive` at {} takes '{}' only while it waits there; this one arrived when no `receive` was waiting",
+            prog.sources.location(*w),
+            ev
+        ));
+    } else if let Some((w, evs)) = waits.first() {
+        let names: Vec<String> = evs.iter().map(|e| format!("'{}'", prog.event(*e).name)).collect();
+        help.push_str(&format!(
+            ". The `receive` at {} waits only for {}; other events stay queued and the state handles them once it is done",
+            prog.sources.location(*w),
+            names.join(", ")
+        ));
+    }
+    (what, at, help)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

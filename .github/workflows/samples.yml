@@ -1,6 +1,6 @@
 # Every sample under examples/samples builds, lints and behaves as declared: test cases
-# without a flaw pass coverage and mutation testing, and each `// expect-bug:` test
-# case fails with its named assertion. See examples/samples/AUTHORING.md.
+# without a flaw pass coverage and mutation testing, and each native expected-bug test
+# finds its declared failure on seeds 1, 2 and 3. See examples/samples/AUTHORING.md.
 
 name: Samples
 
@@ -36,10 +36,11 @@ jobs:
       - name: Build this checkout's checker
         run: cargo build -p snappea --bin snappea --locked
       - name: Check every sample in ${{ matrix.group }}
-        run: python3 examples/samples/check_samples.py "${{ matrix.group }}" --timeout 10s
+        run: python3 examples/samples/check_samples.py "${{ matrix.group }}" --timeout 10s --workers 2
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
           name: samples-${{ matrix.group }}-output
           path: examples/samples/**/PCheckerOutput
           if-no-files-found: ignore
+          retention-days: 7

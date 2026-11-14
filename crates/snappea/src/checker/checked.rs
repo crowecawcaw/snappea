@@ -568,6 +568,16 @@ pub(crate) fn visit_stmts(b: &Block, visit: &mut dyn FnMut(&Stmt)) {
 /// * `no-progress-spec`: a test case's driver waits on the model's events, but none of
 ///   its specs has a hot state, so a model that stops answering passes.
 pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
+    lints_with_progress_tests(prog, tests, tests, drivers)
+}
+
+/// Like `lints`, but progress obligations apply only to `progress_tests` (positive controls).
+pub fn lints_with_progress_tests(
+    prog: &Program,
+    tests: &[TestCase],
+    progress_tests: &[TestCase],
+    drivers: &[bool],
+) -> Vec<Finding> {
     let checked = analyze(prog);
     let roles = roles(prog, tests, drivers);
     let mut out = Vec::new();
@@ -726,7 +736,10 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
     }
     // no-progress-spec
     let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
-    for t in &prog.tests {
+    for (i, t) in prog.tests.iter().enumerate() {
+        if !progress_tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i)) {
+            continue;
+        }
         let module = &t.module;
         let hot = module.monitor_map.iter().any(|(m, _)| {
             prog.machine(*m).kind == MachineKind::Spec
@@ -807,7 +820,9 @@ pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Findin
             });
         }
     }
-    crate::checker::flow_lints::lints(prog, drivers, &mut out);
+    crate::checker::flow_lints::lints_for_tests(prog, progress_tests, drivers, &mut out);
+    out.extend(shared_spec_helpers(prog, tests, drivers));
+    out.extend(unused_design_payloads(prog, tests, drivers));
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
 }
@@ -895,6 +910,177 @@ pub(crate) fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
         StmtKind::Ctor { payload, .. } | StmtKind::Goto { payload, .. } => payload.iter().for_each(go),
         _ => {}
     }
+}
+
+/// Sharing an implementation helper with its oracle can hide the same defect on both
+/// sides. This is advisory: formatting and representation helpers may be intentional.
+/// Compare roles within each test, not across unrelated selected configurations.
+fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
+    use std::collections::{BTreeMap, BTreeSet};
+    #[derive(Default)]
+    struct Users {
+        specs: BTreeSet<String>,
+        models: BTreeSet<String>,
+        tests: BTreeSet<String>,
+    }
+    let mut shared: BTreeMap<FunId, Users> = BTreeMap::new();
+    for test in tests {
+        let roles = roles(prog, std::slice::from_ref(test), drivers);
+        let mut spec_users: BTreeMap<FunId, BTreeSet<String>> = BTreeMap::new();
+        let mut model_users: BTreeMap<FunId, BTreeSet<String>> = BTreeMap::new();
+        for (i, role) in roles.iter().enumerate() {
+            let users = match role {
+                Role::Spec => &mut spec_users,
+                Role::Model => &mut model_users,
+                _ => continue,
+            };
+            for f in machine_funs(prog, MachineId(i as u32)) {
+                let fun = prog.fun(f);
+                if fun.owner.is_none() && fun.parent.is_none() && fun.body.is_some() && !fun.name.is_empty() {
+                    users.entry(f).or_default().insert(prog.machines[i].name.clone());
+                }
+            }
+        }
+        for (f, specs) in spec_users {
+            if let Some(models) = model_users.get(&f) {
+                let users = shared.entry(f).or_default();
+                users.specs.extend(specs);
+                users.models.extend(models.iter().cloned());
+                users.tests.insert(test.name.clone());
+            }
+        }
+    }
+    let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
+    shared.into_iter().map(|(f, users)| Finding {
+        rule: "shared-spec-helper",
+        span: prog.fun(f).span,
+        message: format!(
+            "global helper '{}' is shared by spec(s) {} and design machine(s) {} in test(s) {}; the same helper mistake may affect both implementation and expected result",
+            prog.fun(f).name, names(users.specs), names(users.models), names(users.tests)
+        ),
+    }).collect()
+}
+
+/// Field-level evidence at selected design receivers, without guessing request/reply
+/// roles from event names. Whole-tuple uses are deliberately conservative.
+fn unused_design_payloads(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
+    let mut handlers = std::collections::BTreeSet::new();
+    for test in tests {
+        for (i, role) in roles(prog, std::slice::from_ref(test), drivers).iter().enumerate() {
+            if *role != Role::Model {
+                continue;
+            }
+            let m = MachineId(i as u32);
+            for s in &prog.machine(m).states {
+                for h in &prog.state(*s).handlers {
+                    if let HandlerAction::Do(f) = h.action {
+                        handlers.insert((m, f, h.event));
+                    }
+                }
+            }
+            for f in machine_funs(prog, m) {
+                if let Some(b) = &prog.fun(f).body {
+                    visit_stmts(b, &mut |s| {
+                        if let StmtKind::Receive { cases } = &s.kind {
+                            handlers.extend(cases.iter().map(|(e, f)| (m, *f, *e)));
+                        }
+                    });
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (m, f, event) in handlers {
+        let fun = prog.fun(f);
+        let (Some(p), Some(body)) = (fun.params.first(), &fun.body) else { continue };
+        let crate::sema::PType::NamedTuple(fields) = prog.var(*p).ty.canonicalize(prog) else { continue };
+        if rejects_unconditionally(body) {
+            continue;
+        }
+        let mut used = FxHashSet::default();
+        let mut bases = FxHashSet::default();
+        let mut writes = FxHashSet::default();
+        // Receive cases can capture the outer handler's parameter. Do not lose those
+        // reads; VarIds distinguish them from each nested case's own payload.
+        let mut bodies = vec![f];
+        let mut seen = FxHashSet::default();
+        let mut expressions = Vec::new();
+        while let Some(f) = bodies.pop() {
+            if !seen.insert(f) {
+                continue;
+            }
+            let Some(b) = &prog.fun(f).body else { continue };
+            visit_stmts(b, &mut |s| {
+                if let StmtKind::Receive { cases } = &s.kind {
+                    bodies.extend(cases.iter().map(|(_, f)| *f));
+                }
+                if matches!(&s.kind, StmtKind::Print(e) if pure(e)) {
+                    return;
+                }
+                if let StmtKind::Assign { lhs, .. } = &s.kind {
+                    // Only direct tuple writes are known not to read the old field.
+                    // Container/indexed writes may inspect old contents or fail.
+                    mark_tuple_write(lhs, &mut writes);
+                }
+                each_expr(s, &mut |e| {
+                    if let ExprKind::NamedTupleAccess { base, index } = &e.kind {
+                        if matches!(base.kind, ExprKind::Var(v) if v == *p) {
+                            bases.insert(base.span);
+                            expressions.push((e.span, Some(*index as usize)));
+                        }
+                    } else if matches!(e.kind, ExprKind::Var(v) if v == *p) {
+                        expressions.push((e.span, None));
+                    }
+                });
+            });
+        }
+        for (span, index) in &expressions {
+            if let Some(index) = index {
+                if !writes.contains(span) {
+                    used.insert(*index);
+                }
+            }
+        }
+        if expressions.iter().any(|(span, index)| index.is_none() && !bases.contains(span) && !writes.contains(span)) {
+            continue;
+        }
+        for (i, (field, _)) in fields.iter().enumerate() {
+            if !used.contains(&i) {
+                out.push(Finding {
+                    rule: "unused-design-payload-field",
+                    span: prog.var(*p).span,
+                    message: format!("design machine '{}' handles '{}' without reading payload field '{}.{}' outside diagnostic output; check whether this receiver should act on it", prog.machine(m).name, prog.event(event).name, prog.var(*p).name, field),
+                });
+            }
+        }
+    }
+    out
+}
+
+fn mark_tuple_write(e: &Expr, writes: &mut FxHashSet<Span>) {
+    match &e.kind {
+        ExprKind::Var(_) => {
+            writes.insert(e.span);
+        }
+        ExprKind::NamedTupleAccess { base, .. } | ExprKind::TupleAccess { base, .. } => {
+            writes.insert(e.span);
+            mark_tuple_write(base, writes);
+        }
+        _ => {}
+    }
+}
+
+fn rejects_unconditionally(body: &Block) -> bool {
+    for s in &body.stmts {
+        match &s.kind {
+            StmtKind::Nop => {}
+            StmtKind::Print(e) if pure(e) => {}
+            StmtKind::Assert { cond, .. } => return matches!(cond.kind, ExprKind::BoolLit(false)),
+            StmtKind::Block(b) if rejects_unconditionally(b) => return true,
+            _ => return false,
+        }
+    }
+    false
 }
 
 #[cfg(test)]

@@ -5,30 +5,30 @@
 //
 // Real primitives: storage write (accept and store).
 
-event eWrite: (node: machine, id: int, value: int);
+event Write: (node: machine, id: int, value: int);
 
 machine UnfencedStorage {
   var value: int;
   start state Serving {
-    on eWrite do (w: (node: machine, id: int, value: int)) {
+    on Write do (w: (node: machine, id: int, value: int)) {
       value = w.value;
-      announce eWriteAccepted, (node = w.id, value = value);
-      send w.node, eWriteResp, (ok = true,);
+      announce WriteAccepted, (node = w.id, value = value);
+      send w.node, WriteResp, (ok = true,);
     }
   }
 }
 
 machine UnfencedNode {
-  var config: tNodeConfig;
+  var config: NodeConfig;
   var token: int;
   var written: int;
 
   start state Acquiring {
-    entry (c: tNodeConfig) {
+    entry (c: NodeConfig) {
       config = c;
-      send config.locks, eAcquire, (node = this, id = config.id);
+      send config.locks, Acquire, (node = this, id = config.id);
     }
-    on eGranted do (g: (token: int)) {
+    on Granted do (g: (token: int)) {
       token = g.token;
       goto Writing;
     }
@@ -37,17 +37,17 @@ machine UnfencedNode {
   state Writing {
     entry {
       // The lease check passes here (the lease is fresh) ... then the node pauses.
-      send this, eResume;
+      send this, Resume;
     }
-    on eResume do {
+    on Resume do {
       // BUG: nothing stops this write if the lease expired during the pause.
-      send config.storage, eWrite, (node = this, id = config.id, value = config.plan[written]);
+      send config.storage, Write, (node = this, id = config.id, value = config.plan[written]);
     }
-    on eWriteResp do {
+    on WriteResp do {
       written = written + 1;
       if (written < sizeof(config.plan)) { goto Writing; }
-      send config.locks, eRelease, (token = token,);
-      announce eNodeDone, (node = config.id, fenced = false);
+      send config.locks, Release, (token = token,);
+      announce NodeDone, (node = config.id, fenced = false);
     }
   }
 }

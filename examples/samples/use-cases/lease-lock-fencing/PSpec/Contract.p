@@ -2,12 +2,12 @@
 // their commit points. The specs rebuild leases, tokens and the storage order from the
 // history alone; they never read the services' fields.
 
-event eGranted: (id: int, token: int);
-event eBusy: int;
-event eExpired: int;
-event eReleased: int;
-event eWriteAccepted: (id: int, token: int);
-event eWriteRejected: (id: int, token: int);
+event Granted: (id: int, token: int);
+event Busy: int;
+event Expired: int;
+event Released: int;
+event WriteAccepted: (id: int, token: int);
+event WriteRejected: (id: int, token: int);
 
 // Safety.
 // Leases: at most one live lease; tokens strictly increase; a busy answer needs a live
@@ -15,7 +15,7 @@ event eWriteRejected: (id: int, token: int);
 // Fencing: storage accepts writes only from the client a token was granted to, in
 // token order, so once a later holder has written, no earlier holder's write is ever
 // accepted; a write is rejected only when a later token already wrote.
-spec FencedWrites observes eGranted, eBusy, eExpired, eReleased, eWriteAccepted, eWriteRejected {
+spec FencedWrites observes Granted, Busy, Expired, Released, WriteAccepted, WriteRejected {
   // token -> client it was granted to
   var grantedTo: map[int, int];
   var lastToken: int;
@@ -24,7 +24,7 @@ spec FencedWrites observes eGranted, eBusy, eExpired, eReleased, eWriteAccepted,
   var highestWritten: int;
 
   start state Watching {
-    on eGranted do (p: (id: int, token: int)) {
+    on Granted do (p: (id: int, token: int)) {
       assert live == 0,
         format("lease {0} granted to client {1} while lease {2} is live", p.token, p.id, live);
       assert p.token > lastToken,
@@ -33,19 +33,21 @@ spec FencedWrites observes eGranted, eBusy, eExpired, eReleased, eWriteAccepted,
       grantedTo[p.token] = p.id;
       live = p.token;
     }
-    on eBusy do (id: int) {
+    on Busy do (id: int) {
       assert live != 0, format("client {0} told the lock is busy, but no lease is live", id);
     }
-    on eExpired do (token: int) { End(token, "expired"); }
-    on eReleased do (token: int) { End(token, "released"); }
-    on eWriteAccepted do (p: (id: int, token: int)) {
+    on Expired do (token: int) { End(token, "expired"); }
+    on Released do (token: int) { End(token, "released"); }
+    on WriteAccepted do (p: (id: int, token: int)) {
       assert p.token in grantedTo && grantedTo[p.token] == p.id,
         format("write by client {0} accepted with token {1}, which was not granted to it", p.id, p.token);
       assert p.token >= highestWritten,
         format("write with token {0} accepted after token {1}: superseded holder wrote", p.token, highestWritten);
       highestWritten = p.token;
     }
-    on eWriteRejected do (p: (id: int, token: int)) {
+    on WriteRejected do (p: (id: int, token: int)) {
+      assert p.token in grantedTo && grantedTo[p.token] == p.id,
+        "rejected write used another client's token";
       assert p.token < highestWritten,
         format("write by client {0} with token {1} rejected, but no later token had written", p.id, p.token);
     }
@@ -62,64 +64,64 @@ spec FencedWrites observes eGranted, eBusy, eExpired, eReleased, eWriteAccepted,
 // rejected) once granted, Crashed only if planned, GaveUp only after maxAttempts
 // busy answers. A client that wrote does not finish while its lease is live, and the
 // test is not over while any lease is live: a crashed holder's lease must expire.
-type tClientPlan = (id: int, behavior: tBehavior, writes: int, maxAttempts: int);
-event eClientsPlanned: int;
-event eClientStarted: tClientPlan;
+type ClientPlan = (id: int, behavior: Behavior, writes: int, maxAttempts: int);
+event ClientsPlanned: int;
+event ClientStarted: ClientPlan;
 
-spec ClientsFinish observes eClientsPlanned, eClientStarted, eGranted, eBusy, eExpired, eReleased,
-    eWriteAccepted, eWriteRejected, eClientDone {
+spec ClientsFinish observes ClientsPlanned, ClientStarted, Granted, Busy, Expired, Released,
+    WriteAccepted, WriteRejected, ClientDone {
   // client -> its plan; removed when it finishes
-  var started: map[int, tClientPlan];
+  var started: map[int, ClientPlan];
   // client -> its token
   var tokenOf: map[int, int];
   var busy: map[int, int];
   var writesSeen: map[int, int];
-  var due: map[int, tOutcome];
+  var due: map[int, Outcome];
   var live: int;
   var unfinished: int;
 
   start state Idle {
-    on eClientsPlanned do (n: int) {
+    on ClientsPlanned do (n: int) {
       assert n > 0, "planned no clients";
       unfinished = n;
       goto Busy;
     }
-    on eClientStarted do { assert false, "client started without a plan"; }
-    on eGranted do { assert false, "grant before any client started"; }
-    on eBusy do { assert false, "busy answer before any client started"; }
-    on eWriteAccepted do { assert false, "write before any client started"; }
-    on eWriteRejected do { assert false, "write before any client started"; }
-    on eClientDone do { assert false, "client done before it started"; }
-    ignore eExpired, eReleased;
+    on ClientStarted do { assert false, "client started without a plan"; }
+    on Granted do { assert false, "grant before any client started"; }
+    on Busy do { assert false, "busy answer before any client started"; }
+    on WriteAccepted do { assert false, "write before any client started"; }
+    on WriteRejected do { assert false, "write before any client started"; }
+    on ClientDone do { assert false, "client done before it started"; }
+    ignore Expired, Released;
   }
 
   hot state Busy {
-    on eClientsPlanned do { assert false, "clients planned twice"; }
-    on eClientStarted do (p: tClientPlan) {
+    on ClientsPlanned do { assert false, "clients planned twice"; }
+    on ClientStarted do (p: ClientPlan) {
       assert !(p.id in started), format("client {0} started twice", p.id);
       assert p.writes > 0 && p.maxAttempts > 0, format("client {0} planned no writes or no attempts", p.id);
       started[p.id] = p;
       busy[p.id] = 0;
     }
-    on eGranted do (p: (id: int, token: int)) {
+    on Granted do (p: (id: int, token: int)) {
       Known(p.id);
       assert !(p.id in tokenOf), format("client {0} granted twice", p.id);
       tokenOf[p.id] = p.token;
       live = p.token;
       if (started[p.id].behavior == Crashes) { due[p.id] = Crashed; }
     }
-    on eBusy do (id: int) {
+    on Busy do (id: int) {
       Known(id);
       busy[id] = busy[id] + 1;
       assert busy[id] <= started[id].maxAttempts,
         format("client {0} asked for the lock more than {1} times", id, started[id].maxAttempts);
       if (busy[id] == started[id].maxAttempts) { due[id] = GaveUp; }
     }
-    on eExpired do { live = 0; Settle(); }
-    on eReleased do { live = 0; Settle(); }
-    on eWriteAccepted do (p: (id: int, token: int)) { Wrote(p.id, p.token, Wrote); }
-    on eWriteRejected do (p: (id: int, token: int)) { Wrote(p.id, p.token, Fenced); }
-    on eClientDone do (p: (id: int, outcome: tOutcome)) {
+    on Expired do { live = 0; Settle(); }
+    on Released do { live = 0; Settle(); }
+    on WriteAccepted do (p: (id: int, token: int)) { Wrote(p.id, p.token, Wrote); }
+    on WriteRejected do (p: (id: int, token: int)) { Wrote(p.id, p.token, Fenced); }
+    on ClientDone do (p: (id: int, outcome: Outcome)) {
       assert p.id in started, format("client {0} finished twice or never started", p.id);
       assert p.id in due, format("client {0} finished before the services decided", p.id);
       assert p.outcome == due[p.id],
@@ -133,21 +135,21 @@ spec ClientsFinish observes eClientsPlanned, eClientStarted, eGranted, eBusy, eE
   }
 
   state Finished {
-    on eClientsPlanned do { assert false, "clients planned twice"; }
-    on eClientStarted do { assert false, "client started after all finished"; }
-    on eGranted do { assert false, "grant after all clients finished"; }
-    on eBusy do { assert false, "busy answer after all clients finished"; }
-    on eWriteAccepted do { assert false, "write after all clients finished"; }
-    on eWriteRejected do { assert false, "write after all clients finished"; }
-    on eClientDone do { assert false, "client done after all finished"; }
-    ignore eExpired, eReleased;
+    on ClientsPlanned do { assert false, "clients planned twice"; }
+    on ClientStarted do { assert false, "client started after all finished"; }
+    on Granted do { assert false, "grant after all clients finished"; }
+    on Busy do { assert false, "busy answer after all clients finished"; }
+    on WriteAccepted do { assert false, "write after all clients finished"; }
+    on WriteRejected do { assert false, "write after all clients finished"; }
+    on ClientDone do { assert false, "client done after all finished"; }
+    ignore Expired, Released;
   }
 
   fun Known(id: int) {
     assert id in started, format("client {0} acted but was never started", id);
   }
 
-  fun Wrote(id: int, token: int, outcome: tOutcome) {
+  fun Wrote(id: int, token: int, outcome: Outcome) {
     Known(id);
     assert id in tokenOf && tokenOf[id] == token,
       format("client {0} wrote with token {1}, not its own", id, token);

@@ -3,21 +3,21 @@
 // Dual write: commit the order, then publish it directly, with no outbox. A crash
 // between the commit and the publish loses the event for good.
 // tcBugDualWrite shows the progress spec catching the lost order.
-event eDualWriteOrder: (id: int, crashesBeforePublish: bool);
+event DualWriteOrder: (id: int, crashesBeforePublish: bool);
 machine DualWriteOrderService {
   var broker: machine;
   start state Serving {
     entry (b: machine) { broker = b; }
-    on eDualWriteOrder do (o: (id: int, crashesBeforePublish: bool)) {
-      announce eOrderCommitted, o.id;
+    on DualWriteOrder do (o: (id: int, crashesBeforePublish: bool)) {
+      announce OrderCommitted, o.id;
       // BUG: nothing durable says this order still has to be published.
       if (o.crashesBeforePublish) { goto Crashed; }
-      send broker, ePublish, (relay = this, id = o.id);
+      send broker, Publish, (relay = this, id = o.id);
     }
-    ignore eAck;
+    ignore Ack;
   }
   state Crashed {
-    ignore eDualWriteOrder, eAck;
+    ignore DualWriteOrder, Ack;
   }
 }
 
@@ -25,9 +25,9 @@ machine DualWriteOrderService {
 // tcBugNoDedup shows the safety spec catching the double application.
 machine NaiveConsumer {
   start state Consuming {
-    on eDeliver do (id: int) {
+    on Deliver do (id: int) {
       // BUG: no check whether this id was already applied.
-      announce eApplied, id;
+      announce Applied, id;
     }
   }
 }

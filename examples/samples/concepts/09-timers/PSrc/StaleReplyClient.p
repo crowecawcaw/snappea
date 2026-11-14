@@ -18,26 +18,26 @@ machine StaleReplyClient {
   state Calling {
     entry {
       current = current + 1;
-      send server, eReq, (client = this, id = current, value = inputs[current - 1]);
+      send server, Request, (client = this, id = current, value = inputs[current - 1]);
       timer = new Timer((holder = this, tag = current));
     }
-    on eReply do (r: (id: int, result: int)) {
+    on Reply do (r: (id: int, result: int)) {
       // BUG: no check that r.id is the request in flight.
-      send timer, eCancel;
+      send timer, Cancel;
       Decide(true, r.result);
     }
-    on eTimeout do (tag: int) {
+    on Timeout do (tag: int) {
       if (tag != current) { return; }
       Decide(false, 0);
     }
   }
 
   state Done {
-    ignore eReply, eTimeout;
+    ignore Reply, Timeout;
   }
 
   fun Decide(ok: bool, result: int) {
-    announce eOutcome, (id = current, ok = ok, result = result);
+    announce Outcome, (id = current, ok = ok, result = result);
     if (current < sizeof(inputs)) { goto Calling; }
     goto Done;
   }

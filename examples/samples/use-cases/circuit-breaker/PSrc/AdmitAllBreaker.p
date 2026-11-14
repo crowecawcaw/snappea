@@ -2,7 +2,7 @@
 // passing tests' coverage: half-open lets every caller through instead of one trial,
 // so a struggling dependency gets a burst of calls the moment the cooldown ends.
 machine AdmitAllBreaker {
-  var mode: tBreakerState;
+  var mode: BreakerState;
   var threshold: int;
   var failures: int;
   var period: int;
@@ -19,22 +19,22 @@ machine AdmitAllBreaker {
       mode = Closed;
     }
 
-    on eCall do (c: (caller: machine, call: int)) {
+    on CallRequested do (c: (caller: machine, call: int)) {
       // BUG: only Open rejects; half-open admits every call.
       if (mode == Open) {
-        announce eShortCircuited, (call = c.call,);
-        send c.caller, eCallResult, (call = c.call, outcome = Rejected);
+        announce CallRejected, (call = c.call,);
+        send c.caller, CallResult, (call = c.call, outcome = Rejected);
         return;
       }
       callers[c.call] = c.caller;
       sentIn[c.call] = period;
-      announce eDispatched, (call = c.call,);
-      send dependency, eDepCall, (breaker = this, call = c.call);
+      announce CallDispatched, (call = c.call,);
+      send dependency, DependencyCall, (breaker = this, call = c.call);
     }
 
-    on eDepResult do (r: (call: int, ok: bool)) {
+    on DependencyResult do (r: (call: int, ok: bool)) {
       var caller: machine;
-      announce eResultSeen, r;
+      announce CallResultObserved, r;
       caller = callers[r.call];
       callers -= (r.call);
       if (sentIn[r.call] == period) {
@@ -51,26 +51,28 @@ machine AdmitAllBreaker {
       }
       sentIn -= (r.call);
       if (r.ok) {
-        send caller, eCallResult, (call = r.call, outcome = Succeeded);
+        send caller, CallResult, (call = r.call, outcome = Succeeded);
       } else {
-        send caller, eCallResult, (call = r.call, outcome = Failed);
+        send caller, CallResult, (call = r.call, outcome = Failed);
       }
     }
 
-    on eCooldown do (t: (period: int)) {
-      if (mode == Open && t.period == period) {
+    on Cooldown do (t: (period: int)) {
+      // Timers are created only on entry to Open. Every mode change advances
+      // period, so a matching timer also proves we are still in that Open period.
+      if (t.period == period) {
         Change(HalfOpen);
       }
     }
   }
 
-  fun Change(target: tBreakerState) {
+  fun Change(target: BreakerState) {
     mode = target;
     period = period + 1;
     failures = 0;
-    announce eBreakerChanged, (mode = target,);
+    announce BreakerChanged, (mode = target,);
     if (target == Open) {
-      send timers, eStartCooldown, (breaker = this, period = period);
+      send timers, StartCooldown, (breaker = this, period = period);
     }
   }
 }

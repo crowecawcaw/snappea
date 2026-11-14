@@ -15,27 +15,27 @@
 // returned, and even after a newer write: the version check keeps the newer value.
 // Everything a client does between them can interleave with other clients.
 
-event eReplicaRead: (client: machine);
-event eReplicaReadResp: (version: int, value: int);
-event eReplicaWrite: (client: machine, version: int, value: int);
-event eReplicaWriteResp;
+event ReplicaRead: (client: machine);
+event ReplicaReadResp: (version: int, value: int);
+event ReplicaWrite: (client: machine, version: int, value: int);
+event ReplicaWriteResp;
 
 machine Replica {
   var version: int;
   var value: int;
 
   start state Serving {
-    on eReplicaRead do (r: (client: machine)) {
-      send r.client, eReplicaReadResp, (version = version, value = value);
+    on ReplicaRead do (r: (client: machine)) {
+      send r.client, ReplicaReadResp, (version = version, value = value);
     }
-    on eReplicaWrite do (w: (client: machine, version: int, value: int)) {
+    on ReplicaWrite do (w: (client: machine, version: int, value: int)) {
       // Last writer wins by version; an older version arriving late is ignored.
       // snappea-lint: allow mutation:swap-operator -- a version names one write, so an equal version carries the value already stored
       if (w.version > version) {
         version = w.version;
         value = w.value;
       }
-      send w.client, eReplicaWriteResp;
+      send w.client, ReplicaWriteResp;
     }
   }
 }
