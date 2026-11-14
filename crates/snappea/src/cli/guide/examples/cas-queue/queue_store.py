@@ -1,5 +1,7 @@
 """A shared FIFO with durable, operation-specific request deduplication."""
 
+from __future__ import annotations
+
 
 class Queue:
     def __init__(self, store, capacity=2):
