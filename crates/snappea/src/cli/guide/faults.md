@@ -1,8 +1,23 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I model timers, crashes and lossy networks?
+  - Where do fault injectors go so mutation testing judges the design?
+  - How do I bound faults so liveness checks stay meaningful?
+---
+
 # Timers, crashes and lossy networks
 
 Faults are the environment, not the design. Model them in machines marked
 `// snappea: driver` (on its own line before the machine): drivers are not mutated, so
 mutation testing judges the design's handling of a fault, not the fault itself.
+
+The marker is what matters, not the folder. Put fault injectors in `PTst/` with the
+other drivers. A timer that the design itself creates (a lease timer the lock service
+starts for each grant) can stay in `PSrc/` next to the code that arms it, but mark
+the timer machine as a driver: when it fires is the environment's choice. The code
+that creates, cancels or reacts to it is design and stays unmarked.
 
 ## Reusable building blocks
 
@@ -42,14 +57,17 @@ machine Timer {
 
 ## Crash and restart with an epoch
 
-Keep durable fields; reset volatile ones in the crash handler. Bump an epoch so work
-queued before the crash is recognised and dropped.
+Keep the fields that stand in for persisted state; reset volatile ones in the crash
+handler. Bump an epoch so work queued before the crash is recognised and dropped.
+This in-machine shortcut fits a process that restarts in place. When the restarted
+process is a new machine, keep durable state in a separate storage machine
+(`snappea guide recovery`).
 
 ```p
 event eCrash; event eReq: machine; event eResp; event eWork: int;
 
 machine Server {
-  var epoch: int;               // durable: survives a crash
+  var epoch: int;               // stands in for a persisted counter: survives a crash
   var pending: seq[machine];    // volatile: lost in a crash
   start state Serving {
     on eReq do (c: machine) { pending += (sizeof(pending), c); send this, eWork, epoch; }

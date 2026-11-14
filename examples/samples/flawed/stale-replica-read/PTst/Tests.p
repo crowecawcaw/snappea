@@ -130,10 +130,12 @@ test tcFixedMonotonicReads [main=FixedMonotonicReads]:
 test tcFixedTwoWriters [main=FixedTwoWriters]:
   assert SessionGuarantees in { FixedTwoWriters, TokenReads, Primary, LogShipper, SessionReplica, TokenSession };
 
-// snappea: expect-bug "read-your-writes violated"
+// The replica may not have applied the first write either, so the stale value read
+// can be 11 or the initial 0; the session is always 1.
+// snappea: expect-bug "read-your-writes violated: session 1 read value"
 test tcBugReadYourWrites [main=BugReadYourWrites]:
   assert SessionGuarantees in { BugReadYourWrites, LoadBalancedReads, Primary, LogShipper, Replica, Session };
 
-// snappea: expect-bug "monotonic reads violated"
+// snappea: expect-bug "monotonic reads violated: session 2 read value 0 after it had already read value 11"
 test tcBugMonotonicReads [main=BugMonotonicReads]:
   assert SessionGuarantees in { BugMonotonicReads, LoadBalancedReads, Primary, LogShipper, Replica, Session };

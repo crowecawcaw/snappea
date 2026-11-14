@@ -77,8 +77,9 @@ test tcFixedOneConsumerTwoItems [main=OneConsumerTwoItems]:
 test tcFixedTwoConsumers [main=TwoConsumers]:
   assert TakeBlocksOnlyWhenEmpty in { TwoConsumers, WaitQueue, WaitingConsumer, Producer };
 
-// The only blocking receive left at quiescence is the consumer waiting for Wake.
-// Match the deadlock message without depending on machine-allocation order.
-// snappea: expect-bug "is waiting to receive an event"
+// The consumer blocks in `receive` for a Wake, so the checker reports a deadlock. Pin
+// the spec state it names, not the machine number: consumer 1 asleep while item 10
+// sits in the queue. Any other hang would show a different queue or sleeper.
+// snappea: expect-bug "is in hot state 'ItemsOutstanding' (wants = {1: 1}, queued = [10], sleeping = {1}"
 test tcBugCheckThenWait [main=RacyOneItem]:
   assert TakeBlocksOnlyWhenEmpty in { RacyOneItem, RacyQueue, RacyConsumer, Producer };

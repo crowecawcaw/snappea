@@ -1,3 +1,12 @@
+---
+diataxis: reference
+personas: [application-developer, coding-agent, p-user]
+questions:
+  - How do I prove that a test reached a specific race?
+  - How does a scenario monitor run, and how do I read its summary?
+  - What do I do when no test satisfies a scenario?
+---
+
 # Scenario monitors
 
 A `scenario` monitor records that an event pattern occurred: it measures coverage

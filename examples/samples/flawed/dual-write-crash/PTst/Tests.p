@@ -166,7 +166,8 @@ test tcFixedRelayCrash [main=OutboxRelayCrash]:
   assert CommittedChangesPublished, UpdatesAnswered in
   { OutboxRelayCrash, OutboxDb, OutboxService, OutboxRelay, EventStream, Client, Crasher };
 
-// snappea: expect-bug "CommittedNotPublished"
+// Change 1 committed and never delivered: the spec's hot state names exactly that.
+// snappea: expect-bug "CommittedChangesPublished detected liveness bug in hot state 'CommittedNotPublished'"
 test tcBugCrashBetweenWriteAndPublish [main=DualWriteCrash]:
   assert CommittedChangesPublished, UpdatesAnswered in
   { DualWriteCrash, OrdersDb, DualWriteService, EventStream, Client, Crasher };

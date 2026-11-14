@@ -13,30 +13,54 @@ A service handles an update by committing it to its database and then publishing
 event to a broker, so downstream services (search index, billing, notifications) learn
 about it. The client gets an answer after both steps.
 
-**Difficulty: medium.** Every line is correct; the bug is the gap between two durable
+**Difficulty: Medium.** Every line is correct; the bug is the gap between two durable
 systems that no transaction spans.
 
-**Contract.** Every committed change reaches downstream: it is published only if it
-committed, with the committed value, and applied downstream exactly once. Every update
-gets an answer, and a confirmed update has committed. (A reset connection leaves the
-outcome unknown, which is allowed.)
-
-**Atomic primitives**: one database transaction; the broker accepting a message. A
-crash loses the process's memory (the in-flight request); the database and the broker
-keep what they stored. The fault injector (`Crasher`) crashes the service, or the relay,
-at most once, at a moment the checker picks.
-
-## The flaw
-
-The commit and the publish are two separate steps, and nothing durable records that a
-publish is owed, so a crash between them leaves a committed change no event will ever
-announce.
+**The flaw in one sentence:** the commit and the publish are two separate steps, and
+nothing durable records that a publish is owed, so a crash between them leaves a
+committed change no event will ever announce.
 
 ```text
 db.commit(change);        // durable
 broker.publish(change);   // the process can die before this line
 return ok;
 ```
+
+**Contract** (in [`PSpec/Contract.p`](PSpec/Contract.p), the same for both designs)
+
+- `CommittedChangesPublished` (safety and progress, hot state
+  `CommittedNotPublished`): a change is published only if it committed, with the
+  committed value, and every committed change is applied downstream exactly once.
+- `UpdatesAnswered` (progress, hot state `Answering`): every update gets an answer,
+  a change commits only with the value its client asked for, and a confirmed update
+  has committed. A reset connection leaves the outcome unknown, which is allowed.
+- `DeliveredOnceWithoutRelayCrash` (safety, selected only where the relay cannot
+  crash): the broker delivers each change once.
+
+**Atomic primitives**: one database transaction; the broker accepting a message. A
+crash loses the process's memory (the in-flight request); the database and the broker
+keep what they stored. The fault injector (`Crasher`) crashes the service, or the relay,
+at most once, at a moment the checker picks.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | The three specs and the events they observe |
+| [`PSrc/Common.p`](PSrc/Common.p) | Shared events; `EventStream`: the broker and the deduplicating consumer |
+| [`PSrc/DualWriteService.p`](PSrc/DualWriteService.p) | Flawed: database, then publish |
+| [`PSrc/Outbox.p`](PSrc/Outbox.p) | Fixed: database with outbox table, service, relay |
+| [`PTst/Tests.p`](PTst/Tests.p) | Client, `Crasher`, `CrashAfterCommit`, drivers, the `DeliveredTwice` scenario, test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugCrashBetweenWriteAndPublish` | Flawed design, one update, service may crash anywhere | A crash between commit and publish loses the event | Expected bug: `CommittedChangesPublished detected liveness bug in hot state 'CommittedNotPublished'` |
+| `tcFixedServiceCrash` | Outbox design, one update, service may crash anywhere | The same fault as the bug test, against the fix | Passes |
+| `tcFixedStaleCommitResult` | Service crashed right after each commit, two updates, no relay | A late commit result must not confirm the next update | Passes |
+| `tcFixedTwoUpdates` | Two updates, no faults | Commits, notifications and relay reads interleave; no duplicates without a crash | Passes |
+| `tcFixedRelayCrash` | One update, relay may crash anywhere | Crash between publish and mark: delivered twice, applied once | Passes |
 
 ## The counterexample
 
@@ -50,8 +74,13 @@ From `tcBugCrashBetweenWriteAndPublish` (one update):
 5. The run ends with change 1 committed and downstream unaware of it:
 
 ```text
-PImplementation.CommittedChangesPublished detected liveness bug in hot state 'CommittedNotPublished' at the end of program execution.
+CommittedChangesPublished detected liveness bug in hot state 'CommittedNotPublished' at the end of program execution.
+CommittedChangesPublished's fields: committed = {1: 101}, delivered = {}, applied = {}
 ```
+
+The service waits in state handlers, not in a blocking `receive`, so nothing is
+blocked: the run simply ends. Only the hot state of `CommittedChangesPublished` turns
+the missing event into a failure, and its name says which promise was broken.
 
 ## Why ordinary tests miss it
 
@@ -79,36 +108,16 @@ Both processes tag requests with an epoch that a restart changes, so a reply add
 to the process before the crash is ignored. Without it, a restarted service confirms its
 next update with the previous update's commit result (`tcFixedStaleCommitResult`).
 
-## Files
-
-| File | What it holds |
-| --- | --- |
-| [`PSpec/Contract.p`](PSpec/Contract.p) | `CommittedChangesPublished` (hot until every commit is applied downstream), `UpdatesAnswered` (hot until every update is answered), `DeliveredOnceWithoutRelayCrash` |
-| [`PSrc/Common.p`](PSrc/Common.p) | Shared events; `EventStream`: the broker and the deduplicating consumer |
-| [`PSrc/DualWriteService.p`](PSrc/DualWriteService.p) | Flawed: database, then publish |
-| [`PSrc/Outbox.p`](PSrc/Outbox.p) | Fixed: database with outbox table, service, relay |
-| [`PTst/Tests.p`](PTst/Tests.p) | Client, `Crasher`, `CrashAfterCommit`, drivers, the `DeliveredTwice` scenario, test cases |
-
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcFixedServiceCrash` | Outbox design, one update, service may crash anywhere | The same fault as the bug test, against the fix | passes |
-| `tcFixedStaleCommitResult` | Service crashed right after each commit, two updates, no relay | A late commit result must not confirm the next update | passes |
-| `tcFixedTwoUpdates` | Two updates, no faults | Commits, notifications and relay reads interleave; no duplicates without a crash | passes |
-| `tcFixedRelayCrash` | One update, relay may crash anywhere | Crash between publish and mark: delivered twice, applied once | passes |
-| `tcBugCrashBetweenWriteAndPublish` | Flawed design, one update, service may crash anywhere | **Expected bug**: `CommittedNotPublished` | Expected bug found |
-
 ## Run
 
 ```sh
-snappea check DualWriteCrash.pproj 'tcFixed*' --deny mutation
-snappea check DualWriteCrash.pproj tcBugCrashBetweenWriteAndPublish   # succeeds only when the declared bug is found
+snappea check DualWriteCrash.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check DualWriteCrash.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 ## Bounds and omissions
 

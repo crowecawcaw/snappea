@@ -1186,6 +1186,15 @@ impl<'p> Runtime<'p> {
         }
         msg.push_str(if n == 1 { " is " } else { " are " });
         msg.push_str("waiting to receive an event, but no other controlled tasks are enabled");
+        // Identify the failure by a blocked machine's declaration and state, chosen by
+        // name so it does not depend on creation order.
+        let stuck =
+            self.ops.iter().filter(|o| o.status == OpStatus::BlockedOnReceive).filter_map(|o| o.machine).min_by_key(
+                |&m| (self.prog.machine(self.machines[m].decl).name.as_str(), self.state_name(self.machines[m].state)),
+            );
+        if let Some(m) = stuck {
+            self.identify_bug("deadlock", Actor::Machine(m), None);
+        }
         if self.config.snappea_reports {
             // the promise the deadlock breaks, which does not depend on creation order
             let hot: Vec<String> = (0..self.monitors.len())

@@ -160,12 +160,12 @@ scenario SplitVoteNobodyWins observes ElectionEnded {
   }
 }
 
-// snappea: expect-bug "split brain: term 1 has two leaders"
+// snappea: expect-bug "split brain: term 1 has two leaders (node 1 and node 3)"
 test tcBugSplitVote [main=SplitVoteHalfQuorum]:
   assert OneLeaderPerTerm, ElectionsEnd in
   { SplitVoteHalfQuorum, HalfQuorumNode };
 
-// snappea: expect-bug "split brain: term 1 has two leaders"
+// snappea: expect-bug "split brain: term 1 has two leaders (node 1 and node 3)"
 test tcBugPartition [main=PartitionHalfQuorum]:
   assert OneLeaderPerTerm, ElectionsEnd in
   { PartitionHalfQuorum, HalfQuorumNode, Unreachable };

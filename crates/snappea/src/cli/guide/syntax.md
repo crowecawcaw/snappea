@@ -1,3 +1,12 @@
+---
+diataxis: reference
+personas: [application-developer, coding-agent, p-user]
+questions:
+  - What does a complete small P model look like?
+  - How do messages, transitions, receive and payload bindings behave?
+  - Which commands check a model?
+---
+
 # P syntax and commands
 
 ## Small syntax reference
@@ -88,7 +97,7 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 - Put handler/function locals at the start of that block, before executable statements. P keywords are reserved; using one as a variable, field, function or type name is a parse error, so rename it (`vals`, not `values`). Reserved words that look like names: `values`, `keys`, `to`, `as`, `in`, `default`, `format`, `choose`, `sizeof`, `data`, `any`, `string`, `map`, `set`, `seq`, `start`, `state`, `event`, `type`, `test`, `main`, `module`, `param`, `entry`, `exit`, `this`, `new`, `send`, `receive`, `print`, `receives`, `sends`, `creates`, `safe`, `union`, `rename`, `compose`; and the PVerifier words `is`, `sent`, `targets`, `inflight`, `pure`, `assume`, `requires`, `ensures`, `invariant`, `using`, `except`, `forall`, `exists`, `prove`, `axiom`.
 - `goto S, v;` enters state `S` and passes `v` to its `entry (x: T)`. A state whose entry takes a parameter needs one on every `goto`. To re-enter it from places that have no value, keep the value in a machine variable instead: set it once in a separate start state (`start state Init { entry (cfg: Config) { config = cfg; goto Idle; } }`) and give `Idle` a plain `entry { ... }`.
 - P has no `sender()`. Put the sender in the payload (`event eReq: (client: machine, id: int);`, `send s, eReq, (client = this, id = 1);`) and reply to `p.client`.
-- A state must handle every event that reaches it: `on E do`, `on E goto S`, `defer E;` (keep it for a later state) or `ignore E;` (drop it). A `receive` takes only its own cases, and only while it waits; other events stay queued for the state.
+- A state must handle every event that reaches it: `on E do`, `on E goto S`, `defer E;` (keep it for a later state) or `ignore E;` (drop it). A `receive` takes only its listed cases. Other events stay queued while it waits; once it returns, the state the machine is then in must handle them (`on`, `defer` or `ignore`), or the run fails with an unhandled event.
 - `send target, event, payload` delivers to a machine; `receive { case event: (p: Type) { ... } }` waits; `announce event, payload` records a monitor-visible event. `send`, `receive`, and `new` are scheduling points; assignments do not yield.
 
 ## Messages, transitions and bindings
@@ -105,9 +114,10 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 - Specs observe `send` as well as `announce`. Observe the real send when available;
   use `announce` for facts nobody receives. Announcing and sending the same event
   makes the spec observe it twice.
-- `receive` selects its listed cases. An unlisted event can remain queued when the
-  current state has a handler for it; an event the state cannot handle fails the
-  run. Do not assume a receive silently accepts every unrelated event.
+- `receive` takes only its listed cases. An unlisted event stays queued while the
+  receive waits, whether or not the state handles it. After the receive returns, the
+  machine's current state handles queued events in order, and an event that state
+  cannot handle fails the run. A receive never drops unrelated events.
 - In a receive loop, include an operation ID in replies and check it against the
   current request. A late reply from a previous iteration is not a fresh answer.
 - `goto` inside a called function ends the current handler too: statements after

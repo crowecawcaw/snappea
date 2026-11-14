@@ -14,24 +14,47 @@ which commits each with the next log sequence number (LSN) and ships the log to 
 replica; each replica applies it at its own pace. A load balancer spreads reads over the
 replicas. This model has one register (one key).
 
-**Difficulty: medium.** Replica lag is usually milliseconds, so the bug shows up as a
+**Difficulty: Medium.** Replica lag is usually milliseconds, so the bug shows up as a
 rare "my change vanished" report that no one can reproduce.
 
-**Contract (session guarantees).** For each client session:
+**The flaw in one sentence:** a replica answers a read from whatever it has applied so
+far, so a read routed to a replica that the session's write (or an earlier read's
+value) has not reached yet returns older data.
 
-- **read-your-writes**: a read returns the session's own last write, or something newer;
-- **monotonic reads**: a read never returns something older than an earlier read did;
-- reads return only committed values, and every operation completes.
+**Contract** (in [`PSpec/SessionGuarantees.p`](PSpec/SessionGuarantees.p), the same
+for both designs). `SessionGuarantees` checks, for each client session, against the
+commit order:
+
+- **read-your-writes** (safety): a read returns the session's own last write, or
+  something newer;
+- **monotonic reads** (safety): a read never returns something older than an earlier
+  read did;
+- reads return only committed values (safety), and every planned operation completes
+  (progress, hot state `Running`).
 
 **Atomic primitives**: the primary's commit; a replica applying one log record; a
 replica serving one read. Each replica's log stream (`LogShipper`) delivers records in
 order with any delay.
 
-## The flaw
+## Files
 
-A replica answers a read from whatever it has applied so far, so a read routed to a
-replica the session's write (or an earlier read's value) has not reached yet returns
-older data.
+| File | What it holds |
+| --- | --- |
+| [`PSpec/SessionGuarantees.p`](PSpec/SessionGuarantees.p) | `SessionGuarantees` and the events it observes |
+| [`PSrc/Primary.p`](PSrc/Primary.p) | The primary and the per-replica `LogShipper`, shared by both designs |
+| [`PSrc/Replica.p`](PSrc/Replica.p) | Flawed: replica answers at once; session without a token |
+| [`PSrc/SessionReplica.p`](PSrc/SessionReplica.p) | Fixed: replica holds reads until it reaches the token; session with a token |
+| [`PTst/Tests.p`](PTst/Tests.p) | Plans, drivers (which also play the load balancer), test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcBugReadYourWrites` | Flawed design, as `tcFixedReadYourWrites` | A session misses its own write | Expected bug: `read-your-writes violated: session 1 read value` |
+| `tcBugMonotonicReads` | Flawed design, as `tcFixedMonotonicReads` | A session sees time go backwards | Expected bug: `monotonic reads violated: session 2 read value 0 after it had already read value 11` |
+| `tcFixedReadYourWrites` | One session writes twice, then reads; one replica | The read must wait for the second write, not just the first | Passes |
+| `tcFixedMonotonicReads` | Session 1 writes; session 2 reads replica 0, then replica 1 | The token from the first read holds the second | Passes |
+| `tcFixedTwoWriters` | Two sessions write, then read; one replica | A read's token can be two records ahead: the replica keeps holding it after applying one | Passes |
 
 ## The counterexamples
 
@@ -43,8 +66,10 @@ older data.
 3. The session reads; the replica answers 11.
 
 ```text
-read-your-writes violated: session 1 read value 11, older than its own write of value 12
+Assertion Failed: PSpec/SessionGuarantees.p:64:7 read-your-writes violated: session 1 read value 11, older than its own write of value 12
 ```
+
+If the replica has not applied the first write either, the same failure reads value 0.
 
 `tcBugMonotonicReads` (session 1 writes once, session 2 reads twice, two replicas):
 
@@ -53,7 +78,7 @@ read-your-writes violated: session 1 read value 11, older than its own write of 
 3. Session 2 reads again; the load balancer sends it to replica 1, which answers 0.
 
 ```text
-monotonic reads violated: session 2 read value 0 after it had already read value 11
+Assertion Failed: PSpec/SessionGuarantees.p:67:7 monotonic reads violated: session 2 read value 0 after it had already read value 11
 ```
 
 ## Why ordinary tests miss it
@@ -73,36 +98,16 @@ could instead forward it to the primary). Reads still go to any replica, so the 
 load stays spread. Read-your-writes holds because the token covers the session's own
 writes; monotonic reads hold because it also covers every value the session has read.
 
-## Files
-
-| File | What it holds |
-| --- | --- |
-| [`PSpec/SessionGuarantees.p`](PSpec/SessionGuarantees.p) | `SessionGuarantees`: both guarantees per session, from the commit order; every planned operation completes (hot state) |
-| [`PSrc/Primary.p`](PSrc/Primary.p) | The primary and the per-replica `LogShipper`, shared by both designs |
-| [`PSrc/Replica.p`](PSrc/Replica.p) | Flawed: replica answers at once; session without a token |
-| [`PSrc/SessionReplica.p`](PSrc/SessionReplica.p) | Fixed: replica holds reads until it reaches the token; session with a token |
-| [`PTst/Tests.p`](PTst/Tests.p) | Plans, drivers (which also play the load balancer), test cases |
-
-## Test cases
-
-| Test | Drives | Why it matters | Expected |
-| --- | --- | --- | --- |
-| `tcFixedReadYourWrites` | One session writes twice, then reads; one replica | The read must wait for the second write, not just the first | passes |
-| `tcFixedMonotonicReads` | Session 1 writes; session 2 reads replica 0, then replica 1 | The token from the first read holds the second | passes |
-| `tcFixedTwoWriters` | Two sessions write, then read; one replica | A read's token can be two records ahead: the replica keeps holding it after applying one | passes |
-| `tcBugReadYourWrites` | Flawed design, as `tcFixedReadYourWrites` | **Expected bug**: `read-your-writes violated` | Expected bug found |
-| `tcBugMonotonicReads` | Flawed design, as `tcFixedMonotonicReads` | **Expected bug**: `monotonic reads violated` | Expected bug found |
-
 ## Run
 
 ```sh
-snappea check StaleReplicaRead.pproj 'tcFixed*' --deny mutation
-snappea check StaleReplicaRead.pproj 'tcBug*'    # succeeds only when the declared bug is found
+snappea check StaleReplicaRead.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check StaleReplicaRead.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 
-The negative controls use native `snappea: expect-bug` declarations. A matching
-failure passes the test; no failure or a different failure fails it. Search coverage
-depends on the budget: claim exhaustion only when the current run reports completion.
+Each negative control carries a native `// snappea: expect-bug` declaration: a matching
+failure passes the test; no failure or a different failure fails it. Describe a
+search as exhaustive only when its report says `search_complete`.
 
 ## Bounds and omissions
 

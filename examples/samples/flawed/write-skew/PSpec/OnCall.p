@@ -68,12 +68,14 @@ spec AlwaysSomeoneOnCall observes RosterStarted, OffCallRequested, Committed, Of
 
   fun Commit(w: map[int, int]) {
     var row: int;
+    var offCall: int;
     foreach (row in keys(w)) {
       if (row in doctors) {
         assert w[row] == 0 && row in asked, format("doctor {0} was taken off call without asking", row);
         onCall -= (row);
+        offCall = row;
       }
     }
-    assert sizeof(onCall) > 0, "nobody is on call: the last on-call doctors went off call together";
+    assert sizeof(onCall) > 0, format("nobody is on call after doctor {0} went off call", offCall);
   }
 }

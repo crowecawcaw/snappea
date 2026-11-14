@@ -285,6 +285,11 @@ fn deadlock_reports_name_the_hot_spec() {
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let report = v["test_cases"][0]["bug"]["report"].as_str().unwrap_or_default().to_string();
     assert!(report.contains("while spec Finishes is in hot state 'Busy'"), "{}", h.stdout);
+    // A deadlock has a failure identity, so expected-bug seeds can be compared.
+    let identity = &v["test_cases"][0]["bug"]["identity"];
+    assert_eq!(identity["kind"], "deadlock", "{}", h.stdout);
+    assert_eq!(identity["machine"], "Main", "{}", h.stdout);
+    assert_eq!(identity["state"], "S", "{}", h.stdout);
 
     let (_, log) = compat_check(DEADLOCK);
     assert!(

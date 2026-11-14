@@ -54,7 +54,12 @@ machine DualWriteService {
   }
 
   state Committing {
+    // One request at a time: a new update waits until this one is answered.
     defer Update;
+    // A crash while publishing leaves that publish's acknowledgement in flight; it can
+    // arrive after the restarted service has started the next commit. It carries the
+    // old epoch and answers nothing this request is waiting for, so drop it.
+    ignore PublishAck;
     on CommitResult do (e: int) {
       if (e == epoch) {
         // BUG: the commit is durable, the publish below is not yet.
@@ -66,6 +71,7 @@ machine DualWriteService {
   }
 
   state Publishing {
+    // One request at a time: a new update waits until this one is answered.
     defer Update;
     // One publish is in flight per epoch; the epoch identifies its response.
     // The broker also returns id for the outbox relay, which can publish many rows.
