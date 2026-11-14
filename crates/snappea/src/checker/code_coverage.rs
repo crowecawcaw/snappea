@@ -285,6 +285,7 @@ impl Scope {
 /// What ran in a run, for any scope: the probes and the `(state, event)` handlers.
 #[derive(Debug, Clone, Default)]
 pub struct Hits {
+    queue_policies: FxHashSet<(StateId, EventId)>,
     probes: ProbeSet,
     handled: FxHashSet<(StateId, EventId)>,
     transition_pairs: FxHashSet<(StateId, StateId, StateId)>,
@@ -305,11 +306,17 @@ impl Hits {
             }
         }
         Hits {
+            queue_policies: info.queue_policies.clone(),
             probes: info.probes.clone(),
             handled,
             transition_pairs: info.transition_pairs.clone(),
             states: info.monitor_states.clone(),
         }
+    }
+
+    /// Whether an event encountered this state’s ignore or defer policy.
+    pub fn queue_policy(&self, state: StateId, event: EventId) -> bool {
+        self.queue_policies.contains(&(state, event))
     }
 
     /// Whether code coverage probe `id` ran.
@@ -318,6 +325,7 @@ impl Hits {
     }
 
     pub fn add(&mut self, other: &Hits) {
+        self.queue_policies.extend(other.queue_policies.iter().copied());
         self.probes.union(&other.probes);
         self.handled.extend(other.handled.iter().copied());
         self.transition_pairs.extend(other.transition_pairs.iter().copied());
@@ -350,6 +358,8 @@ impl CodeMap {
             }
         }
         Hits {
+            // Restricted hits are suite coverage only; queue policies are not required coverage points.
+            queue_policies: Default::default(),
             probes,
             handled: hits.handled.iter().filter(|k| self.handler_point.contains_key(k)).copied().collect(),
             transition_pairs: hits

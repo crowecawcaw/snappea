@@ -532,7 +532,8 @@ pub fn run(
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
     let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
-    let all_mutants = mutation::mutants(prog, &funs, &probes);
+    let mut all_mutants = mutation::mutants(prog, &funs, &probes);
+    all_mutants.extend(mutation::queue_mutants(prog, &tests, drivers));
     let stale_suppressions = suppressed
         .iter()
         .filter(|s| !all_mutants.iter().any(|m| s.matches(m.span, m.change.name())))
@@ -541,7 +542,7 @@ pub fn run(
             json!({"file": loc.file, "line": loc.line, "kind": s.kind, "reason": s.reason, "nested": s.nested})
         })
         .collect();
-    let mutants: Vec<Mutant> = all_mutants.into_iter().filter(|m| passed.iter().any(|(_, h)| h.ran(m.probe))).collect();
+    let mutants: Vec<Mutant> = all_mutants.into_iter().filter(|m| passed.iter().any(|(_, h)| m.reached(h))).collect();
     let faults = crate::checker::equivalent::FaultModel::new(prog, &tests);
     let mut states: Vec<State> = mutants
         .iter()
@@ -549,7 +550,7 @@ pub fn run(
             // only the test cases where the change would change a value can notice it
             let covering: Vec<usize> = (0..passed.len()).filter(|t| m.changed(&passed[*t].1)).collect();
             let reached = match covering.is_empty() {
-                true => (0..passed.len()).filter(|t| passed[*t].1.ran(m.probe)).collect(),
+                true => (0..passed.len()).filter(|t| m.reached(&passed[*t].1)).collect(),
                 false => Vec::new(),
             };
             let exact = vec![false; covering.len()];
