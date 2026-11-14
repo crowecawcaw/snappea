@@ -1,64 +1,37 @@
 // Raft: servers elect a leader and replicate its log despite delayed or dropped messages.
-// Safety rules compare leaders, log entries, and applied commands.
-// This observer checks a rule; it does not implement the system. Hot states require
-// eventual progress.
+// Progress: every client the test starts eventually finishes its workload.
 
-spec LivenessClientsDone observes ClientPutRequest, ClientGetRequest, ClientFinishedMonitor {
-  var activeClients: set[Client];
+// The View announces how many clients it starts before starting any of them.
+event ClientsPlanned: int;
+
+spec LivenessClientsDone observes ClientsPlanned, ClientFinishedMonitor {
+  var planned: int;
   var finishedClients: set[Client];
 
-  start state Init {
-    entry {
-      activeClients = default(set[Client]);
-      finishedClients = default(set[Client]);
-      goto AllClientsDone;
+  start cold state NoClients {
+    on ClientsPlanned do (n: int) {
+      assert n > 0, "a test must start at least one client";
+      planned = n;
+      goto ClientsActive;
+    }
+    on ClientFinishedMonitor do (c: Client) {
+      assert false, format("client {0} finished, but no clients were planned", c);
     }
   }
 
   hot state ClientsActive {
     on ClientFinishedMonitor do (c: Client) {
+      assert !(c in finishedClients), format("client {0} finished twice", c);
       finishedClients += (c);
-      if (finishedClients == activeClients) {
+      if (sizeof(finishedClients) == planned) {
         goto AllClientsDone;
-      }
-    }
-
-    // on ClientRequest do (payload: ClientRequestData) {
-    //     if (payload.client == payload.sender) {
-    //         activeClients += (payload.client);
-    //     }
-    // }
-
-    on ClientPutRequest do (payload: ClientPutRequestData) {
-      if (payload.client == payload.sender) {
-        activeClients += (payload.client);
-      }
-    }
-
-    on ClientGetRequest do (payload: ClientGetRequestData) {
-      if (payload.client == payload.sender) {
-        activeClients += (payload.client);
       }
     }
   }
 
   cold state AllClientsDone {
-    on ClientPutRequest do (payload: ClientPutRequestData) {
-      if (payload.client == payload.sender) {
-        activeClients += (payload.client);
-        goto ClientsActive;
-      }
-    }
-
-    on ClientGetRequest do (payload: ClientGetRequestData) {
-      if (payload.client == payload.sender) {
-        activeClients += (payload.client);
-        goto ClientsActive;
-      }
-    }
-
     on ClientFinishedMonitor do (c: Client) {
-      assert false, format("client {0} finished after all clients were done", c);
+      assert false, format("client {0} finished after all {1} planned clients were done", c, planned);
     }
   }
 }

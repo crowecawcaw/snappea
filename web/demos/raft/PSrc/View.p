@@ -14,6 +14,8 @@ event Shutdown;
 // This is used for choosing servers that should receive an election timeout
 event NotifyLog: (server: Server, log: seq[ServerLog]);
 
+// snappea: driver
+// Test environment: starts the cluster and clients, injects timeouts and crashes.
 machine View {
   // the cluster nodes
   var servers: set[Server];
@@ -80,6 +82,8 @@ machine View {
 
       triggerTimer = new Timer((user=this, timeoutEvent=HeartbeatTimeout));
       clientsDone = default(set[machine]);
+      // the plan comes first, so the liveness spec waits for every client
+      announce ClientsPlanned, numClients;
       i = 0;
       while (i < numClients) {
         new Client((viewService=this, servers=servers, requests=randomWorkload(3)));
