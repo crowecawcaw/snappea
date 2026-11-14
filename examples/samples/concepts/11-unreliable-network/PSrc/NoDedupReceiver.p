@@ -8,10 +8,10 @@ machine NoDedupReceiver {
     entry (n: Network) {
       net = n;
     }
-    on Data do (d: Msg) {
+    on Data do (d: DataMessage) {
       // BUG: no check whether d.id was already delivered.
       announce Delivered, d.id;
-      send net, NetSend, (dest = d.from, ev = Ack, msg = d.id);
+      send net, NetSend, (destination = d.from, message = Ack, payload = d.id);
     }
   }
 }

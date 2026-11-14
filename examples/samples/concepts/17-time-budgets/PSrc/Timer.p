@@ -4,20 +4,20 @@
 //
 // The timer stands in for the OS clock, so it is a driver: not mutated.
 
-type TimerConfig = (holder: machine, ev: event, tag: int, after: int);
+type TimerConfig = (holder: machine, message: event, tag: int, after: int);
 
 // snappea: driver
 machine Timer {
   start state Arming {
     entry (t: TimerConfig) {
       Elapse(t.after, t.after);
-      send t.holder, t.ev, t.tag;
-      // After the send: from here on the timeout is in the holder's inbox.
-      announce TimerFired, (ev = t.ev, tag = t.tag);
+      // Announce before the send, like the server's Replied.
+      announce TimerFired, (message = t.message, tag = t.tag);
+      send t.holder, t.message, t.tag;
     }
   }
 }
 
-fun StartTimer(holder: machine, ev: event, tag: int, after: int) {
-  new Timer((holder = holder, ev = ev, tag = tag, after = after));
+fun StartTimer(holder: machine, message: event, tag: int, after: int) {
+  new Timer((holder = holder, message = message, tag = tag, after = after));
 }

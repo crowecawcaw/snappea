@@ -21,6 +21,8 @@ machine StaleReplyClient {
       send server, Request, (client = this, id = current, value = inputs[current - 1]);
       timer = new Timer((holder = this, tag = current));
     }
+    // The bug is ignoring the id, which is what the lint reports here.
+    // snappea-lint: allow unused-design-payload-field -- negative control: its flaw is that it ignores r.id
     on Reply do (r: (id: int, result: int)) {
       // BUG: no check that r.id is the request in flight.
       send timer, Cancel;

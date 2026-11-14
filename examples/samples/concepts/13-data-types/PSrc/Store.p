@@ -4,7 +4,7 @@
 event Add: (cart: int, line: Line);
 event Remove: (cart: int, sku: Sku);
 event Checkout: (client: machine, cart: int);
-event Receipt: Receipt;
+event CheckoutResponse: Receipt;
 
 machine Store {
   var stock: map[Sku, int];
@@ -30,15 +30,13 @@ machine Store {
       // Removing a key from a map: `m -= (key);`
       carts[r.cart] -= (r.sku);
     }
+    // One transaction: the reply carries its outcome, so the spec observes the reply.
     on Checkout do (c: (client: machine, cart: int)) {
-      var receipt: Receipt;
-      receipt = Checkout(c.cart);
-      announce CheckedOut, receipt;
-      send c.client, Receipt, receipt;
+      send c.client, CheckoutResponse, ProcessCheckout(c.cart);
     }
   }
 
-  fun Checkout(cart: int): Receipt {
+  fun ProcessCheckout(cart: int): Receipt {
     var items: Cart;
     var sku: Sku;
     var lines: seq[Line];

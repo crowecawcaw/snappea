@@ -10,7 +10,8 @@ machine App {
     }
     on Connected do (conn: machine) {
       send owner, Connected, conn;
-      send conn, Close, ByClient;
+      announce CloseRequested, conn;
+      send conn, Close, ClientClose;
     }
   }
   // Keeps the connection open until the server takes it away.
@@ -72,10 +73,10 @@ machine EvictIdleHolder {
 }
 
 test tcTwoConnectionsOneSlot [main=TwoConnectionsOneSlot]:
-  assert Lifecycle in { TwoConnectionsOneSlot, App, Server, Connection };
+  assert ConnectionsWithinSlots in { TwoConnectionsOneSlot, App, Server, Connection };
 
 test tcTwoConnectionsTwoSlots [main=TwoConnectionsTwoSlots]:
-  assert Lifecycle in { TwoConnectionsTwoSlots, App, Server, Connection };
+  assert ConnectionsWithinSlots in { TwoConnectionsTwoSlots, App, Server, Connection };
 
 test tcEvictIdleHolder [main=EvictIdleHolder]:
-  assert Lifecycle in { EvictIdleHolder, App, Server, Connection };
+  assert ConnectionsWithinSlots in { EvictIdleHolder, App, Server, Connection };

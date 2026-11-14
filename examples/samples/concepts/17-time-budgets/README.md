@@ -7,13 +7,47 @@ questions:
   - Do I need a latency profile or --timed to check a time budget?
 ---
 
-# Time budgets: a retry policy inside a deadline
+# Time budgets: three attempts must fit inside a one-second deadline
 
-Plain P has no durations: a timeout is only an ordering choice (see `09-timers`). Snap
-Pea adds time without new syntax: declare a few foreign functions and each machine gets
-a clock. This sample checks that a client with three attempts, a per-attempt timeout
-and backoff always answers its caller within one second, and shows the first policy,
-which does not.
+Plain P has no durations: a timeout is only an ordering choice (see
+[09-timers](../09-timers/README.md)). Snap Pea adds time without new syntax: declare a
+few foreign functions and each machine gets a clock. Here a client calls a flaky server
+with three attempts, a 250 ms per-attempt timeout and 50 then 100 ms of backoff, and
+its caller needs an answer within one second. The first policy, with a 300 ms
+timeout, does not fit when every reply is lost.
+
+**Contract:**
+
+- The caller gets an answer, success or error, within 1 s of the call
+  (`AnswersWithinDeadline`).
+- At most 3 attempts, and a retry only after the previous attempt timed out
+  (`AnswersWithinDeadline`).
+- A success only for an attempt the server answered; an error only after the third
+  attempt timed out (`AnswersWithinDeadline`).
+- The client answers, and every attempt reaches the server (`AnswersWithinDeadline`
+  stays hot until then).
+
+**Atomic primitives:** the server's `Request` handler is one request served (8-36 ms of
+work) or lost; a timer firing is one OS timer callback; each client handler is one step
+of the client's event loop.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSrc/Time.p`](PSrc/Time.p) | The time functions; declaring them turns time on |
+| [`PSrc/Timer.p`](PSrc/Timer.p) | A one-shot timer: waits `after`, then sends (a driver) |
+| [`PSrc/RetryClient.p`](PSrc/RetryClient.p) | The retry `Client` and the flaky `Server` (a driver) |
+| [`PSpec/Budget.p`](PSpec/Budget.p) | `AnswersWithinDeadline` |
+| [`PTst/Tests.p`](PTst/Tests.p) | The two policies, the `LongTimer` stand-in, three test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcRetryWithinDeadline` | 250 ms timeout, a server that may lose each reply: worst case 3 x 250 + 50 + 100 = 900 ms | The retry chain fits the deadline even when every reply is lost; late replies are dropped | Passes |
+| `tcServerAnswers` | The same client, a server that always answers, timeouts longer than any reply (`LongTimer`) | Rules out a client that ignores replies and gives up within the deadline | Passes |
+| `tcBugRetryOverDeadline` | 300 ms timeout: 3 x 300 + 150 = 1050 ms when every reply is lost | The first policy misses the deadline | Expected bug: `after up to 1050000 us; the deadline is 1000000 us` |
 
 ## The concept
 
@@ -39,62 +73,41 @@ profile (`--latency file.toml`) adds network delay per event; `--timed` delivers
 messages in time order, pruning orders that cannot happen. Both are optional; see
 [design/time/RetryBudget](../../../../design/time/RetryBudget/README.md).
 
-## Key lines
+**Timed models are searched like any other.** The default run explores every schedule
+of all three tests in about a second; read `search_complete` (or `all N schedules`) in
+the report as usual.
+
+## The key lines
 
 The caller starts the stopwatch as it calls ([`PTst/Tests.p`](PTst/Tests.p)):
 
 ```p
 announce Called, Mark();
-new Client((server = new Server(), policy = (timeout = timeout, backoff = Backoff())));
+new Client((server = new Server(dropsReplies), policy = (timeout = timeout, backoff = Backoff())));
 ```
 
-The spec ([`PSpec/Budget.p`](PSpec/Budget.p)) checks the budget when the client answers:
+The spec ([`PSpec/Budget.p`](PSpec/Budget.p)) checks the budget when the client answers,
+and checks that the answer is justified by what happened:
 
 ```p
 assert Elapsed(call) <= ms(1000),
   format("answered (ok = {0}) after up to {1} us; the deadline is 1000000 us", ok, Elapsed(call));
+if (ok) {
+  assert attempts in replied, format("attempt {0} succeeded, but the server never replied to it", attempts);
+} else {
+  assert attempts == 3, format("gave up after {0} attempts", attempts);
+  assert attempts in timedOut, format("gave up before attempt {0} timed out", attempts);
+}
 ```
 
-It also checks that the client retries or gives up only when that attempt's timeout
-reached it before the reply, that it makes at most three attempts, and (hot state) that
-it answers and every attempt reaches the server.
+The server and the timer announce `Replied` and `TimerFired` just before they send, so
+the justification always comes before the client acts on it, in the model and in a real
+log. The spec does not guess which message reached the client first.
 
-## Test cases
-
-| Test | Policy | Expected |
-| --- | --- | --- |
-| `tcRetryWithinDeadline` | 250 ms timeout: worst case 3 x 250 + 50 + 100 = 900 ms | Passes (sampled; see below) |
-| `tcBugRetryOverDeadline` | 300 ms timeout: 3 x 300 + 150 = 1050 ms when every reply is lost | **Fails**: `answered (ok = False) after up to 1050000 us; the deadline is 1000000 us` |
-
-```sh
-snappea check tcRetryWithinDeadline --timeout 20s
-snappea check mutation tcRetryWithinDeadline
-snappea check tcBugRetryOverDeadline     # exits 0 when the declared bug matches, with or without --timed
-```
-
-## What the checker shows
-
-Output excerpts illustrate the report; counts, timings and source lines vary with
-the checker version and run budget. Read the current result before claiming exhaustiveness.
-
-```text
-ok    tcRetryWithinDeadline (61744 schedules, time limit reached, 20.0s)
-      Coverage: 3/3 states, 53/53 statements, 14/14 branches, 10/10 event handlers, 16/16 condition outcomes, ...
-Mutation testing: 30 of 30 mutants detected (0.2s)
-
-expected bug  tcBugRetryOverDeadline (matching declared failure)
-      Assertion Failed: PSpec/Budget.p:51:7 answered (ok = False) after up to 1050000 us; the deadline is 1000000 us
-```
-
-A timed model is **never searched exhaustively**: the checker samples schedules until
-the time limit, so the result says "time limit reached", and `check_samples.py` notes
-the search as incomplete. The budget does not depend on the schedule much here (the
-worst path is "every reply lost"), so sampling finds the bug in the first schedule.
-
-With `--timed`, coverage drops to 12/14 branches: a reply 8-36 ms after the request
-can no longer lose to a 250 ms timeout, so the stale-reply branch never runs. That is
-the point of `--timed`, and the reason this sample's default run is untimed: it keeps
-the "reply after timeout" race in the checked behaviour.
+With `--timed`, the stale-reply branch (`a != attempt`) is no longer covered: a reply
+8-36 ms after the request can never lose to a 250 ms timeout. That is the point of
+`--timed`, and the reason this sample's default run is untimed: it keeps the "reply
+after timeout" race in the checked behaviour.
 
 ## Common mistakes
 
@@ -105,28 +118,39 @@ the "reply after timeout" race in the checked behaviour.
   machine, or the budget includes time the caller never waited.
 - **Putting the stopwatch in the code under test.** The caller (the driver) marks the
   start, so a client that forgets to start a timer cannot hide its own lateness.
-- **Expecting exhaustive search.** Raise `--timeout` for confidence; read coverage and
-  mutation results, not "all N schedules".
+- **Checking only the deadline.** A client that ignores every reply and gives up after
+  three timeouts meets the deadline. `tcServerAnswers` is what makes that fail.
 
 ## Try this
 
-Delete `if (a != attempt) { return; }` from `Client.Trying`'s `Response` handler. A late
+Delete `if (a != attempt) { return; }` from `Client.Trying`'s `Reply` handler. A late
 reply to attempt 1 or 2 now answers attempt 3:
 
 ```text
-FAIL  tcRetryWithinDeadline (bug found after 1 schedule, 0.01s)
-      Assertion Failed: PSpec/Budget.p:53:7 attempt 3 answered ok = True, but the other message arrived first
+Assertion Failed: PSpec/Budget.p:50:9 attempt 3 succeeded, but the server never replied to it
 ```
+
+## Run
+
+```sh
+cd examples/samples/concepts/17-time-budgets
+snappea check --deny mutation
+snappea check --timed     # exits 1: the stale-reply branch is unreachable in time order
+```
+
+`tcBugRetryOverDeadline` counts as passing when it fails with the declared message, with
+or without `--timed`.
 
 ## Bounds and omissions
 
-One client, one server that loses replies, three attempts, fixed backoffs. Network
+One client, one server that may lose replies, three attempts, fixed backoffs. Network
 delay is zero unless you pass `--latency`; the server's work is 8-36 ms. Not modeled:
 jitter on backoff, a deadline propagated to the server, clock skew.
 
 ## Testing the implementation
 
-Emit `Attempt` and `Outcome` with timestamps from the client and check them with
-`snappea observe`, whose specs read log timestamps through the same `Mark`/`Elapsed`
-functions (see docs/observe.md, "Time and latency budgets"). To hit the worst case in a
-test, drop every reply with a fake server and a fake clock.
+Emit `Attempt` and `Outcome` with timestamps from the client, `Received` and `Replied`
+from the server, and `TimerFired` from the timer callback, and check them with
+`snappea observe`, whose specs read log timestamps through the same `Mark` and
+`Elapsed` functions (see docs/observe.md, "Time and latency budgets"). To hit the worst
+case in a test, drop every reply with a fake server and a fake clock.

@@ -5,15 +5,48 @@ questions:
   - How do I model a process that crashes and restarts in P?
   - How do I separate durable state from volatile state in a model?
   - Where can a crash happen in a P model, and where can it not?
+  - How do I show that "persist before replying" matters?
 ---
 
-# Crash and restart: what survives
+# Crash and restart: a ticket server that must not reissue tickets
 
 A ticket server hands out unique, increasing tickets. Its process can crash at any
-moment and is restarted by a process manager. The question every recovery design must
-answer is **which state survives**: whatever lives only in the process is gone, so the
-restarted server must rebuild from durable storage. This sample models that and shows
-the checker catching a server that keeps its counter in memory.
+moment and is restarted by a process manager. Every recovery design must answer
+**which state survives**: whatever lives only in the process is gone, so the restarted
+server must rebuild from durable storage, and it must have stored a ticket before any
+client can hold it.
+
+**Contract:**
+
+- Tickets are unique and increasing, across crashes too (`TicketsUnique`).
+- A client accepts only a ticket issued to it, and only one (`TicketsUnique`).
+- Every client that asks eventually holds a ticket (`TicketsUnique` stays hot until
+  then).
+
+**Atomic primitives:** storage's `Write` handler is one durable write, committed as soon
+as storage handles it, even if the server that asked has crashed; its `Read` is one
+read. Each server handler is one step of the server process: a crash lands between
+handlers, never inside one.
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSrc/Server.p`](PSrc/Server.p) | The design: persist the counter, then reply |
+| [`PSrc/Storage.p`](PSrc/Storage.p) | Durable storage: a separate machine that never crashes |
+| [`PSrc/Client.p`](PSrc/Client.p) | A client that resends after a restart if still waiting |
+| [`PSrc/MemoryOnlyServer.p`](PSrc/MemoryOnlyServer.p) | Negative control: keeps the counter only in memory |
+| [`PSrc/ReplyFirstServer.p`](PSrc/ReplyFirstServer.p) | Negative control: replies first, persists on its next turn |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | `TicketsUnique` |
+| [`PTst/Tests.p`](PTst/Tests.p) | The process manager `CrashOnce`, module bindings, three test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcCrashAnywhere` | Two clients, at most one crash at any point, restart on the same storage | A crash while recovering, while idle, or with a write in flight must not reissue a ticket | Passes |
+| `tcBugMemoryOnly` | The same, with `MemoryOnlyServer` bound in for `Server` | Nothing survives the crash: the restart starts again from ticket 1 | Expected bug: `ticket 1 issued twice` |
+| `tcBugReplyFirst` | The same, with `ReplyFirstServer` bound in for `Server` | A crash between the reply and the write loses a ticket a client already holds | Expected bug: `ticket 1 issued twice` |
 
 ## The concept
 
@@ -28,15 +61,15 @@ Model durability by **where state lives**, not by flags:
 
 A crash can only land **between handlers**: everything inside one handler runs as one
 step. So split the design into a handler per real step wherever a crash between them
-matters (here: write to storage, then reply after the ack).
+matters.
 
 Use this whenever a design claims to survive restarts: counters, idempotency keys,
 leases, outboxes, anything "recovered on startup".
 
-## Key lines
+## The key lines
 
-The server persists before it replies ([`PSrc/Server.p`](PSrc/Server.p)), in two handlers,
-so a crash can land between the write and the reply:
+The server persists before it replies ([`PSrc/Server.p`](PSrc/Server.p)), in two
+handlers, so a crash can land between the write and the reply:
 
 ```p
 state Serving {
@@ -56,82 +89,73 @@ state Crashed { entry { send owner, Exited; raise halt; } }
 ```
 
 On restart it rebuilds from storage before serving (`Recovering` defers requests until
-then). The driver ([`PTst/Tests.p`](PTst/Tests.p)) is the process manager: it may send one
-`Crash` at a moment the scheduler picks, then starts a new `Server` on the same
+then). The driver ([`PTst/Tests.p`](PTst/Tests.p)) is the process manager: it may send
+one `Crash` at a moment the scheduler picks, then starts a new `Server` on the same
 `Storage` and tells the clients its address. A client still waiting resends.
-
-## Test cases
-
-| Test | Drives | Expected |
-| --- | --- | --- |
-| `tcCrashAnywhere` | Two clients, at most one crash at any point, restart on the same storage | Passes; all schedules explored (about 11,000) |
-| `tcBugMemoryOnly` | The same, with a server that keeps its counter only in memory | **Fails**: `ticket 1 issued twice` |
-
-```sh
-snappea check tcCrashAnywhere --timeout 20s
-snappea check mutation tcCrashAnywhere
-snappea check tcBugMemoryOnly        # exits 0 when the declared bug matches
-```
-
-## What the checker shows
-
-Output excerpts illustrate the report; counts, timings and source lines vary with
-the checker version and run budget. Read the current result before claiming exhaustiveness.
-
-```text
-ok    tcCrashAnywhere (all 10994 schedules, 2.98s)
-      Coverage: 2/2 states, 45/45 statements, 4/4 branches, 14/14 event handlers, ...
-      Driver limits (held in all 10994 schedules):
-        no CrashOnce sends Crash after Restarted
-        creates 2 Client, 1 to 2 Server and 1 Storage, never more
-        CrashOnce sends Crash at most once
-```
-
-The coverage line shows every `on Crash` handler ran: the crash landed while
-recovering, while idle and while a write was in flight. The driver limits state the
-bound: one crash. Auto mode explores the bounded model within the chosen budget.
-Read `search_complete` (or `all N schedules`) before claiming exhaustiveness; increasing
-`--timeout` gives the checker more time, but does not guarantee completion.
-
-The memory-only server fails in the first schedule: it issues ticket 1, crashes,
-restarts from zero and issues ticket 1 again.
-
-```text
-expected bug  tcBugMemoryOnly (matching declared failure)
-      Assertion Failed: PSpec/Contract.p:22:7 ticket 1 issued twice
-```
 
 A crash in `Persisting` shows the other half of the lesson: the write committed, the
 client never got the ticket, and the restarted server skips it. Tickets may have gaps;
-the contract ([`PSpec/Contract.p`](PSpec/Contract.p)) only forbids duplicates and going
-backwards, and requires every client to end up holding a ticket issued to it.
+the contract only forbids duplicates and going backwards.
+
+## Breaking "persist before replying"
+
+The rule only means something if the model can break it. `ReplyFirstServer` is a
+write-behind server: it replies at once and sends itself `Flush` to persist on its next
+turn. That puts the crash window in its own handler:
+
+```p
+on Next do (c: machine) {
+  last = last + 1;
+  send c, Ticket, last;      // BUG: the reply goes out before the counter is durable
+  ...
+  send this, Flush;
+  goto Flushing;
+}
+```
+
+A crash before `Flush` (or before storage handles the write) restarts the server at the
+old high-water mark, and it hands ticket 1 out again. Both negative controls reuse the
+same driver through module bindings:
+
+```p
+module ReplyFirst = { ReplyFirstServer -> Server };
+
+// snappea: expect-bug "ticket 1 issued twice"
+test tcBugReplyFirst [main=CrashOnce]:
+  assert TicketsUnique in (union { CrashOnce, Storage, Client }, ReplyFirst);
+```
 
 ## Common mistakes
 
-- **Resetting fields in an `Crash` handler instead of ending the machine.** Then the
+- **Resetting fields in a `Crash` handler instead of ending the machine.** Then the
   model decides what a crash forgets, and it is easy to forget too little. A new
   machine forgets everything that is not in storage.
-- **Expecting a crash inside a handler.** Moving the reply before the write (`send
-  client, Ticket` in `Serving`, then the write) still passes here: both sends happen in
-  the same step, and the model's storage never loses a write that was sent. If your real
-  code can crash between two writes, put them in separate handlers.
-- **Always crashing.** With an unconditional crash, a client that never sends its first
-  request still gets its ticket, because the restart makes it resend. Mutation testing
-  reported exactly that; the driver now crashes with `if ($)`, so no-crash runs are
-  checked too.
+- **Expecting a crash inside a handler.** If the reply and the write were sent in the
+  same handler, in either order, no crash could land between them. If your real code
+  can crash between two steps, put them in separate handlers.
+- **Always crashing.** With an unconditional crash, the restart makes every client
+  resend, and mutation testing reports 4 undetected mutants, including a client that
+  never sends its first request and storage that never records a write. The driver
+  crashes with `if ($)`, so runs without a crash are checked too.
 
 ## Try this
 
-In `Server.Recovering`, delete `last = highWater;`. The lint fails first:
+In `Server.Recovering`, delete `last = highWater;`. The restarted server forgets the
+counter, like the memory-only one:
 
 ```text
-error[unchecked-state]: machine Storage writes field 'highWater' 1 time, but no assertion,
-condition, spec or sent event depends on it, so a wrong value there passes every test case
+Assertion Failed: PSpec/Contract.p:22:7 ticket 1 issued twice
 ```
 
-For this deliberately broken exercise only, `--warn lint` lets the checker continue
-past that diagnostic and find the bug: `Assertion Failed: PSpec/Contract.p:22:7
-ticket 1 issued twice`.
+## Run
+
+```sh
+cd examples/samples/concepts/10-crash-and-restart
+snappea check --deny mutation
+```
+
+`tcCrashAnywhere` explores every schedule in a few seconds. The `tcBug*` tests count as
+passing when they fail with the declared message.
 
 ## Bounds and omissions
 
@@ -142,7 +166,8 @@ after its replacement starts (that needs fencing), clients that crash.
 
 ## Testing the implementation
 
-Emit `Issued` after the reply is sent and `GotTicket` in the client. To force the
-crash points, kill the process (or throw from a fault-injection hook) after the
-storage write commits but before the reply, then restart it and check that the next
-ticket is higher than every ticket handed out.
+Emit `Issued` where the server sends a ticket and `GotTicket` in the client. To force
+the crash points, kill the process (or throw from a fault-injection hook) after the
+storage write commits but before the reply, and, for a write-behind design, after the
+reply but before the flush. Then restart it and check that the next ticket is higher
+than every ticket handed out.

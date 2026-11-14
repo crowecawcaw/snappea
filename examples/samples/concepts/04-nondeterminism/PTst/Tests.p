@@ -1,12 +1,12 @@
-// Driver: open an account with 2, then withdraw twice. Each amount is a choice from 0 to
-// 3, so the checker tries below, exactly at and above the balance, in both orders.
+// Driver: open an account with 2, then withdraw twice, one after the other. Each amount
+// is a choice from 0 to 3, so the checker tries below, exactly at and above the balance.
 machine TwoWithdrawals {
   var account: Account;
   var made: int;
 
   start state Init {
     entry {
-      announce Opened, 2;
+      announce Opened, (balance = 2, withdrawals = 2);
       account = new Account(2);
       goto Withdrawing;
     }
@@ -17,8 +17,8 @@ machine TwoWithdrawals {
       var amount: int;
       amount = choose(4);
       made = made + 1;
-      announce WithdrawRequested, amount;
-      send account, Withdraw, (client = this, amount = amount);
+      announce WithdrawRequested, (id = made, amount = amount);
+      send account, Withdraw, (client = this, id = made, amount = amount);
     }
     on WithdrawResponse do { Next(); }
     on Unavailable do { Next(); }

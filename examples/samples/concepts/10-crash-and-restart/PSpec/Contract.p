@@ -35,7 +35,11 @@ spec TicketsUnique observes ClientsPlanned, Issued, GotTicket {
 
   state AllServed {
     on ClientsPlanned do { assert false, "clients planned after every client was served"; }
-    on Issued do { assert false, "ticket issued after every client was served"; }
-    on GotTicket do { assert false, "ticket accepted after every client was served"; }
+    on Issued do (p: (client: machine, ticket: int)) {
+      assert false, format("ticket {0} issued to {1} after every client was served", p.ticket, p.client);
+    }
+    on GotTicket do (p: (client: machine, ticket: int)) {
+      assert false, format("{0} accepted ticket {1} after every client was served", p.client, p.ticket);
+    }
   }
 }

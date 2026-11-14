@@ -7,38 +7,38 @@ machine ReceiveClient {
     entry (s: Store) {
       store = s;
     }
-    // A second Increment that arrives while Increment() is blocked waits in the queue:
-    // this state handles it, so it is kept until the receive returns.
+    // While ApplyIncrement() blocks in a receive, a second Increment stays queued.
+    // When the receive returns, the machine is still in Idle, which handles it next.
     on Increment do {
-      Increment();
+      ApplyIncrement();
     }
   }
 
-  fun Increment() {
+  fun ApplyIncrement() {
     var current: (version: int, value: int);
     var done: bool;
     while (!done) {
-      current = Get();
-      done = Cas(current.version, current.value + 1);
+      current = FetchCurrent();
+      done = TryCas(current.version, current.value + 1);
     }
   }
 
-  fun Get(): (version: int, value: int) {
+  fun FetchCurrent(): (version: int, value: int) {
     var result: (version: int, value: int);
     send store, Get, (client = this,);
     receive {
-      case GetResponse: (r: (version: int, value: int)) {
+      case Got: (r: (version: int, value: int)) {
         result = r;
       }
     }
     return result;
   }
 
-  fun Cas(version: int, value: int): bool {
+  fun TryCas(version: int, value: int): bool {
     var ok: bool;
     send store, Cas, (client = this, version = version, value = value);
     receive {
-      case CasResponse: (r: (ok: bool)) {
+      case CasResult: (r: (ok: bool)) {
         ok = r.ok;
       }
     }

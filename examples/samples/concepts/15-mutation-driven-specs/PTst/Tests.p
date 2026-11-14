@@ -2,18 +2,18 @@
 machine Client {
   start state Asking {
     entry (input: (account: Account, id: int, amount: int)) {
-      announce Requested, (id = input.id, amount = input.amount);
+      announce WithdrawRequested, (id = input.id, amount = input.amount);
       send input.account, Withdraw, (client = this, id = input.id, amount = input.amount);
     }
-    on WithdrawResponse do (r: (id: int, ok: bool, balance: int)) {
-      announce Answered, (id = r.id, ok = r.ok);
-    }
+    on WithdrawResponse goto Answered;
   }
+
+  state Answered {}
 }
 
-// Two clients withdraw from a balance of 10. Amounts include 0 (the fast path), an
-// amount both can have (4), one only the first can have (6 after 4), and exactly the
-// balance (10).
+// Two clients withdraw from a balance of 10 at once. Amounts include 0 (the fast
+// path), an amount both can have (4), one only the first can have (6 after 4), and
+// exactly the balance (10).
 machine TwoWithdrawals {
   start state Init {
     entry {
@@ -32,4 +32,4 @@ machine TwoWithdrawals {
 }
 
 test tcTwoWithdrawals [main=TwoWithdrawals]:
-  assert Contract in { TwoWithdrawals, Account, Client };
+  assert WithdrawalsMatchBalance in { TwoWithdrawals, Account, Client };

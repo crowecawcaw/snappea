@@ -7,12 +7,45 @@ questions:
   - How do I convert between enums and integers?
 ---
 
-# Data types: a shopping cart
+# Data types: two shoppers want the last apples
 
 P's data types are few and value-typed: `int`, `bool`, `string`, enums, tuples, named
 tuples, `seq`, `set`, `map`, `machine` and `event`. This sample uses each in a small
-cart service: shoppers fill carts and check out against shared stock, and a spec
-recomputes every receipt from what the shoppers asked for.
+cart service: shoppers fill their own carts and check out against shared stock, so two
+checkouts can compete for the last items, and a spec recomputes every receipt from
+what the shoppers asked for.
+
+**Contract:**
+
+- A checkout is paid when every line of the cart is in stock, refused as `OutOfStock`
+  otherwise, and `EmptyCart` when the cart is missing or empty
+  (`CheckoutsMatchCarts`).
+- A paid receipt lists exactly the cart's lines and charges their list price
+  (`CheckoutsMatchCarts`).
+- A paid cart is emptied: checking it out again finds nothing (`CheckoutsMatchCarts`).
+- Every checkout gets a receipt (`CheckoutsMatchCarts` stays hot until then).
+
+The spec keeps its own stock, rebuilt from the opening stock and the paid receipts, so
+a store that oversells refuses or charges differently from what the spec expects.
+
+**Atomic primitives:** each store handler is one transaction: add a line, remove a
+line, or check out (check every line, then take every line, or take none).
+
+## Files
+
+| File | What it holds |
+| --- | --- |
+| [`PSrc/Types.p`](PSrc/Types.p) | Enums, type aliases and the price table |
+| [`PSrc/Store.p`](PSrc/Store.p) | The store: carts, stock, and the all-or-nothing checkout |
+| [`PSpec/Contract.p`](PSpec/Contract.p) | `CheckoutsMatchCarts`, with an independent price oracle |
+| [`PTst/Tests.p`](PTst/Tests.p) | The `Shopper` driver and two test cases |
+
+## Test cases
+
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoShoppers` | Two shoppers want the last two apples; one changes its mind about a pear; the first clicks pay twice | Contention for stock, adding a sku twice, removal, a paid cart is emptied | Passes |
+| `tcEmptyCarts` | One shopper never adds; one adds an item (either sku) and removes it | Both kinds of empty cart: missing and emptied | Passes |
 
 ## The concept
 
@@ -25,7 +58,7 @@ recomputes every receipt from what the shoppers asked for.
 | Map: put, read, remove, test | `m[k] = v;` `m[k]` `m -= (k);` `k in m` | `Store.p` |
 | Sequence: append, index, length | `s += (sizeof(s), v);` `s[i]` `sizeof(s)` | `Store.p` |
 | Set: add, test, pick any | `s += (v);` `v in s` `choose(s)` | [`PTst/Tests.p`](PTst/Tests.p) |
-| Iterate | `foreach (k in keys(m))`, `foreach (v in values(m))`, `foreach (x in seq)` | `Store.p`, [`PSpec/Contract.p`](PSpec/Contract.p) |
+| Iterate | `foreach (k in keys(m))`, `foreach (x in seq)`; `values(m)` for a map's values | `Store.p`, [`PSpec/Contract.p`](PSpec/Contract.p) |
 | Enum to integer | `sku to int` | `Types.p` |
 | Message text | `format("cart {0} charged {1}", cart, total)` | `Contract.p` |
 
@@ -33,7 +66,11 @@ All values are copied on assignment: `items = carts[cart];` takes a snapshot, an
 changing `items` does not change the map. Nested updates work in place:
 `carts[c][sku] = carts[c][sku] + qty;`.
 
-## Key lines
+Give each name one meaning. The type is `Receipt`, the reply event that carries it is
+`CheckoutResponse`, and the helper that builds a line is `MakeLine`: a type, an event
+and a function never share a name.
+
+## The key lines
 
 Checkout is all-or-nothing: check every line, then take every line.
 
@@ -49,56 +86,18 @@ foreach (sku in keys(items)) {
 carts -= (cart);
 ```
 
-The spec keeps its own copy of each cart (from `Added`/`Removed`, announced by the
-shoppers) and of the stock, decides the expected `Result`, and for a payment checks
-each receipt line, the total at list price, and that no stock value went negative:
-
-```p
-foreach (qty in values(stock)) {
-  assert qty >= 0, format("stock went negative: {0}", stock);
-}
-```
-
-## Test cases
-
-| Test | Drives | Why |
-| --- | --- | --- |
-| `tcTwoShoppers` | Two shoppers want the last two apples; one changes its mind about a pear; the first clicks pay twice | Contention for stock, adding a sku twice, removal, a paid cart is emptied |
-| `tcEmptyCarts` | One shopper never adds; one adds an item (either sku) and removes it | Both kinds of empty cart: missing and emptied |
-
-Both pass: `tcTwoShoppers` explores all schedules (about 8,000) with `--timeout 20s`,
-`tcEmptyCarts` all 404 schedules.
-
-```sh
-snappea check --timeout 20s --deny mutation
-```
-
-## What the checker shows
-
-Output excerpts illustrate the report; counts, timings and source lines vary with
-the checker version and run budget. Read the current result before claiming exhaustiveness.
-
-```text
-ok    tcTwoShoppers (all 7968 schedules, 3.66s)
-ok    tcEmptyCarts (all 404 schedules, 0.09s)
-      Coverage: 3/3 states, 50/79 statements, 10/22 branches, ...
-Coverage of all test cases: 3/3 states, 88/88 statements, 22/22 branches, 8/8 event handlers, 26/26 condition outcomes, ...
-Mutation testing: 41 of 41 mutants detected (0.2s)
-```
-
-Coverage is checked over all tests together: `tcEmptyCarts` alone runs half the code,
-and that is fine; it exists for the `EmptyCart` branch.
-
-The spec computes expected prices independently of the store's indexed price table.
-Sharing that calculation would let the same price bug change both the result and its oracle.
+The spec observes the store's reply, `CheckoutResponse`, which carries the receipt.
+It keeps its own copy of each cart (from `Added` and `Removed`, announced by the
+shoppers) and of the stock, decides the expected outcome, and for a payment checks
+each receipt line and the total at list price. It computes prices with its own
+`ExpectedPrice`, not the store's indexed table: sharing that code would let the same
+price bug change both the result and its oracle.
 
 ## Common mistakes
 
 - **Reading a missing map key.** It is a runtime error, not a default. Delete the
-  `default(Cart)` initialisation in `Store.Add` and the first schedule fails with
-  `Exception 'System.Collections.Generic.KeyNotFoundException' was thrown in Store(2)
-  (state 'Open', action 'Anon_1'): The given key '1' was not present in the dictionary.`
-  Test `k in m` first.
+  `default(Cart)` initialisation in `Store.Add` and the check fails with
+  `error: map 'carts' has no key 1 (in Store(2), state 'Open')`. Test `k in m` first.
 - **`as` versus `to`.** `as` changes the static type (from `any`, or to a supertype);
   `to` converts a value: `sku to int`. `sku as int` fails with `types Sku and int are
   incomparable`. Converting an integer back to an enum is not supported; pick from a set
@@ -110,15 +109,22 @@ Sharing that calculation would let the same price bug change both the result and
 
 ## Try this
 
-In `Store.Checkout`, change `items[sku] > stock[sku]` to `items[sku] >= stock[sku]`. A
-cart that takes exactly the remaining stock is now refused:
+In `Store.ProcessCheckout`, change `items[sku] > stock[sku]` to `items[sku] >= stock[sku]`.
+A cart that takes exactly the remaining stock is now refused:
 
 ```text
-FAIL  tcTwoShoppers (bug found after 34 schedules, 0.02s)
-      Assertion Failed: PSpec/Contract.p:43:7 cart 1: checkout returned 1, expected 0
+Assertion Failed: PSpec/Contract.p:47:7 cart 1: checkout returned OutOfStock, expected Paid
 ```
 
-`format` prints enum values as their integers: 1 is `OutOfStock`, 0 is `Paid`.
+## Run
+
+```sh
+cd examples/samples/concepts/13-data-types
+snappea check --deny mutation
+```
+
+Coverage is checked over both tests together: `tcEmptyCarts` alone runs about half the
+code, and that is fine; it exists for the `EmptyCart` branch.
 
 ## Bounds and omissions
 
@@ -127,6 +133,6 @@ change, reservations at add time, concurrent edits to one cart, payment failures
 
 ## Testing the implementation
 
-Emit `Added`/`Removed` from the cart API and `CheckedOut` with the receipt after the
-checkout transaction commits. Run two checkouts that together exceed the stock, and a
-checkout that takes exactly the remaining stock.
+Emit `Added` and `Removed` from the cart API and `CheckoutResponse` with the receipt
+where the checkout transaction replies. Run two checkouts that together exceed the
+stock, and a checkout that takes exactly the remaining stock.

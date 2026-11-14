@@ -1,6 +1,6 @@
-// The client side of a connection: Idle -> Connecting (up to two attempts) -> Open ->
-// Closed. However it leaves Open, by its owner's close or the server's reset, the exit
-// handler says goodbye so the server frees the slot.
+// The client side of a connection: Idle -> Connecting (up to two attempts) ->
+// Established -> Closed. However it leaves Established, by its owner's close or the
+// server's reset, the exit handler says goodbye so the server frees the slot.
 
 event Open: machine;
 event Close: Reason;
@@ -28,7 +28,7 @@ machine Connection {
     on SynAck do (r: (ok: bool, session: int)) {
       if (r.ok) {
         // `goto S, payload` passes the payload to S's entry.
-        goto Open, r.session;
+        goto Established, r.session;
       }
       if (attempts < 2) {
         // Re-entering a state runs its entry again: the next attempt.
@@ -41,14 +41,14 @@ machine Connection {
     on GiveUp goto Closed;
   }
 
-  state Open {
+  state Established {
     entry (s: int) {
       session = s;
       send app, Connected, this;
     }
     on Close goto Closed;
     on Reset goto Closed;
-    // Runs on every way out of Open.
+    // Runs on every way out of Established.
     exit {
       send server, Fin, session;
     }
@@ -56,7 +56,7 @@ machine Connection {
 
   state Closed {
     entry (reason: Reason) {
-      announce Closed, (conn = this, reason = reason);
+      announce ConnectionClosed, (conn = this, reason = reason);
       // Done for good: events still on their way to this machine are dropped.
       raise halt;
     }
