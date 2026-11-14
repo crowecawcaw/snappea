@@ -92,6 +92,11 @@ Exploration:
                             shared machines.
       --seed <N>            Seed for reproducible choices. Not needed to reproduce
                             a bug: its .schedule replays exactly.
+      --expect-bug-seeds <N,N,...>
+                            Repeat declared expected-bug tests with 2–32 explicit seeds
+                            (e.g. 1,2,3), and compare actual failure sites. Positive tests
+                            still run once. Different sites are advisory; every seed
+                            must find its declared failure. --timeout applies per seed.
 
 Strategies are chosen automatically. A search that covers every schedule ends
 early; one that times out is incomplete.
@@ -191,6 +196,7 @@ Options:
                             test cases share 10s)
   -j, --workers <N>         Worker limit (default: one per CPU core)
       --seed <N>            Seed for reproducible choices
+      --expect-bug-seeds <N,N,...>  Repeat negative controls and compare failure sites
       --latency <FILE>[:<PROFILE>], --timed
       --warn <CHECK>, --deny <CHECK>
                             As for `snappea check`
@@ -834,6 +840,7 @@ const CHECK_OPTS: &[Opt] = &[
     value("timeout", None),
     value("workers", Some('j')),
     value("seed", None),
+    value("expect-bug-seeds", None),
     value("latency", None),
     flag("timed", None),
     value("out", Some('o')),
@@ -952,6 +959,17 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     if let Some(s) = a.get("seed") {
         cfg.seed =
             Some(s.parse().map_err(|_| format!("'--seed' needs a whole number from 0 to 4294967295, not '{}'", s))?);
+    }
+    if let Some(seeds) = a.get("expect-bug-seeds") {
+        cfg.expected_bug_seeds = seeds
+            .split(',')
+            .map(|s| s.trim().parse::<u32>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "'--expect-bug-seeds' needs comma-separated seed numbers, e.g. 1,2,3".to_string())?;
+        let distinct: std::collections::BTreeSet<_> = cfg.expected_bug_seeds.iter().collect();
+        if !(2..=32).contains(&cfg.expected_bug_seeds.len()) || distinct.len() != cfg.expected_bug_seeds.len() {
+            return Err("'--expect-bug-seeds' needs 2 to 32 distinct seeds".into());
+        }
     }
     if let Some(l) = a.get("latency") {
         cfg.latency_profile = split_latency(l).1.map(str::to_string);
@@ -1098,7 +1116,27 @@ fn run_check(
         &selected_tests,
         &intents,
     )?;
-    let n = selected.len();
+    if !cfg.expected_bug_seeds.is_empty()
+        && !selected_tests.iter().any(|tc| {
+            crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
+                .is_some_and(|i| i.expected_bug.is_some())
+        })
+    {
+        error(con.inner, "--expect-bug-seeds requires a selected test with a snappea: expect-bug marker");
+        return Err(Exit(ERROR));
+    }
+    let mut planned = Vec::new();
+    for name in selected {
+        let tc = selected_tests.iter().find(|t| t.name == name).unwrap();
+        let negative = crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
+            .is_some_and(|i| i.expected_bug.is_some());
+        if negative && !cfg.expected_bug_seeds.is_empty() {
+            planned.extend(cfg.expected_bug_seeds.iter().map(|&seed| (name.clone(), Some(seed))));
+        } else {
+            planned.push((name, None));
+        }
+    }
+    let n = planned.len();
     con.inner.out_line(&format!("Checking {}: {} test case{}", cfg.project_name, n, plural(n)));
     let mut failed = 0;
     let prog = &loaded.analysis.program;
@@ -1120,8 +1158,12 @@ fn run_check(
     }
     let mut passed = Vec::new();
     let check_start = con.inner.now();
-    for (i, name) in selected.into_iter().enumerate() {
+    let base_seed = cfg.seed;
+    let mut seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>> = Default::default();
+    for (i, (name, seed)) in planned.into_iter().enumerate() {
         cfg.test_case_name = name;
+        cfg.seed = seed.or(base_seed);
+        cfg.seed_artifact = seed;
         // the shared budget left, split between the test cases left
         cfg.time_share = cfg.suite_budget.map(|b| {
             let left = b - (con.inner.now() - check_start);
@@ -1137,6 +1179,13 @@ fn run_check(
         let matched = expected.is_some_and(|text| {
             case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, &sources).contains(text))
         });
+        if let Some(seed) = seed {
+            seed_runs.entry(case.test_case.clone()).or_default().push(SeedFailure {
+                seed,
+                matched,
+                identity: case.bug_identity.clone(),
+            });
+        }
         if expected.is_some() && !matched || expected.is_none() && case.bugs > 0 {
             failed += 1;
         } else if expected.is_none() && case.exhaustive_finished != Some(true) {
@@ -1144,9 +1193,10 @@ fn run_check(
         }
         if let Some(expected) = expected {
             con.inner.out_line(&format!(
-                "{}  {} (expected bug: {:?})",
+                "{}  {}{} (expected bug: {:?})",
                 if matched { "ok  " } else { "FAIL" },
                 case.test_case,
+                seed.map(|s| format!(" [seed {s}]")).unwrap_or_default(),
                 expected
             ));
             if !matched {
@@ -1172,6 +1222,9 @@ fn run_check(
             print_case(con.inner, &case, &cfg, boundary);
         }
         let mut result = case_json(&case, &cfg, boundary);
+        if let Some(seed) = seed {
+            result["seed"] = json!(seed);
+        }
         if let Some(text) = expected {
             result["result"] = json!(if matched { "expected_bug" } else { "expectation_failed" });
             let outcome = if matched {
@@ -1251,6 +1304,17 @@ fn run_check(
         }
         cases.push(result);
     }
+    let seed_checks = expected_seed_checks(&seed_runs);
+    for check in &seed_checks {
+        let name = check["test_case"].as_str().unwrap();
+        match check["status"].as_str().unwrap() {
+            "different_failures" => con.inner.out_line(&format!("      warning: {name} failed at different sites across seeds; inspect each seed's failure identity and replay, then split or tighten the negative control")),
+            "incomplete" => con.inner.out_line(&format!("      note: {name}: failure identity comparison is incomplete; a seed did not match or its failure has no captured identity")),
+            _ => con.inner.out_line(&format!("      {name}: expected failure identity consistent across {} seeds (evidence from these runs, not a guarantee)", check["runs"].as_array().unwrap().len())),
+        }
+    }
+    cfg.seed = base_seed;
+    cfg.seed_artifact = None;
     negative_driver_scope.exclude(&positive_design);
     hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
     scope.add(&negative_driver_scope);
@@ -1441,6 +1505,10 @@ fn run_check(
     };
     // what was reported but did not fail the check
     let mut warnings = serde_json::Map::new();
+    let differing = seed_checks.iter().filter(|c| c["status"] == "different_failures").count();
+    if differing > 0 {
+        warnings.insert("expected_bug_failure_identity".into(), json!(differing));
+    }
     if lint_findings > 0 {
         warnings.insert("lint".into(), json!(lint_findings));
     }
@@ -1460,6 +1528,9 @@ fn run_check(
                 match k.as_str() {
                     "lint" => format!("{} lint finding{}", n, plural(n)),
                     "coverage" => format!("{} coverage gap{}", n, plural(n)),
+                    "expected_bug_failure_identity" => {
+                        format!("{} expected-bug test{} with differing failures", n, plural(n))
+                    }
                     _ => format!("{} undetected mutant{}", n, plural(n)),
                 }
             })
@@ -1524,6 +1595,7 @@ fn run_check(
             "output": format!("{}/", out),
             "mutation": mutation,
             "warnings": warnings,
+            "expected_bug_seed_checks": seed_checks,
         });
         return Ok((if failed > 0 || mutation_failed { BUG } else { OK }, result));
     }
@@ -1552,6 +1624,7 @@ fn run_check(
         "coverage_failed": coverage_failed,
         "mutation": mutation,
         "warnings": warnings,
+        "expected_bug_seed_checks": seed_checks,
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
     Ok((if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK }, result))
@@ -1739,6 +1812,36 @@ fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBra
     out
 }
 
+struct SeedFailure {
+    seed: u32,
+    matched: bool,
+    identity: Option<crate::checker::runtime::BugIdentity>,
+}
+
+fn bug_identity_json(identity: &crate::checker::runtime::BugIdentity) -> Value {
+    json!({"kind": identity.kind, "machine": identity.machine, "state": identity.state,
+        "file": identity.file, "line": identity.line, "column": identity.column})
+}
+
+fn expected_seed_checks(runs: &std::collections::BTreeMap<String, Vec<SeedFailure>>) -> Vec<Value> {
+    runs.iter()
+        .map(|(name, runs)| {
+            let identities: std::collections::BTreeSet<_> = runs.iter().filter_map(|r| r.identity.as_ref()).collect();
+            let all_matched = runs.iter().all(|r| r.matched);
+            let status = if identities.len() > 1 {
+                "different_failures"
+            } else if !all_matched || runs.iter().any(|r| r.identity.is_none()) {
+                "incomplete"
+            } else {
+                "consistent"
+            };
+            json!({"test_case": name, "status": status, "all_matched": all_matched,
+            "runs": runs.iter().map(|r| json!({"seed": r.seed, "matched": r.matched,
+                "identity": r.identity.as_ref().map(bug_identity_json)})).collect::<Vec<_>>()})
+        })
+        .collect()
+}
+
 /// Match the diagnostic message, never source excerpts or suggested fixes. Native
 /// diagnostics place those after a location/help line; assertion and liveness reports
 /// without a rendered snippet retain their whole message, including newlines.
@@ -1823,6 +1926,7 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
     if case.bugs > 0 {
         v["bug"] = json!({
             "report": case.bug_report,
+            "identity": case.bug_identity.as_ref().map(bug_identity_json),
             "schedule": case.schedule_file,
             "replay": case.schedule_file.as_ref().map(|s| replay_command(s, cfg)),
         });

@@ -222,3 +222,148 @@ fn assertion_source_path_is_not_an_expected_failure_message() {
     assert_eq!(code, 1, "{report}");
     assert_eq!(report["test_cases"][0]["expected_bug"]["outcome"], "wrong_failure");
 }
+
+#[test]
+fn explicit_seeds_repeat_only_negative_controls_and_keep_replays() {
+    let src = r#"
+        machine Positive { start state S { } }
+        machine Negative { start state S { entry { assert false, "known flaw"; } } }
+        test tcPositive [main=Positive]: { Positive };
+        // snappea: expect-bug "known flaw"
+        test tcNegative [main=Negative]: { Negative };
+    "#;
+    let mut h = MemHost::new("/w");
+    h.add_file("model.p", src);
+    let command = ["check", "model.p", "--no-mutation", "--json", "--warn", "all", "--expect-bug-seeds", "1,2,3"];
+    assert_eq!(
+        snappea::cli::run(&command.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &mut h),
+        0,
+        "{}",
+        h.stdout
+    );
+    let report: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let cases = report["test_cases"].as_array().unwrap();
+    assert_eq!(cases.iter().filter(|c| c["name"] == "tcPositive").count(), 1);
+    assert_eq!(cases.iter().filter(|c| c["name"] == "tcNegative").count(), 3);
+    assert_eq!(report["expected_bug_seed_checks"][0]["status"], "consistent");
+    for seed in 1..=3 {
+        let case = cases.iter().find(|c| c["seed"] == seed).unwrap();
+        assert_eq!(case["result"], "expected_bug");
+        assert_eq!(case["bug"]["identity"]["kind"], "assertion");
+        assert_eq!(case["bug"]["identity"]["machine"], "Negative");
+        assert_eq!(case["bug"]["identity"]["file"], "model.p");
+        let schedule = case["bug"]["schedule"].as_str().unwrap();
+        assert!(schedule.contains(&format!("tcNegative/seed-{seed}/")), "{schedule}");
+        use snappea::host::Host;
+        assert!(h.is_file(&std::path::Path::new("/w").join(schedule)));
+    }
+}
+
+#[test]
+fn different_assertions_with_identical_messages_are_reported_across_seeds() {
+    let src = r#"
+        machine Main { start state S { entry {
+            if ($) { assert false, "known flaw"; } else { assert false, "known flaw"; }
+        } } }
+        // snappea: expect-bug "known flaw"
+        test tcNegative [main=Main]: { Main };
+    "#;
+    let (code, report, _) =
+        run(src, &["--expect-bug-seeds", "1,2,3,4,5,6,7,8", "--workers", "1", "--warn", "coverage"]);
+    assert_eq!(code, 0, "{report}");
+    let check = &report["expected_bug_seed_checks"][0];
+    assert_eq!(check["status"], "different_failures", "{report}");
+    assert_eq!(check["all_matched"], true);
+    assert_eq!(report["warnings"]["expected_bug_failure_identity"], 1);
+    let columns: std::collections::BTreeSet<_> =
+        check["runs"].as_array().unwrap().iter().map(|r| r["identity"]["column"].as_u64()).collect();
+    assert_eq!(columns.len(), 2, "{check}");
+    let mut host = MemHost::new("/w");
+    host.add_file("model.p", src);
+    let args = [
+        "check",
+        "model.p",
+        "--no-mutation",
+        "--expect-bug-seeds",
+        "1,2,3,4,5,6,7,8",
+        "--workers",
+        "1",
+        "--warn",
+        "lint,coverage",
+    ];
+    let code = snappea::cli::run(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &mut host);
+    assert_eq!(code, 0, "{} {}", host.stdout, host.stderr);
+    assert!(host.stdout.contains("1 expected-bug test with differing failures"), "{}", host.stdout);
+    assert!(!host.stdout.contains("undetected mutant"), "{}", host.stdout);
+}
+
+#[test]
+fn every_seed_must_match_even_when_comparing_failures() {
+    for body in ["assert false, \"wrong\";", "assert true;"] {
+        let src = format!("machine Main {{ start state S {{ entry {{ {body} }} }} }}\n// snappea: expect-bug \"known flaw\"\ntest tcNegative [main=Main]: {{ Main }};");
+        let (code, report, _) = run(&src, &["--expect-bug-seeds", "1,2"]);
+        assert_eq!(code, 1, "{report}");
+        assert_eq!(report["failed"], 2);
+        assert_eq!(report["expected_bug_seed_checks"][0]["all_matched"], false);
+        assert_eq!(report["expected_bug_seed_checks"][0]["status"], "incomplete");
+    }
+}
+
+#[test]
+fn failure_identity_ignores_formatted_values_at_the_same_assertion() {
+    let src = r#"
+        machine Main { start state S { entry {
+            assert false, format("known flaw value {0}", choose(100));
+        } } }
+        // snappea: expect-bug "known flaw"
+        test tcNegative [main=Main]: { Main };
+    "#;
+    let (code, report, _) = run(src, &["--expect-bug-seeds", "1,2,3,4", "--workers", "1"]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["expected_bug_seed_checks"][0]["status"], "consistent", "{report}");
+    let messages: std::collections::BTreeSet<_> =
+        report["test_cases"].as_array().unwrap().iter().map(|c| c["bug"]["report"].as_str()).collect();
+    assert!(messages.len() > 1, "fixture needs distinct formatted values: {report}");
+}
+
+#[test]
+fn seed_matrix_options_reject_duplicates_and_unmarked_selection() {
+    let src = "machine Main { start state S { } } test tc [main=Main]: { Main };";
+    for seeds in ["1,1", "1", "1,no", "1,4294967296"] {
+        let (code, _, _) = run(src, &["--expect-bug-seeds", seeds]);
+        assert_eq!(code, 2, "{seeds}");
+    }
+    let (code, report, _) = run(src, &["--expect-bug-seeds", "1,2"]);
+    assert_eq!(code, 2, "{report}");
+}
+
+#[test]
+fn seed_comparison_captures_spec_liveness_and_runtime_exception_sites() {
+    let liveness = r#"
+        event eStarted;
+        machine Main { start state S { entry { announce eStarted; } } }
+        spec Progress observes eStarted {
+            start state Idle { on eStarted goto RequestPending; }
+            hot state RequestPending { ignore eStarted; }
+        }
+        // snappea: expect-bug "RequestPending"
+        test tcNegative [main=Main]: assert Progress in { Main };
+    "#;
+    let (code, report, _) = run(liveness, &["--expect-bug-seeds", "1,2", "--workers", "1", "--warn", "coverage"]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["expected_bug_seed_checks"][0]["status"], "consistent");
+    let identity = &report["test_cases"][0]["bug"]["identity"];
+    assert_eq!(identity["kind"], "liveness");
+    assert_eq!(identity["machine"], "Progress");
+    assert_eq!(identity["state"], "RequestPending");
+    let exception = r#"
+        event e;
+        machine Main { start state S { entry { var target: machine; send target, e; } } }
+        // snappea: expect-bug "null"
+        test tcNegative [main=Main]: { Main };
+    "#;
+    let (code, report, _) = run(exception, &["--expect-bug-seeds", "1,2"]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["expected_bug_seed_checks"][0]["status"], "consistent");
+    assert_eq!(report["test_cases"][0]["bug"]["identity"]["kind"], "send-null-target");
+}

@@ -343,6 +343,40 @@ it. JSON uses `result: expected_bug` or `expectation_failed`, with
 first schedule gets an advisory reminder to check whether the control exercises
 the intended flaw; it still passes when the message matches.
 
+To check whether a negative control consistently finds the same defect, use explicit
+seeds:
+
+```sh
+snappea check 'tcBug*' --expect-bug-seeds 1,2,3 --workers 1 --timeout 10s
+```
+
+`--expect-bug-seeds` accepts 2–32 distinct unsigned 32-bit seeds. It repeats only
+selected tests marked `expect-bug`; positive tests still run once using `--seed` as
+usual. Every repeated run must match its declared failure. Each seed gets its own
+`<out>/<test>/seed-<N>/` replay/artifact directory so later runs do not overwrite
+earlier evidence. `--timeout` applies to each seed run; without it, all runs share
+the existing suite budget. Test-case counts include repeated runs, and each repeated
+JSON test case carries `seed`. Use `--workers 1` to isolate seed effects; parallel
+workers can change which failure is found first.
+
+`expected_bug_seed_checks` groups the results by test case. `consistent` means all
+requested seeds matched and reported the same captured identity; `different_failures`
+is an advisory warning to inspect each seed's replay and split or tighten the control.
+A broad matching-message prefix can still accept distinct defects. `incomplete` means
+a seed did not match, found no bug, or produced a failure without a captured identity,
+unless differing captured identities already establish `different_failures`. The
+`all_matched` field and each run retain any unmatched outcomes in either case.
+An unmatched run still fails the check; differing matching identities alone do not.
+Consistency across selected seeds is evidence, not a guarantee for every schedule.
+
+Each actual bug now exposes `bug.identity` when available: failure kind, machine/spec
+type, state, and source file/line/column. Assertion, null-send, runtime-exception, and liveness
+identities are captured at execution time; formatted message values, machine instance
+numbers, source excerpts, and hints do not define identity. Failures without a captured
+site (for example a deadlock involving several machines) report a null identity rather
+than claiming to be the same defect. These comparisons do not add location/spec
+matching syntax or counterfactual fault replay.
+
 A matching expected-bug run contributes driver coverage. Its design/spec coverage
 is reported separately in `expected_bug_design_coverage`; it cannot fill coverage
 gaps in passing positive tests. Shared helpers used by a positive design are also
