@@ -16,6 +16,8 @@ import tempfile
 from pathlib import Path
 
 RUNS = [
+    ("cas-queue", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]),
+    ("blob-publication", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]),
     ("cas-retry", [sys.executable, "check_examples.py", "--binary", "{binary}"]),
     ("forced-interleaving", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]),
     ("reservation", [sys.executable, "-m", "unittest", "-v"]),

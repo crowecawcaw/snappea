@@ -27,6 +27,8 @@ type Probe<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, Option<&'a str>)]);
 const EXAMPLES: &[&str] = &[
     "building-blocks",
     "cas-retry",
+    "cas-queue",
+    "blob-publication",
     "forced-interleaving",
     "reservation",
     "bounded-history",
@@ -428,4 +430,24 @@ fn reply_building_block_checks_the_whole_plan_and_ids() {
             assert!(result.exhaustive.as_ref().unwrap().complete());
         }
     }
+}
+
+#[test]
+fn end_to_end_examples_complete_without_bypassing_quality_gates() {
+    let out = temp("end-to-end-models");
+    for (example, source) in [("cas-queue", "Queue.pproj"), ("blob-publication", "Publication.p")] {
+        assert!(snappea(&["guide", "example", example, "--out", out.to_str().unwrap()], &out).status.success());
+        let result =
+            snappea(&["check", source, "--timeout", "30s", "--deny", "mutation", "--json"], &out.join(example));
+        assert!(result.status.success(), "{example}: {}", text(&result));
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        let summary = &report["summary"];
+        assert_eq!(summary["status"], "passed", "{example}: {summary}");
+        for field in ["incomplete", "coverage_gaps", "mutants_undetected", "mutants_not_tested", "mutants_unreached"] {
+            assert_eq!(summary[field], 0, "{example} {field}: {summary}");
+        }
+        assert_eq!(summary["skipped"], serde_json::json!([]), "{example}: {summary}");
+        assert_eq!(report["coverage"]["gate_bypassed"], false, "{example}: {}", text(&result));
+    }
+    std::fs::remove_dir_all(out).ok();
 }

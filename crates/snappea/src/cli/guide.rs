@@ -73,6 +73,31 @@ pub(super) const EXAMPLES: &[Example] = &[
         ],
     },
     Example {
+        name: "cas-queue",
+        main: "Queue.p",
+        about: "End-to-end CAS queue: shared contract, forced Python races, and delayed retry regressions.",
+        files: &[
+            ("Queue.p", include_str!("guide/examples/cas-queue/Queue.p")),
+            ("Contract.p", include_str!("guide/examples/cas-queue/Contract.p")),
+            ("Queue.pproj", include_str!("guide/examples/cas-queue/Queue.pproj")),
+            ("queue_store.py", include_str!("guide/examples/cas-queue/queue_store.py")),
+            ("store.py", include_str!("guide/examples/cas-queue/store.py")),
+            ("test_queue.py", include_str!("guide/examples/cas-queue/test_queue.py")),
+            ("README.md", include_str!("guide/examples/cas-queue/README.md")),
+        ],
+    },
+    Example {
+        name: "blob-publication",
+        main: "Publication.p",
+        about: "Immutable staging, root-CAS publication, and saved crash/retry tests.",
+        files: &[
+            ("Publication.p", include_str!("guide/examples/blob-publication/Publication.p")),
+            ("publication.py", include_str!("guide/examples/blob-publication/publication.py")),
+            ("test_publication.py", include_str!("guide/examples/blob-publication/test_publication.py")),
+            ("README.md", include_str!("guide/examples/blob-publication/README.md")),
+        ],
+    },
+    Example {
         name: "forced-interleaving",
         main: "test_wallet.py",
         about: "Python tests that force the interleavings a model explores, and check real calls.",

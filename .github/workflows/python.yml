@@ -57,7 +57,6 @@ jobs:
         run: python -m pytest -p no:cacheprovider
 
       - name: Guide examples (`snappea guide example ...`)
-        if: matrix.python == '3.13'
         run: python scripts/check-guide-examples.py
 
       - name: Inventory example (explicit checks)

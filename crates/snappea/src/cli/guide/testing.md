@@ -105,3 +105,13 @@ Make one deliberate bug at a time and run the tests: ignore the compare-and-swap
 result; reuse the old value on retry; drop the memo for rejected results; keep the memo
 in the object; flip `<` and `<=` at each limit; skip each precondition. Every bug should
 fail some test. If one passes, add the test that would have caught it. Restore the code.
+
+## Keep a runnable model and regression tests together
+
+`snappea guide example cas-queue --out /tmp` exports a shared P contract, a load/CAS
+model, a real Python queue and saved pytest regressions. It includes key-independent
+race fixtures that assert they fired, delayed retries through new objects, optional
+results that distinguish None from 0, and a deliberately broken implementation that
+the shared monitor rejects. Read its README, run the model, then run the saved tests.
+The sequential observations have known operation order; concurrent races use plain
+assertions instead of treating response order as commit order.

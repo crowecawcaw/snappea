@@ -981,3 +981,17 @@ uses the same model and scheduler. The normal trace format is unchanged without
 this option. Captures stop after 10,000 snapshots; long value previews are marked
 with an ellipsis. These snapshots describe the model execution, not application
 runtime state.
+
+## From bounded models to application regressions
+
+`snappea guide example cas-queue --out /tmp` exports an independent FIFO/retry
+contract, realistic load/CAS clients, and saved Python regressions. The shared spec
+checks actual sequential calls; key-independent fixtures force concurrent races
+and assert the requested interference occurred. `snappea guide example blob-publication --out /tmp` separates immutable staging writes from one root CAS and tests recovery
+and stale-candidate rebuilding. Follow each exported README for bounds and commands.
+
+Inspect `summary.incomplete`, `summary.coverage_gaps`, `summary.mutants_undetected`
+and skipped checks in JSON results. A successful exit alone does not mean exhaustive
+exploration or that required quality gates ran. The examples' model checks require
+complete search and zero gaps without warning overrides; Python tests validate
+selected implementation histories separately.
