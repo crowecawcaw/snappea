@@ -66,6 +66,7 @@ model covers every requirement or faithfully represents the implementation.
 | `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
 | `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
 | `unplanned-driver-stage` | A driver starts more model work only after a model notification, and no driver of the test announces a plan a spec observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
+| `unused-design-payload-field` | Advisory: a design receiver never reads a named payload field outside diagnostic output. | Act on the field, or suppress an intentional abstraction. |
 | `shared-spec-helper` | Advisory: a selected spec and design machine call the same global helper, directly or transitively. | Compute expected results independently, or suppress intentional shared utilities. |
 | `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before the call. |
 
@@ -497,3 +498,28 @@ its declaration:
 // snappea-lint: allow shared-spec-helper -- reviewed representation conversion; invariant is independent
 fun RowKey(row: (id: int, value: int)): int { return row.id; }
 ```
+
+### Unused design payload fields (advisory)
+
+`unused-design-payload-field` points out named tuple fields that a selected design
+machine's receiving handler never reads outside diagnostic output. For example,
+a response receiver that checks `reply.id` but ignores `reply.value` may have
+abstracted away the result it should act on. This is a review prompt: metadata
+and intentionally simplified protocols can legitimately ignore fields. No event
+names or presumed request/reply conventions affect the rule.
+
+The analysis covers `on Event do` handlers and `receive` cases, including captured
+payload reads in nested receive cases. It excludes drivers, specs, scenarios,
+`goto` transition callbacks and destination entry actions. Assertion messages and
+side-effect-free `print` expressions do not count as behavioral reads; expressions
+that can call code, choose values or fail still count. Direct tuple-field assignment
+is a write, not a read of the incoming value. A bare unconditional `assert false`
+handler (optionally preceded by diagnostic output) already rejects the event and
+is exempt.
+
+This is a conservative syntactic check, not data-flow proof: passing or copying the
+whole payload counts all fields as used, as do reads even after overwriting them.
+Only top-level named fields are checked. Unreachable handlers and intentional
+abstractions can still generate advisories. Suppress a reviewed abstraction with
+`// snappea-lint: allow unused-design-payload-field -- reason` on its handler or
+machine. Advisories never fail the lint gate, including with `--deny lint`.
