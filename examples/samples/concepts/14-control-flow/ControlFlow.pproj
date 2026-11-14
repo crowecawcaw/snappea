@@ -1,0 +1,9 @@
+<!-- Control flow in a connection lifecycle. See README.md. -->
+<Project>
+<ProjectName>ControlFlow</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

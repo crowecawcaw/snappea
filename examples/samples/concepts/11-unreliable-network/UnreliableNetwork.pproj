@@ -1,0 +1,9 @@
+<!-- Retransmission and deduplication over a lossy network. See README.md. -->
+<Project>
+<ProjectName>UnreliableNetwork</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

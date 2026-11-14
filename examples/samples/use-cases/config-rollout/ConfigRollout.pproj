@@ -1,0 +1,10 @@
+<!-- Staged config rollout with canary and rollback. See README.md. -->
+<Project>
+<ProjectName>ConfigRollout</ProjectName>
+<IncludeProject>../../../../crates/snappea/src/cli/guide/examples/building-blocks/Network.pproj</IncludeProject>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

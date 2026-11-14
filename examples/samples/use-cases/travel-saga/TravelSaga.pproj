@@ -1,0 +1,9 @@
+<!-- Orchestrated saga: flight, hotel, car, with compensation and user cancel. See README.md. -->
+<Project>
+<ProjectName>TravelSaga</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

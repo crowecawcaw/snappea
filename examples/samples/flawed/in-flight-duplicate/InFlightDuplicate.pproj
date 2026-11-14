@@ -1,0 +1,9 @@
+<!-- An idempotency check that records the key after the side effect. See README.md. -->
+<Project>
+<ProjectName>InFlightDuplicate</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

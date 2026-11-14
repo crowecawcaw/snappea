@@ -1,0 +1,9 @@
+<!-- A lock-free stack whose compare-and-swap compares only the pointer. See README.md. -->
+<Project>
+<ProjectName>AbaCas</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

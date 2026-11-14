@@ -1,0 +1,9 @@
+<!-- Two browser tabs sharing a rotating refresh token. See README.md. -->
+<Project>
+<ProjectName>TokenRefresh</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

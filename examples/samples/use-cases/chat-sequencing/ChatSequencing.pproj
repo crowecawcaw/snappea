@@ -1,0 +1,9 @@
+<!-- Chat room with per-room sequence numbers, dropped connections and resume. See README.md. -->
+<Project>
+<ProjectName>ChatSequencing</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

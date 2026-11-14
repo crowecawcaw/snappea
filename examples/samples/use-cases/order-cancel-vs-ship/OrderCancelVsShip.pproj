@@ -1,0 +1,9 @@
+<!-- An order the customer can cancel while the warehouse ships it. See README.md. -->
+<Project>
+<ProjectName>OrderCancelVsShip</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

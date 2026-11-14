@@ -1,0 +1,9 @@
+<!-- Reads load-balanced across asynchronous replicas, without session tokens. See README.md. -->
+<Project>
+<ProjectName>StaleReplicaRead</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

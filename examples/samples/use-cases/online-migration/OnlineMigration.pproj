@@ -1,0 +1,9 @@
+<!-- Moving a table to a new store while writers keep writing. See README.md. -->
+<Project>
+<ProjectName>OnlineMigration</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

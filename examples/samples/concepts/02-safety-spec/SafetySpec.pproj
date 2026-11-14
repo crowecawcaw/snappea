@@ -1,0 +1,9 @@
+<!-- Spec monitors: rebuild expected state from events announced at the commit point. See README.md. -->
+<Project>
+<ProjectName>SafetySpec</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

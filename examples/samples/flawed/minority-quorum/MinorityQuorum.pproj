@@ -1,0 +1,9 @@
+<!-- Leader election with quorum n/2 among 4 nodes. See README.md. -->
+<Project>
+<ProjectName>MinorityQuorum</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

@@ -1,0 +1,9 @@
+<!-- A single elevator: controller, door, motor, two passengers. See README.md. -->
+<Project>
+<ProjectName>Elevator</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

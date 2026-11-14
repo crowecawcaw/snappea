@@ -1,0 +1,9 @@
+<!-- Raft-style term voting among three nodes, with a crash and restart. See README.md. -->
+<Project>
+<ProjectName>LeaderElection</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

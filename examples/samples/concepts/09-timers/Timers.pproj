@@ -1,0 +1,9 @@
+<!-- A request timeout racing the reply. See README.md. -->
+<Project>
+<ProjectName>Timers</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

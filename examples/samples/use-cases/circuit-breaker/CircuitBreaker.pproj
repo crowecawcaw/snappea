@@ -1,0 +1,9 @@
+<!-- A client-side circuit breaker in front of a flaky dependency. See README.md. -->
+<Project>
+<ProjectName>CircuitBreaker</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

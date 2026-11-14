@@ -1,0 +1,9 @@
+<!-- A Kafka-style consumer group rebalancing while consumers commit offsets. See README.md. -->
+<Project>
+<ProjectName>ConsumerGroupRebalance</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

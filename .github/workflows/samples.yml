@@ -1,0 +1,46 @@
+# Every sample under examples/samples builds, lints and behaves as declared: test cases
+# without a flaw pass coverage and mutation testing, and each native expected-bug test
+# finds its declared failure on seeds 1, 2 and 3. See examples/samples/AUTHORING.md.
+
+name: Samples
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: samples-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  samples:
+    name: samples (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [use-cases, concepts, flawed]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: samples
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build this checkout's checker
+        run: cargo build -p snappea --bin snappea --locked
+      - name: Check every sample in ${{ matrix.group }}
+        run: python3 examples/samples/check_samples.py "${{ matrix.group }}" --timeout 10s --workers 2
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: samples-${{ matrix.group }}-output
+          path: examples/samples/**/PCheckerOutput
+          if-no-files-found: ignore
+          retention-days: 7

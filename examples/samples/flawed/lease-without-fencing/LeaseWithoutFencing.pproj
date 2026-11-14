@@ -1,0 +1,9 @@
+<!-- A leader that writes under an expired lease. See README.md. -->
+<Project>
+<ProjectName>LeaseWithoutFencing</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

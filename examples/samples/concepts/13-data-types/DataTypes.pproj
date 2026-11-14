@@ -1,0 +1,9 @@
+<!-- P data types in a small shopping cart service. See README.md. -->
+<Project>
+<ProjectName>DataTypes</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

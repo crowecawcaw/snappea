@@ -1,0 +1,9 @@
+<!-- On-call scheduling under snapshot isolation: two doctors go off call at once. See README.md. -->
+<Project>
+<ProjectName>WriteSkew</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

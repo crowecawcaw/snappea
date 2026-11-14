@@ -1,0 +1,9 @@
+<!-- Fixed-window rate limiter shared by two gateways. See README.md. -->
+<Project>
+<ProjectName>RateLimiter</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

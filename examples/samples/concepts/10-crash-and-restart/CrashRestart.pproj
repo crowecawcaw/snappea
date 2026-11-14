@@ -1,0 +1,9 @@
+<!-- A server that crashes and restarts from durable storage. See README.md. -->
+<Project>
+<ProjectName>CrashRestart</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

@@ -1,0 +1,9 @@
+<!-- Nondeterminism: choices the checker explores exhaustively. See README.md. -->
+<Project>
+<ProjectName>Nondeterminism</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>

@@ -1,0 +1,9 @@
+<!-- Several test cases over one design, composed from modules. See README.md. -->
+<Project>
+<ProjectName>TestsAndModules</ProjectName>
+<InputFiles>
+	<PFile>./PSrc/</PFile>
+	<PFile>./PSpec/</PFile>
+	<PFile>./PTst/</PFile>
+</InputFiles>
+</Project>
