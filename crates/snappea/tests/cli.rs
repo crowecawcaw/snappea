@@ -1643,3 +1643,79 @@ fn duplicate_announce_and_send_fails_lint_before_checking() {
     h.add_file("duplicate.p", &source.replace("announce eDone, 42; ", ""));
     assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
 }
+
+#[test]
+fn auto_completes_small_collection_models_alone_and_batched_across_seeds() {
+    let mut h = host();
+    h.add_file(
+        "collections.p",
+        r#"
+        event eNext: int;
+        machine Main {
+            var history: map[int,int];
+            start state S {
+                entry { new Sender((dest = this, id = 10)); new Sender((dest = this, id = 20)); send this, eNext, 0; }
+                on eNext do (n:int) {
+                    history[n] = n;
+                    assert sizeof(history) <= 7;
+                    if (n < 4 && $) { send this, eNext, n+1; }
+                }
+            }
+        }
+        machine Sender { start state S { entry (p: (dest: machine, id: int)) { if ($) { send p.dest, eNext, p.id; } else { send p.dest, eNext, p.id+1; } } } }
+        machine Other { start state S { entry { if ($) { print "left"; } } } }
+        test tcOther [main=Other]: { Other };
+        test tcCollection [main=Main]: { Main, Sender };
+    "#,
+    );
+    for seed in ["1", "2", "7"] {
+        for workers in ["1", "4"] {
+            for batched in [false, true] {
+                let mut args = vec![
+                    "check",
+                    "collections.p",
+                    "--no-mutation",
+                    "--warn",
+                    "all",
+                    "--workers",
+                    workers,
+                    "--seed",
+                    seed,
+                    "--json",
+                ];
+                if !batched {
+                    args.push("tcCollection");
+                }
+                assert_eq!(snappea(&mut h, &args), 0, "{}{}", h.stdout, h.stderr);
+                let report: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+                let case =
+                    report["test_cases"].as_array().unwrap().iter().find(|c| c["name"] == "tcCollection").unwrap();
+                assert_eq!(case["search_complete"], true, "seed {seed}, batch {batched}: {case}");
+                assert!(case.get("auto_handoffs").is_none(), "{case}");
+                let fields = case["collection_sizes"].as_array().unwrap();
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0]["field"], "history");
+                assert_eq!(fields[0]["file"], "collections.p");
+                assert!(fields[0]["max"].as_u64().unwrap() > 0);
+                assert!(fields[0]["max"].as_u64().unwrap() <= 7);
+            }
+        }
+    }
+    assert_eq!(
+        snappea(
+            &mut h,
+            &["check", "collections.p", "tcCollection", "--no-mutation", "--warn", "all", "--format", "text"]
+        ),
+        0
+    );
+    assert!(!h.stdout.contains("Sampled collection sizes"));
+    assert_eq!(
+        snappea(
+            &mut h,
+            &["check", "collections.p", "tcCollection", "--no-mutation", "--warn", "all", "--format", "text", "-v"]
+        ),
+        0
+    );
+    assert!(h.stdout.contains("Sampled collection sizes (elements): Main.history"), "{}", h.stdout);
+    assert!(h.stdout.contains("do not prove growth"));
+}

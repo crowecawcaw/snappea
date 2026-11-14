@@ -171,6 +171,22 @@ coverage was not reached within the run budget. Exit status is 0 when no bug or
 required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
 result distinguishes exhaustive completion from an incomplete search.
 
+For incomplete tests, text also lists the five largest observed top-level collection
+fields (maps, sets and sequences), including spec/scenario fields. `-v` prints these
+for completed tests too. Per-test JSON `collection_sizes` lists all nonempty fields
+with declaration `file`/`line`, `machine`, `field`, observed `min`/`max` element counts,
+and `observations` (one field on one instance at one sampled point).
+
+This evidence samples one in 32 scheduling points of the existing every-eighth-schedule
+branching sample, plus that schedule's final snapshot. Ranges combine instances,
+schedules and workers, including bounded/pruned prefixes; they can miss peaks.
+Only lengths are retained, never elements or cached states. Nested collections and
+locals are not profiled. A large range does not prove a collection grows forever,
+estimate memory use, or establish that the field caused the large search. Use it to
+locate history retained by the model and review whether the contract needs that
+history; do not remove spec bookkeeping merely to make a search finish. Collecting
+these statistics does not change state hashing, scheduling choices, or search limits.
+
 ### What fails a check
 
 Besides bugs, `snappea check` reports three kinds of findings. Each one either fails

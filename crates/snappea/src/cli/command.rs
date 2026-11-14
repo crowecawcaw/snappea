@@ -1817,6 +1817,16 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
             })).collect::<Vec<_>>(),
         });
     }
+    if !case.collection_sizes.is_empty() {
+        v["collection_sizes"] = json!(case
+            .collection_sizes
+            .iter()
+            .map(|c| json!({
+                "machine": c.machine, "field": c.field, "file": c.file, "line": c.line,
+                "min": c.min, "max": c.max, "observations": c.observations,
+            }))
+            .collect::<Vec<_>>());
+    }
     if !boundary && little_to_explore(case) {
         v["little_to_explore"] = json!(true);
     }
@@ -1873,6 +1883,17 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
             host.out_line(
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
+        }
+        if (cfg.verbose || incomplete_reason(case).is_some()) && !case.collection_sizes.is_empty() {
+            let fields = case
+                .collection_sizes
+                .iter()
+                .take(5)
+                .map(|c| format!("{}.{} {}..{}", c.machine, c.field, c.min, c.max))
+                .collect::<Vec<_>>()
+                .join(", ");
+            host.out_line(&format!("      Sampled collection sizes (elements): {fields}"));
+            host.out_line("      note: ranges combine sampled states and instances; they do not prove growth or identify the cause of search size (--json lists fields and locations)");
         }
         let branching = case
             .branching

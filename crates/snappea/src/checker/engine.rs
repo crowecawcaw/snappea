@@ -1132,6 +1132,9 @@ impl<'p> Checker<'p> {
                 if let Some(c) = rt.coverage.take() {
                     result.coverage = Some(c.into_info());
                 }
+                // Include the final snapshot of a sampled schedule, even when it
+                // finished within one sampling interval or was pruned/bounded.
+                rt.record_collection_sizes();
                 if let Some(mut b) = rt.branching.take() {
                     b.schedules += 1;
                     branching = Some(b);
