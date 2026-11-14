@@ -111,8 +111,12 @@ inventory P model, so their Go/Python/Java harnesses do not create separate P
 schedule spaces. Time examples use the checker's default time options; missing
 profile/adapters remain explicit limitations of this quick pass.
 
-The per-commit workflow also appends the broad corpus results to `corpus.jsonl`
-on the `benchmarks` branch and uploads the complete Markdown per-case table.
+The per-commit workflow stores the broad corpus result on the `benchmarks` branch
+as `corpus/<commit>/<run-id>-<attempt>.json.gz` and uploads the complete Markdown
+per-case table. Each run has its own compressed file, so retaining history cannot
+push a growing JSONL file past GitHub's file-size limit. Earlier measurements remain
+in the frozen `corpus.jsonl`; new runs do not append to it. Read a downloaded
+snapshot with `python3 scripts/bench-corpus.py --report-from <file>.json.gz`.
 Verify accounting with `python3 -m unittest discover -s scripts -p test_bench_corpus.py`.
 
 The checked-in [compressed raw measurements](corpus-before-auto.json.gz) record a three-seed quick pass at

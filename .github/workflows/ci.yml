@@ -109,7 +109,7 @@ jobs:
           key: checker-discovery
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test benchmark metrics and CI gates
-        run: python3 -m unittest discover -s scripts -p test_bench_checker.py
+        run: python3 -m unittest discover -s scripts -p 'test_bench*.py'
       - name: Build the checker benchmark
         run: cargo build --release --locked -p snappea --example checker_bench
       - name: Find every development bug with auto

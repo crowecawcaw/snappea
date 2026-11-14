@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Usage: push-bench-data.sh append <src-file> <dest-path> <commit message>
+# Usage: push-bench-data.sh <append|snapshot> <src-file> <dest-path> <commit message>
 #
-# Appends <src-file>'s JSON, compacted to one line, to <dest-path> (JSON lines) on the
-# `benchmarks` branch (created on first use). Retries on push races with other runs.
+# Appends compact JSON to a JSONL history, or stores one gzip JSON snapshot, on
+# the `benchmarks` branch. Retries on push races with other runs.
 set -euo pipefail
 
-[ "$1" = append ] || { echo "unknown mode: $1" >&2; exit 2; }
+case "$1" in append|snapshot) ;; *) echo "unknown mode: $1" >&2; exit 2 ;; esac
+mode="$1"
+writer="$(cd "$(dirname "$0")" && pwd)/store-bench-result.py"
 src="$(realpath "$2")"
 dest="$3"
 msg="$4"
@@ -31,10 +33,13 @@ for attempt in 1 2 3 4 5; do
     printf '# Benchmark data\n\nWritten by the Benchmarks workflows; see scripts/bench.py on main.\n' > README.md
   fi
 
-  mkdir -p "$(dirname "$dest")"
-  python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' "$src" >> "$dest"
+  python3 "$writer" "$mode" "$src" "$dest"
 
   git add -A
+  if git diff --cached --quiet; then
+    echo "Already recorded: $msg"
+    exit 0
+  fi
   git commit -qm "$msg"
   if git push -q origin benchmarks; then
     echo "Pushed: $msg"

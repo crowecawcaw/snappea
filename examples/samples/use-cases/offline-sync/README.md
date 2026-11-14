@@ -90,6 +90,10 @@ a restoring edit.
   clients, without requiring a larger workload.
 - Only the lossy client talks through the link: each forwarding hop multiplies the
   schedules without adding a new fault to the other client.
+- Negative controls still complete the normal protocol on schedules that do not
+  expose their flaw. `BuggyStaleReply` waits for both edits to finish and asks both
+  clients to pull, just like the correct driver. Omitting those pulls creates an
+  unrelated convergence failure that can hide the intended stale-reply assertion.
 
 ## Run
 

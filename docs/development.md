@@ -138,4 +138,6 @@ For a quick pass across every runnable example/tutorial/regression model test
 case, use `python3 scripts/bench-corpus.py --out corpus.json`. It writes a per-case
 `corpus.md` table and raw first-discovery schedule counts for random, feedback,
 DFS and auto. Unknown totals and unsuccessful/incomplete runs remain explicit;
-see the [corpus methodology](../benchmarks/search/README.md).
+see the [corpus methodology](../benchmarks/search/README.md). CI preserves each run
+as `corpus/<commit>/<run-id>-<attempt>.json.gz` on the `benchmarks` branch. The older
+`corpus.jsonl` history is retained but no longer appended to.
