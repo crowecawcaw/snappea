@@ -25,6 +25,10 @@ pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> 
 /// `--list-rules` know them.
 pub const PROGRAM_RULES: &[(&str, &str)] = &[
     (
+        "shared-spec-helper",
+        "Advisory: a selected spec and design machine call the same global helper, so a shared mistake may escape the oracle.",
+    ),
+    (
         "unchecked-state",
         "A model or spec field is written, but no assertion, condition, spec or sent event depends on it.",
     ),
@@ -58,7 +62,13 @@ pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding
     Ok(())
 }
 
-/// An actionable diagnostic. Every unsuppressed finding fails CLI linting.
+/// Whether a rule reports an advisory rather than blocking a check. Advisory findings
+/// remain warnings even with `--deny lint`; source suppressions work as usual.
+pub fn is_advisory(rule: &str) -> bool {
+    matches!(rule, "shared-spec-helper")
+}
+
+/// An actionable diagnostic; advisory rules do not fail CLI linting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     pub rule: &'static str,

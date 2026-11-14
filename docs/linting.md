@@ -12,7 +12,7 @@ questions:
 # Linting P models
 
 `snappea check` type-checks and lints all loaded sources before exploring schedules.
-An unsuppressed lint finding stops the command with exit status **2**, before it
+An unsuppressed blocking lint finding stops the command with exit status **2**, before it
 creates checker output. A model bug found during exploration still exits with 1.
 `snappea check --warn lint` reports the findings as warnings and checks anyway, e.g.
 to see whether a model written for upstream P finds bugs before you address its lints
@@ -28,7 +28,7 @@ snappea check lint --list-rules
 ```
 
 `check lint` loads and type-checks sources, prints every unsuppressed finding with its
-file, line, column, and rule ID, and exits with 0 when clean or 2 on findings or
+file, line, column, and rule ID, and exits with 0 when there are no blocking findings, or 2 on blocking findings or
 source errors. It does not explore schedules or write checker artifacts. Test-name
 filters are not accepted: selection checks need the complete loaded project.
 `check` also lints the whole loaded project, even when you select one test to run.
@@ -36,6 +36,13 @@ filters are not accepted: selection checks need the complete loaded project.
 `snappea observe` and the test libraries (Rust `snappea::test`, and Python, Go and
 Java through `snappea observe`) enforce the spec rule `unobserved-handler` too, with
 the same suppression comments; the other rules concern model tests.
+
+Some rules identify a risk rather than a demonstrated modeling mistake. These are
+**advisory**: they print `warning[rule-id]` and do not block `check lint` or `check`,
+even with `--deny lint`. `--warn lint` continues to downgrade the blocking rules.
+`--list-rules` JSON includes each rule's `severity` (`error` or `advisory`). Successful
+`check lint` JSON includes advisory entries in `findings`, with source locations;
+`check` counts them under `warnings.lint`. Scoped suppressions apply to both kinds.
 
 Linting identifies common weak checks. A clean result does not establish that the
 model covers every requirement or faithfully represents the implementation.
@@ -59,6 +66,7 @@ model covers every requirement or faithfully represents the implementation.
 | `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
 | `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
 | `unplanned-driver-stage` | A driver starts more model work only after a model notification, and no driver of the test announces a plan a spec observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
+| `shared-spec-helper` | Advisory: a selected spec and design machine call the same global helper, directly or transitively. | Compute expected results independently, or suppress intentional shared utilities. |
 | `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before the call. |
 
 ### Permissive monitors
@@ -465,3 +473,27 @@ directives are `invalid-directive` findings. Expected-bug tests skip progress
 obligation lints; boundary tests do not skip lints. See
 [expected bugs and boundary tests](checking-models.md#expected-bugs-and-boundary-tests)
 for matching, coverage, and selection behavior.
+
+
+### Shared helpers between design and spec
+
+`shared-spec-helper` reports a global helper whose body is reachable from both a
+selected design machine and a spec selected in the same test. It names the helper,
+the machines/specs, and the test cases, and points at the helper declaration. Calls
+through wrappers and receive cases count. Driver-only helpers, scenarios, foreign
+functions without bodies, and sharing that occurs only across unrelated tests do
+not produce this advisory.
+
+If the implementation computes a value with `Compute(x)` and its spec checks that
+value against `Compute(x)`, a mistake in that helper can change both sides without
+failing the check. Prefer an independent calculation or a separately stated invariant
+in the spec. This is a call-graph warning, not proof that the spec is weak: shared
+representation and formatting utilities may be appropriate. The analysis includes
+methods even if this run never calls them and does not establish that a shared call
+feeds an assertion. Review the use and suppress an intentional common utility at
+its declaration:
+
+```p
+// snappea-lint: allow shared-spec-helper -- reviewed representation conversion; invariant is independent
+fun RowKey(row: (id: int, value: int)): int { return row.id; }
+```

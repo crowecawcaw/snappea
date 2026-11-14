@@ -178,9 +178,13 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | fails (exit 2, before exploring) | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, before exploring); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
+
+Advisory lints such as `shared-spec-helper` report a risk that needs review, not a
+proven defect. They remain warnings even with `--deny lint`; rule-list JSON identifies
+them with `"severity": "advisory"`. See [linting](linting.md) for each rule's limits.
 
 The source comment is the way to accept an intended finding: it names one rule, covers
 one declaration or statement, and carries its reason into code review. To change what
