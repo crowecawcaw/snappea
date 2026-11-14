@@ -141,6 +141,7 @@ pub fn help(rule: &str) -> String {
         rule
     );
     let fix = match rule {
+        "unused-design-payload-field" => "use the field in this receiver when its value affects the contract, remove it from the event when unnecessary, or suppress the intentional omission",
         "shared-spec-helper" => "compute expected results independently in the spec; sharing a proven representation or formatting utility may be intentional",
         "no-model-machine" => return "put modeled behavior in a separate `machine` and include it with the entry driver in the test module; for an intentional trace-only configuration, suppress this rule immediately before its test or implementation declaration, or before `machine Main` for the implicit default configuration".to_string(),
         "unobserved-handler" => "add the event to the monitor's `observes` list, or remove the handler",
