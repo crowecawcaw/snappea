@@ -110,10 +110,9 @@ machine Network {
 ```
 
 - Bound the losses. Upstream P's `UnReliableSend` decides each loss with `$`. The
-  checker treats such choices as fair, so "every retry is lost" is not reported as a
-  liveness bug, but it is a cycle the exhaustive search cannot rule out: liveness then
-  stays unverified and the search incomplete. A loss counter keeps the search finite
-  and lets it verify progress.
+  checker treats such choices as fair, so "every retry is lost" is not a liveness bug:
+  the exhaustive search verifies progress assuming the network eventually delivers. A
+  loss counter states the bound explicitly and keeps the search small.
 - Bound duplicates and crashes the same way: once each is usually enough to find bugs.
 
 ## Mutation testing and faults

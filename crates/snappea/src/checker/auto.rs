@@ -36,7 +36,6 @@ pub(crate) struct AutoStrategy {
     window_prunes: usize,
     window_frontier: Option<usize>,
     dfs_bounds: usize,
-    has_hot: bool,
     interrupted: bool,
     interruption_reason: Option<&'static str>,
     schedules: usize,
@@ -45,6 +44,9 @@ pub(crate) struct AutoStrategy {
     /// looking for bugs with feedback until the other parts are done too, and leaves
     /// its unused exhaustive work to workers whose parts are larger.
     split: Option<std::sync::Arc<super::exhaustive::Shared>>,
+    /// The record of the state graph of a completed part of a split search, kept for the
+    /// fair-cycle analysis once every part is done.
+    graph: Option<super::fairness::LiveGraph>,
 }
 impl AutoStrategy {
     /// `exhaustive` starts with exhaustive search, of this worker's part of the tree
@@ -58,10 +60,14 @@ impl AutoStrategy {
         split: Option<Split>,
     ) -> Self {
         let shared = split.as_ref().map(|s| s.shared_state());
+        let workers = split.as_ref().map_or(1, |s| s.workers());
         Self {
             dfs: exhaustive.then(|| {
                 let rng = Rc::new(RefCell::new(RandomValueGenerator::new(seed)));
-                let dfs = ExhaustiveStrategy::new(unfair_steps, Some(rng));
+                let mut dfs = ExhaustiveStrategy::new(unfair_steps, Some(rng));
+                if has_hot {
+                    dfs = dfs.with_live_graph(super::fairness::RECORD_BUDGET / workers);
+                }
                 match split {
                     Some(split) => dfs.with_split(split),
                     None => dfs,
@@ -83,12 +89,12 @@ impl AutoStrategy {
             window_prunes: 0,
             window_frontier: None,
             dfs_bounds: 0,
-            has_hot,
             interrupted: false,
             interruption_reason: None,
             schedules: 0,
             complete: false,
             split: shared,
+            graph: None,
         }
     }
     fn active(&self) -> &dyn Strategy {
@@ -196,25 +202,31 @@ impl Strategy for AutoStrategy {
         let stats = dfs.exhaustive_stats().unwrap();
         // a program that does not repeat itself given the same choices cannot be exhausted
         let repeatable = dfs.replay_error().is_none();
-        let live = !SearchStats { hot_monitors: self.has_hot, ..stats.clone() }.liveness_unverified();
-        if !more && stats.finished && self.dfs_bounds == 0 && live && repeatable {
+        // liveness is decided once every part is done, from the record of the state graph
+        let unrecorded = dfs.live_graph_unusable().map(str::to_string);
+        if !more && stats.finished && self.dfs_bounds == 0 && unrecorded.is_none() && repeatable {
             self.complete = true;
             let Some(shared) = &self.split else {
                 return false;
             };
             shared.give_spare_work(self.work_deadline.saturating_sub(self.work));
             self.parked = Some(SearchStats { depth_bound_hits: 0, ..stats });
+            self.graph = dfs.take_live_graph();
             self.dfs = None;
             return true;
         }
         if !more || self.dfs_bounds > 0 || !repeatable {
-            self.park(if !repeatable {
-                "execution did not repeat with the same choices"
+            let reason = if !repeatable {
+                "execution did not repeat with the same choices".to_string()
             } else if self.dfs_bounds > 0 {
-                "a schedule reached the depth bound"
+                "a schedule reached the depth bound".to_string()
             } else {
-                "state exploration finished, but liveness remains unverified: a cycle through a state where a liveness spec was not cold was unfair or left its hot state, and another cycle there could stay hot"
-            });
+                format!(
+                    "state exploration finished, but liveness remains unverified: {}",
+                    unrecorded.as_deref().unwrap_or("the state graph was not recorded")
+                )
+            };
+            self.park(&reason);
             return true;
         }
         let frontier = dfs.pending_alternatives();
@@ -349,6 +361,24 @@ impl Strategy for AutoStrategy {
             return None;
         }
         self.dfs.as_mut().and_then(|dfs| dfs.closed_cycle())
+    }
+    fn live_graph_step(&self) -> Option<usize> {
+        if self.probing || self.interrupted {
+            return None;
+        }
+        self.dfs.as_ref().and_then(|dfs| dfs.live_graph_step())
+    }
+    fn note_live_facts(&mut self, facts: super::fairness::LiveFacts) {
+        if let Some(dfs) = self.dfs.as_mut().filter(|_| !self.probing) {
+            dfs.note_live_facts(facts);
+        }
+    }
+    fn take_live_graph(&mut self) -> Option<super::fairness::LiveGraph> {
+        // only a complete search's record can decide liveness
+        if !self.complete {
+            return None;
+        }
+        self.graph.take().or_else(|| self.dfs.as_mut().and_then(|dfs| dfs.take_live_graph()))
     }
     fn exhaustive_stats(&self) -> Option<SearchStats> {
         self.dfs

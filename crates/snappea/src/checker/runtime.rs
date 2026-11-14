@@ -1081,6 +1081,44 @@ impl<'p> Runtime<'p> {
         self.config.liveness_enabled && self.monitors.iter().any(|m| self.liveness_monitor(m))
     }
 
+    /// The transition since step `from` and the current state, for the fair-cycle
+    /// analysis (see [`crate::checker::fairness`]); `infos` are the operations offered now.
+    fn live_facts(&self, from: usize, infos: &[OpInfo]) -> crate::checker::fairness::LiveFacts {
+        let steps = &self.trace.steps;
+        let first = self.fair_choices.partition_point(|c| c.step < from);
+        let mut facts = crate::checker::fairness::LiveFacts {
+            steps: steps[from.min(steps.len())..].to_vec(),
+            choices: self.fair_choices[first..].iter().map(|c| (c.site, c.count, c.value)).collect(),
+            enabled: infos.iter().filter(|o| o.enabled).map(|o| o.id).collect(),
+            ..Default::default()
+        };
+        if !self.config.liveness_enabled {
+            return facts;
+        }
+        for (i, m) in self.monitors.iter().enumerate() {
+            let decl = self.prog.machine(m.decl);
+            if decl.is_scenario() || !decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot) {
+                continue;
+            }
+            if i >= 64 {
+                facts.too_many_monitors = true;
+                continue;
+            }
+            let bit = 1u64 << i;
+            let temperature = m.state.map(|s| self.prog.state(s).temperature);
+            if temperature.is_some_and(|t| t != Temperature::Cold) {
+                facts.not_cold |= bit;
+            }
+            if temperature == Some(Temperature::Hot) {
+                facts.hot |= bit;
+            }
+            if m.cold_at > from {
+                facts.cold |= bit;
+            }
+        }
+        facts
+    }
+
     /// Whether every choice made since step `start` took each of its values there.
     fn fair_choices_vary(&self, start: usize) -> bool {
         let made = self.fair_choices.iter().filter(|c| c.step >= start);
@@ -1169,6 +1207,10 @@ impl<'p> Runtime<'p> {
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
             let live = self.liveness_pending();
+            if let Some(from) = self.strategy.live_graph_step() {
+                let facts = self.live_facts(from, infos);
+                self.strategy.note_live_facts(facts);
+            }
             if !self.strategy.observe_state(hash, live) {
                 self.check_lasso()?;
                 self.pruned = true;

@@ -293,3 +293,105 @@ fn split_search_reports_a_fair_hot_cycle() {
     assert_eq!(r.report.num_bugs, 1);
     assert!(r.report.bug_reports[0].contains("repeat them forever"), "{:?}", r.report.bug_reports);
 }
+
+/// Auto mode on `workers` threads, as `snappea check -j` runs it: its result and the
+/// result of replaying the bug it reports, if any.
+fn threaded(src: &str, workers: usize) -> (CheckResult, Option<CheckResult>) {
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("model.p", src.to_string());
+    let analysis = snappea::sema::compile(&sm, &snappea::sema::Options::default()).expect("compiles");
+    let program = &analysis.program;
+    let tc = program.test_cases().remove(0);
+    let opts = CheckerOptions { strategy: StrategyKind::Auto, iterations: 20_000, seed: 3, ..Default::default() };
+    let pool = WorkerPool::new(workers);
+    let parts = std::thread::scope(|s| {
+        let jobs: Vec<_> = (0..workers)
+            .map(|w| {
+                let (tc, opts, pool) = (&tc, &opts, &pool);
+                s.spawn(move || Checker::new(program).explore(tc, opts, pool, w, &mut Vec::new()).unwrap())
+            })
+            .collect();
+        jobs.into_iter().map(|j| j.join().unwrap()).collect::<Vec<_>>()
+    });
+    let checker = Checker::new(program);
+    let result = checker.finish(&tc, &opts, parts);
+    let replay = result.schedule_trace.as_ref().map(|t| {
+        let trace = snappea::checker::strategy::ScheduleTrace::parse(t).unwrap();
+        let opts = CheckerOptions { strategy: StrategyKind::Replay, replay: Some(trace), ..Default::default() };
+        checker.check(&tc, &opts, &mut Vec::new()).unwrap()
+    });
+    (result, replay)
+}
+
+/// A liveness spec: hot until `eDone`.
+const PROGRESS: &str = "
+    spec Progress observes eDone {
+      start hot state Waiting { on eDone goto Done; }
+      cold state Done { ignore eDone; }
+    }";
+
+#[test]
+fn split_search_reaches_the_same_liveness_verdicts_as_one_worker() {
+    // the upstream P timer idiom: it may fire at every tick, so a fair execution fires
+    let timer = "event eStart; event eTimeout; event eTick; event eDone;
+        machine Timer {
+          var holder: machine;
+          start state Init { entry (h: machine) { holder = h; goto Idle; } }
+          state Idle { on eStart goto Ticking; ignore eTick; }
+          state Ticking { entry { check(); } on eTick do { check(); } }
+          fun check() { if ($) { send holder, eTimeout; goto Idle; } else { send this, eTick; } }
+        }
+        machine Main { start state S {
+          entry { var t: machine; t = new Timer(this); send t, eStart; }
+          on eTimeout do { announce eDone; }
+        } }
+        test tc [main = Main]: assert Progress in { Main, Timer };";
+    // the server is enabled throughout the client's loop: a fair scheduler runs it
+    let unfair = "event eLoop; event eGo; event eDone;
+        machine Server { start state S { on eGo do { announce eDone; } } }
+        machine Main {
+          start state Init { entry { var s: machine; s = new Server(); send s, eGo; goto Loop; } }
+          state Loop { entry { send this, eLoop; } on eLoop goto Loop; }
+        }
+        test tc [main = Main]: assert Progress in { Main, Server };";
+    let cold = "event ePing: machine; event eDone;
+        machine Peer { start state S { on ePing do (m: machine) { send m, ePing, this; } } }
+        machine Main { start state S { entry {
+          var a: machine; var b: machine;
+          announce eDone; a = new Peer(); b = new Peer(); send a, ePing, b;
+        } } }
+        test tc [main = Main]: assert Progress in { Main, Peer };";
+    let ping_pong = cold.replace("announce eDone; ", "");
+    // two loops through the same hot state that each decline one value of `$`
+    let two_loops = "event eTick; event eTock; event eDone;
+        machine Main { start state S {
+          entry { send this, eTick; }
+          on eTick do { if ($) { send this, eTick; } else { send this, eTock; } }
+          on eTock do { send this, eTick; }
+        } }
+        test tc [main = Main]: assert Progress in { Main };";
+    let models = [
+        ("timer", timer, false),
+        ("unfair", unfair, false),
+        ("cold", cold, false),
+        ("ping-pong", ping_pong.as_str(), true),
+        ("two loops", two_loops, true),
+    ];
+    for (name, model, bug) in models {
+        let src = format!("{model}{PROGRESS}");
+        for workers in [1, 4] {
+            let (r, replay) = threaded(&src, workers);
+            let stats = r.exhaustive.clone().unwrap();
+            if bug {
+                assert_eq!(r.report.num_bugs, 1, "{name} on {workers}: {stats:?}");
+                assert!(r.report.bug_reports[0].contains("repeat them forever"), "{name}: {:?}", r.report.bug_reports);
+                let replay = replay.expect("a schedule");
+                assert!(replay.replay_error.is_none(), "{name} on {workers}: {:?}", replay.replay_error);
+                assert_eq!(replay.report.bug_reports, r.report.bug_reports, "{name} on {workers}");
+            } else {
+                assert_eq!(r.report.num_bugs, 0, "{name} on {workers}: {:?}", r.report.bug_reports);
+                assert!(stats.complete() && stats.auto_handoffs.is_empty(), "{name} on {workers}: {stats:?}");
+            }
+        }
+    }
+}
