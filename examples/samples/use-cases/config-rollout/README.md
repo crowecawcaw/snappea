@@ -55,7 +55,7 @@ overtake each other.
 | --- | --- | --- | --- |
 | `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion. All schedules | Passes |
 | `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2. Sampled | Passes |
-| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | A delayed push of the bad version undoes the rollback | Expected bug: `node 0 applied version 2 after version 3` |
+| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | A delayed push of the bad version undoes the rollback | Expected bug: `node N applied version 2 after version 3` |
 
 The `RollbackOvertookPush` scenario confirms a node applied version 3 while a push of
 version 2 to it was still in flight (the rollback overtook the bad version).
