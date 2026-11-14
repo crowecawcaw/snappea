@@ -60,7 +60,7 @@ machine ConfigService {
       acked += (a.node);
       if (sizeof(acked) == sizeof(nodes) - 1) {
         announce RolloutDone, (version = version,);
-        // snappea-lint: allow mutation:remove-statement -- once every ack is in, Rest and Idle handle every event alike
+        // snappea-lint: allow mutation:remove-statement -- equivalent: each node acks each version once, so no ack for this version is still coming; Rest and Idle handle Issue and older acks alike
         goto Idle;
       }
     }

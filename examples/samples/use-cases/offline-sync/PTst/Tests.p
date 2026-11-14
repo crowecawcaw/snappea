@@ -30,7 +30,7 @@ machine LossyLink {
       server = input.server;
       fault = input.fault;
     }
-    on Update do (u: Update) {
+    on Update do (u: UpdateRequest) {
       client = u.client;
       clientId = u.clientId;
       send server, Update, (client = this, clientId = u.clientId, req = u.req, base = u.base,
@@ -267,10 +267,10 @@ test tcGeneratedSync [main=GeneratedSync]:
 test tcBugLastWriterWins [main=BuggyLastWriterWins]:
   assert NoLostUpdates, SyncCompletes in { BuggyLastWriterWins, SyncDriver, LossyLink, BBDelivery, LastWriterWinsServer, SyncClient };
 
-// snappea: expect-bug "conflicted with itself"
+// snappea: expect-bug "request 11 conflicted with itself: it was already applied"
 test tcBugNoRequestIds [main=BuggyNoRequestIds]:
   assert NoLostUpdates, SyncCompletes in { BuggyNoRequestIds, SyncDriver, LossyLink, BBDelivery, ForgetfulServer, SyncClient };
 
-// snappea: expect-bug "took a late reply as fresh"
+// snappea: expect-bug "client 1 pushed base 2, not newer than its last push on base 2: it took a late reply as fresh"
 test tcBugStaleReply [main=BuggyStaleReply]:
   assert NoLostUpdates, SyncCompletes in { BuggyStaleReply, LossyLink, BBDelivery, NoteServer, SyncClient, NaiveSyncClient };

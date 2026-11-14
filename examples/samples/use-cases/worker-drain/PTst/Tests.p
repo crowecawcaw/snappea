@@ -159,12 +159,12 @@ test tcLastInstanceRefused [main=LastInstanceRefused]:
   assert DrainSafety, RequestsAndScaleInsFinish in
   { LastInstanceRefused, LoadBalancer, BBDelivery, Instance, Autoscaler, Client, ScaleInTrigger };
 
-// snappea: expect-bug "terminated with request"
+// snappea: expect-bug "instance 0 terminated with request"
 test tcBugTerminateEarly [main=BuggyTerminateEarly]:
   assert DrainSafety, RequestsAndScaleInsFinish in
   { BuggyTerminateEarly, LoadBalancer, BBDelivery, Instance, HastyAutoscaler, Client, ScaleInTrigger };
 
-// snappea: expect-bug "started draining while the load balancer still routes to it"
+// snappea: expect-bug "instance 0 started draining while the load balancer still routes to it"
 test tcBugDrainBeforeDeregistered [main=BuggyDrainBeforeDeregistered]:
   assert DrainSafety, RequestsAndScaleInsFinish in
   { BuggyDrainBeforeDeregistered, LoadBalancer, BBDelivery, Instance, EarlyDrainAutoscaler, Client, ScaleInTrigger };

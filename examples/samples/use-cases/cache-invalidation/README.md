@@ -18,13 +18,16 @@ the outstanding lease.
 
 **Contract** (writes commit increasing values, so "older" means "smaller")
 
-- A cache hit returns a value the database committed at some point not before the last
-  completed invalidation, and that value is what the cache was last filled with.
-- Read-after-write: a read that starts after a write completed (database write and
-  cache delete both acknowledged) returns that write's value or a newer one.
-- At quiescence (no client running) the cache is empty or equal to the database, and a
-  read-through fills it: the probe's second read is served from the cache.
-- Progress: every planned read and write returns.
+- `CacheFresh`: a cache hit returns a value the database committed at some point not
+  before the last completed invalidation, and that value is what the cache was last
+  filled with.
+- `CacheFresh` (read-after-write): a read that starts after a write completed
+  (database write and cache delete both acknowledged) returns that write's value or a
+  newer one.
+- `CacheFresh`: at quiescence (no client running) the cache is empty or equal to the
+  database, and a read-through fills it: the probe's second read is served from the
+  cache.
+- `OperationsFinish` (hot state): every planned read and write returns.
 
 **Atomic primitives**: database read and write; cache get (hit, or miss plus a new
 lease that replaces any earlier one), set-with-lease, delete (also revokes the lease).
@@ -42,38 +45,18 @@ A read-through is three of them, so a write and delete can land in between.
 
 ## Test cases
 
-| Test | Drives | Why it matters |
-| --- | --- | --- |
-| `tcStaleFillRace` | One reader (one read) and one writer, then the probe | The core race: a fill computed before the write arrives after the delete |
-| `tcTwoReadersOneWriter` | Two readers and one writer, then the probe | A second miss replaces the first lease; hits on a filled cache while a write is in flight |
-| `tcGeneratedWorkload` | Readers read once or twice, the writer writes once or twice | Repeated invalidation, leases revoked by either write |
-| `tcReadWriteRead` | Fill, then a completed write, then a read, in order | Lifecycle boundary: the entry filled before the write must not be served after it |
-| `tcBugNaiveCache` | The core race against `NaiveCache` | **Expected bug**: `cache holds stale value 0 at quiescence; database has 1` |
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcStaleFillRace` | One reader (one read) and one writer, then the probe | The core race: a fill computed before the write arrives after the delete. All schedules | Passes |
+| `tcTwoReadersOneWriter` | Two readers and one writer, then the probe | A second miss replaces the first lease; hits on a filled cache while a write is in flight. All schedules | Passes |
+| `tcGeneratedWorkload` | Readers read once or twice, the writer writes once or twice | Repeated invalidation, leases revoked by either write. Sampled | Passes |
+| `tcReadWriteRead` | Fill, then a completed write, then a read, in order | Lifecycle boundary: the entry filled before the write must not be served after it. All schedules | Passes |
+| `tcBugNaiveCache` | The core race against `NaiveCache` | The stale fill is stored and outlives the write | Expected bug: `cache holds stale value 0 at quiescence; database has 1` |
 
 After the clients finish, the driver announces `Quiesced` and runs a probe reader that
 reads twice. That turns "stale indefinitely" into a finite check: a stale entry is
 served to the probe, and a cache that refuses every fill never serves the probe's
 second read.
-
-## Run
-
-```sh
-snappea check tcStaleFillRace tcTwoReadersOneWriter tcGeneratedWorkload tcReadWriteRead --deny mutation
-snappea check tcBugNaiveCache      # passes only when the declared failure is found
-```
-
-The small stale-fill and lifecycle tests isolate the core races. The generated
-and multi-reader tests explore a larger space and may be sampled. Check each
-run's `search_complete` field; a passing sampled run is not an exhaustive result.
-
-## Bounds and omissions
-
-One key, up to two readers, one writer with up to two writes, values 1 and 2. Messages
-are not lost or reordered between a pair of machines; nothing crashes. A miss always
-issues a new lease (memcache instead tells a second concurrent miss to wait); this is
-simpler and still safe. Not modeled: cache eviction, lease expiry, failed deletes (the
-writer would have to retry), several writers (a reader's lease can still be
-revoked by any of them), and multiple keys.
 
 ## What building it taught
 
@@ -85,6 +68,27 @@ revoked by any of them), and multiple keys.
 - A broad `allow mutation` on the lease counter hid a real mutant (removing the
   increment makes every lease 0, so a revoked lease matches again). Scope suppressions
   to the kind: `allow mutation:swap-operator`.
+
+## Run
+
+```sh
+snappea check tcStaleFillRace tcTwoReadersOneWriter tcGeneratedWorkload tcReadWriteRead --deny mutation
+snappea check tcBugNaiveCache      # passes only when the declared failure is found
+```
+
+## Bounds and omissions
+
+One key, up to two readers, one writer with up to two writes, values 1 and 2. Each
+reader and writer does one operation at a time and waits for each reply in `receive`,
+so every reply belongs to its current call. Messages
+are not lost or reordered between a pair of machines; nothing crashes. A miss always
+issues a new lease (memcache instead tells a second concurrent miss to wait); this is
+simpler and still safe. Not modeled: cache eviction, lease expiry, failed deletes (the
+writer would have to retry), several writers (a reader's lease can still be
+revoked by any of them), and multiple keys.
+
+One suppression: the cache's lease counter may count down. Leases only need to be
+distinct and non-zero, and counting down keeps them so.
 
 ## Testing the implementation
 

@@ -170,7 +170,7 @@ test tcGeneratedOrders [main=GeneratedOrders]:
   assert OrderSafety, OrdersSettle in
   { GeneratedOrders, Shopper, OrderStore, Payments, Checkout, Warehouse, CancelRequest };
 
-// snappea: expect-bug "shipped after it was cancelled"
+// snappea: expect-bug "order 1 shipped after it was cancelled"
 test tcBugBlindShip [main=BugBlindShip]:
   assert OrderSafety, OrdersSettle in
   { BugBlindShip, Shopper, OrderStore, Payments, Checkout, BlindWarehouse, CancelRequest };

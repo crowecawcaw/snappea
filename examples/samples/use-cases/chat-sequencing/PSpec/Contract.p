@@ -4,6 +4,10 @@
 event Posted: (msg: int);
 event Sequenced: (sn: int, msg: int);
 event Displayed: (client: int, sn: int, msg: int);
+// Server: a connection joined the live set, resuming after seq `after`.
+event Subscribed: (client: int, after: int);
+// Server: the replay read the log from seq `first` to seq `last`.
+event Replayed: (client: int, after: int, first: int, last: int);
 // Driver: how many messages will be posted and how many clients watch the room.
 event Planned: (msgs: int, clients: int);
 
@@ -36,6 +40,54 @@ spec InOrderNoGaps observes Posted, Sequenced, Displayed {
         format("client {0} displayed message {1} as seq {2}, which the server did not assign", d.client, d.msg, d.sn);
       shown[d.client] = d.sn;
     }
+  }
+}
+
+// Safety: a client resumes after the last seq it displayed, and the server replays
+// from exactly the next seq up to the end of its log at that moment. Resuming from 0
+// would still look correct to InOrderNoGaps (the client skips duplicates), so the
+// resume point is checked here.
+spec ResumesAfterLastShown observes Sequenced, Displayed, Subscribed, Replayed {
+  var sequenced: int;
+  // client -> last seq it displayed
+  var shown: map[int, int];
+  // (client, after) subscriptions whose replay has not started
+  var pending: set[(int, int)];
+
+  start state Watching {
+    on Sequenced do (s: (sn: int, msg: int)) { sequenced = s.sn; }
+    on Displayed do (d: (client: int, sn: int, msg: int)) { shown[d.client] = d.sn; }
+    on Subscribed do (s: (client: int, after: int)) { CheckSubscribe(s.client, s.after); }
+    on Replayed do (r: (client: int, after: int, first: int, last: int)) {
+      assert false, format("replay for client {0} after seq {1} has no subscription", r.client, r.after);
+    }
+  }
+
+  // A subscription is waiting for its replay.
+  hot state Replaying {
+    on Sequenced do (s: (sn: int, msg: int)) { sequenced = s.sn; }
+    on Displayed do (d: (client: int, sn: int, msg: int)) { shown[d.client] = d.sn; }
+    on Subscribed do (s: (client: int, after: int)) { CheckSubscribe(s.client, s.after); }
+    on Replayed do (r: (client: int, after: int, first: int, last: int)) { CheckReplay(r.client, r.after, r.first, r.last); }
+  }
+
+  fun CheckSubscribe(client: int, after: int) {
+    if (!(client in shown)) { shown[client] = 0; }
+    assert after == shown[client],
+      format("client {0} resumed after seq {1}, but it last displayed seq {2}", client, after, shown[client]);
+    pending += ((client, after));
+    goto Replaying;
+  }
+
+  fun CheckReplay(client: int, after: int, first: int, last: int) {
+    assert (client, after) in pending,
+      format("replay for client {0} after seq {1} has no subscription", client, after);
+    pending -= ((client, after));
+    assert first == after + 1,
+      format("replay for client {0} starts at seq {1}, not after its resume point {2}", client, first, after);
+    assert last == sequenced,
+      format("replay for client {0} ends at seq {1}, but the log ends at seq {2}", client, last, sequenced);
+    if (sizeof(pending) == 0) { goto Watching; }
   }
 }
 

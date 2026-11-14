@@ -11,7 +11,7 @@ machine LastWriterWinsServer {
     entry (initial: Note) {
       note = initial;
     }
-    on Update do (u: Update) {
+    on Update do (u: UpdateRequest) {
       if (u.req in applied) {
         announce Replayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
         send u.client, UpdateOk, (req = u.req, version = applied[u.req]);
@@ -39,7 +39,7 @@ machine ForgetfulServer {
     entry (initial: Note) {
       note = initial;
     }
-    on Update do (u: Update) {
+    on Update do (u: UpdateRequest) {
       // BUG: no record of applied requests.
       if (u.base != note.version) {
         announce Conflicted, (client = u.clientId, req = u.req, base = u.base, current = note.version);

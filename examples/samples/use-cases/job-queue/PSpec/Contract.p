@@ -146,7 +146,7 @@ spec JobsComplete observes WorkersPlanned, Enqueued, Acked, AckSent, AckRejected
 
   fun Answered(job: int, receipt: int) {
     assert receipt in acks, format("ack with receipt {0} answered but never sent", receipt);
-    assert acks[receipt] == job, "ack response named another job";
+    assert acks[receipt] == job, format("ack with receipt {0} was answered for job {1}, but sent for job {2}", receipt, job, acks[receipt]);
     acks -= (receipt);
     Settle();
   }

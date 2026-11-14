@@ -63,7 +63,7 @@ machine Breaker {
       var caller: machine;
       announce CallResultObserved, r;
       caller = callers[r.call];
-      // snappea-lint: allow mutation:remove-statement -- forgetting a finished call; call ids are never reused, so keeping it is unobservable
+      // snappea-lint: allow mutation:remove-statement -- equivalent: call ids are never reused, so a finished call's entry is never read again
       callers -= (r.call);
       if (sentIn[r.call] == period) {
         // Not late: this result belongs to the current period.
@@ -80,7 +80,7 @@ machine Breaker {
           if (r.ok) { Change(Closed); } else { Change(Open); }
         }
       }
-      // snappea-lint: allow mutation:remove-statement -- as above: frees memory only
+      // snappea-lint: allow mutation:remove-statement -- equivalent: call ids are never reused, so a finished call's entry is never read again
       sentIn -= (r.call);
       if (r.ok) {
         send caller, CallResult, (call = r.call, outcome = Succeeded);

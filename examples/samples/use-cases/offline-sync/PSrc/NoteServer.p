@@ -7,9 +7,9 @@
 //                               else conflict with the current copy.
 // Everything else (the client's offline edit, the merge, the retry) interleaves.
 
-type Update = (client: machine, clientId: int, req: int, base: int, content: set[int], deleted: bool);
+type UpdateRequest = (client: machine, clientId: int, req: int, base: int, content: set[int], deleted: bool);
 
-event Update: Update;
+event Update: UpdateRequest;
 event UpdateOk: (req: int, version: int);
 event UpdateConflict: (req: int, server: Note);
 event Fetch: machine;
@@ -24,7 +24,7 @@ machine NoteServer {
     entry (initial: Note) {
       note = initial;
     }
-    on Update do (u: Update) {
+    on Update do (u: UpdateRequest) {
       if (u.req in applied) {
         announce Replayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
         // The client lost our reply and retried: answer as before, change nothing.

@@ -20,7 +20,7 @@ event Answered: (req: int, admitted: bool);
 // is counted in, or rejected for, a window that was current while it was in flight;
 // once a later window has admitted requests, no earlier window admits more; and a
 // rejection is justified only by a full window.
-spec WindowLimit observes Ticked, Requested, Admitted, Rejected, CasResp {
+spec WindowLimit observes Ticked, Requested, Admitted, Rejected, CasResult {
   var current: int;
   // req -> window current when the driver sent it
   var startedIn: map[int, int];
@@ -50,7 +50,7 @@ spec WindowLimit observes Ticked, Requested, Admitted, Rejected, CasResp {
       assert p.count == admitted[p.window],
         format("store counts {0} in window {1}, but {2} requests were admitted", p.count, p.window, admitted[p.window]);
     }
-    on CasResp do (r: (req: int, ok: bool)) {
+    on CasResult do (r: (req: int, ok: bool)) {
       if (!r.ok) {
         assert r.req in startedIn && !(r.req in decided),
           format("request {0} lost a CAS, but it was not in flight", r.req);

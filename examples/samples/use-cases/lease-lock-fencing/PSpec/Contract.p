@@ -84,7 +84,7 @@ spec ClientsFinish observes ClientsPlanned, ClientStarted, Granted, Busy, Expire
     on ClientsPlanned do (n: int) {
       assert n > 0, "planned no clients";
       unfinished = n;
-      goto Busy;
+      goto Running;
     }
     on ClientStarted do { assert false, "client started without a plan"; }
     on Granted do { assert false, "grant before any client started"; }
@@ -95,7 +95,7 @@ spec ClientsFinish observes ClientsPlanned, ClientStarted, Granted, Busy, Expire
     ignore Expired, Released;
   }
 
-  hot state Busy {
+  hot state Running {
     on ClientsPlanned do { assert false, "clients planned twice"; }
     on ClientStarted do (p: ClientPlan) {
       assert !(p.id in started), format("client {0} started twice", p.id);
@@ -119,8 +119,8 @@ spec ClientsFinish observes ClientsPlanned, ClientStarted, Granted, Busy, Expire
     }
     on Expired do { live = 0; Settle(); }
     on Released do { live = 0; Settle(); }
-    on WriteAccepted do (p: (id: int, token: int)) { Wrote(p.id, p.token, Wrote); }
-    on WriteRejected do (p: (id: int, token: int)) { Wrote(p.id, p.token, Fenced); }
+    on WriteAccepted do (p: (id: int, token: int)) { NoteWrite(p.id, p.token, Wrote); }
+    on WriteRejected do (p: (id: int, token: int)) { NoteWrite(p.id, p.token, Fenced); }
     on ClientDone do (p: (id: int, outcome: Outcome)) {
       assert p.id in started, format("client {0} finished twice or never started", p.id);
       assert p.id in due, format("client {0} finished before the services decided", p.id);
@@ -149,7 +149,7 @@ spec ClientsFinish observes ClientsPlanned, ClientStarted, Granted, Busy, Expire
     assert id in started, format("client {0} acted but was never started", id);
   }
 
-  fun Wrote(id: int, token: int, outcome: Outcome) {
+  fun NoteWrite(id: int, token: int, outcome: Outcome) {
     Known(id);
     assert id in tokenOf && tokenOf[id] == token,
       format("client {0} wrote with token {1}, not its own", id, token);

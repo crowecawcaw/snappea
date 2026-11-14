@@ -129,10 +129,10 @@ test tcStolenToken [main=StolenToken]:
 test tcRepeatedExpiry [main=RepeatedExpiry]:
   assert TokenSafety, TabsServed in { RepeatedExpiry, AuthServer, Storage, LockManager, Network, Tab };
 
-// snappea: expect-bug "user logged out by reuse detection"
+// snappea: expect-bug "user logged out by reuse detection: refresh token 1 was presented after it was rotated"
 test tcBugNoLock [main=BugNoLock]:
   assert TokenSafety, TabsServed in { BugNoLock, AuthServer, Storage, LockManager, Network, UnlockedTab };
 
-// snappea: expect-bug "user logged out by reuse detection"
+// snappea: expect-bug "user logged out by reuse detection: refresh token 1 was presented after it was rotated"
 test tcBugRetryAfterLostResponse [main=BugRetryAfterLostResponse]:
   assert TokenSafety, TabsServed in { BugRetryAfterLostResponse, AuthServer, Storage, LockManager, Network, RetryingTab };

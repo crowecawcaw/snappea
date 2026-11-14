@@ -8,7 +8,7 @@ type Plan = (seed: map[int, int], writers: seq[seq[Op]], readers: seq[Reads]);
 // Starts everything at once, so writes and reads race with the backfill and cutover.
 fun Migrate(owner: machine, newStore: machine, plan: Plan) {
   var oldStore: OldStore;
-  Plan(plan);
+  AnnouncePlan(plan);
   oldStore = new OldStore(plan.seed);
   MigrateVia(owner, oldStore, new Router((oldStore = oldStore, newStore = newStore)), newStore, plan);
 }
@@ -23,7 +23,7 @@ fun MigrateVia(owner: machine, oldStore: OldStore, router: machine, newStore: ma
   StartClients(router, oldStore, newStore, plan);
 }
 
-fun Plan(plan: Plan) {
+fun AnnouncePlan(plan: Plan) {
   var ops: seq[Op];
   var op: Op;
   var writes: int;
@@ -134,7 +134,7 @@ machine WriteAfterCutover {
       var scan: seq[int];
       plan = OneWriter(Put(1, 1, 20));
       plan.readers += (0, (key = 1, reads = 2));
-      Plan(plan);
+      AnnouncePlan(plan);
       oldStore = new OldStore(plan.seed);
       newStore = new NewStore();
       router = new Router((oldStore = oldStore, newStore = newStore));
@@ -206,7 +206,7 @@ machine BugCutoverMidRead {
 fun Eager(owner: machine, plan: Plan) {
   var oldStore: OldStore;
   var newStore: NewStore;
-  Plan(plan);
+  AnnouncePlan(plan);
   oldStore = new OldStore(plan.seed);
   newStore = new NewStore();
   MigrateVia(owner, oldStore, new EagerRouter((oldStore = oldStore, newStore = newStore)), newStore, plan);
@@ -258,7 +258,7 @@ test tcBugCutoverMidWrite [main=BugCutoverMidWrite]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverMidWrite, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
 
-// snappea: expect-bug "cutover broken: old store served a read after cutover"
+// snappea: expect-bug "cutover broken: old store served reader 1's read of key 1 after cutover"
 test tcBugCutoverMidRead [main=BugCutoverMidRead]:
   assert MigrationSafety, MigrationCompletes in
   { BugCutoverMidRead, OldStore, NewStore, EagerRouter, Writer, Reader, Migrator };
