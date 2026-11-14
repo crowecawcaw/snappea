@@ -6,7 +6,30 @@
 //! Counts cover every eighth schedule run, including the prefixes an exhaustive search
 //! replays, so they describe an average schedule rather than the size of the search tree.
 
-use crate::sema::Program;
+use super::value::Value;
+use crate::sema::{MachineId, Program, VarId};
+use std::collections::BTreeMap;
+
+/// Observed top-level collection lengths, aggregated across instances and sampled
+/// states. These are not retained values, allocations, or a proof of monotonic growth.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectionSize {
+    pub machine: String,
+    pub field: String,
+    pub file: String,
+    pub line: u32,
+    pub min: usize,
+    pub max: usize,
+    pub observations: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SizeRange {
+    machine: MachineId,
+    min: usize,
+    max: usize,
+    observations: u64,
+}
 
 /// Branching counts over the schedules of one test case.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -21,6 +44,8 @@ pub struct Branching {
     /// Per machine declaration: choices with two or more outcomes (`$`, `$$`, `choose`)
     /// its machines made.
     pub choices: Vec<u64>,
+    state_points: u64,
+    collection_sizes: BTreeMap<VarId, SizeRange>,
 }
 
 /// One machine's share of the branching, per schedule on average.
@@ -34,6 +59,59 @@ pub struct MachineBranching {
 }
 
 impl Branching {
+    /// Profile one in 32 scheduling points of the already sampled schedules.
+    pub(crate) fn sample_sizes(&mut self) -> bool {
+        let sample = self.state_points.is_multiple_of(32);
+        self.state_points += 1;
+        sample
+    }
+
+    /// Constant-time length reads only; never traverses or clones collection contents.
+    pub(crate) fn observe_fields(&mut self, prog: &Program, decl: MachineId, values: &[Value]) {
+        for id in &prog.machine(decl).fields {
+            let field = prog.var(*id);
+            let n = match values.get(field.slot as usize) {
+                Some(Value::Map(v)) => v.len(),
+                Some(Value::Set(v)) => v.len(),
+                Some(Value::Seq(v)) => v.len(),
+                _ => continue,
+            };
+            let range = self.collection_sizes.entry(*id).or_insert(SizeRange {
+                machine: decl,
+                min: n,
+                max: n,
+                observations: 0,
+            });
+            range.min = range.min.min(n);
+            range.max = range.max.max(n);
+            range.observations += 1;
+        }
+    }
+
+    /// Nonempty collection fields, largest observed first, with stable tie ordering.
+    pub fn collections(&self, prog: &Program) -> Vec<CollectionSize> {
+        let mut out: Vec<_> = self
+            .collection_sizes
+            .iter()
+            .filter(|(_, r)| r.max > 0)
+            .map(|(id, r)| {
+                let field = prog.var(*id);
+                let loc = prog.sources.location(field.span);
+                CollectionSize {
+                    machine: prog.machine(r.machine).name.clone(),
+                    field: field.name.clone(),
+                    file: loc.file.unwrap_or_default(),
+                    line: loc.line.max(0) as u32,
+                    min: r.min,
+                    max: r.max,
+                    observations: r.observations,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| b.max.cmp(&a.max).then(a.machine.cmp(&b.machine)).then(a.field.cmp(&b.field)));
+        out
+    }
+
     /// A scheduling point at which the machines of `decls` (with repeats) could go next.
     pub(crate) fn point(&mut self, decls: impl Iterator<Item = usize>) {
         self.points += 1;
@@ -50,6 +128,13 @@ impl Branching {
     /// Adds another worker's counts.
     pub fn merge(&mut self, other: &Branching) {
         self.schedules += other.schedules;
+        self.state_points += other.state_points;
+        for (id, r) in &other.collection_sizes {
+            let a = self.collection_sizes.entry(*id).or_insert(SizeRange { observations: 0, ..r.clone() });
+            a.min = a.min.min(r.min);
+            a.max = a.max.max(r.max);
+            a.observations += r.observations;
+        }
         self.points += other.points;
         for (i, n) in other.ready.iter().enumerate() {
             add(&mut self.ready, i, *n);

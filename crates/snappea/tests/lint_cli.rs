@@ -22,7 +22,7 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 15);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 16);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -180,7 +180,7 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 15);
+    assert_eq!(h.stdout.lines().count(), 16);
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("announce-and-send"));
     assert!(h.stdout.contains("unchecked-state"));
@@ -350,4 +350,111 @@ fn upstream_compatibility_keeps_the_warnings() {
         h.stdout
     );
     assert!(!h.stderr.contains("unobserved-handler"));
+}
+
+const SHARED_HELPER: &str = r#"
+fun Compute(x: int): int { return x + 1; }
+event Result: (input: int, actual: int);
+machine Worker { start state S { entry { announce Result, (input = 1, actual = Compute(1)); } } }
+machine Main { start state S { entry { new Worker(); } } }
+spec Oracle observes Result { start state S { on Result do (p: (input: int, actual: int)) {
+    assert p.actual == Compute(p.input);
+} } }
+test tcShared [main=Main]: assert Oracle in { Main, Worker };
+"#;
+
+#[test]
+fn shared_spec_helpers_are_advisory_in_lint_and_check_even_when_lint_is_denied() {
+    let mut h = MemHost::new("/w");
+    h.add_file("shared.p", SHARED_HELPER);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"][0]["rule"], "shared-spec-helper");
+    assert_eq!(result["findings"][0]["severity"], "advisory");
+    assert_eq!(result["findings"][0]["file"], "shared.p");
+    assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
+    assert!(!h.stderr.contains("Lint failed"), "{}", h.stderr);
+    assert_eq!(
+        run(&mut h, &["check", "shared.p", "--deny", "lint", "--no-mutation", "--json"]),
+        0,
+        "{}{}",
+        h.stdout,
+        h.stderr
+    );
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["warnings"]["lint"], 1);
+    assert_eq!(result["test_cases"][0]["result"], "ok");
+
+    h.add_file(
+        "shared.p",
+        &SHARED_HELPER
+            .replace("assert p.actual == Compute(p.input);", "assert p.actual == Compute(p.input); assert true;"),
+    );
+    assert_eq!(run(&mut h, &["check", "shared.p", "--no-mutation"]), 2);
+    assert!(h.stderr.contains("error[tautological-assert]"), "{}", h.stderr);
+    assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
+}
+
+#[test]
+fn shared_helper_advisories_follow_transitive_calls_and_scoped_suppressions() {
+    let mut h = MemHost::new("/w");
+    let src = SHARED_HELPER.replace(
+        "fun Compute(x: int): int { return x + 1; }",
+        "fun Compute(x: int): int { return Leaf(x); }\nfun Leaf(x: int): int { return x + 1; }",
+    );
+    h.add_file("shared.p", &src);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"].as_array().unwrap().len(), 2);
+    let src = src
+        .replace("fun Compute", "// snappea-lint: allow shared-spec-helper -- reviewed adapter\nfun Compute")
+        .replace("fun Leaf", "// snappea-lint: allow shared-spec-helper -- reviewed utility\nfun Leaf");
+    h.add_file("shared.p", &src);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"], serde_json::json!([]));
+}
+
+#[test]
+fn helper_sharing_between_unrelated_tests_or_only_drivers_is_not_reported() {
+    let mut h = MemHost::new("/w");
+    let src = SHARED_HELPER.replace("assert p.actual == Compute(p.input);", "assert p.actual == p.input + 1;")
+        + r#"
+        machine OtherWorker { start state S { entry { announce Result, (input = 1, actual = 2); } } }
+        machine OtherMain { start state S { entry { new OtherWorker(); } } }
+        spec OtherOracle observes Result { start state S { on Result do (p: (input: int, actual: int)) { assert p.actual == Compute(p.input); } } }
+        test tcOther [main=OtherMain]: assert OtherOracle in { OtherMain, OtherWorker };
+    "#;
+    h.add_file("shared.p", &src);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"], serde_json::json!([]));
+    // PTst and explicit driver annotations must not turn environment helpers into design oracles.
+    h.add_file("shared.p", &SHARED_HELPER.replace("machine Worker", "// snappea: driver\nmachine Worker"));
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"], serde_json::json!([]));
+}
+
+#[test]
+fn shared_helper_warning_follows_check_test_selection() {
+    let mut h = MemHost::new("/w");
+    let src = SHARED_HELPER.to_string()
+        + r#"
+        machine OtherWorker { start state S { entry { announce Result, (input = 1, actual = 2); } } }
+        machine OtherMain { start state S { entry { new OtherWorker(); } } }
+        spec Independent observes Result { start state S { on Result do (p: (input: int, actual: int)) { assert p.actual == p.input + 1; } } }
+        test tcIndependent [main=OtherMain]: assert Independent in { OtherMain, OtherWorker };
+    "#;
+    h.add_file("shared.p", &src);
+    assert_eq!(
+        run(&mut h, &["check", "tcIndependent", "shared.p", "--no-mutation", "--json"]),
+        0,
+        "{}{}",
+        h.stdout,
+        h.stderr
+    );
+    assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert!(result["warnings"].get("lint").is_none(), "{result}");
 }

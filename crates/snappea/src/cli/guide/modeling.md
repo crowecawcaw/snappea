@@ -37,3 +37,12 @@
 - An atomic commit-pointer model alone does not validate candidate construction or CAS retry logic; model those stages if risky.
 - For bounded records and larger logical operations, represent splitting plus publication. Separately test actual encoded sizes in the implementation.
 - Replay and reduce counterexamples before adding realism. A passing finite search covers only represented transitions and bounds.
+
+
+When a search is incomplete, inspect the sampled collection-size ranges alongside
+branching counts (`-v` also shows them for completed tests; JSON uses
+`collection_sizes`). They identify top-level map/set/sequence fields, including spec
+history, whose sampled contents were largest. A range combines different instances
+and schedules: it is evidence of observed sizes, not proof of unbounded growth or a
+causal ranking. Check whether completed operations can be summarized without losing
+a property the spec checks. Retain IDs or history that the contract actually needs.

@@ -821,6 +821,7 @@ pub fn lints_with_progress_tests(
         }
     }
     crate::checker::flow_lints::lints_for_tests(prog, progress_tests, drivers, &mut out);
+    out.extend(shared_spec_helpers(prog, tests, drivers));
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
 }
@@ -908,6 +909,55 @@ pub(crate) fn each_expr(s: &Stmt, f: &mut dyn FnMut(&Expr)) {
         StmtKind::Ctor { payload, .. } | StmtKind::Goto { payload, .. } => payload.iter().for_each(go),
         _ => {}
     }
+}
+
+/// Sharing an implementation helper with its oracle can hide the same defect on both
+/// sides. This is advisory: formatting and representation helpers may be intentional.
+/// Compare roles within each test, not across unrelated selected configurations.
+fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
+    use std::collections::{BTreeMap, BTreeSet};
+    #[derive(Default)]
+    struct Users {
+        specs: BTreeSet<String>,
+        models: BTreeSet<String>,
+        tests: BTreeSet<String>,
+    }
+    let mut shared: BTreeMap<FunId, Users> = BTreeMap::new();
+    for test in tests {
+        let roles = roles(prog, std::slice::from_ref(test), drivers);
+        let mut spec_users: BTreeMap<FunId, BTreeSet<String>> = BTreeMap::new();
+        let mut model_users: BTreeMap<FunId, BTreeSet<String>> = BTreeMap::new();
+        for (i, role) in roles.iter().enumerate() {
+            let users = match role {
+                Role::Spec => &mut spec_users,
+                Role::Model => &mut model_users,
+                _ => continue,
+            };
+            for f in machine_funs(prog, MachineId(i as u32)) {
+                let fun = prog.fun(f);
+                if fun.owner.is_none() && fun.parent.is_none() && fun.body.is_some() && !fun.name.is_empty() {
+                    users.entry(f).or_default().insert(prog.machines[i].name.clone());
+                }
+            }
+        }
+        for (f, specs) in spec_users {
+            if let Some(models) = model_users.get(&f) {
+                let users = shared.entry(f).or_default();
+                users.specs.extend(specs);
+                users.models.extend(models.iter().cloned());
+                users.tests.insert(test.name.clone());
+            }
+        }
+    }
+    let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
+    shared.into_iter().map(|(f, users)| Finding {
+        rule: "shared-spec-helper",
+        span: prog.fun(f).span,
+        message: format!(
+            "global helper '{}' is shared by spec(s) {} and design machine(s) {} in test(s) {}; the same helper mistake may affect both implementation and expected result",
+            prog.fun(f).name, names(users.specs), names(users.models), names(users.tests)
+        ),
+    }).collect()
 }
 
 #[cfg(test)]

@@ -917,3 +917,54 @@ fn scenario_evidence_clips_unicode_payloads_by_character() {
     assert!(w.truncated);
     assert_eq!(w.accepting_state, "Accepted");
 }
+
+#[test]
+fn collection_size_evidence_does_not_change_search_and_counts_only_lengths() {
+    let src = r#"
+        event eTick: int;
+        machine Main {
+            var pending: map[int,int]; var seen: set[int]; var queue: seq[int];
+            start state S {
+                entry {
+                    pending[1] = 9001; pending[2] = 9002; pending[3] = 9003;
+                    seen += (10); seen += (20);
+                    queue += (0, 100); queue += (1, 200); queue += (2, 300); queue += (3, 400);
+                    send this, eTick, 1;
+                }
+                on eTick do (n:int) { if (n < 3) { send this, eTick, n+1; } }
+            }
+        }
+        spec History observes eTick {
+            var history: map[int,bool];
+            start state S { on eTick do (n:int) { history[n] = true; assert n <= 3; } }
+        }
+        test tcMain [main=Main]: assert History in { Main };
+    "#;
+    let plain = check(src, &opts(StrategyKind::Auto, 0));
+    let measured = check(src, &CheckerOptions { branching: true, ..opts(StrategyKind::Auto, 0) });
+    assert_eq!(plain.exhaustive, measured.exhaustive);
+    assert_eq!(plain.report.timelines, measured.report.timelines);
+    assert_eq!(plain.report.explored_unfair_schedules, measured.report.explored_unfair_schedules);
+    assert_eq!(plain.report.bug_reports, measured.report.bug_reports);
+    assert!(plain.branching.is_none());
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("model.p", src);
+    let a = snappea::sema::compile(&sm, &Default::default()).unwrap();
+    let stats = measured.branching.unwrap();
+    let fields = stats.collections(&a.program);
+    for (machine, field, max) in
+        [("Main", "pending", 3), ("Main", "seen", 2), ("Main", "queue", 4), ("History", "history", 3)]
+    {
+        let size = fields.iter().find(|s| s.machine == machine && s.field == field).unwrap();
+        assert_eq!(size.max, max, "{size:?}");
+        assert!(size.observations > 0);
+        assert_eq!(size.file, "model.p");
+        assert!(size.line > 0);
+    }
+    let mut merged = stats.clone();
+    merged.merge(&stats);
+    for (single, both) in fields.iter().zip(merged.collections(&a.program)) {
+        assert_eq!((single.min, single.max), (both.min, both.max));
+        assert_eq!(single.observations * 2, both.observations);
+    }
+}
