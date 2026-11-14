@@ -64,9 +64,13 @@ on Data do (d: Msg) {
 }
 ```
 
-The spec ([`PSpec/Contract.p`](PSpec/Contract.p)) requires each planned message to be
-delivered once, acknowledged only after delivery, and (hot state) every message to be
-delivered and acknowledged by the end.
+The specs ([`PSpec/Contract.p`](PSpec/Contract.p)) separate safety from progress.
+`ExactlyOnce` requires each delivered message to have been planned, rejects duplicate
+delivery or acknowledgement, and allows acknowledgement only after delivery. It stays
+active after all acknowledgements, so a late duplicate fails the same assertion.
+`MessagesAcknowledged` stays hot until every planned message is acknowledged; it relies
+on `ExactlyOnce` to check that those acknowledgements are valid and distinct. Select
+both specs in every test.
 
 ## Test cases
 
@@ -117,7 +121,7 @@ sender waits forever:
 
 ```text
 FAIL  tcLostPackets (bug found after 2 schedules, 0.01s)
-      PImplementation.ExactlyOnce detected liveness bug in hot state 'Delivering' at the end of program execution.
+      PImplementation.MessagesAcknowledged detected liveness bug in hot state 'Awaiting' at the end of program execution.
 ```
 
 ## Bounds and omissions
