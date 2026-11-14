@@ -8,7 +8,7 @@ use crate::sema::Program;
 use crate::syntax::SourceMap;
 use snappea_lint::Finding;
 
-/// Print all unsuppressed lint findings. Does not execute models or write artifacts.
+/// Print all unsuppressed findings and return the blocking count. Does not execute models or write artifacts.
 pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usize, Exit> {
     let sm = sources.source_map();
     let findings = findings(host, &sm, prog)?;
@@ -17,7 +17,7 @@ pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usi
 
 /// The unsuppressed findings of the source rules and of the rules on the type-checked
 /// program `prog` ([`snappea_lint::PROGRAM_RULES`]), in source order.
-fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<Finding>, Exit> {
+pub fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<Finding>, Exit> {
     let mut findings = snappea_lint::lint(sm).map_err(|e| syntax_error(host, sm, e))?;
     findings.extend(program_findings(sm, prog));
     findings.sort_by(|a, b| (a.span.file, a.span.start, a.rule).cmp(&(b.span.file, b.span.start, b.rule)));
@@ -46,7 +46,8 @@ pub fn program_findings(sm: &SourceMap, prog: &Program) -> Vec<Finding> {
 }
 
 /// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and stop
-/// the check (exit status 2); with [`Gate::Warn`] they print as warnings and the check
+/// the check (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print
+/// as warnings and the check
 /// goes on. Returns how many findings there were.
 pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
     gate_selected(host, sources, prog, gate, &prog.test_cases(), &[])
@@ -140,6 +141,7 @@ pub fn help(rule: &str) -> String {
         rule
     );
     let fix = match rule {
+        "shared-spec-helper" => "compute expected results independently in the spec; sharing a proven representation or formatting utility may be intentional",
         "no-model-machine" => return "put modeled behavior in a separate `machine` and include it with the entry driver in the test module; for an intentional trace-only configuration, suppress this rule immediately before its test or implementation declaration, or before `machine Main` for the implicit default configuration".to_string(),
         "unobserved-handler" => "add the event to the monitor's `observes` list, or remove the handler",
         "scenario-never-accepts" => "mark the state the scenario should reach `cold`",
@@ -157,7 +159,11 @@ pub fn help(rule: &str) -> String {
 
 /// A finding with its source and fix, ending in a newline.
 pub fn render(sm: &SourceMap, f: &Finding) -> String {
-    render_coded(sm, Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)))
+    if snappea_lint::is_advisory(f.rule) {
+        render_with_level(sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)))
+    } else {
+        render_coded(sm, Some(f.rule), Some(f.span), &f.message, Some(&help(f.rule)))
+    }
 }
 
 /// The line that ends a list of `n` findings.
@@ -165,14 +171,16 @@ pub fn summary(n: usize) -> String {
     format!("Lint failed: {} finding(s). See docs/linting.md for fixes and scoped suppression comments.", n)
 }
 
-/// Prints `findings` with their source and fix, then a count; returns how many there were.
+/// Prints findings with their source and fix; returns only the blocking finding count.
 pub fn report(host: &mut dyn Host, sm: &SourceMap, findings: &[Finding]) -> usize {
+    let errors = findings.iter().filter(|f| !snappea_lint::is_advisory(f.rule)).count();
     for f in findings {
-        host.write(Stream::Err, &render(sm, f), Some(Color::Red));
+        let color = if snappea_lint::is_advisory(f.rule) { Color::Yellow } else { Color::Red };
+        host.write(Stream::Err, &render(sm, f), Some(color));
         host.write(Stream::Err, "\n", None);
     }
-    if !findings.is_empty() {
-        host.write(Stream::Err, &format!("{}\n", summary(findings.len())), None);
+    if errors > 0 {
+        host.write(Stream::Err, &format!("{}\n", summary(errors)), None);
     }
-    findings.len()
+    errors
 }

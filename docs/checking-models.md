@@ -171,6 +171,22 @@ coverage was not reached within the run budget. Exit status is 0 when no bug or
 required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
 result distinguishes exhaustive completion from an incomplete search.
 
+For incomplete tests, text also lists the five largest observed top-level collection
+fields (maps, sets and sequences), including spec/scenario fields. `-v` prints these
+for completed tests too. Per-test JSON `collection_sizes` lists all nonempty fields
+with declaration `file`/`line`, `machine`, `field`, observed `min`/`max` element counts,
+and `observations` (one field on one instance at one sampled point).
+
+This evidence samples one in 32 scheduling points of the existing every-eighth-schedule
+branching sample, plus that schedule's final snapshot. Ranges combine instances,
+schedules and workers, including bounded/pruned prefixes; they can miss peaks.
+Only lengths are retained, never elements or cached states. Nested collections and
+locals are not profiled. A large range does not prove a collection grows forever,
+estimate memory use, or establish that the field caused the large search. Use it to
+locate history retained by the model and review whether the contract needs that
+history; do not remove spec bookkeeping merely to make a search finish. Collecting
+these statistics does not change state hashing, scheduling choices, or search limits.
+
 ### What fails a check
 
 Besides bugs, `snappea check` reports three kinds of findings. Each one either fails
@@ -178,9 +194,13 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | fails (exit 2, before exploring) | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, before exploring); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
+
+Advisory lints such as `shared-spec-helper` report a risk that needs review, not a
+proven defect. They remain warnings even with `--deny lint`; rule-list JSON identifies
+them with `"severity": "advisory"`. See [linting](linting.md) for each rule's limits.
 
 The source comment is the way to accept an intended finding: it names one rule, covers
 one declaration or statement, and carries its reason into code review. To change what
@@ -727,6 +747,21 @@ declaration. Mutations in nested statements remain active. Opt into a nested sco
 with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a reason.
 Use `--list-suppressions` to inspect every suppressed mutant and stale directive;
 JSON includes `suppressed_details` and `stale_suppressions` alongside the count.
+
+A suppressed `remove-statement` on `goto` also produces a
+`suppressed-state-transition` advisory when a possible source state and the target
+state declare different handlers. It names an event, both states, and their handling
+policies or functions. The analysis follows helper calls and receive cases; these
+are possible source states, not a claim that the current tests exercised each one.
+Exercise the named event before and after the transition when reviewing the
+suppression. Different handlers do not prove different behavior, and no advisory
+does not prove equivalence (entry actions and field values can also matter).
+
+These advisories appear in ordinary mutation text output and JSON
+`mutation.suppression_advisories`, with a count in `warnings.mutation_suppressions`.
+They never fail a check, including with `--deny mutation`, and do not change which
+mutants are suppressed. They describe suppressed goto mutants reached by passing
+tests; they are not emitted when mutation testing is skipped.
 
 
 When a change cannot or need not be detected, say so with the

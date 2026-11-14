@@ -68,10 +68,10 @@ Runs test cases over many schedules (event orders, nondeterministic choices) to
 find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj or
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
-Sources are linted first; findings fail with exit status 2. `check lint` only lints;
+Sources are linted first; blocking findings fail with exit status 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
-Lint findings and required coverage gaps fail the check; undetected mutants are
+Blocking lint findings and required coverage gaps fail the check; undetected mutants are
 warnings. Silence an intended finding in the source with a
 `// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
 fails for one run.
@@ -762,7 +762,8 @@ Usage: snappea check lint [SOURCE...] [--list-rules]
 
 Type-checks and lints .p or .pproj sources without exploring schedules or writing
 checker output. Fast; use it while editing. The same rules run before `snappea check`.
-Exit status: 0 clean, 2 unsuppressed findings or source errors.
+Exit status: 0 with no blocking findings, 2 blocking findings or source errors.
+Advisory rules remain warnings, including under --deny lint.
 
   --list-rules  List available rule IDs and descriptions without loading sources
 
@@ -809,7 +810,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
                 .iter()
                 .map(|(id, description)| {
                     host.out_line(&format!("{}  {}", id, description));
-                    json!({"id": id, "description": description})
+                    json!({"id": id, "description": description, "severity": if snappea_lint::is_advisory(id) { "advisory" } else { "error" }})
                 })
                 .collect();
             return Ok((OK, json!({"rules": rules})));
@@ -819,11 +820,17 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         let Buffered { out, .. } = quiet;
         match loaded {
             Ok(loaded) => {
-                if crate::driver::lint::run(host, &loaded.sources, &loaded.analysis.program)? != 0 {
+                let sm = loaded.sources.source_map();
+                let findings = crate::driver::lint::findings(host, &sm, &loaded.analysis.program)?;
+                if crate::driver::lint::report(host, &sm, &findings) != 0 {
                     return Err(Exit(ERROR));
                 }
-                host.out_line("Lint passed.");
-                Ok((OK, json!({"findings": []})))
+                host.out_line(if findings.is_empty() { "Lint passed." } else { "Lint passed with advisory findings." });
+                let findings: Vec<_> = findings.iter().map(|f| {
+                    let loc = sm.location(f.span);
+                    json!({"rule": f.rule, "severity": "advisory", "message": f.message, "file": loc.file, "line": loc.line, "column": loc.col})
+                }).collect();
+                Ok((OK, json!({"findings": findings})))
             }
             Err(e) => {
                 for (stream, text, color) in out {
@@ -1518,6 +1525,10 @@ fn run_check(
     if undetected > 0 && !mutation_failed {
         warnings.insert("mutation".into(), json!(undetected));
     }
+    if let Some(advisories) = mutation.get("suppression_advisories").and_then(Value::as_array).filter(|a| !a.is_empty())
+    {
+        warnings.insert("mutation_suppressions".into(), json!(advisories.len()));
+    }
     let with_warnings = if failed > 0 || warnings.is_empty() {
         String::new()
     } else {
@@ -1530,6 +1541,9 @@ fn run_check(
                     "coverage" => format!("{} coverage gap{}", n, plural(n)),
                     "expected_bug_failure_identity" => {
                         format!("{} expected-bug test{} with differing failures", n, plural(n))
+                    }
+                    "mutation_suppressions" => {
+                        format!("{} mutation suppression advisor{}", n, if n == 1 { "y" } else { "ies" })
                     }
                     _ => format!("{} undetected mutant{}", n, plural(n)),
                 }
@@ -1920,6 +1934,16 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
             })).collect::<Vec<_>>(),
         });
     }
+    if !case.collection_sizes.is_empty() {
+        v["collection_sizes"] = json!(case
+            .collection_sizes
+            .iter()
+            .map(|c| json!({
+                "machine": c.machine, "field": c.field, "file": c.file, "line": c.line,
+                "min": c.min, "max": c.max, "observations": c.observations,
+            }))
+            .collect::<Vec<_>>());
+    }
     if !boundary && little_to_explore(case) {
         v["little_to_explore"] = json!(true);
     }
@@ -1977,6 +2001,17 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
             host.out_line(
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
+        }
+        if (cfg.verbose || incomplete_reason(case).is_some()) && !case.collection_sizes.is_empty() {
+            let fields = case
+                .collection_sizes
+                .iter()
+                .take(5)
+                .map(|c| format!("{}.{} {}..{}", c.machine, c.field, c.min, c.max))
+                .collect::<Vec<_>>()
+                .join(", ");
+            host.out_line(&format!("      Sampled collection sizes (elements): {fields}"));
+            host.out_line("      note: ranges combine sampled states and instances; they do not prove growth or identify the cause of search size (--json lists fields and locations)");
         }
         let branching = case
             .branching

@@ -1107,7 +1107,22 @@ impl<'p> Runtime<'p> {
         r
     }
 
+    /// Collection-size evidence does not enter the state hash or scheduling choices.
+    pub(crate) fn record_collection_sizes(&mut self) {
+        if let Some(b) = &mut self.branching {
+            for m in &self.machines {
+                b.observe_fields(self.prog, m.decl, &m.fields);
+            }
+            for m in &self.monitors {
+                b.observe_fields(self.prog, m.decl, &m.fields);
+            }
+        }
+    }
+
     fn schedule_from(&mut self, infos: &mut [OpInfo]) -> Result<(), Stop> {
+        if self.branching.as_mut().is_some_and(|b| b.sample_sizes()) {
+            self.record_collection_sizes();
+        }
         if self.time.as_ref().is_some_and(|t| t.opts.timed) {
             self.filter_timed(infos);
         }

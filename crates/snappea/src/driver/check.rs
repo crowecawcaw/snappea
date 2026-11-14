@@ -802,6 +802,8 @@ pub struct CaseOutcome {
     /// Scheduling points with a choice per schedule, and the machines that branch most
     /// (see [`crate::checker::branching`]).
     pub branching: Option<(f64, Vec<crate::checker::branching::MachineBranching>)>,
+    /// Sampled top-level collection lengths, not a memory or growth proof.
+    pub collection_sizes: Vec<crate::checker::branching::CollectionSize>,
     /// Seconds the test case took.
     pub elapsed: f64,
     /// The `.schedule` file written for the bug (as `cfg.output_directory` names it).
@@ -991,6 +993,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         auto_handoffs: res.exhaustive.as_ref().map(|x| x.auto_handoffs.clone()).unwrap_or_default(),
         time_tracked: res.time_tracked,
         branching: res.branching.as_ref().map(|b| (b.points_per_schedule(), b.machines(prog))),
+        collection_sizes: res.branching.as_ref().map(|b| b.collections(prog)).unwrap_or_default(),
         elapsed: process_elapsed,
         schedule_file,
         code_coverage,
