@@ -100,11 +100,14 @@ machine Network {
 
 ## Mutation testing and faults
 
-- Removing an `if` on a bare `$` or `choose()` with no `else` is not run: the checker
-  already explores the run where the branch is skipped.
-- Emptying the handler of an event that every test case sends only under `$` (a crash
-  injected with `if ($) { send s, eCrash; }`) is reported as likely equivalent: a
-  handler that does nothing is the history where the fault never happened.
+- Removing an `if` on a bare `$` or `choose()` with an empty branch, or the only
+  statement of its other branch, is not run: the checker already explores the run
+  where the branch is skipped.
+- Emptying the handler of an event that every test case sends only as the whole branch
+  of `if ($)` (a crash injected with `if ($) { send s, eCrash; }`), and no spec observes,
+  is reported as likely equivalent: a handler that does nothing is the history where the
+  fault never happened. The report gives the suppression line to add if you agree. An
+  event sent in both branches of a choice is always delivered, so it does not qualify.
 - A surviving mutant under a `$` condition in a machine that stands in for the
   environment means the machine needs `// snappea: driver`.
 - Best-effort operations (cancelling a timer, warming a cache, sending a hint) are

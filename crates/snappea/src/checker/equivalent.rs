@@ -1,8 +1,8 @@
 //! Mutants no test case can detect, found from the code alone (see
 //! [`crate::checker::mutation`]):
 //!
-//! - removing an `if` without `else` whose condition is a nondeterministic choice (`$`,
-//!   `choose()`): the mutant does what the original does when the choice is `false`,
+//! - removing an `if` with an empty branch whose condition is a nondeterministic choice
+//!   (`$`, `choose()`): the mutant does what the original does when the choice skips it,
 //!   which the checker explores anyway (fault injection such as `if ($) { return; }`);
 //! - swapping `>` and `>=` (or `<` and `<=`) in a guard that only assigns one operand to
 //!   the other (`if (a > b) { b = a; }`): at equality the branch assigns the value
@@ -11,7 +11,10 @@
 //!   values are only copied and compared with `==` and `!=` (or with 0), every value is
 //!   still new.
 //!
-//! [`FaultModel`] finds a fourth kind, which still runs and is only judged when no test
+//! Removing the only statement of such an `if`'s branch is the same program as removing
+//! the whole `if` (see [`sole_choice_statements`]).
+//!
+//! [`FaultModel`] finds another kind, which still runs and is only judged when no test
 //! case detects it: emptying the handler of an event every test case sends only
 //! optionally (a crash injected with `if ($) { send server, eCrash; }`).
 
@@ -21,11 +24,48 @@ use crate::sema::{BinOp, Block, EventId, Expr, ExprKind, FunId, HandlerAction, P
 use crate::sema::{TestCase, UnOp, VarId, VarRole};
 use crate::syntax::Span;
 
-/// Why removing the `if` statement `s` cannot be detected, if it cannot.
+/// Why removing the `if` statement `s` cannot be detected, if it cannot: its condition
+/// is a bare choice and one of its branches is empty, so the original already runs as if
+/// it were not there.
 pub fn removed_choice_branch(s: &Stmt) -> Option<&'static str> {
-    let StmtKind::If { cond, else_branch, .. } = &s.kind else { return None };
-    (bare_choice(cond) && empty(else_branch))
+    let StmtKind::If { cond, then_branch, else_branch } = &s.kind else { return None };
+    (bare_choice(cond) && (empty(else_branch) || empty(then_branch)))
         .then_some("the condition is a nondeterministic choice, so the original already runs without this branch")
+}
+
+/// Why removing a statement in `sole` cannot be detected (see [`sole_choice_statements`]).
+pub const SOLE_CHOICE_STATEMENT: &str =
+    "it is the only statement of a branch on a nondeterministic choice whose other branch is empty, so the original already runs without it";
+
+/// The statements of `body` that are the only statement of one branch of an `if` on a
+/// bare choice whose other branch is empty: removing one is the same program as
+/// removing the whole `if` (see [`removed_choice_branch`]).
+pub fn sole_choice_statements(body: &Block) -> FxHashSet<Span> {
+    let mut out = FxHashSet::default();
+    crate::checker::checked::visit_stmts(body, &mut |s| {
+        if let Some(one) = sole_choice_branch(s) {
+            out.insert(one.span);
+        }
+    });
+    out
+}
+
+/// For `if ($) { s; }` (or `if ($) {} else { s; }`): `s`, the only statement of the
+/// branch that does something.
+fn sole_choice_branch(s: &Stmt) -> Option<&Stmt> {
+    let StmtKind::If { cond, then_branch, else_branch } = &s.kind else { return None };
+    if !bare_choice(cond) {
+        return None;
+    }
+    let branch = match (empty(then_branch), empty(else_branch)) {
+        (false, true) => then_branch,
+        (true, false) => else_branch,
+        _ => return None,
+    };
+    match only(branch)[..] {
+        [one] => Some(one),
+        _ => None,
+    }
 }
 
 /// `$` or `choose()`, possibly negated: a choice the checker takes both ways, with no
@@ -383,8 +423,10 @@ impl Carriers {
 /// event arrives look like the original's runs where it was never sent.
 ///
 /// An event is optional in a test case when every send or raise of it in the test
-/// case's machines (and in global functions) is in a branch of an `if` on `$` or
-/// `choose()` that does nothing but send. The mutants judged this way empty a `do`
+/// case's machines (and in global functions) is the only statement of one branch of an
+/// `if` on `$` or `choose()` whose other branch is empty (`if ($) { send t, eCrash; }`),
+/// no spec observes it, and none of those machines sends an event computed at run time.
+/// The mutants judged this way empty a `do`
 /// handler of optional events only, or remove its one statement, or empty a function
 /// that is the one statement of such handlers; the function must run nowhere else (not
 /// as an entry, exit or `goto ... with` function, a `receive` case, or another call).
@@ -405,27 +447,28 @@ impl FaultModel {
         // sends of each event, as (owner machine, optional)
         let mut sends: FxHashMap<EventId, Vec<(Option<crate::sema::MachineId>, bool)>> = FxHashMap::default();
         let mut callers: FxHashMap<FunId, (Vec<FunId>, bool)> = FxHashMap::default();
+        // owners of sends and raises of an event computed at run time
+        let mut dynamic: Vec<Option<crate::sema::MachineId>> = Vec::new();
         for (i, f) in prog.funs.iter().enumerate() {
             let Some(body) = &f.body else { continue };
             let owner = f.owner;
+            // a send that is the whole of one branch of `if ($)` whose other branch is
+            // empty: the run that skips it is the run without the event. A send next to
+            // other statements, or in both branches, is not optional.
             let mut optional_sends: FxHashSet<Span> = FxHashSet::default();
             crate::checker::checked::visit_stmts(body, &mut |s| {
-                let StmtKind::If { cond, then_branch, else_branch } = &s.kind else { return };
-                if !bare_choice(cond) {
-                    return;
-                }
-                for branch in [then_branch, else_branch] {
-                    let stmts = only(branch);
-                    if !stmts.is_empty() && stmts.iter().all(|s| matches!(s.kind, StmtKind::Send { .. })) {
-                        optional_sends.extend(stmts.iter().map(|s| s.span));
-                    }
+                if let Some(send) = sole_choice_branch(s).filter(|s| matches!(s.kind, StmtKind::Send { .. })) {
+                    optional_sends.insert(send.span);
                 }
             });
             crate::checker::checked::visit_stmts(body, &mut |s| match &s.kind {
-                StmtKind::Send { event, .. } | StmtKind::Raise { event, .. } => {
-                    let ExprKind::EventRef(e) = event.kind else { return };
-                    sends.entry(e).or_default().push((owner, optional_sends.contains(&s.span)));
-                }
+                StmtKind::Send { event, .. } | StmtKind::Raise { event, .. } => match event.kind {
+                    ExprKind::EventRef(e) => {
+                        sends.entry(e).or_default().push((owner, optional_sends.contains(&s.span)))
+                    }
+                    // an event chosen at run time may be any event
+                    _ => dynamic.push(owner),
+                },
                 _ => {}
             });
             // calls: as the one statement of the body, or anywhere else
@@ -458,8 +501,17 @@ impl FaultModel {
                 }
             }
         }
+        // a spec that observes the event sees it arrive, so the mutant's run is not the
+        // run where it was never sent
+        let observed: FxHashSet<EventId> = prog
+            .machines
+            .iter()
+            .filter(|m| m.kind != crate::sema::MachineKind::Impl)
+            .flat_map(|m| m.observes.iter().copied())
+            .collect();
         let optional = sends
             .into_iter()
+            .filter(|(e, _)| !observed.contains(e))
             .map(|(e, list)| {
                 let per_test = tests
                     .iter()
@@ -468,7 +520,8 @@ impl FaultModel {
                         let in_test = |m: Option<crate::sema::MachineId>| {
                             m.is_none_or(|m| module.interface_def.iter().any(|(_, d)| *d == m))
                         };
-                        list.iter().all(|(m, optional)| *optional || !in_test(*m))
+                        !dynamic.iter().any(|m| in_test(*m))
+                            && list.iter().all(|(m, optional)| *optional || !in_test(*m))
                     })
                     .collect();
                 (e, per_test)
@@ -496,8 +549,13 @@ impl FaultModel {
     }
 
     /// Why the undetected mutant `m` is likely equivalent, given the test cases (by index)
-    /// that ran it, if it is.
-    pub fn judge(&self, prog: &Program, m: &crate::checker::mutation::Mutant, tests: &[usize]) -> Option<String> {
+    /// that ran it, if it is; and a reason for a suppression comment that accepts it.
+    pub fn judge(
+        &self,
+        prog: &Program,
+        m: &crate::checker::mutation::Mutant,
+        tests: &[usize],
+    ) -> Option<(String, String)> {
         use crate::checker::mutation::Change;
         let fun = m.fun?;
         let body = prog.fun(fun).body.as_ref()?;
@@ -516,9 +574,12 @@ impl FaultModel {
         events.sort();
         events.dedup();
         let names: Vec<String> = events.iter().map(|e| format!("'{}'", prog.event(*e).name)).collect();
-        Some(format!(
-            "fault model: every send of {} is optional ($), so a handler that does nothing is the history where it was not sent",
-            names.join(", ")
+        let names = names.join(", ");
+        Some((
+            format!(
+                "fault model: every send of {names} is optional ($), so a handler that does nothing is the history where it was not sent"
+            ),
+            format!("ignoring {names} is the same as it never being sent"),
         ))
     }
 
@@ -741,7 +802,7 @@ mod tests {
         let tc2 = tests.iter().position(|t| t.name == "tc2").unwrap();
         let judge = |what: &str, on: &[usize]| {
             let m = ms.iter().find(|m| m.description == what).unwrap();
-            faults.judge(&prog, m, on)
+            faults.judge(&prog, m, on).map(|(why, _)| why)
         };
         let why = judge("removed `Restart();`", &[tc]).expect("an optional crash");
         assert!(why.contains("'eCrash'"), "{why}");

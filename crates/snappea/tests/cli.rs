@@ -1227,7 +1227,12 @@ fn mutants_no_test_case_can_detect_are_skipped_or_reported_as_likely_equivalent(
     assert!(m["likely_equivalent"][0]["reason"].as_str().unwrap().starts_with("fault model: every send of 'eCrash'"));
     assert_eq!(snappea(&mut h, &["check", "crash.p", "--format", "text"]), 0);
     assert!(h.stdout.contains("1 equivalent (not run)"), "{}", h.stdout);
-    assert!(h.stdout.contains("Likely equivalent, not counted as undetected:\n  crash.p:10  "), "{}", h.stdout);
+    assert!(
+        h.stdout
+            .contains("Likely equivalent, not counted as undetected (a heuristic: review each one):\n  crash.p:10  "),
+        "{}",
+        h.stdout
+    );
     // a crash in every run is not optional: the empty handler is a gap
     h.add_file("crash.p", &OPTIONAL_CRASH.replace("if ($) { send s, eCrash; }", "send s, eCrash;"));
     assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 1, "{}", h.stdout);
@@ -1622,8 +1627,8 @@ fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
         assert_eq!(suppressed.iter().any(|m| m["change"] == "removed `total = total + n;`"), nested, "{mutation}");
         assert!(suppressed.iter().all(|m| m["reasons"] == serde_json::json!(["guard scope"])));
         assert_eq!(mutation["stale_suppressions"].as_array().unwrap().len(), 1, "{mutation}");
-        assert!(h.stdout.contains("matches no mutant in the selected model"), "{}", h.stdout);
-        assert!(h.stdout.contains("blanket mutation suppressions"), "{}", h.stdout);
+        assert!(h.stdout.contains("matches no mutant of the selected test cases"), "{}", h.stdout);
+        assert!(h.stdout.contains("blanket `allow mutation` suppressions"), "{}", h.stdout);
     }
 }
 
