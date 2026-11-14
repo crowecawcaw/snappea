@@ -321,11 +321,16 @@ scripts) it is JSON: per test case its result, schedules, bug report and `replay
 command, coverage and driver limits (`driver`); then the coverage of all test cases
 with every uncovered entry, and the mutation testing results under `mutation`. The
 top-level `summary` says first what happened: `status` is `tests_failed`,
-`coverage_failed`, `mutation_failed` (with `--deny mutation`), `search_incomplete` or
-`passed`, with counts for each outcome. `summary.uncovered` lists up to five required
-sites that never ran (`uncovered_more` counts the rest). `mutants_undetected` and
-`mutants_not_tested` count mutants no test case caught, and mutants left untested when
-mutation testing reached its time limit, which does not change `status`. `skipped`
+`coverage_failed`, `mutation_failed` (undetected mutants, with `--deny mutation`),
+`mutation_incomplete` (mutants not tested, with `--deny mutation`), `search_incomplete`
+or `passed`, with counts for each outcome. `summary.uncovered` lists up to five required
+sites that never ran (`uncovered_more` counts the rest). `mutants_undetected` counts
+mutants no test case caught. `mutants_not_tested` and `mutants_under_searched` count
+mutants the time limit left without a first turn or without their full budget,
+`mutants_unreached` mutants of code no passing test case ran (counted as untested only in `check mutation`: `snappea check` reports that code as coverage gaps),
+and `mutants_failed_to_run` mutants the checker could not run; they change `status` only
+under `--deny mutation` (and in `check mutation`), where an untested mutant is not a
+pass. `skipped`
 lists checks a pass did not include (`--no-mutation`, `--warn coverage`), and `note`
 says in a sentence what a pass did not cover and what to run next.
 `--format text|json` or `--json` chooses, as does `SNAPPEA_FORMAT=text|json`, and
@@ -692,9 +697,11 @@ Some mutants no test case can detect, as the code shows. They are not run: the c
 counts them as `equivalent (not run)`, and JSON lists them under `mutation.equivalent`
 with a `reason`:
 
-- removing an `if` with no `else` whose condition is a bare `$` or `choose()` (or its
-  negation): the checker already explores the run that skips the branch, as in fault
-  injection like `if ($) { return; }`;
+- removing an `if` with an empty branch (or no `else`) whose condition is a bare `$` or
+  `choose()` (or its negation): the checker already explores the run that skips the
+  branch, as in fault injection like `if ($) { return; }`;
+- removing the only statement of such an `if`'s non-empty branch, as `send` in
+  `if ($) { send c, eResp; }`: the same program as removing the whole `if`;
 - swapping `>` and `>=` (or `<` and `<=`) in a guard whose branch only assigns one
   compared value to the other, `if (a > b) { b = a; }`: at equality it assigns the value
   already there;
@@ -704,16 +711,31 @@ with a `reason`:
   epoch. Counting down gives values as new as counting up.
 
 One more kind runs, and if no test case detects it, it is reported as likely equivalent
-instead of undetected (`Likely equivalent, not counted as undetected:` in the console,
-`mutation.likely_equivalent` in JSON), so `--deny mutation` does not fail on it. The
-rule: the mutant empties a `do` handler, removes its one statement, or empties a
-function that is only ever the one statement of such handlers; the function runs nowhere
-else; and every event the handler handles is optional in every test case that ran the
-mutant. An event is optional in a test case when every `send` or `raise` of it in the
-test case's machines is the whole branch of an `if` on a bare `$` or `choose()`, such
-as a crash injected with `if ($) { send server, eCrash; }`. A handler that does nothing
-is then the history where the fault never happened. A test case that always sends the
-event, a crash in every run, does not qualify.
+instead of undetected (`Likely equivalent, not counted as undetected` in the console,
+`mutation.likely_equivalent` in JSON), so `--deny mutation` does not fail on it. This is
+a heuristic, so it is narrow, and each one comes with the exact suppression comment that
+accepts it and where to put it (`suppression` and `accept` in JSON):
+
+```
+Likely equivalent, not counted as undetected (a heuristic: review each one):
+  crash.p:10  Server.S, on eCrash: removed the whole body (2 statements) (fault model: ...)
+      if you agree, add this line directly before line 10: `// snappea-lint: allow mutation:empty-body -- ignoring 'eCrash' is the same as it never being sent`
+```
+
+Add the line if the handler doing nothing really is the same as the event never
+arriving; if its effect matters when the event does arrive, add an assertion or spec
+that checks it instead. The rule: the mutant empties a `do` handler, removes its one
+statement, or empties a function that is only ever the one statement of such handlers;
+the function runs nowhere else; and every event the handler handles is optional in every
+test case that ran the mutant. An event is optional in a test case when every `send` of
+it in the test case's machines is the only statement of one branch of an `if` on a bare
+`$` or `choose()` whose other branch is empty, such as a crash injected with
+`if ($) { send server, eCrash; }`; no spec observes it; and no machine of the test case
+sends an event computed at run time. A handler that does nothing is then the history
+where the fault never happened. An event sent in both branches
+(`if ($) { send s, eWrite, 1; } else { send s, eWrite, 2; }`), next to other statements
+in its branch, by a `raise`, or unconditionally anywhere in the test case is always
+delivered, so its handler's mutants are reported as undetected.
 
 When an undetected mutant changes code under a `$` or `choose()` condition, the console
 adds a hint: code like that is often fault injection in a machine that stands in for the
@@ -746,29 +768,67 @@ schedules would take as the machines or events pile up.
 
 `snappea check mutation [SOURCE...] [TEST...]` runs mutation testing alone: it runs
 the test cases, then the mutants, and reports neither coverage nor scenarios. It has a
-5 minute time limit by default and exits with 1 when a mutant goes undetected (or a
-test case fails), so CI can require every mutant to be detected or suppressed. A test
-case named `lint` or `mutation` is selected with a glob (`snappea check 'mutation*'`).
+5 minute time limit by default and exits with 1 when a mutant goes undetected, when a
+mutant was not tested, or when a test case fails, so CI can require every mutant to be
+detected or suppressed. It prints `Every mutant was detected` only when every mutant
+was tested. A mutant is not tested when the time limit came before its first turn or
+stopped it short of its budget, when the checker could not run it, or when it is in
+code no passing test case ran:
+
+```
+Not tested: 4 mutants in code no passing test case ran, so no test case can detect them:
+  h.p:9  Server.S, on eReset (4 mutants)
+Mutation testing incomplete in 0.04s: 4 mutants in code no passing test case ran.
+```
+
+Add a test case that runs that code, or mark code that need not run with
+`allow coverage` and a reason; its mutants are then not counted. `--warn mutation`
+reports untested and undetected mutants without failing. A test case named `lint` or
+`mutation` is selected with a glob (`snappea check 'mutation*'`).
 
 In `snappea check`, mutation testing stops at its time limit, 30 seconds by default
 (`--mutation-timeout 2m` changes it, `--no-mutation` skips it). Because the schedules
 go round robin, a run the time limit stops has given every mutant about the same share:
-on a large model, each may get only its first turns. Undetected mutants with fewer
-schedules than the budget are marked `(only 60 schedules)` in the console and have a smaller
-`schedules` in JSON; raise the limit for a stronger result. Mutation testing is skipped
-when a test case fails: fix the bug first. Undetected mutants do not change the exit
-status unless `--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
+on a large model, each may get only its first turns. A mutant no test case has detected
+yet, but that the time limit stopped before its budget on a test case whose search was
+incomplete, has no verdict: it is listed under `Not fully tested` with its schedules
+(`(only 10 schedules)`) and in JSON under `mutation.under_searched`, not as undetected.
+The fix is a higher `--mutation-timeout`, not an assertion. When the time limit stops
+the first turns, the budget is still the one the run would have used (JSON
+`schedules_per_mutant`). In `snappea check`, code no passing test case ran is a coverage
+gap, so its mutants are listed but change nothing. A mutant the checker cannot run
+(a snappea bug) is listed with its error under `mutation.failed_to_run`; it is neither
+detected nor undetected. Mutation testing is skipped when a test case fails: fix the bug
+first. Undetected and untested mutants do not change the exit status unless
+`--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
 `search_complete`, `changes_a_value`, `unchecked_variable` and, for a coarse mutant, the undetected mutants inside it
-(`undetected_inside`); `undetected_inside_undetected` counts those.
+(`undetected_inside`); `undetected_inside_undetected` counts those. `unreached` counts
+the mutants of code no passing test case ran and `unreached_code` lists where they are;
+`complete` is false when a mutant of the code that ran has no verdict.
 
 ### Suppressing a mutant
 
 A suppression applies only to mutations directly on the following statement or
-declaration. Mutations in nested statements remain active. Opt into a nested scope
-with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a reason.
+declaration. Mutations in nested statements remain active. Before a statement, it
+covers the mutants of that statement (removing it, forcing its condition, changing its
+expressions), not those of the statements inside it. Before a function or handler, it
+covers only the mutants of the declaration itself: `empty-body`, which removes the
+whole body. Before a machine or state, it covers no function code. Opt into a nested
+scope with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a
+reason.
+
+A suppression that matches no mutant is reported in every run, with what to write
+instead:
+
+```
+warning: m.p:6: `allow mutation` matches no mutant of the selected test cases
+  help: did you mean `allow mutation-nested`? ...
+```
+
 Use `--list-suppressions` to inspect every suppressed mutant and stale directive;
-JSON includes `suppressed_details` and `stale_suppressions` alongside the count.
+JSON includes `suppressed_details` and `stale_suppressions` (each with a `help`)
+alongside the count.
 
 A suppressed `remove-statement` on `goto` also produces a
 `suppressed-state-transition` advisory when a possible source state and the target
@@ -788,15 +848,16 @@ tests; they are not emitted when mutation testing is skipped.
 
 When a change cannot or need not be detected, say so with the
 [lint suppression comment](linting.md#suppress-intentional-findings), on its own line
-before the statement, handler, function or machine:
+before the statement (or, with `mutation-nested`, the handler, function or machine
+around the code):
 
 ```p
 // snappea-lint: allow mutation:swap-operator -- units never equals stock in any test
 if (req.units <= stock && !(req.order in reservations)) {
 ```
 
-`mutation` allows every mutant in the code that follows; `mutation:<kind>` allows one
-kind (the IDs in the table above), and `mutation:<kind>,<kind>` several, as in
+`mutation` allows every kind of mutant in the code it covers; `mutation:<kind>` allows
+one kind (the IDs in the table above), and `mutation:<kind>,<kind>` several, as in
 `allow mutation:remove-statement,condition-false -- reason`.
 
 Suppression is the right answer for best-effort operations: cancelling a timer, warming

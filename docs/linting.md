@@ -472,9 +472,11 @@ Mutation suppressions do not capture nested statements. A suppression on an `if`
 covers removing the `if` and mutating its condition, but not assignments or sends in
 its branches. Use `mutation-nested` or `mutation-nested:<kind>` when the whole nested
 scope is deliberately exempt; the comma shorthand works with that prefix too.
-Prefer named kinds over a blanket suppression. `snappea check --list-suppressions`
-(or `-v`) lists suppressed changes and their reasons, plus directives matching no
-mutant in the selected model. JSON retains the `mutation.suppressed` count and adds
+Before a function or handler, a non-nested suppression covers only `empty-body`;
+before a machine, nothing. Prefer named kinds over a blanket suppression. Mutation
+testing warns about every directive that matches no mutant of the selected test cases,
+with what to write instead (often `mutation-nested`). `snappea check
+--list-suppressions` (or `-v`) lists suppressed changes and their reasons. JSON retains the `mutation.suppressed` count and adds
 `suppressed_details` and `stale_suppressions` lists.
 A suppressed goto whose possible source and target states declare different event
 handlers produces a non-failing `suppressed-state-transition` advisory during
