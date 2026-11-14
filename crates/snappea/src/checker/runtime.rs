@@ -812,6 +812,16 @@ impl<'p> Runtime<'p> {
         });
     }
 
+    /// Identifies an unhandled-event failure by the state that had no handler; the
+    /// actor's own state is already popped when the event is found unhandled.
+    fn identify_unhandled(&mut self, actor: Actor, popped: Option<StateId>) {
+        let fresh = self.bug_identity.is_none();
+        self.identify_bug("unhandled-event", actor, popped.map(|s| self.prog.state(s).span));
+        if let (true, Some(id), Some(s)) = (fresh, self.bug_identity.as_mut(), popped) {
+            id.state = self.prog.state(s).name.clone();
+        }
+    }
+
     /// `OperationScheduler.NotifyAssertionFailure`.
     pub fn report_bug(&mut self, text: String) -> Stop {
         if self.bug.is_none() {
@@ -1964,6 +1974,7 @@ impl<'p> Runtime<'p> {
                             self.machines[m].stage = Stage::Halt;
                             continue;
                         }
+                        self.identify_unhandled(Actor::Machine(m), popped);
                         if self.config.snappea_reports {
                             let decl = self.machines[m].decl;
                             let (what, at, help) =
@@ -2942,6 +2953,7 @@ impl<'p> Runtime<'p> {
         let mut popped: Option<StateId> = None;
         loop {
             let Some(s) = self.monitors[mon].state else {
+                self.identify_unhandled(Actor::Monitor(mon), popped);
                 if self.config.snappea_reports {
                     let decl = self.monitors[mon].decl;
                     let name = self.prog.machine(decl).name.clone();
