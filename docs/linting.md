@@ -420,6 +420,12 @@ Prefer named kinds over a blanket suppression. `snappea check --list-suppression
 (or `-v`) lists suppressed changes and their reasons, plus directives matching no
 mutant in the selected model. JSON retains the `mutation.suppressed` count and adds
 `suppressed_details` and `stale_suppressions` lists.
+A suppressed goto whose possible source and target states declare different event
+handlers produces a non-failing `suppressed-state-transition` advisory during
+mutation checking. It gives an event to exercise when reviewing the suppression;
+it does not establish that the handlers differ semantically. See the mutation
+suppression section of [checking models](checking-models.md) for JSON fields and
+analysis limits.
 
 `allow coverage` accepts deliberate missing statement, handler, or branch coverage in
 `snappea check`. Coverage suppressions require a nonempty reason after `--`:

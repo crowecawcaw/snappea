@@ -1719,3 +1719,34 @@ fn auto_completes_small_collection_models_alone_and_batched_across_seeds() {
     assert!(h.stdout.contains("Sampled collection sizes (elements): Main.history"), "{}", h.stdout);
     assert!(h.stdout.contains("do not prove growth"));
 }
+
+#[test]
+fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
+    let mut h = host();
+    h.add_file(
+        "transition.p",
+        r#"
+        event eTimeout;
+        machine Main { start state S { entry { new Node(); } } }
+        // snappea-lint: allow mutation-nested -- intentional suppression fixture
+        machine Node {
+            start state Leader { entry { Leave(); } on eTimeout do Timeout; }
+            state Follower { ignore eTimeout; }
+            fun Leave() { goto Follower; }
+            fun Timeout() { print "timeout"; }
+        }
+        test tcMain [main=Main]: { Main, Node };
+    "#,
+    );
+    let args = ["check", "mutation", "transition.p", "--warn", "lint", "--deny", "mutation"];
+    assert_eq!(snappea(&mut h, &[&args[..], &["--json"]].concat()), 0, "{}{}", h.stdout, h.stderr);
+    let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let advisory = &json["mutation"]["suppression_advisories"][0];
+    assert_eq!(advisory["event"], "eTimeout");
+    assert_eq!(advisory["source_state"], "Node.Leader");
+    assert_eq!(json["warnings"]["mutation_suppressions"], 1);
+    assert_eq!(snappea(&mut h, &[&args[..], &["--format", "text"]].concat()), 0, "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("warning[suppressed-state-transition]"), "{}", h.stdout);
+    assert!(h.stdout.contains("eTimeout: call Timeout versus ignore"), "{}", h.stdout);
+    assert!(h.stdout.contains("1 mutation suppression advisory"), "{}", h.stdout);
+}

@@ -175,6 +175,8 @@ pub struct Report {
     pub suppression_details: Vec<Value>,
     pub stale_suppressions: Vec<Value>,
     pub blanket_suppressions: usize,
+    /// Different event handling behind suppressed goto mutations; advisory only.
+    pub suppression_advisories: Vec<Value>,
     pub seconds: f64,
     pub time_limit_reached: bool,
     /// Schedules each undetected mutant could get on each test case (see [`budget`]).
@@ -302,6 +304,22 @@ impl Report {
             skipped,
             self.seconds
         )];
+        for advisory in self.suppression_advisories.iter().take(shown) {
+            out.push(format!(
+                "warning[{}]: {}:{}: {}",
+                advisory["rule"].as_str().unwrap_or_default(),
+                advisory["file"].as_str().unwrap_or_default(),
+                advisory["line"],
+                advisory["message"].as_str().unwrap_or_default()
+            ));
+            out.push(format!("  hint: {}", advisory["help"].as_str().unwrap_or_default()));
+        }
+        if self.suppression_advisories.len() > shown {
+            out.push(format!(
+                "  ... {} more suppression advisories (--json lists all)",
+                self.suppression_advisories.len() - shown
+            ));
+        }
         let bound = self.step_bound();
         if bound > 0 {
             out.push(format!(
@@ -499,6 +517,7 @@ impl Report {
             "suppressed": self.suppressed(),
             "suppressed_details": self.suppression_details,
             "stale_suppressions": self.stale_suppressions,
+            "suppression_advisories": self.suppression_advisories,
             "undetected_inside_undetected": self.subsumed(),
             "not_tested": self.not_tested(),
             "time_limit_reached": self.time_limit_reached,
@@ -715,7 +734,9 @@ pub fn run(
         let reasons: Vec<_> = suppressed.iter().filter(|s| s.matches(m.span, m.change.name())).map(|s| s.reason.as_str()).collect();
         json!({"file": m.file, "line": m.line, "mutation": m.change.name(), "change": m.description, "reasons": reasons})
     }).collect();
+    let suppression_advisories = super::mutation_suppression::advisories(prog, &mutants, &verdicts);
     let report = Report {
+        suppression_advisories,
         suppression_details,
         stale_suppressions,
         blanket_suppressions: suppressed.iter().filter(|s| s.kind == "mutation").count(),

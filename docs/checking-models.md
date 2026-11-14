@@ -726,6 +726,21 @@ with `allow mutation-nested:<kind>` (or blanket `mutation-nested`), and give a r
 Use `--list-suppressions` to inspect every suppressed mutant and stale directive;
 JSON includes `suppressed_details` and `stale_suppressions` alongside the count.
 
+A suppressed `remove-statement` on `goto` also produces a
+`suppressed-state-transition` advisory when a possible source state and the target
+state declare different handlers. It names an event, both states, and their handling
+policies or functions. The analysis follows helper calls and receive cases; these
+are possible source states, not a claim that the current tests exercised each one.
+Exercise the named event before and after the transition when reviewing the
+suppression. Different handlers do not prove different behavior, and no advisory
+does not prove equivalence (entry actions and field values can also matter).
+
+These advisories appear in ordinary mutation text output and JSON
+`mutation.suppression_advisories`, with a count in `warnings.mutation_suppressions`.
+They never fail a check, including with `--deny mutation`, and do not change which
+mutants are suppressed. They describe suppressed goto mutants reached by passing
+tests; they are not emitted when mutation testing is skipped.
+
 
 When a change cannot or need not be detected, say so with the
 [lint suppression comment](linting.md#suppress-intentional-findings), on its own line
