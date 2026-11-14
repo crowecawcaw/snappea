@@ -42,25 +42,17 @@ event AppendEntriesReply: AppendEntriesReplyData;
 // Resetting a server (to model crashes)
 event Reset;
 
+// A candidate's reminder to itself to ask its next peer for a vote
+event AskForVote;
+
 // events to notify the server role change to the view server
 event ViewChangedFollower: Server;
 event ViewChangedLeader: Server;
 event ViewChangedCandidate: Server;
 
 // server logs
-type ServerLog = (term: TermId, key: KeyT, value: ValueT, client: Client, transactionId: TransactionId);
-
-fun TermLT(t1: TermId, t2: TermId): bool {
-  return t1 < t2;
-}
-
-fun IsSuccess(s: bool): bool {
-  return s;
-}
-
-fun IsFailure(s: bool): bool {
-  return !s;
-}
+// Puts and gets both go through the log, so a get is answered only once it commits.
+type ServerLog = (term: TermId, op: Op, key: KeyT, value: ValueT, client: Client, transactionId: TransactionId);
 
 // A node in the Raft cluster
 machine Server {
@@ -85,12 +77,12 @@ machine Server {
   // States for voting
   var votedFor: Server;
   var votesReceived: set[Server];
+  // peers a candidate has not yet asked for a vote this term
+  var unasked: set[Server];
 
   // all servers
   var commitIndex: int;
   var lastApplied: int;
-
-  var logNotifyTimestamp: int;
 
   // var heartbeatTimer: Timer;
   // var clientRequestQueue: seq[ClientRequestData];
@@ -99,34 +91,23 @@ machine Server {
   var clientGetRequestQueue: seq[(sequenceNumber: int, payload: ClientGetRequestData)];
   var clientPutRequestCache: map[Client, map[int, RaftPutResponseData]];
   var clientGetRequestCache: map[Client, map[int, RaftGetResponseData]];
+  // Part of the state machine: each client's last applied transaction and its result.
+  // A retried request can reach the log twice (a new leader appends it again in its own
+  // term); the second copy must not run again (Raft paper, section 8).
+  var sessions: map[Client, (transactionId: TransactionId, result: Result)];
 
   start state Init {
     entry {
     }
 
+    // every other variable starts at its default: term 0, empty log, no leader, no vote
     on ServerInit do (setup: (myId: ServerId, cluster: set[Server], viewServer: View)) {
-      kvStore = newStore();
       assert this in setup.cluster, "Server should be in the cluster";
       clusterSize = sizeof(setup.cluster);
       peers = setup.cluster;
-      nextIndex = default(map[Server, int]);
-      matchIndex = default(map[Server, int]);
-      votesReceived = default(set[Server]);
-      logs = default(seq[ServerLog]);
-      // clientRequestQueue = default(seq[ClientRequestData]);
-      clientPutRequestQueue = default(seq[(sequenceNumber: int, payload: ClientPutRequestData)]);
-      clientGetRequestQueue = default(seq[(sequenceNumber: int, payload: ClientGetRequestData)]);
-      requestSequenceNumber = 0;
-      clientPutRequestCache = default(map[Client, map[int, RaftPutResponseData]]);
-      clientGetRequestCache = default(map[Client, map[int, RaftGetResponseData]]);
       viewServer = setup.viewServer;
-
-      currentTerm = 0;
-      logNotifyTimestamp = 0;
-      votedFor = default(Server);
       commitIndex = -1;
       lastApplied = -1;
-      leader = default(Server);
       goto Follower;
     }
 
@@ -137,7 +118,6 @@ machine Server {
     entry {
       // reset the leader upon being a follower
       leader = default(Server);
-      printLog("Become follower");
       send viewServer, ViewChangedFollower, this;
     }
 
@@ -164,11 +144,6 @@ machine Server {
 
     on AppendEntries do (payload: AppendEntriesData) {
       if (payload.term >= currentTerm) {
-        printLog(format("heartbeat updated term from {0} to {1}", currentTerm, payload.term));
-        if (leader != default(Server) && payload.leader != leader) {
-          votedFor = default(Server);
-        }
-
         leader = payload.leader;
         updateTermAndVote(payload.term);
       }
@@ -181,7 +156,6 @@ machine Server {
     }
 
     on ElectionTimeout do {
-      printLog("Election timeout");
       goto Candidate;
     }
 
@@ -189,14 +163,12 @@ machine Server {
       notifyViewLog();
     }
 
-    ignore RequestVoteReply, AppendEntriesReply;
+    // a reminder left over from an earlier candidacy
+    ignore RequestVoteReply, AppendEntriesReply, AskForVote;
   }
 
   state Candidate {
     entry {
-      var peer: Server;
-      var lastTerm: int;
-      printLog("Become candidate");
       send viewServer, ViewChangedCandidate, this;
       currentTerm = currentTerm + 1;
       votedFor = default(Server);
@@ -207,12 +179,23 @@ machine Server {
         goto Leader;
       }
       else {
-        printLog(format("RequestVote with term {0}", currentTerm));
-        broadcastRequest(this, peers, RequestVote,
-        (term=currentTerm,
-        candidate=this,
-        lastLogIndex=lastLogIndex(logs),
-        lastLogTerm=lastLogTerm(logs)));
+        // Ask the peers one at a time, in an order the checker picks. Requests to
+        // different peers travel separately, so one peer can answer, or hear of a newer
+        // term, before another is asked.
+        unasked = peers;
+        unasked -= (this);
+        send this, AskForVote;
+      }
+    }
+
+    // the reminder after the last peer, or one left from an earlier term, finds no one
+    on AskForVote do {
+      var peer: Server;
+      if (sizeof(unasked) > 0) {
+        peer = choose(unasked);
+        unasked -= (peer);
+        send peer, RequestVote, (term=currentTerm, candidate=this, lastLogIndex=lastLogIndex(logs), lastLogTerm=lastLogTerm(logs));
+        send this, AskForVote;
       }
     }
 
@@ -232,20 +215,17 @@ machine Server {
     on AppendEntries do (payload: AppendEntriesData) {
       if (payload.term >= currentTerm) {
         // if there is a leader, convert to follower
-        printLog(format("Received heartbeat from a leader with higher term {0}", payload.term));
         updateTermAndVote(payload.term);
         handleAppendEntries(payload);
         goto Follower;
       }
       else {
-        printLog(format("Received smaller term heartbeat from {0}", payload.leader));
         handleAppendEntries(payload);
       }
     }
 
     on AppendEntriesReply do (payload: AppendEntriesReplyData) {
       if (payload.term > currentTerm) {
-        printLog(format("Received AppendEntriesReply with higher term {0}", payload.term));
         updateTermAndVote(payload.term);
         goto Follower;
       }
@@ -260,16 +240,13 @@ machine Server {
       else if (payload.voteGranted && payload.term == currentTerm) {
         // if the vote is granted for me in this term, count it.
         votesReceived += (payload.sender);
-        printLog(format("vote granted by {0}; now vote={1}", payload.sender, votesReceived));
         if (sizeof(votesReceived) > clusterSize / 2) {
           // if majority votes are received, become a leader
-          printLog(format("majority votes: {0}", votesReceived));
           goto Leader;
         }
       }
-      else {
-        printLog(format("Received rejection/invalid reply: {0}", payload));
-      }
+
+      // otherwise a rejection or a reply from an earlier term: nothing to count
     }
 
     on RequestVote do (payload: RequestVoteData)  {
@@ -308,7 +285,6 @@ machine Server {
       announce BecomeLeader, (term=currentTerm, leader=this, log=logs, commitIndex=commitIndex);
       // first exhaust the client request queu on its own
       drainRequestQueuesTo(this);
-      printLog(format("Become leader with Log={0}, commiteIndex={1}, lastApplied={2}", logs, commitIndex, lastApplied));
       broadcastAppendEntries();
     }
 
@@ -318,19 +294,16 @@ machine Server {
 
     on RequestVote do (payload: RequestVoteData) {
       if (currentTerm < payload.term) {
-        printLog(format("Saw higher term as a leader: currentTerm={0}, payload.term={1}", currentTerm, payload.term));
         handleRequestVote(payload);
         becomeFollower(payload.term);
       }
       else {
-        printLog(format("Reject proposal from {0} with term {1}", payload.candidate, payload.term));
         send payload.candidate, RequestVoteReply, (sender=this, term=currentTerm, voteGranted=false);
       }
     }
 
     on RequestVoteReply do (payload: RequestVoteReplyData) {
       if (payload.term > currentTerm) {
-        printLog(format("received RequestVoteReply with higher term {0}", payload.term));
         updateTermAndVote(payload.term);
         goto Follower;
       }
@@ -343,31 +316,27 @@ machine Server {
     }
 
     on AppendEntries do (payload: AppendEntriesData) {
+      // a newer leader won without asking this server for its vote: step down
+      // snappea-lint: allow mutation:swap-operator -- `>=` is equivalent: an equal term would mean two leaders in one term, which SafetyOneLeader rules out
       if (payload.term > currentTerm) {
-        // if the leader receives an AppendEntries from another leader with a higher term
-        // step down to a follower
-        printLog(format("received AppendEntries with higher term {0}; handle then step down", payload.term));
         updateTermAndVote(payload.term);
         handleAppendEntries(payload);
         becomeFollower(payload.term);
       }
-      else if (payload.term < currentTerm) {
-        send payload.leader, AppendEntriesReply, (sender=this, term=currentTerm, success=false, matchedIndex=-1);
-        leaderCommits();
-      }
+
+      // payload.term < currentTerm: two leaders never share a term (SafetyOneLeader)
+      send payload.leader, AppendEntriesReply, (sender=this, term=currentTerm, success=false, matchedIndex=-1);
+      leaderCommits();
     }
 
     on AppendEntriesReply do (payload: AppendEntriesReplyData) {
-      printLog(format("Leader({0}, {1}) received AppendEntriesReply from {2}: {3}", this, currentTerm, payload.sender, payload));
       if (payload.term < currentTerm) {
-        printLog("Ignore AppendEntriesReply with outdated term");
         return;
       }
 
       if (payload.term > currentTerm) {
         // if the leader receives a reply from another leader with a higher term
         // step down to a follower
-        printLog(format("received reply from another leader with term {0} > currentTerm {1}", payload.term, currentTerm));
         updateTermAndVote(payload.term);
         goto Follower;
       }
@@ -375,7 +344,6 @@ machine Server {
       if (payload.success) {
         // if the heartbeat is accepted,
         // update the nextIndex and matchIndex for the corresponding node.
-        printLog(format("entries accepted by {0}; matchIndex={1}", payload.sender, payload.matchedIndex));
         // Note that the leader can receive delayed message, so here we need to keep the
         // larger values of nextIndex and matchIndex.
         nextIndex[payload.sender] = Max(nextIndex[payload.sender], payload.matchedIndex + 1);
@@ -388,86 +356,48 @@ machine Server {
           // this can happen when me and the other node simultaneously become a candidate
           // the other node received my heartbeat from the previous term and sent me a rejection
           // but currently, I am already at the newer term, so I can safely ignore this rejection
-          printLog(format("outdated rejection with term={0}, matchedIndex={1}", payload.term, payload.matchedIndex));
           return;
         }
 
         // rejected because of log mismatch
         // now, payload.matchedIndex is the index of the (potentially) first mismatched term
-        printLog(format("re-sync with {0} at index {1}", payload.sender, payload.matchedIndex));
         // still, the leader can receive outdated message. To be conservative, it is safe to synchronize from
         // a smaller index.
         nextIndex[payload.sender] = Min(payload.matchedIndex, nextIndex[payload.sender]);
       }
     }
 
+    // A get goes through the log like a put. Answering from the local store would let a
+    // new leader that has not yet applied every committed put return an older value.
     on ClientGetRequest do (payload: ClientGetRequestData) {
-      var executionResult: ExecutionResult;
       if (checkClientRequestCache(payload.client, payload.transactionId)) {
         return;
       }
 
-      executionResult = executeGet(kvStore, payload.key);
-      send payload.client, RaftGetResponse, (sender=this, client=payload.client, success=executionResult.result.success, transactionId=payload.transactionId, value=executionResult.result.value);
-      if (!(payload.client in keys(clientGetRequestCache))) {
-        clientGetRequestCache[payload.client] = default(map[int, RaftGetResponseData]);
-      }
-
-      clientGetRequestCache[payload.client][payload.transactionId] = (sender=this, client=payload.client, success=executionResult.result.success, transactionId=payload.transactionId, value=executionResult.result.value);
+      appendAndReplicate((term=currentTerm, op=GET, key=payload.key, value=-1, client=payload.client, transactionId=payload.transactionId));
     }
 
     on ClientPutRequest do (payload: ClientPutRequestData) {
-      var newEntry: ServerLog;
-      var target: Server;
-      var entries: seq[ServerLog];
-      var i: int;
-      // print format("Received client request {0}", payload);
       if (checkClientRequestCache(payload.client, payload.transactionId)) {
         return;
       }
 
-      newEntry = (term=currentTerm, key=payload.key, value=payload.value, client=payload.client, transactionId=payload.transactionId);
-      if (!(newEntry in logs)) {
-        logs += (sizeof(logs), newEntry);
-      }
-
-      printLog(format("Current leader logs={0}", logs));
-      printLog(format("nextIndex={0}, matchIndex={1}", nextIndex, matchIndex));
-      // use info of nextIndex and matchIndex to broadcast to peers
-      foreach (target in peers) {
-        if (target != this && nextIndex[target] < sizeof(logs)) {
-          entries = default(seq[ServerLog]);
-          i = nextIndex[target];
-          while (i < sizeof(logs)) {
-            entries += (i - nextIndex[target], logs[i]);
-            i = i + 1;
-          }
-
-          send target, AppendEntries, (term=currentTerm,
-          leader=this,
-          prevLogIndex=nextIndex[target] - 1,
-          prevLogTerm=getLogTerm(logs, nextIndex[target] - 1),
-          entries=entries,
-          leaderCommit=commitIndex);
-        }
-      }
-
-      leaderCommits();
+      appendAndReplicate((term=currentTerm, op=PUT, key=payload.key, value=payload.value, client=payload.client, transactionId=payload.transactionId));
     }
 
     on Reset do {
       reset();
     }
 
-    ignore ElectionTimeout;
+    // a reminder left over from the candidacy that won
+    ignore ElectionTimeout, AskForVote;
   }
 
   state FinishedServing {
     entry {
-      printLog("Service ended. Shutdown.");
     }
 
-    ignore Shutdown, RequestVote, RequestVoteReply, AppendEntries, AppendEntriesReply, ClientPutRequest, ClientGetRequest, HeartbeatTimeout, ElectionTimeout;
+    ignore Shutdown, RequestVote, RequestVoteReply, AppendEntries, AppendEntriesReply, ClientPutRequest, ClientGetRequest, HeartbeatTimeout, ElectionTimeout, AskForVote;
   }
 
   fun drainRequestQueuesTo(target: Server) {
@@ -481,6 +411,7 @@ machine Server {
         clientPutRequestQueue -= (0);
       }
       else {
+        // snappea-lint: allow mutation:swap-operator -- `<=` is equivalent: each queued request gets its own sequence number, so they are never equal
         if (clientPutRequestQueue[0].sequenceNumber < clientGetRequestQueue[0].sequenceNumber) {
           send target, ClientPutRequest, forwardedPutRequest(clientPutRequestQueue[0].payload);
           clientPutRequestQueue -= (0);
@@ -534,7 +465,6 @@ machine Server {
     leader = default(Server);
     if (reply.term < currentTerm) {
       // reject a vote with a smaller term
-      printLog(format("Reject vote with term {0} < currentTerm {1}", reply.term, currentTerm));
       send reply.candidate, RequestVoteReply, (sender=this, term=currentTerm, voteGranted=false);
     }
     else {
@@ -543,12 +473,10 @@ machine Server {
       // and the log is up-to-date, grant the vote. Reject otherwise.
       if ((votedFor == default(Server) || votedFor == reply.candidate)
       && logUpToDateCheck(reply.lastLogIndex, reply.lastLogTerm)) {
-        printLog(format("Grant vote to {0} (prev. votedFor={1})", reply.candidate, votedFor));
         votedFor = reply.candidate;
         send reply.candidate, RequestVoteReply, (sender=this, term=currentTerm, voteGranted=true);
       }
       else {
-        printLog(format("Reject vote with votedFor={0} and logUpToDate={1}", votedFor, logUpToDateCheck(reply.lastLogIndex, reply.lastLogTerm)));
         send reply.candidate, RequestVoteReply, (sender=this, term=currentTerm, voteGranted=false);
       }
     }
@@ -562,24 +490,20 @@ machine Server {
     var mismatchedTerm: int;
     var i: int;
     var j: int;
-    printLog(format("Received AppendEntries({0}) from Leader({1}) with {2}; currentTerm={3}, log={4}", response.entries, response.leader, response, currentTerm, logs));
     if (response.term < currentTerm) {
       // if the heartbeat is from a leader with an outdated term, reject the heartbeat
-      printLog(format("Reject AppendEntries with term {0} < currentTerm {1}", response.term, currentTerm));
       send response.leader, AppendEntriesReply, (sender=this, term=currentTerm,
       success=false, matchedIndex=-1);
     }
     else if (sizeof(logs) <= response.prevLogIndex) {
       // If the log is very outdated, re-sync from the end of my log
       leader = response.leader;
-      printLog(format("prevLogIndex={0} is out of range of sizeof(log)={1}", response.prevLogIndex, sizeof(logs)));
       send response.leader, AppendEntriesReply, (sender=this, term=currentTerm, success=false, matchedIndex=sizeof(logs));
     }
     else if (response.prevLogIndex >= 0 && logs[response.prevLogIndex].term != response.prevLogTerm) {
       // Log consistency check failed here;
       // search for the first occurence of the mismatched
       // term and notify the leader.
-      printLog(format("Log inconsistency at index {0}: log[i].term={1} v.s. prevTerm={2}", response.prevLogIndex, logs[response.prevLogIndex].term, response.prevLogTerm));
       leader = response.leader;
       ptr = response.prevLogIndex;
       mismatchedTerm = logs[ptr].term;
@@ -589,17 +513,13 @@ machine Server {
         ptr = ptr - 1;
       }
 
-      printLog(format("requesting sync. log terms={0}, mismatchedTerm={1}, prevLogIndex={2}, ptr={3}", termsOfLog(), mismatchedTerm, response.prevLogIndex, ptr));
       send response.leader, AppendEntriesReply, (sender=this, term=currentTerm,
       success=false, matchedIndex=ptr);
     }
     else {
       // Check if any entries disagree; delete all entries after it.
-      printLog(format("Sync log with log={0} at index {1}. Entries={2}", logs, response.prevLogIndex + 1, response.entries));
       leader = response.leader;
       i = response.prevLogIndex + 1;
-      j = 0;
-      printLog(format("Before sync: logs={0}", logs));
       // find the first mismatched entry
       while (i < sizeof(logs) && j < sizeof(response.entries)) {
         if (logs[i].term != response.entries[j].term) {
@@ -615,7 +535,6 @@ machine Server {
         logs -= (lastLogIndex(logs));
       }
 
-      printLog(format("Inconsistency removal: logs={0}", logs));
       // Append entries from the leader
       j = 0;
       while (j < sizeof(response.entries)) {
@@ -629,14 +548,8 @@ machine Server {
         j = j + 1;
       }
 
-      printLog(format("After sync: logs={0}, leaderCommit={1}, commitIndex={2}", logs, response.leaderCommit, commitIndex));
       if (response.leaderCommit > commitIndex) {
-        if (response.leaderCommit > lastLogIndex(logs)) {
-          commitIndex = lastLogIndex(logs);
-        }
-        else {
-          commitIndex = response.leaderCommit;
-        }
+        commitIndex = Min(response.leaderCommit, lastLogIndex(logs));
       }
 
       executeCommands();
@@ -658,13 +571,7 @@ machine Server {
       if (this != target) {
         entries = default(seq[ServerLog]);
         prevIndex = nextIndex[target] - 1;
-        // get prevIndex and prevIndexTerm
-        if (prevIndex >= 0 && prevIndex < sizeof(logs)) {
-          prevTerm = logs[prevIndex].term;
-        }
-        else {
-          prevTerm = 0;
-        }
+        prevTerm = getLogTerm(logs, prevIndex);
 
         if (nextIndex[target] < sizeof(logs)) {
           // if the current lead has something to send (nextIndex within range of logs)
@@ -677,7 +584,6 @@ machine Server {
             j = j + 1;
           }
 
-          printLog(format("Entries for {0} is {1}", target, entries));
           send target, AppendEntries, (term=currentTerm,
           leader=this,
           prevLogIndex=prevIndex,
@@ -698,9 +604,38 @@ machine Server {
     }
   }
 
+  fun appendAndReplicate(newEntry: ServerLog) {
+    var target: Server;
+    var entries: seq[ServerLog];
+    var i: int;
+    if (!(newEntry in logs)) {
+      logs += (sizeof(logs), newEntry);
+    }
+
+    // use info of nextIndex and matchIndex to broadcast to peers
+    foreach (target in peers) {
+      if (target != this && nextIndex[target] < sizeof(logs)) {
+        entries = default(seq[ServerLog]);
+        i = nextIndex[target];
+        while (i < sizeof(logs)) {
+          entries += (i - nextIndex[target], logs[i]);
+          i = i + 1;
+        }
+
+        send target, AppendEntries, (term=currentTerm,
+        leader=this,
+        prevLogIndex=nextIndex[target] - 1,
+        prevLogTerm=getLogTerm(logs, nextIndex[target] - 1),
+        entries=entries,
+        leaderCommit=commitIndex);
+      }
+    }
+
+    leaderCommits();
+  }
+
   fun leaderCommits() {
     // leader committing log entries
-    var executionResult: ExecutionResult;
     // the next commit index
     var nextCommit: int;
     // the number of match indices that are greater than or equal to nextCommit
@@ -710,7 +645,6 @@ machine Server {
     assert this == leader, "Only leader can execute the log on its own";
     // iteratively search for that index
     nextCommit = lastLogIndex(logs);
-    printLog(format("state: nextCommit={0} commitIndex={1} matchIndex={2}", nextCommit, commitIndex, matchIndex));
     // Find the largest nextCommit such that the majority of matchIndex is greater than or equal to nextCommit
     while (nextCommit > commitIndex) {
       // counting itself first
@@ -736,23 +670,57 @@ machine Server {
     }
 
     // commitIndex = nextCommit;
-    printLog(format("leader commits decision: matchIndex={0} commitIndex={1} currentTerm={2} logs={3}", matchIndex, commitIndex, currentTerm, logs));
-    // commit all the logs from lastApplied + 1 to commitIndex
+    // apply the logs from lastApplied + 1 to commitIndex and answer their clients
     while (lastApplied < commitIndex) {
       lastApplied = lastApplied + 1;
-      announce EntryApplied, (logIndex=lastApplied, term=logs[lastApplied].term, key=logs[lastApplied].key, value=logs[lastApplied].value, transactionId=logs[lastApplied].transactionId, client=logs[lastApplied].client);
-      executionResult = executePut(kvStore, logs[lastApplied].key, logs[lastApplied].value);
-      kvStore = executionResult.newState;
-      printLog(format("leader committed and processed (by {0}), log: {1}", this, logs[lastApplied]));
-      // execute the command and send the result back to the client
-      send logs[lastApplied].client, RaftPutResponse, (sender=this, client=logs[lastApplied].client,
-      transactionId=logs[lastApplied].transactionId, key=logs[lastApplied].key);
-      // update the cache
-      if (!(logs[lastApplied].client in keys(clientPutRequestCache))) {
-        clientPutRequestCache[logs[lastApplied].client] = default(map[int, RaftPutResponseData]);
+      replyToClient(logs[lastApplied], applyEntry(lastApplied));
+    }
+  }
+
+  // Apply one committed entry to the store and return its result.
+  fun applyEntry(index: LogIndex): Result {
+    var executionResult: ExecutionResult;
+    var client: Client;
+    announce EntryApplied, (logIndex=index, log=logs[index]);
+    client = logs[index].client;
+    if (client in sessions && logs[index].transactionId <= sessions[client].transactionId) {
+      // a copy of a request that already ran
+      return sessions[client].result;
+    }
+
+    if (logs[index].op == PUT) {
+      executionResult = executePut(kvStore, logs[index].key, logs[index].value);
+    }
+    else {
+      executionResult = executeGet(kvStore, logs[index].key);
+    }
+
+    kvStore = executionResult.newState;
+    sessions[client] = (transactionId=logs[index].transactionId, result=executionResult.result);
+    return executionResult.result;
+  }
+
+  // The leader answers the client of an applied entry and caches the answer for retries.
+  fun replyToClient(applied: ServerLog, result: Result) {
+    var putResponse: RaftPutResponseData;
+    var getResponse: RaftGetResponseData;
+    if (applied.op == PUT) {
+      putResponse = (sender=this, client=applied.client, transactionId=applied.transactionId, key=applied.key);
+      send applied.client, RaftPutResponse, putResponse;
+      if (!(applied.client in keys(clientPutRequestCache))) {
+        clientPutRequestCache[applied.client] = default(map[int, RaftPutResponseData]);
       }
 
-      clientPutRequestCache[logs[lastApplied].client][logs[lastApplied].transactionId] = (sender=this, client=logs[lastApplied].client, transactionId=logs[lastApplied].transactionId, key=logs[lastApplied].key);
+      clientPutRequestCache[applied.client][applied.transactionId] = putResponse;
+    }
+    else {
+      getResponse = (sender=this, client=applied.client, success=result.success, transactionId=applied.transactionId, value=result.value);
+      send applied.client, RaftGetResponse, getResponse;
+      if (!(applied.client in keys(clientGetRequestCache))) {
+        clientGetRequestCache[applied.client] = default(map[int, RaftGetResponseData]);
+      }
+
+      clientGetRequestCache[applied.client][applied.transactionId] = getResponse;
     }
   }
 
@@ -771,21 +739,11 @@ machine Server {
     return false;
   }
 
-  fun printLog(msg: string) {
-    // return;
-    // print format("{0}@{1}: {2}", this, currentTerm, msg);
-  }
-
   fun executeCommands() {
-    var executionResult: ExecutionResult;
-    printLog(format("commitIndex={0} lastApplied={1}", commitIndex, lastApplied));
-    // Execute the command from lastApplied + 1 to commitIndex
+    // a follower applies the entries from lastApplied + 1 to commitIndex; the leader answers
     while (lastApplied < commitIndex) {
       lastApplied = lastApplied + 1;
-      announce EntryApplied, (logIndex=lastApplied, term=logs[lastApplied].term, key=logs[lastApplied].key, value=logs[lastApplied].value, transactionId=logs[lastApplied].transactionId, client=logs[lastApplied].client);
-      executionResult = executePut(kvStore, logs[lastApplied].key, logs[lastApplied].value);
-      kvStore = executionResult.newState;
-      // clientRequestCache[logs[lastApplied].client][logs[lastApplied].transactionId] = (client=logs[lastApplied].client, transactionId=logs[lastApplied].transactionId, result=executionResult.result);
+      applyEntry(lastApplied);
     }
   }
 
@@ -807,8 +765,7 @@ machine Server {
   }
 
   fun notifyViewLog() {
-    logNotifyTimestamp = logNotifyTimestamp + 1;
-    send viewServer, NotifyLog, (timestamp=logNotifyTimestamp, server=this, log=logs);
+    send viewServer, NotifyLog, (server=this, log=logs);
   }
 
   fun becomeFollower(term: int) {
@@ -828,24 +785,14 @@ machine Server {
     currentTerm = term;
   }
 
-  fun termsOfLog(): seq[int] {
-    var terms: seq[int];
-    var i: int;
-    terms = default(seq[int]);
-    i = 0;
-    while (i < sizeof(logs)) {
-      terms += (sizeof(terms), logs[i].term);
-      i = i + 1;
-    }
-
-    return terms;
-  }
-
   fun reset() {
     // crash a node, reset volatile states
-    // and become a follower (just as it starts up)
+    // and become a follower (just as it starts up); the log and term persist, and the
+    // store is rebuilt by applying the log again
     commitIndex = -1;
     lastApplied = -1;
+    kvStore = newStore();
+    sessions = default(map[Client, (transactionId: TransactionId, result: Result)]);
     nextIndex = fillMap(this, nextIndex, peers, 0);
     matchIndex = fillMap(this, matchIndex, peers, -1);
     goto Follower;

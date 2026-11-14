@@ -11,7 +11,8 @@ module ServingTests = {
   OneClientFiveServersUnreliable,
   TwoClientsThreeServersReliable,
   TwoClientsThreeServersUnreliable,
-  ThreeClientsOneServerReliable
+  ThreeClientsOneServerReliable,
+  ElectionRaces
 }
 ;
 
@@ -44,5 +45,9 @@ assert SafetyOneLeader, SafetyLeaderCompleteness, SafetyStateMachine, SafetyLogM
 (union Server, Timer, Client, View, ServingTests);
 
 test twoClientsThreeServersUnreliable [main=TwoClientsThreeServersUnreliable]:
+assert SafetyOneLeader, SafetyLeaderCompleteness, SafetyStateMachine, SafetyLogMatching, LivenessClientsDone, LivenessProgress, SafetySynchronization in
+(union Server, Timer, Client, View, ServingTests);
+
+test electionRaces [main=ElectionRaces]:
 assert SafetyOneLeader, SafetyLeaderCompleteness, SafetyStateMachine, SafetyLogMatching, LivenessClientsDone, LivenessProgress, SafetySynchronization in
 (union Server, Timer, Client, View, ServingTests);

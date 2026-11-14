@@ -58,8 +58,7 @@ spec LivenessClientsDone observes ClientPutRequest, ClientGetRequest, ClientFini
     }
 
     on ClientFinishedMonitor do (c: Client) {
-      print format("Problematic: {0}", c);
-      assert false, "Received a client finished event after all clients are done.";
+      assert false, format("client {0} finished after all clients were done", c);
     }
   }
 }

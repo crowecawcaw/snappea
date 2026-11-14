@@ -6,19 +6,22 @@
 type BecomeLeaderData = (term:TermId, leader:Server, log: seq[ServerLog], commitIndex: LogIndex);
 event BecomeLeader: BecomeLeaderData;
 
-spec SafetyOneLeader observes BecomeLeader{
-  var termToLeader: map[int, Server];
+spec SafetyOneLeader observes BecomeLeader {
+  // every (term, leader) pair announced so far
+  var elected: set[(term: TermId, leader: Server)];
   start state Init {
     entry {
-      termToLeader = default(map[int, Server]);
+      elected = default(set[(term: TermId, leader: Server)]);
     }
 
-    on BecomeLeader do (payload: (term:int, leader:Server, log: seq[ServerLog], commitIndex: int)) {
-      if (payload.term in keys(termToLeader)) {
-        assert termToLeader[payload.term] == payload.leader, format("At term {0} there are multiple leaders: {1} and {2}.", payload.term, termToLeader[payload.term], payload.leader);
+    on BecomeLeader do (payload: BecomeLeaderData) {
+      var prev: (term: TermId, leader: Server);
+      foreach (prev in elected) {
+        assert prev.term != payload.term || prev.leader == payload.leader,
+        format("At term {0} there are multiple leaders: {1} and {2}.", payload.term, prev.leader, payload.leader);
       }
 
-      termToLeader += (payload.term, payload.leader);
+      elected += ((term=payload.term, leader=payload.leader));
     }
   }
 }

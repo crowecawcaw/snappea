@@ -15,14 +15,6 @@ type Result = (success: bool, value: ValueT);
 type ExecutionResult = (newState: KVStore, result: Result);
 type KVStore = map[KeyT, ValueT];
 
-fun IsPut(op: Op): bool {
-  return op == PUT;
-}
-
-fun IsGet(op: Op): bool {
-  return op == GET;
-}
-
 fun newStore(): KVStore {
   return default(KVStore);
 }
