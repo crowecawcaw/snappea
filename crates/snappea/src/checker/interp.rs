@@ -1674,12 +1674,17 @@ impl<'p> Runtime<'p> {
                 if !cond.as_bool() {
                     if self.java_semantics() {
                         // `Monitor.tryAssert`: a `PAssertionFailureException`
+                        self.identify_bug("assertion", actor, current_span(exec));
                         let text = format!("Assertion failure: {}", msg.to_display(prog));
                         self.failure.get_or_insert(crate::checker::runtime::Failure::Assertion(text.clone()));
                         return Err(self.report_bug(text).into());
                     }
                     let text = format!("Assertion Failed: {}", msg.to_display(prog));
-                    return Err(self.assertion_failure(text));
+                    let failure = self.assertion_failure(text);
+                    if self.bug.is_some() {
+                        self.identify_bug("assertion", actor, current_span(exec));
+                    }
+                    return Err(failure);
                 }
             }
             Op::Print if self.java_semantics() => {
@@ -1745,6 +1750,7 @@ impl<'p> Runtime<'p> {
                                 self.machine_state_name(m)
                             )
                         };
+                        self.identify_bug("send-null-event", actor, current_span(exec));
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(other, "PChecker.Runtime.Events.Event", prog).into()),
@@ -1766,6 +1772,7 @@ impl<'p> Runtime<'p> {
                                 self.machine_state_name(m)
                             )
                         };
+                        self.identify_bug("send-null-target", actor, current_span(exec));
                         return Err(self.report_bug(msg).into());
                     }
                     other => return Err(invalid_cast(&other, "PChecker.Runtime.Values.PMachineValue", prog).into()),

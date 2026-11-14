@@ -346,6 +346,17 @@ pub enum Failure {
     Other(String),
 }
 
+/// Stable failure site captured while executing, independent of message values and snippets.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BugIdentity {
+    pub kind: String,
+    pub machine: String,
+    pub state: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+}
+
 /// A .NET-style exception raised by P code.
 #[derive(Debug, Clone)]
 pub struct Exception {
@@ -488,6 +499,7 @@ pub struct Runtime<'p> {
     pub(crate) handler_starts: u64,
     /// The first failure of this execution (see [`Failure`]).
     pub(crate) failure: Option<Failure>,
+    pub(crate) bug_identity: Option<BugIdentity>,
     /// See [`Setup::java_semantics`].
     pub(crate) java: Option<&'p JavaFormatter<'p>>,
     next_op_id: u64,
@@ -587,6 +599,7 @@ impl<'p> Runtime<'p> {
             time: time.map(|o| Box::new(crate::checker::time::TimeState::new(o))),
             handler_starts: 0,
             failure: None,
+            bug_identity: None,
             java: java_semantics,
             next_op_id: 0,
             format_buf: String::new(),
@@ -765,6 +778,27 @@ impl<'p> Runtime<'p> {
 
     // ---- assertions and bugs ------------------------------------------------
 
+    /// Capture semantic failure identity before formatting its report.
+    pub(crate) fn identify_bug(&mut self, kind: &str, actor: Actor, at: Option<crate::syntax::Span>) {
+        if self.bug_identity.is_some() {
+            return;
+        }
+        let (decl, state) = match actor {
+            Actor::Machine(m) => (self.machines[m].decl, self.machines[m].state),
+            Actor::Monitor(m) => (self.monitors[m].decl, self.monitors[m].state),
+        };
+        let at = at.filter(|s| !s.is_dummy());
+        let location = at.map(|s| self.prog.sources.location(s));
+        self.bug_identity = Some(BugIdentity {
+            kind: kind.into(),
+            machine: self.prog.machine(decl).name.clone(),
+            state: state.map(|s| self.prog.state(s).name.clone()).unwrap_or_default(),
+            file: location.as_ref().and_then(|l| l.file.clone()),
+            line: location.as_ref().and_then(|l| u32::try_from(l.line).ok()),
+            column: location.as_ref().and_then(|l| u32::try_from(l.col).ok()),
+        });
+    }
+
     /// `OperationScheduler.NotifyAssertionFailure`.
     pub fn report_bug(&mut self, text: String) -> Stop {
         if self.bug.is_none() {
@@ -827,6 +861,7 @@ impl<'p> Runtime<'p> {
         action: &str,
         at: Option<crate::syntax::Span>,
     ) -> Stop {
+        self.identify_bug(&exc.ty, actor, at);
         self.failure.get_or_insert(Failure::Exception(exc.ty.to_string(), exc.message.clone()));
         if let Actor::Machine(m) = actor {
             let short = exc.ty.rsplit('.').next().unwrap_or(&exc.ty).to_string();
@@ -956,6 +991,11 @@ impl<'p> Runtime<'p> {
                         self.state_name(self.monitors[i].state),
                         self.spec_fields_line(i)
                     );
+                    self.identify_bug(
+                        "liveness",
+                        Actor::Monitor(i),
+                        self.monitors[i].state.map(|s| self.prog.state(s).span),
+                    );
                     return Err(self.report_bug(msg));
                 }
             }
@@ -1003,6 +1043,7 @@ impl<'p> Runtime<'p> {
             if n == 1 { "s" } else { "" },
             if n == 1 { "it" } else { "them" },
         );
+        self.identify_bug("liveness", Actor::Monitor(i), self.monitors[i].state.map(|s| self.prog.state(s).span));
         Err(self.report_bug(msg))
     }
 
@@ -1331,6 +1372,7 @@ impl<'p> Runtime<'p> {
                         self.prog.state(s).name,
                         self.spec_fields_line(i)
                     );
+                    self.identify_bug("liveness", Actor::Monitor(i), Some(self.prog.state(s).span));
                     let _ = self.report_bug(msg);
                     return;
                 }

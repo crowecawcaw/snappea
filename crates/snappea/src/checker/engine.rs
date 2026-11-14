@@ -154,6 +154,8 @@ impl CheckerOptions {
 pub struct TestReport {
     pub num_bugs: usize,
     pub bug_reports: Vec<String>,
+    /// Identities aligned with bug_reports; None when a failure has no captured site.
+    pub bug_identities: Vec<Option<super::runtime::BugIdentity>>,
     pub explored_fair_schedules: usize,
     pub explored_unfair_schedules: usize,
     pub total_fair_steps: usize,
@@ -209,6 +211,7 @@ impl TestReport {
     pub fn merge(&mut self, other: TestReport) {
         self.num_bugs += other.num_bugs;
         self.bug_reports.extend(other.bug_reports);
+        self.bug_identities.extend(other.bug_identities);
         self.explored_fair_schedules += other.explored_fair_schedules;
         self.explored_unfair_schedules += other.explored_unfair_schedules;
         self.total_fair_steps += other.total_fair_steps;
@@ -1063,6 +1066,7 @@ impl<'p> Checker<'p> {
                 if let Some(b) = &rt.bug {
                     r.num_bugs += 1;
                     r.bug_reports.push(b.clone());
+                    r.bug_identities.push(rt.bug_identity.clone());
                 }
                 if fair {
                     r.explored_fair_schedules += 1;
@@ -1238,6 +1242,7 @@ impl<'p> Checker<'p> {
             // reported (the reporting worker's bug comes first)
             result.report.num_bugs = result.report.num_bugs.min(1);
             result.report.bug_reports.truncate(1);
+            result.report.bug_identities.truncate(1);
         }
         let Some(mut bug) = first_bug else { return result };
         if several {
