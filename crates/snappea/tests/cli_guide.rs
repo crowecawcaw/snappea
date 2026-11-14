@@ -55,8 +55,8 @@ fn every_topic_prints_markdown() {
         let out = snappea(&args, &dir);
         assert!(out.status.success(), "snappea guide {topic} failed");
         assert!(
-            ["# ", "---\n"].iter().any(|prefix| String::from_utf8_lossy(&out.stdout).starts_with(prefix)),
-            "guide {topic} is not Markdown"
+            String::from_utf8_lossy(&out.stdout).starts_with("# "),
+            "guide {topic} is not Markdown, or prints its front matter"
         );
     }
     for e in EXAMPLES {
@@ -319,11 +319,18 @@ fn reusable_building_blocks_import_and_check() {
     let project = "building-blocks/Example.pproj";
     let pass = snappea(&["check", "tcReplies", "tcNetworkFaults", project, "--no-mutation", "--format", "text"], &dir);
     assert!(pass.status.success(), "{}", text(&pass));
-    for (case, reason) in [("tcDuplicate", "duplicate terminal reply"), ("tcMissing", "RepliesPending")] {
+    // The negative controls declare their failures, so they pass only when the oracle
+    // fails them for the stated reason.
+    for (case, reason) in
+        [("tcDuplicate", "duplicate terminal reply for request 1"), ("tcMissing", "in hot state 'RepliesPending'")]
+    {
         let fail = snappea(&["check", case, project, "--no-mutation", "--format", "text"], &dir);
-        assert_eq!(fail.status.code(), Some(1), "{}", text(&fail));
-        assert!(text(&fail).contains(reason), "{}", text(&fail));
+        assert!(fail.status.success(), "{}", text(&fail));
+        assert!(text(&fail).contains("expected bug") && text(&fail).contains(reason), "{}", text(&fail));
     }
+    // The whole project, mutation testing included, passes as exported.
+    let all = snappea(&["check", project, "--format", "text"], &dir);
+    assert!(all.status.success(), "{}", text(&all));
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -401,8 +408,8 @@ fn reply_building_block_checks_the_whole_plan_and_ids() {
     for (body, failure) in [
         ("announce BBPlan, 2; announce BBRequested, 1; announce BBReplied, 1; announce BBRequested, 2; announce BBReplied, 2;", None),
         ("announce BBPlan, 2; announce BBRequested, 1; announce BBReplied, 1;", Some("RepliesPending")),
-        ("announce BBPlan, 1; announce BBRequested, 1; announce BBReplied, 2;", Some("unknown request")),
-        ("announce BBPlan, 2; announce BBRequested, 1; announce BBRequested, 1;", Some("ID reused")),
+        ("announce BBPlan, 1; announce BBRequested, 1; announce BBReplied, 2;", Some("unknown request 2")),
+        ("announce BBPlan, 2; announce BBRequested, 1; announce BBRequested, 1;", Some("ID 1 reused")),
         ("announce BBPlan, 0;", Some("at least one request")),
     ] {
         let mut sm = snappea::syntax::SourceMap::new();

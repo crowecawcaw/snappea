@@ -71,6 +71,7 @@ machine OutboxService {
   }
 
   state Committing {
+    // One request at a time: a new update waits until this one is answered.
     defer Update;
     on CommitResult do (e: int) {
       if (e == epoch) {

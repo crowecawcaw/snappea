@@ -89,6 +89,6 @@ python3 examples/samples/check_samples.py use-cases/seat-hold
 | [minority-quorum](flawed/minority-quorum/) | `n/2` votes elect two leaders | Medium |
 | [stale-replica-read](flawed/stale-replica-read/) | Reads from asynchronous replicas | Medium |
 | [dual-write-crash](flawed/dual-write-crash/) | Crash between commit and publish | Medium |
-| [lost-wakeup](flawed/lost-wakeup/) | Check-then-sleep in a blocking queue | Hard |
+| [lost-wakeup](flawed/lost-wakeup/) | Check-then-sleep in a blocking queue | Medium |
 | [aba-cas](flawed/aba-cas/) | ABA in a lock-free stack | Hard |
 | [write-skew](flawed/write-skew/) | Write skew under snapshot isolation | Hard |

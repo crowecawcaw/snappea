@@ -1219,7 +1219,9 @@ fn run_check(
                 con.inner.out_line(&format!("      {reason}; check the test and expected failure text"));
             }
             if let Some(report) = &case.bug_report {
-                con.inner.out_line(&format!("      {report}"));
+                for l in report.lines() {
+                    con.inner.out_line(&format!("      {l}"));
+                }
             }
             if let Some(schedule) = &case.schedule_file {
                 con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, &cfg)));

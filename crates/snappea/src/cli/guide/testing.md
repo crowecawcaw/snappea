@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I force the interleavings the model explored in implementation tests?
+  - How do I check real calls against the P spec?
+  - How do I show that my implementation tests can fail?
+---
+
 # Test the implementation against what the model explored
 
 The model checks every ordering of its clients. The implementation's tests should make

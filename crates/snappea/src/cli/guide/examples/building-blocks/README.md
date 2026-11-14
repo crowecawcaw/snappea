@@ -43,9 +43,14 @@ Run the included consumer to see the import work:
 ```sh
 cd vendor/building-blocks
 snappea check tcReplies tcNetworkFaults Example.pproj --no-mutation
-snappea check tcDuplicate Example.pproj --no-mutation  # expected: duplicate terminal reply
-snappea check tcMissing Example.pproj --no-mutation    # expected: RepliesPending liveness failure
+snappea check tcDuplicate tcMissing Example.pproj --no-mutation  # negative controls
+snappea check Example.pproj                                      # everything, with mutation testing
 ```
+
+`tcDuplicate` and `tcMissing` are negative controls: each carries a
+`// snappea: expect-bug` declaration, so it passes only when the oracle fails it for
+the declared reason (`duplicate terminal reply for request 1`, and a liveness bug in
+the hot state `RepliesPending`).
 
 `tcReplies` demonstrates the completion spec over a reliable direct-send model.
 `tcNetworkFaults` independently checks the network's one-drop/one-duplicate budget:

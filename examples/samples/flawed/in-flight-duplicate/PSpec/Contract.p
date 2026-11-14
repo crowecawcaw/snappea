@@ -7,8 +7,9 @@ event RequestsPlanned: int;
 event Requested: (req: int, key: int, amount: int);
 // The gateway announces each charge when it commits.
 event Charged: (key: int, amount: int, charge: int);
-// The API worker announces the result it returns to the client.
-event Replied: (req: int, charge: int);
+// What every API worker returns to the client that sent the request. The specs
+// observe this reply itself, as the client receives it.
+event ChargeResult: (req: int, charge: int);
 
 // Safety: one idempotency key causes at most one charge, for the amount requested.
 spec ChargedOnce observes Requested, Charged {
@@ -42,7 +43,7 @@ spec ChargedOnce observes Requested, Charged {
 // Progress: every request returns, and returns the one charge made for its key, so a
 // duplicate sees the same result as the original. Hot until every planned request
 // has returned.
-spec EveryRequestAnswered observes RequestsPlanned, Requested, Charged, Replied {
+spec EveryRequestAnswered observes RequestsPlanned, Requested, Charged, ChargeResult {
   // req -> key, for requests that have not returned yet
   var pending: map[int, int];
   var charged: map[int, int];
@@ -56,7 +57,9 @@ spec EveryRequestAnswered observes RequestsPlanned, Requested, Charged, Replied 
     }
     on Requested do { assert false, "request sent without a plan"; }
     on Charged do { assert false, "charge with no request in progress"; }
-    on Replied do { assert false, "reply with no request in progress"; }
+    on ChargeResult do (p: (req: int, charge: int)) {
+      assert false, format("reply to request {0} with no request in progress", p.req);
+    }
   }
 
   hot state Busy {
@@ -70,7 +73,7 @@ spec EveryRequestAnswered observes RequestsPlanned, Requested, Charged, Replied 
     on Charged do (p: (key: int, amount: int, charge: int)) {
       charged[p.key] = p.charge;
     }
-    on Replied do (p: (req: int, charge: int)) {
+    on ChargeResult do (p: (req: int, charge: int)) {
       assert p.req in pending, format("request {0} returned twice or was never sent", p.req);
       assert pending[p.req] in charged,
         format("request {0} returned charge {1}, but key {2} was never charged", p.req, p.charge, pending[p.req]);

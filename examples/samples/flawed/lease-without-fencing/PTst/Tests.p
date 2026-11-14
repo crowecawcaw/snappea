@@ -94,7 +94,9 @@ scenario OldLeaderFenced observes WriteRejected {
   }
 }
 
-// snappea: expect-bug "stale write: storage accepted value"
+// Which node's value is stale depends on who got the lease first; the lease order
+// does not: the spec numbers leases in grant order.
+// snappea: expect-bug "under lease 1 after a write under lease 2"
 test tcBugStaleLeaderWrite [main=TwoLeadersUnfenced]:
   assert NoStaleWrites, NodesFinish in
   { TwoLeadersUnfenced, LockService, LeaseTimer, UnfencedStorage, UnfencedNode };

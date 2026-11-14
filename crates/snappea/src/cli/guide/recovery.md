@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - Which state survives a crash, and how do I model a restart?
+  - Which retry and stale-message histories should I check?
+  - How do I bound recovery so progress specs stay meaningful?
+---
+
 # Recovery and retry
 
 ## Preserve the right state

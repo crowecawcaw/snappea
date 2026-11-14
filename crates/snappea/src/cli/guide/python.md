@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - How do I capture real Python calls and check them against a P spec?
+  - What does checking observed executions prove, and what not?
+  - How do I keep the implementation and the model in correspondence?
+---
+
 # Check actual implementation behavior
 
 ## Capture and check

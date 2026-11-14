@@ -10,12 +10,9 @@
 // is on call. This is write skew: no single row was written twice, but the pair of
 // commits breaks an invariant that spans rows.
 
-// Tells whoever started the client (the test driver) that the request is over.
-event DoctorDone;
-
 machine Doctor {
   start state Run {
-    entry (p: (owner: machine, doctor: int, store: machine, doctors: set[int])) {
+    entry (p: (doctor: int, store: machine, doctors: set[int])) {
       var snap: Snapshot;
       var d: int;
       var count: int;
@@ -38,7 +35,6 @@ machine Doctor {
         }
       }
       announce OffCallAnswered, (doctor = p.doctor, granted = granted);
-      send p.owner, DoctorDone;
     }
   }
 }

@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [application-developer, coding-agent]
+questions:
+  - Which test scenarios find the bugs that matter?
+  - How do I write an oracle that does not trust the model?
+  - How do I check progress, time and observed logs?
+---
+
 # Scenarios and independent oracles
 
 ## Expectations
