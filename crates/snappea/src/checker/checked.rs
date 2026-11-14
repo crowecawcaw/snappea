@@ -7,9 +7,15 @@
 //! function calls and returns, `new` payloads and event payloads, into any machine,
 //! spec monitors included. Everything is over-approximated: containers count as one
 //! value, every handler of an event receives every payload sent with it, and every
-//! condition counts. So a value that is *not* checked can never change whether a test
-//! case passes, which is what [`lints`] reports and mutation testing relies on to skip
-//! changes that only write such values.
+//! condition counts. So a value that is *not* checked cannot change what any schedule
+//! does next: which steps run, which choices are offered, or whether an assertion, spec
+//! (liveness included) or operation fails. The exhaustive search leaves such values out
+//! of the state it compares ([`crate::checker::compile::Unhashed`]), so they cannot
+//! change which states it sees again or which cycles it closes either. Hence removing a
+//! write to such a value never changes whether a schedule passes, which is what
+//! [`lints`] reports and mutation testing relies on to skip changes that only write such
+//! values. (Search heuristics that steer by code coverage may still explore a little
+//! differently without the write, as with any change to the code.)
 
 use rustc_hash::{FxHashMap, FxHashSet};
 

@@ -181,6 +181,18 @@ pub enum Pending {
     },
 }
 
+/// A nondeterministic choice of a schedule (see [`Runtime::note_choice`]).
+#[derive(Debug, Clone, Copy)]
+struct FairChoice {
+    /// Its position in the schedule.
+    step: usize,
+    /// Where in the code it was made.
+    site: u64,
+    /// How many values it had.
+    count: u32,
+    value: u32,
+}
+
 /// One active call. Its locals and operand stack live in [`Exec::values`].
 #[derive(Debug, Clone)]
 pub struct Frame {
@@ -513,8 +525,9 @@ pub struct Runtime<'p> {
     spare_execs: Vec<Box<Exec>>,
     /// See [`Buffers::machine_refs`].
     machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
-    /// Fair choices (`$$`) of this schedule: the step, the choice's code site, the value.
-    fair_choices: Vec<(usize, u64, bool)>,
+    /// The nondeterministic choices (`$`, `$$`, `choose`) of this schedule, all of them
+    /// fair for liveness (see [`Runtime::check_lasso`]).
+    fair_choices: Vec<FairChoice>,
 }
 
 impl<'p> Runtime<'p> {
@@ -1006,17 +1019,14 @@ impl<'p> Runtime<'p> {
     /// Checks the cycle a pruned schedule closed, if it returned to a state on its own
     /// path: a fair cycle through which a hot monitor never enters a cold state can
     /// repeat forever, a liveness bug. The schedule (prefix and cycle) replays it.
+    ///
+    /// A fair cycle runs every operation enabled throughout it (see
+    /// [`crate::checker::exhaustive::ExhaustiveStrategy::closed_cycle`]) and takes every
+    /// value of every choice it makes (`$`, `$$`, `choose`), as upstream P's and the
+    /// sampling search's random choices eventually do: a timer that keeps choosing not
+    /// to fire is not a bug.
     fn check_lasso(&mut self) -> Result<(), Stop> {
-        if !self.config.liveness_enabled {
-            return Ok(());
-        }
-        let liveness_monitor = |m: &Monitor| {
-            let decl = self.prog.machine(m.decl);
-            !decl.is_scenario()
-                && decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot)
-                && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
-        };
-        if !self.monitors.iter().any(liveness_monitor) {
+        if !self.liveness_pending() {
             return Ok(());
         }
         let Some(cycle) = self.strategy.closed_cycle() else { return Ok(()) };
@@ -1026,7 +1036,7 @@ impl<'p> Runtime<'p> {
         }
         let Some(i) = (0..self.monitors.len()).find(|&i| {
             let m = &self.monitors[i];
-            liveness_monitor(m)
+            self.liveness_monitor(m)
                 && m.state.is_some_and(|s| self.prog.state(s).temperature == Temperature::Hot)
                 && m.cold_at <= cycle.start
         }) else {
@@ -1047,18 +1057,38 @@ impl<'p> Runtime<'p> {
         Err(self.report_bug(msg))
     }
 
-    /// Whether every fair choice (`$$`) made since step `start` took both values there.
-    fn fair_choices_vary(&self, start: usize) -> bool {
-        let made: Vec<_> = self.fair_choices.iter().filter(|c| c.0 >= start).collect();
-        made.iter().all(|(_, site, value)| made.iter().any(|(_, s, v)| s == site && v != value))
+    /// Whether `m` checks liveness (has hot states) and is not in a cold state.
+    fn liveness_monitor(&self, m: &Monitor) -> bool {
+        let decl = self.prog.machine(m.decl);
+        !decl.is_scenario()
+            && decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot)
+            && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
     }
 
-    /// `$$`: a choice the cycles of a liveness bug must take both ways (see
-    /// [`Runtime::check_lasso`]). `site` identifies the choice in the code.
-    pub fn choose_fair_bool(&mut self, caller: &str, site: u64) -> Result<bool, Stop> {
-        let b = self.choose_bool(2, caller)?;
-        self.fair_choices.push((self.trace.steps.len() - 1, site, b));
-        Ok(b)
+    /// Whether liveness is checked and some liveness monitor is not in a cold state: a
+    /// cycle through the current state could be a liveness bug.
+    fn liveness_pending(&self) -> bool {
+        self.config.liveness_enabled && self.monitors.iter().any(|m| self.liveness_monitor(m))
+    }
+
+    /// Whether every choice made since step `start` took each of its values there.
+    fn fair_choices_vary(&self, start: usize) -> bool {
+        let made = self.fair_choices.iter().filter(|c| c.step >= start);
+        let mut seen: rustc_hash::FxHashMap<(u64, u32), rustc_hash::FxHashSet<u32>> = Default::default();
+        for c in made {
+            seen.entry((c.site, c.count)).or_default().insert(c.value);
+        }
+        seen.iter().all(|((_, count), values)| values.len() >= *count as usize)
+    }
+
+    /// Records that the choice just made at code site `site`, among `count` values, took
+    /// `value`: the cycles of a liveness bug must take each value (see
+    /// [`Runtime::check_lasso`]).
+    pub(crate) fn note_choice(&mut self, site: u64, count: usize, value: usize) {
+        if count > 1 {
+            let step = self.trace.steps.len() - 1;
+            self.fair_choices.push(FairChoice { step, site, count: count as u32, value: value as u32 });
+        }
     }
 
     pub(crate) fn check_cancelled(&mut self) -> Result<(), Stop> {
@@ -1128,7 +1158,8 @@ impl<'p> Runtime<'p> {
         }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
-            if !self.strategy.observe_state(hash) {
+            let live = self.liveness_pending();
+            if !self.strategy.observe_state(hash, live) {
                 self.check_lasso()?;
                 self.pruned = true;
                 self.stopped = true;

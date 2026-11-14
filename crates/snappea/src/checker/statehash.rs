@@ -5,7 +5,9 @@
 //! running action), every monitor, and the operation table. It leaves out what only
 //! affects logs, traces and statistics (names, vector clocks, scenario progress, step
 //! counts) and the liveness temperatures, which grow with every step and would make
-//! every state unique.
+//! every state unique. It also leaves out fields, locals and event payloads no check
+//! depends on ([`Unhashed`]): a write-only counter cannot change how the program
+//! continues, so it must not keep the search from seeing a state again.
 //!
 //! With time tracking on, it also covers every clock: each machine's, the stamps of
 //! queued events, `Mark()` handles and the symbol counter. Clocks only grow, so a timed
@@ -22,6 +24,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use crate::checker::compile::Unhashed;
 use crate::checker::runtime::{Event, Exec, Machine, Monitor, Pending, Runtime, Stage, Transition};
 use crate::checker::value::Value;
 
@@ -67,6 +70,7 @@ impl Hasher for StableHasher {
 
 /// Hash of the program state of `rt` (see the module documentation).
 pub fn program_state(rt: &Runtime) -> u64 {
+    let u = &rt.code.unhashed;
     let mut h = StableHasher::new();
     values(&rt.globals, &mut h);
     h.write_usize(rt.ops.len());
@@ -78,11 +82,11 @@ pub fn program_state(rt: &Runtime) -> u64 {
     }
     h.write_usize(rt.machines.len());
     for m in &rt.machines {
-        machine(m, &mut h);
+        machine(m, u, &mut h);
     }
     h.write_usize(rt.monitors.len());
     for m in &rt.monitors {
-        monitor(m, &mut h);
+        monitor(m, u, &mut h);
     }
     if let Some(t) = &rt.time {
         // what decides a timed model's future beyond the untimed state
@@ -97,45 +101,45 @@ pub fn program_state(rt: &Runtime) -> u64 {
     h.finish()
 }
 
-fn machine(m: &Machine, h: &mut StableHasher) {
+fn machine(m: &Machine, u: &Unhashed, h: &mut StableHasher) {
     h.write_u64(m.id);
     m.decl.hash(h);
     m.iface.hash(h);
-    values(&m.fields, h);
+    masked(&m.fields, u.fields.get(m.decl.idx()), h);
     m.state.hash(h);
     h.write_u8(m.status as u8);
     h.write_usize(m.inbox.queue.len());
     for e in &m.inbox.queue {
-        event(e, h);
+        event(e, u, h);
     }
-    opt_event(m.inbox.raised.as_ref(), h);
+    opt_event(m.inbox.raised.as_ref(), u, h);
     m.inbox.closed.hash(h);
     m.inbox.handler_running.hash(h);
     m.inbox.waiting.as_deref().hash(h);
-    transition(&m.pending_transition, h);
+    transition(&m.pending_transition, u, h);
     opt_value(m.goto_payload.as_ref(), h);
     m.goto_target.hash(h);
     m.popped_from.hash(h);
-    stage(&m.stage, h);
+    stage(&m.stage, u, h);
     match &m.exec {
         Some(x) => {
             h.write_u8(1);
-            exec(x, h);
+            exec(x, u, h);
         }
         None => h.write_u8(0),
     }
-    opt_event(m.received.as_ref(), h);
+    opt_event(m.received.as_ref(), u, h);
 }
 
-fn monitor(m: &Monitor, h: &mut StableHasher) {
+fn monitor(m: &Monitor, u: &Unhashed, h: &mut StableHasher) {
     m.decl.hash(h);
-    values(&m.fields, h);
+    masked(&m.fields, u.fields.get(m.decl.idx()), h);
     m.state.hash(h);
-    transition(&m.pending_transition, h);
+    transition(&m.pending_transition, u, h);
     opt_value(m.goto_payload.as_ref(), h);
 }
 
-fn stage(s: &Stage, h: &mut StableHasher) {
+fn stage(s: &Stage, u: &Unhashed, h: &mut StableHasher) {
     match s {
         Stage::Start(v) => {
             h.write_u8(0);
@@ -149,19 +153,19 @@ fn stage(s: &Stage, h: &mut StableHasher) {
         }
         Stage::Dequeued(e) => {
             h.write_u8(4);
-            event(e, h);
+            event(e, u, h);
         }
         Stage::Handle(e) => {
             h.write_u8(5);
-            event(e, h);
+            event(e, u, h);
         }
         Stage::AfterAction(e) => {
             h.write_u8(6);
-            event(e, h);
+            event(e, u, h);
         }
         Stage::AfterExit { e, then } => {
             h.write_u8(7);
-            event(e, h);
+            event(e, u, h);
             match then {
                 crate::checker::runtime::ExitThen::Goto { target, with } => {
                     h.write_u8(0);
@@ -173,25 +177,25 @@ fn stage(s: &Stage, h: &mut StableHasher) {
         }
         Stage::AfterWith { e, target } => {
             h.write_u8(8);
-            event(e, h);
+            event(e, u, h);
             target.hash(h);
         }
         Stage::AfterEntry(e) => {
             h.write_u8(9);
-            event(e, h);
+            event(e, u, h);
         }
         Stage::Halt => h.write_u8(10),
         Stage::Idle => h.write_u8(11),
     }
 }
 
-fn exec(x: &Exec, h: &mut StableHasher) {
+fn exec(x: &Exec, u: &Unhashed, h: &mut StableHasher) {
     h.write_usize(x.frames.len());
     for (i, f) in x.frames.iter().enumerate() {
         f.fun.hash(h);
         h.write_usize(f.pc);
         let (locals, stack) = x.frame_values(i);
-        values(locals, h);
+        masked(locals, u.locals.get(f.fun.idx()), h);
         values(stack, h);
     }
     h.write_usize(x.iters.len());
@@ -220,7 +224,7 @@ fn exec(x: &Exec, h: &mut StableHasher) {
         Some(Pending::Send { target, event: e }) => {
             h.write_u8(2);
             h.write_u64(target.id);
-            event(e, h);
+            event(e, u, h);
         }
         Some(Pending::ReceiveWait { cases }) => {
             h.write_u8(3);
@@ -229,7 +233,7 @@ fn exec(x: &Exec, h: &mut StableHasher) {
         Some(Pending::ReceiveFound { cases, event: e }) => {
             h.write_u8(4);
             receive_cases(cases, h);
-            event(e, h);
+            event(e, u, h);
         }
     }
 }
@@ -243,12 +247,12 @@ fn receive_cases(cases: &[crate::checker::bytecode::ReceiveCase], h: &mut Stable
     }
 }
 
-fn transition(t: &Transition, h: &mut StableHasher) {
+fn transition(t: &Transition, u: &Unhashed, h: &mut StableHasher) {
     match t {
         Transition::None => h.write_u8(0),
         Transition::Raise(e) => {
             h.write_u8(1);
-            event(e, h);
+            event(e, u, h);
         }
         Transition::Goto(s) => {
             h.write_u8(2);
@@ -257,20 +261,22 @@ fn transition(t: &Transition, h: &mut StableHasher) {
     }
 }
 
-fn event(e: &Event, h: &mut StableHasher) {
+fn event(e: &Event, u: &Unhashed, h: &mut StableHasher) {
     e.id.hash(h);
-    value(&e.payload, h);
+    if !u.payloads.get(e.id.idx()).copied().unwrap_or(false) {
+        value(&e.payload, h);
+    }
     // only set while time is tracked
     if let Some(stamp) = &e.stamp {
         stamp.hash(h);
     }
 }
 
-fn opt_event(e: Option<&Event>, h: &mut StableHasher) {
+fn opt_event(e: Option<&Event>, u: &Unhashed, h: &mut StableHasher) {
     match e {
         Some(e) => {
             h.write_u8(1);
-            event(e, h);
+            event(e, u, h);
         }
         None => h.write_u8(0),
     }
@@ -283,6 +289,21 @@ fn opt_value(v: Option<&Value>, h: &mut StableHasher) {
             value(v, h);
         }
         None => h.write_u8(0),
+    }
+}
+
+/// [`values`], leaving out those `skip` marks (see [`Unhashed`]).
+fn masked(vs: &[Value], skip: Option<&Vec<bool>>, h: &mut StableHasher) {
+    match skip.filter(|s| !s.is_empty()) {
+        None => values(vs, h),
+        Some(skip) => {
+            h.write_usize(vs.len());
+            for (i, v) in vs.iter().enumerate() {
+                if !skip.get(i).copied().unwrap_or(false) {
+                    value(v, h);
+                }
+            }
+        }
     }
 }
 

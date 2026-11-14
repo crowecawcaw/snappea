@@ -248,3 +248,48 @@ fn split_exhaustive_search_explores_each_state_once() {
         CheckResult::default()
     });
 }
+
+/// Auto mode on 4 workers, for two peers that ping-pong forever; with `announce`, the
+/// liveness spec is cold before they start.
+fn ping_pong(announce: &str) -> CheckResult {
+    let src = format!(
+        "event ePing: machine; event eDone;
+         machine Peer {{ start state S {{ on ePing do (m: machine) {{ send m, ePing, this; }} }} }}
+         machine Main {{ start state S {{ entry {{
+           var a: machine; var b: machine;
+           {announce}
+           a = new Peer(); b = new Peer();
+           send a, ePing, b;
+         }} }} }}
+         spec Progress observes eDone {{
+           start hot state Waiting {{ on eDone goto Done; }}
+           cold state Done {{ ignore eDone; }}
+         }}
+         test tc [main = Main]: assert Progress in {{ Main, Peer }};"
+    );
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("model.p", src);
+    let analysis = snappea::sema::compile(&sm, &snappea::sema::Options::default()).expect("compiles");
+    let tc = analysis.program.test_cases().remove(0);
+    let checker = Checker::new(&analysis.program);
+    let opts = CheckerOptions { strategy: StrategyKind::Auto, iterations: 400, seed: 3, ..Default::default() };
+    let pool = WorkerPool::new(4);
+    let parts = (0..4).map(|w| checker.explore(&tc, &opts, &pool, w, &mut Vec::new()).unwrap()).collect();
+    checker.finish(&tc, &opts, parts)
+}
+
+#[test]
+fn split_search_verifies_liveness_when_cycles_repeat_only_while_specs_are_cold() {
+    let r = ping_pong("announce eDone;");
+    assert_eq!(r.report.num_bugs, 0, "{:?}", r.report.bug_reports);
+    let stats = r.exhaustive.unwrap();
+    assert!(stats.cycle_prunes > 0 && stats.live_cycle_prunes == 0, "{stats:?}");
+    assert!(stats.complete() && stats.auto_handoffs.is_empty(), "{stats:?}");
+}
+
+#[test]
+fn split_search_reports_a_fair_hot_cycle() {
+    let r = ping_pong("");
+    assert_eq!(r.report.num_bugs, 1);
+    assert!(r.report.bug_reports[0].contains("repeat them forever"), "{:?}", r.report.bug_reports);
+}

@@ -93,10 +93,10 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
 
 ## Messages, transitions and bindings
 
-- `$$` is a fair nondeterministic Boolean: under fair exploration, a choice made
-  repeatedly cannot keep selecting only one outcome forever. `$` has no such
-  fairness promise. Use explicit finite bounds when a test needs bounded losses;
-  see `snappea guide faults`.
+- `$` and `$$` are nondeterministic Booleans. For liveness both are fair: a choice
+  made repeatedly does not keep selecting one outcome forever, so `if ($) { fire(); }`
+  in a timer eventually fires. `choose` is fair the same way. Use explicit finite
+  bounds when losses must be able to continue; see `snappea guide faults`.
 - A module can bind an interface to an implementation with `Machine -> Interface`
   inside its machine set. Creation through that interface uses the bound machine;
   this lets tests replace an implementation while keeping its clients.

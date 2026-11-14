@@ -196,7 +196,7 @@ fn dfs_reports_when_the_depth_bound_cut_the_search() {
                  var n: int;
                  start state Init {
                    entry { send this, eTick; }
-                   on eTick do { n = n + 1; send this, eTick; }
+                   on eTick do { n = n + 1; assert n > 0; send this, eTick; }
                  }
                }
                test tcMain [main=Main]: { Main };";
@@ -205,6 +205,14 @@ fn dfs_reports_when_the_depth_bound_cut_the_search() {
     let x = r.exhaustive.unwrap();
     assert!(x.finished);
     assert_eq!(x.depth_bound_hits, 1);
+    // a counter no check reads does not make states new: the search closes the cycle
+    let r = check(
+        &src.replace("assert n > 0; ", ""),
+        &CheckerOptions { max_unfair_steps: 50, ..opts(StrategyKind::Dfs, 0) },
+    );
+    let x = r.exhaustive.unwrap();
+    assert_eq!(x.depth_bound_hits, 0);
+    assert!(x.cycle_prunes > 0 && x.complete(), "{x:?}");
 }
 
 #[test]
@@ -478,13 +486,78 @@ fn a_lasso_must_take_fair_choices_both_ways_but_not_plain_ones() {
              test tcMain [main=Main]: assert Answered in {{ Main }};"
         )
     };
-    // `$` may lose forever (a lossy network with retries is a liveness bug)
-    let plain = check(&src("$"), &opts(StrategyKind::Dfs, 0));
-    assert_eq!(plain.report.num_bugs, 1);
-    assert!(plain.report.bug_reports[0].contains("repeat"));
-    // `$$` must eventually take each value
-    let fair = check(&src("$$"), &opts(StrategyKind::Dfs, 0));
-    assert_eq!(fair.report.num_bugs, 0, "{:?}", fair.report.bug_reports);
+    // `$`, `$$` and `choose` must each eventually take each value, as with upstream P
+    // and sampling: a timer that keeps choosing not to fire is not a liveness bug
+    for choice in ["$", "$$", "choose(3) == 0"] {
+        for strategy in [StrategyKind::Dfs, StrategyKind::Auto] {
+            let r = check(&src(choice), &opts(strategy, 200));
+            assert_eq!(r.report.num_bugs, 0, "{choice} {strategy}: {:?}", r.report.bug_reports);
+        }
+        // the search cannot rule out a fair cycle through the state, so it does not
+        // claim to have verified liveness
+        let stats = check(&src(choice), &opts(StrategyKind::Dfs, 0)).exhaustive.unwrap();
+        assert!(stats.finished && !stats.complete(), "{choice}: {stats:?}");
+    }
+    // a cycle that takes both values of a choice (at alternate ticks) and stays hot is
+    // a liveness bug
+    let both = "event eTick; event eReq; event eDone;
+        spec Answered observes eReq, eDone {
+          start cold state Idle { on eReq goto Waiting; }
+          hot state Waiting { on eDone goto Idle; }
+        }
+        machine Main { var n: int; start state S {
+          entry { announce eReq; send this, eTick; }
+          on eTick do { n = 1 - n; assert n >= 0; if ($) { send this, eTick; } else { send this, eTick; } }
+        } }
+        test tcMain [main=Main]: assert Answered in { Main };";
+    for strategy in [StrategyKind::Dfs, StrategyKind::Auto] {
+        let r = check(both, &opts(strategy, 100));
+        assert_eq!(r.report.num_bugs, 1, "{strategy}");
+        assert!(r.report.bug_reports[0].contains("repeat"), "{:?}", r.report.bug_reports);
+    }
+}
+
+/// The upstream P timer idiom: a timer that may fire at every tick, with and without a
+/// tick counter nothing checks.
+fn timer(counter: &str) -> String {
+    format!(
+        "event eStart; event eTimeout; event eTick; event eDone;
+         machine Timer {{
+           var holder: machine; var ticks: int;
+           start state Init {{ entry (h: machine) {{ holder = h; goto Idle; }} }}
+           state Idle {{ on eStart goto Ticking; ignore eTick; }}
+           state Ticking {{ entry {{ check(); }} on eTick do {{ check(); }} }}
+           fun check() {{
+             {counter}
+             if ($) {{ send holder, eTimeout; goto Idle; }} else {{ send this, eTick; }}
+           }}
+         }}
+         machine Main {{
+           start state S {{
+             entry {{ var t: machine; t = new Timer(this); send t, eStart; }}
+             on eTimeout do {{ announce eDone; }}
+           }}
+         }}
+         spec Progress observes eDone {{
+           start hot state Waiting {{ on eDone goto Done; }}
+           cold state Done {{ ignore eDone; }}
+         }}
+         test tcMain [main=Main]: assert Progress in {{ Main, Timer }};"
+    )
+}
+
+#[test]
+fn a_timer_that_may_fire_at_every_tick_passes_with_or_without_a_write_only_counter() {
+    for counter in ["", "ticks = ticks + 1;"] {
+        let src = timer(counter);
+        for strategy in [StrategyKind::Dfs, StrategyKind::Auto] {
+            let r = check(&src, &opts(strategy, 200));
+            assert_eq!(r.report.num_bugs, 0, "{counter:?} {strategy}: {:?}", r.report.bug_reports);
+        }
+        // the counter does not change what the exhaustive search sees
+        let stats = check(&src, &opts(StrategyKind::Dfs, 0)).exhaustive.unwrap();
+        assert!(stats.finished && stats.depth_bound_hits == 0 && stats.live_cycle_prunes > 0, "{counter:?}: {stats:?}");
+    }
 }
 
 #[test]

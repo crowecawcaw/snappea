@@ -193,7 +193,7 @@ impl Strategy for Hashes {
     fn wants_state_hash(&self) -> bool {
         true
     }
-    fn observe_state(&mut self, hash: u64) -> bool {
+    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
         self.seen.push(hash);
         true
     }

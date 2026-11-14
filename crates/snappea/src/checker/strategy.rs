@@ -189,9 +189,10 @@ pub trait Strategy {
         false
     }
     /// The program-state hash (see [`crate::checker::statehash`]) at the scheduling point about to
-    /// be decided by [`Strategy::next_operation`]. Returning `false` ends the schedule
+    /// be decided by [`Strategy::next_operation`]; `live` when a liveness monitor (a spec
+    /// with hot states) is not in a cold state there. Returning `false` ends the schedule
     /// there, without a deadlock or liveness check (the state was explored before).
-    fn observe_state(&mut self, _hash: u64) -> bool {
+    fn observe_state(&mut self, _hash: u64, _live: bool) -> bool {
         true
     }
     /// After [`Strategy::observe_state`] ended a schedule at a state where a liveness
@@ -767,7 +768,7 @@ impl Strategy for ReplayStrategy {
     fn wants_state_hash(&self) -> bool {
         self.trace.lasso.is_some_and(|start| self.index == start || self.index == self.trace.steps.len())
     }
-    fn observe_state(&mut self, hash: u64) -> bool {
+    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
         let Some(start) = self.trace.lasso else { return true };
         if self.index == start && self.lasso_start.is_none() {
             self.lasso_start = Some(hash);
