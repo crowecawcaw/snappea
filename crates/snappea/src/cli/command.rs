@@ -1450,6 +1450,10 @@ fn run_check(
     if undetected > 0 && !mutation_failed {
         warnings.insert("mutation".into(), json!(undetected));
     }
+    if let Some(advisories) = mutation.get("suppression_advisories").and_then(Value::as_array).filter(|a| !a.is_empty())
+    {
+        warnings.insert("mutation_suppressions".into(), json!(advisories.len()));
+    }
     let with_warnings = if failed > 0 || warnings.is_empty() {
         String::new()
     } else {
@@ -1460,6 +1464,9 @@ fn run_check(
                 match k.as_str() {
                     "lint" => format!("{} lint finding{}", n, plural(n)),
                     "coverage" => format!("{} coverage gap{}", n, plural(n)),
+                    "mutation_suppressions" => {
+                        format!("{} mutation suppression advisor{}", n, if n == 1 { "y" } else { "ies" })
+                    }
                     _ => format!("{} undetected mutant{}", n, plural(n)),
                 }
             })

@@ -10,6 +10,7 @@
 pub mod check;
 pub mod lint;
 pub mod mutation;
+mod mutation_suppression;
 pub mod observe;
 pub mod progress;
 pub mod scenario;
