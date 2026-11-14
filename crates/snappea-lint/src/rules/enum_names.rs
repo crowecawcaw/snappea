@@ -27,14 +27,23 @@ impl Rule for EnumValueShadowsMachine {
                     MachineKind::Spec => "spec",
                     MachineKind::Scenario => "scenario",
                 };
-                out.push(Finding::new(
-                    self.id(),
-                    e.name.span,
-                    format!(
-                        "enum value '{}' of '{}' has the name of {} '{}'; in an expression the name means the enum value",
-                        e.name.name, name.name, kind, e.name.name
-                    ),
-                ));
+                // the enum's name as a prefix keeps the value's meaning and is unlikely to
+                // clash, e.g. `Role.Server` -> `RoleServer`
+                let renamed = format!("{}{}", name.name, e.name.name);
+                out.push(
+                    Finding::new(
+                        self.id(),
+                        e.name.span,
+                        format!(
+                            "enum value '{}' of '{}' has the name of {} '{}'; in an expression the name means the enum value",
+                            e.name.name, name.name, kind, e.name.name
+                        ),
+                    )
+                    .with_help(format!(
+                        "rename the enum value, e.g. to `{}`, and update its uses, so each name means one thing",
+                        renamed
+                    )),
+                );
             }
         }
     }

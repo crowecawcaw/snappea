@@ -151,7 +151,7 @@ fn scan(stmts: &[Stmt], paths: &HashSet<String>, facts: &mut Facts, out: &mut Ve
             StmtKind::Assert { cond, .. } => {
                 if facts.value(cond, paths) == Some(Value::Bool(true)) {
                     out.push(Finding::new("tautological-assert", s.span,
-                        "assertion is guaranteed true by its expression or preceding scalar assignments; compare independently observed state instead"));
+                        "assertion is guaranteed true by its expression or preceding scalar assignments, so it can never fail"));
                 }
             }
             StmtKind::Assign { lhs, rhs } => {

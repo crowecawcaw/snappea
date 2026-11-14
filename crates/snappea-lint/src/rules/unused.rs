@@ -62,7 +62,13 @@ impl UnusedPayloadField {
                             event: &event.name,
                             param,
                             observed: machine.observes.iter().any(|name| name.name == event.name),
-                            fields: fields.iter().map(|(name, _)| name.name.clone()).collect(),
+                            // a reply address (`client: machine`) routes the event; it is
+                            // not data a spec can check
+                            fields: fields
+                                .iter()
+                                .filter(|(_, ty)| !is_address(ctx, ty))
+                                .map(|(name, _)| name.name.clone())
+                                .collect(),
                             used: used.clone(),
                         });
                     }
@@ -107,12 +113,32 @@ impl UnusedPayloadField {
                     } else {
                         format!("; no selected companion spec reads this event field in test(s) {}", missing.join(", "))
                     };
-                    out.push(Finding::new("unused-payload-field", payload.param.name.span,
-                        format!("monitor payload field '{}.{}' is never read outside diagnostic output{}; check it or suppress this intentional abstraction",
-                            payload.param.name.name, field, scope)));
+                    out.push(Finding::new(
+                        "unused-payload-field",
+                        payload.param.name.span,
+                        format!(
+                            "spec '{}' never reads payload field '{}.{}' of event '{}' outside diagnostic output{}",
+                            payload.spec, payload.param.name.name, field, payload.event, scope
+                        ),
+                    ));
                 }
             }
         }
+    }
+}
+
+/// Whether values of `ty` are machine references (`machine`, an interface or machine
+/// name, or a collection of them): where to send, not data.
+fn is_address(ctx: &Context<'_>, ty: &Type) -> bool {
+    match &ctx.resolve_type(ty).kind {
+        TypeKind::Machine => true,
+        TypeKind::Seq(t) | TypeKind::Set(t) => is_address(ctx, t),
+        TypeKind::Named(n) => ctx.declarations().any(|d| match d {
+            TopDecl::Interface { name, .. } => name.name == n.name,
+            TopDecl::Machine(m) => m.name.name == n.name,
+            _ => false,
+        }),
+        _ => false,
     }
 }
 

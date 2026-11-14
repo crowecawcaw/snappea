@@ -32,6 +32,11 @@ impl Span {
     pub fn is_dummy(&self) -> bool {
         self.file.0 == u32::MAX
     }
+
+    /// Whether `inner` lies within this span, in the same file.
+    pub fn contains(&self, inner: Span) -> bool {
+        self.file == inner.file && self.start <= inner.start && inner.end <= self.end
+    }
 }
 
 /// A resolved position: 1-based line and column.

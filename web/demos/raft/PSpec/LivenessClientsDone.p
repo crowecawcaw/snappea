@@ -3,7 +3,6 @@
 // This observer checks a rule; it does not implement the system. Hot states require
 // eventual progress.
 
-// snappea-lint: allow unused-payload-field -- liveness only tracks which clients are active, not what they ask for
 spec LivenessClientsDone observes ClientPutRequest, ClientGetRequest, ClientFinishedMonitor {
   var activeClients: set[Client];
   var finishedClients: set[Client];

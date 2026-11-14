@@ -34,7 +34,8 @@ impl Rule for UnselectedSpec {
         for m in ctx.machines().filter(|m| m.kind == MachineKind::Spec) {
             if !selected.contains(m.name.name.as_str()) {
                 out.push(Finding::new(self.id(), m.name.span, format!(
-                    "spec '{}' is selected by no model test; select it with 'assert {} in ...', or suppress for observation-only use", m.name.name, m.name.name)));
+                    "spec '{}' is selected by no model test, so no model check runs it", m.name.name))
+                    .with_help(format!("select it in a test whose model produces the events it observes, e.g. `test tcX [main=Main]: assert {} in {{ ... }};`", m.name.name)));
             }
         }
     }

@@ -7,6 +7,8 @@ questions:
   - "Which model state and events can no test notice?"
   - "Why does a test need a hot spec?"
   - "Why must a driver announce its plan before later stages?"
+  - "Why does a suppression report that it matches no finding?"
+  - "Which findings does `check` report when I select one test?"
 ---
 
 # Linting P models
@@ -28,10 +30,22 @@ snappea check lint --list-rules
 ```
 
 `check lint` loads and type-checks sources, prints every unsuppressed finding with its
-file, line, column, and rule ID, and exits with 0 when there are no blocking findings, or 2 on blocking findings or
+file, line, column, rule ID and fix, and exits with 0 when there are no blocking findings, or 2 on blocking findings or
 source errors. It does not explore schedules or write checker artifacts. Test-name
 filters are not accepted: selection checks need the complete loaded project.
-`check` also lints the whole loaded project, even when you select one test to run.
+
+`check` without test names lints like `check lint`. `check` with test names (for
+example `snappea check tcPublish`) reports the findings that apply to the selected
+tests: findings inside other tests' declarations, and test-dependent rules such as
+`no-progress-spec`, `unused-payload-field` and `unplanned-driver-stage` for the other
+tests, are skipped. It then prints how many blocking findings it skipped:
+
+```text
+note: 2 lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them
+```
+
+Run `snappea check lint` before relying on the whole project. Unused suppressions are
+reported only when every test is selected.
 
 `snappea observe` and the test libraries (Rust `snappea::test`, and Python, Go and
 Java through `snappea observe`) enforce the spec rule `unobserved-handler` too, with
@@ -40,9 +54,12 @@ the same suppression comments; the other rules concern model tests.
 Some rules identify a risk rather than a demonstrated modeling mistake. These are
 **advisory**: they print `warning[rule-id]` and do not block `check lint` or `check`,
 even with `--deny lint`. `--warn lint` continues to downgrade the blocking rules.
-`--list-rules` JSON includes each rule's `severity` (`error` or `advisory`). Successful
-`check lint` JSON includes advisory entries in `findings`, with source locations;
-`check` counts them under `warnings.lint`. Scoped suppressions apply to both kinds.
+`--list-rules` JSON includes each rule's `severity` (`error` or `advisory`). `check lint`
+JSON lists every finding in `findings`, with its `rule`, `severity`, `message`, `help`
+and source location; when lint fails, `error` holds the one-line summary, not the
+human-readable report again (that is on stderr). When lint stops `check`, its JSON has
+the same list under `lint.findings`. `check` counts advisories under `warnings.lint`.
+Scoped suppressions apply to both kinds.
 
 Linting identifies common weak checks. A clean result does not establish that the
 model covers every requirement or faithfully represents the implementation.
@@ -57,7 +74,7 @@ model covers every requirement or faithfully represents the implementation.
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
 | `announce-and-send` | Adjacent `announce` and `send` expose the same event and payload to a spec twice. | Remove the redundant `announce`, or suppress an intentional duplicate. |
-| `unused-payload-field` | A spec handler omits a named payload field, and at least one selected test has no companion spec that reads that event field outside diagnostic output. | Validate the field in a selected spec, or suppress an intentional abstraction. |
+| `unused-payload-field` | A spec handler omits a named payload field, and at least one selected test has no companion spec that reads that event field outside diagnostic output. Fields holding machine references (reply addresses) are not checked. | Check the field when the contract depends on it, or suppress an intentional abstraction. |
 | `payload-field-checked-by-other-spec` | Advisory: this handler omits a field that a companion spec reads in every selected test using the monitor. | Keep each spec focused; review whether the division matches the contract. |
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
@@ -66,10 +83,13 @@ model covers every requirement or faithfully represents the implementation.
 | `unchecked-state` | A model or spec field is written, but no assertion, condition, spec or sent event depends on it. | Assert on it in a spec or the driver, send it in an observed event, or remove it. |
 | `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
 | `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
-| `unplanned-driver-stage` | A driver starts more model work only after a model notification, and no driver of the test announces a plan a spec observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
+| `unplanned-driver-stage` | A driver starts more model work only after a model notification that is not a reply to its own request, and no driver of the test announces, before it waits on the model, a plan a spec with a `hot` state observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
 | `unused-design-payload-field` | Advisory: a design receiver never reads a named payload field outside diagnostic output. | Act on the field, or suppress an intentional abstraction. |
 | `shared-spec-helper` | Advisory: a selected spec and design machine call the same global helper, directly or transitively. | Compute expected results independently, or suppress intentional shared utilities. |
-| `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before the call. |
+| `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before what leaves the state. |
+| `invalid-suppression` | A `// snappea-lint: allow` comment is malformed, names an unknown rule ID, shares its line with code, or covers no code. | Fix the comment; the help suggests the closest rule ID. Cannot be suppressed. |
+| `invalid-directive` | A `// snappea:` directive is unknown, malformed, or not directly before what it marks. | Fix or move the directive. Cannot be suppressed. |
+| `unused-suppression` | Advisory: a lint suppression matches no finding in the code it covers, or a `/* snappea-lint: ... */` block comment is not read. | Remove it, or move it to where the rule reports (see [where to put a suppression](#where-to-put-a-suppression)). Cannot be suppressed. |
 
 ### Permissive monitors
 
@@ -207,6 +227,13 @@ or using it only in an assertion message does not count. Whole-tuple forwarding 
 aliasing conservatively counts as reading every field, as before. This is syntactic
 usage evidence, not proof that the specs check the right contract or track every
 request's completion.
+
+Fields that hold machine references (`machine`, an interface or machine name, or a
+`seq` or `set` of them) are not checked: a reply address such as `client: machine`
+says where to send the answer, not something a spec can validate. A spec that does
+compare such a field (for example "one leader per term") still can. Do not add an
+assertion only to read a field; when the contract does not depend on its value,
+suppress the finding with the reason.
 
 Standalone `check lint` evaluates every resolved test/implementation. The source-only
 `snappea_lint::lint` library API has no resolved module selection and retains strict
@@ -373,9 +400,16 @@ to stay `hot` until every planned operation finished:
 The rule reports the first `new` of a model machine, or `send` of an event a model
 machine handles, that runs only after a driver handles an event a model machine sends:
 in that handler, or in a state it goes to that the driver cannot reach otherwise.
-Replies to the driver's own requests do not count (`no-progress-spec` covers those), and
-neither does forwarding the event received, as a test proxy does. Any driver of the test
-announcing an event one of its specs observes counts as a plan.
+Replies to the driver's own requests do not count (`no-progress-spec` covers those),
+including replies through other machines: in two-phase commit the coordinator answers
+the driver's write from its handler of the participants' votes, and the driver sending
+its next write after that answer is sequential request and reply, not a new stage.
+Forwarding the event received, as a test proxy does, does not count either.
+
+A plan counts when a driver of the test announces it before waiting on the model (in
+code it runs without any notification) and a selected spec with a `hot` state observes
+it. A plan only a spec without a `hot` state observes, or one announced in a later
+stage, cannot detect a stage that never starts.
 
 ### Unreachable statements
 
@@ -396,6 +430,11 @@ A function always leaves the state when every path through it reaches a `goto` o
 as never reached; the lint reports it before checking.
 
 ## Suppress intentional findings
+
+Each finding's `help` line gives the likely fix first, then how to suppress the
+finding. Fix it when it points at a real gap; suppress it, with the reason, only when
+the model is right as written. Do not satisfy a rule with code that checks nothing,
+such as an assertion that cannot fail or an announcement no `hot` spec depends on.
 
 Put a standalone comment immediately before the declaration or statement:
 
@@ -459,8 +498,30 @@ scope. Before an `if` or `while`, the suppression also covers its condition outc
 The `-- reason` suffix is optional, but explains the abstraction to reviewers.
 Comments must be on their own line. Unknown IDs, malformed directives, and
 directives without an eligible following node produce an `invalid-suppression`
-finding; a misspelling cannot silently disable a check. Text inside strings and
-block comments is not a directive. There is no global command-line lint bypass.
+finding, with the closest rule ID when the ID looks misspelled; a misspelling cannot
+silently disable a check. Text inside strings is not a directive, and neither is a
+block comment: `/* snappea-lint: allow ... */` produces an `unused-suppression`
+warning saying to write it as a `//` line comment. There is no global command-line
+lint bypass.
+
+### Where to put a suppression
+
+A suppression covers only the declaration or statement directly after it, so it must
+be where the rule reports, which is not always where the cause is:
+
+| Rule | Put the suppression before |
+| --- | --- |
+| `unused-payload-field`, `payload-field-checked-by-other-spec` | the spec's handler for the event (or its state or spec), not the test that selects the spec |
+| `unselected-spec`, `permissive-monitor` | the spec |
+| `no-model-machine`, `no-progress-spec` | the test (`no-progress-spec` for a waiting design machine: that machine) |
+| `unchecked-state` | the field or its machine |
+| `unplanned-driver-stage` | the statement that starts the later stage, or the driver machine |
+
+A lint suppression that matches no finding produces the advisory `unused-suppression`
+(a warning; it does not fail lint). When another finding of the same rule exists, the
+help names its location, so a suppression in the wrong place can be moved; otherwise
+remove the suppression. `check` with test names does not report unused suppressions,
+since findings of the other tests are skipped.
 
 ## Mark driver machines
 
@@ -543,7 +604,8 @@ is exempt.
 
 This is a conservative syntactic check, not data-flow proof: passing or copying the
 whole payload counts all fields as used, as do reads even after overwriting them.
-Only top-level named fields are checked. Unreachable handlers and intentional
+Only top-level named fields are checked, and not those holding machine references
+(a vote's sender, a reply address), as for `unused-payload-field`. Unreachable handlers and intentional
 abstractions can still generate advisories. Suppress a reviewed abstraction with
 `// snappea-lint: allow unused-design-payload-field -- reason` on its handler or
 machine. Advisories never fail the lint gate, including with `--deny lint`.

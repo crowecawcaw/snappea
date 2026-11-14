@@ -26,7 +26,6 @@ spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetR
   }
 
   state Listening {
-    // snappea-lint: allow unused-payload-field -- this rule follows the current leader; the log specs check its log
     on BecomeLeader do (payload: BecomeLeaderData) {
       if (payload.term > term) {
         currentLeader = payload.leader;
