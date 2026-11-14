@@ -202,6 +202,9 @@ machine BuggyNoRequestIds {
 // The SlowReply scenario with a client that treats every conflict as fresh. It is its
 // own driver, so SyncDriver stays free of branches only this test would take.
 machine BuggyStaleReply {
+  var clients: seq[machine];
+  var idle: int;
+
   start state Running {
     entry {
       var initial: Note;
@@ -211,12 +214,21 @@ machine BuggyStaleReply {
       announce SyncPlanned, (clients = 2, initial = initial);
       announce OpPlanned, (client = 1, edit = 11, isDelete = false);
       announce OpPlanned, (client = 2, edit = 21, isDelete = false);
-      new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = DelayReply)),
-        id = 1, note = initial, edit = 11, isDelete = false));
-      new SyncClient((owner = this, server = server, id = 2, note = initial, edit = 21, isDelete = false));
+      clients += (0, new NaiveSyncClient((owner = this, server = new LossyLink((server = server, fault = DelayReply)),
+        id = 1, note = initial, edit = 11, isDelete = false)));
+      clients += (1, new SyncClient((owner = this, server = server, id = 2, note = initial, edit = 21, isDelete = false)));
     }
-    // This control checks the stale-conflict safety failure, before a final pull.
-    ignore ClientIdle;
+    // Not every schedule exposes the stale-conflict bug. Complete the ordinary
+    // convergence protocol on the others, so a missing pull cannot fail first.
+    on ClientIdle do {
+      var client: machine;
+      idle = idle + 1;
+      if (idle == sizeof(clients)) {
+        foreach (client in clients) {
+          send client, Pull;
+        }
+      }
+    }
   }
 }
 

@@ -29,8 +29,9 @@ jobs:
         run: .github/scripts/push-bench-data.sh append search.json search.jsonl "Search effectiveness ${GITHUB_SHA::7}"
       - name: Record corpus results
         if: github.ref == 'refs/heads/main'
-        run: .github/scripts/push-bench-data.sh append corpus.json corpus.jsonl "Corpus search ${GITHUB_SHA::7}"
+        run: .github/scripts/push-bench-data.sh snapshot corpus.json "corpus/${GITHUB_SHA}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json.gz" "Corpus search ${GITHUB_SHA::7}"
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: search-effectiveness
           path: |
