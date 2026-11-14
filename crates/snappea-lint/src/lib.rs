@@ -25,6 +25,10 @@ pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> 
 /// `--list-rules` know them.
 pub const PROGRAM_RULES: &[(&str, &str)] = &[
     (
+        "unused-design-payload-field",
+        "Advisory: a design event handler never reads a named payload field outside diagnostic output.",
+    ),
+    (
         "shared-spec-helper",
         "Advisory: a selected spec and design machine call the same global helper, so a shared mistake may escape the oracle.",
     ),
@@ -65,7 +69,7 @@ pub fn suppress_program_findings(sources: &SourceMap, findings: &mut Vec<Finding
 /// Whether a rule reports an advisory rather than blocking a check. Advisory findings
 /// remain warnings even with `--deny lint`; source suppressions work as usual.
 pub fn is_advisory(rule: &str) -> bool {
-    matches!(rule, "shared-spec-helper")
+    matches!(rule, "shared-spec-helper" | "unused-design-payload-field")
 }
 
 /// An actionable diagnostic; advisory rules do not fail CLI linting.

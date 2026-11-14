@@ -22,7 +22,7 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 16);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 17);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -180,7 +180,7 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 16);
+    assert_eq!(h.stdout.lines().count(), 17);
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("announce-and-send"));
     assert!(h.stdout.contains("unchecked-state"));
@@ -457,4 +457,100 @@ fn shared_helper_warning_follows_check_test_selection() {
     assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert!(result["warnings"].get("lint").is_none(), "{result}");
+}
+
+fn payload_findings(body: &str, prefix: &str) -> Vec<serde_json::Value> {
+    let mut h = MemHost::new("/w");
+    h.add_file(
+        "payload.p",
+        &format!(
+            r#"
+        event Reply: (id: int, value: int);
+        fun Consume(p: (id: int, value: int)) {{ assert p.id >= 0; }}
+        {prefix}
+        machine Worker {{ start state S {{ on Reply do (p: (id: int, value: int)) {{ {body} }} }} }}
+        machine Main {{ start state S {{ entry {{ new Worker(); }} }} }}
+        test tc [main=Main]: {{ Main, Worker }};
+    "#
+        ),
+    );
+    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    result["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["rule"] == "unused-design-payload-field")
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn design_payload_advisory_distinguishes_behavior_from_diagnostic_reads() {
+    for body in [
+        "assert p.id >= 0;",
+        "assert p.id >= 0, format(\"{0}\", p.value);",
+        "print format(\"{0}\", p.value); assert p.id >= 0;",
+        "p.value = 42; assert p.id >= 0;",
+    ] {
+        let findings = payload_findings(body, "");
+        assert_eq!(findings.len(), 1, "{body}: {findings:?}");
+        assert!(findings[0]["message"].as_str().unwrap().contains("p.value"));
+        assert_eq!(findings[0]["severity"], "advisory");
+    }
+    for body in [
+        "assert p.id >= p.value;",
+        "Consume(p);",
+        "var copy: (id: int, value: int); copy = p; assert copy.id >= 0;",
+        "assert false;",
+        "print format(\"{0}\", p.id); { assert false; }",
+    ] {
+        assert!(payload_findings(body, "").is_empty(), "{body}");
+    }
+    assert!(payload_findings("assert p.id >= 0;", "// snappea: driver").is_empty());
+    assert!(payload_findings(
+        "assert p.id >= 0;",
+        "// snappea-lint: allow unused-design-payload-field -- intentional metadata"
+    )
+    .is_empty());
+}
+
+#[test]
+fn design_payload_advisory_reads_nested_receive_captures() {
+    let findings = payload_findings(
+        "receive { case Reply: (next: (id: int, value: int)) { assert p.id == next.id; assert p.value == next.value; } }", "");
+    assert!(findings.is_empty(), "{findings:?}");
+    let findings = payload_findings(
+        "assert p.id >= 0; receive { case Reply: (next: (id: int, value: int)) { assert next.id >= 0; } }",
+        "",
+    );
+    assert_eq!(findings.len(), 2, "{findings:?}");
+}
+
+#[test]
+fn design_payload_advisories_do_not_fail_checks_and_skip_goto_plumbing() {
+    let mut h = MemHost::new("/w");
+    let source = r#"
+        event Reply: (id: int, value: int);
+        machine Worker {
+            fun Handle(p: (id: int, value: int)) { assert p.id >= 0; }
+            start state S { on Reply do Handle; }
+        }
+        machine Main { start state S { entry { var w: machine; w = new Worker(); send w, Reply, (id = 1, value = 2); } } }
+        test tc [main=Main]: { Main, Worker };
+    "#;
+    h.add_file("payload.p", source);
+    assert_eq!(
+        run(&mut h, &["check", "payload.p", "--deny", "lint", "--no-mutation", "--json"]),
+        0,
+        "{}{}",
+        h.stdout,
+        h.stderr
+    );
+    assert!(h.stderr.contains("warning[unused-design-payload-field]"), "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["warnings"]["lint"], 1);
+    h.add_file("payload.p", &source.replace("on Reply do Handle;", "on Reply goto S with Handle;"));
+    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stderr.contains("unused-design-payload-field"), "{}", h.stderr);
 }

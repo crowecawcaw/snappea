@@ -499,7 +499,8 @@ impl FaultModel {
     /// that ran it, if it is.
     pub fn judge(&self, prog: &Program, m: &crate::checker::mutation::Mutant, tests: &[usize]) -> Option<String> {
         use crate::checker::mutation::Change;
-        let body = prog.fun(m.fun).body.as_ref()?;
+        let fun = m.fun?;
+        let body = prog.fun(fun).body.as_ref()?;
         let whole = match m.change {
             Change::EmptyBody => true,
             Change::Remove => matches!(only_body(body)[..], [s] if s.span == m.span),
@@ -509,7 +510,7 @@ impl FaultModel {
             return None;
         }
         let mut events = Vec::new();
-        if !self.fault_fun(m.fun, tests, &mut events, 0) {
+        if !self.fault_fun(fun, tests, &mut events, 0) {
             return None;
         }
         events.sort();
