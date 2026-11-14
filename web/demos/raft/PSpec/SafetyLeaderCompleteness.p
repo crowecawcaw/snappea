@@ -23,9 +23,8 @@ spec SafetyLeaderCompleteness observes BecomeLeader {
       var e: ServerLog;
       // every entry committed by an earlier term must be in the new leader's log
       foreach (e in keys(committedLogs)) {
-        if (committedLogs[e] < payload.term) {
-          assert e in payload.log, format("{0} was committed by term {1} but is not in the log of the leader of term {2}", e, committedLogs[e], payload.term);
-        }
+        assert committedLogs[e] >= payload.term || e in payload.log,
+        format("{0} was committed by term {1} but is not in the log of the leader of term {2}", e, committedLogs[e], payload.term);
       }
 
       // record the entries this leader has committed, by the earliest term seen

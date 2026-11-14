@@ -12,8 +12,7 @@
 event Shutdown;
 // A node can notify the view service about its log entires
 // This is used for choosing servers that should receive an election timeout
-type TS = int;
-event NotifyLog: (timestamp: TS, server: Server, log: seq[ServerLog]);
+event NotifyLog: (server: Server, log: seq[ServerLog]);
 
 machine View {
   // the cluster nodes
@@ -25,6 +24,9 @@ machine View {
   var crashRate: int;
   // the total number failures that can be injected
   var numFailures: int;
+  // election timeouts still to force, one per round, each to a server the checker chooses,
+  // whether or not there is a leader: timers that fire while an election is under way
+  var forcedElections: int;
   // the timer for the view service to perform an action
   var triggerTimer: Timer;
   // the set of clients that have finished all requests
@@ -42,26 +44,24 @@ machine View {
   var requestVotePendingSet: set[Server];
   // the logs of nodes
   var serverLogs: map[Server, seq[ServerLog]];
-  // the last seen log of each node; prevent update the entry using older logs
-  var lastSeenLogs: map[Server, int];
   // number of rounds of actions where the view service cannot detect any leader
   var noLeaderRounds: int;
 
   start state Init {
-    entry (setup: (numServers: int, numClients: int, timeoutRate: int, crashRate: int, numFailures: int)) {
+    entry (setup: (numServers: int, numClients: int, timeoutRate: int, crashRate: int, numFailures: int, forcedElections: int)) {
       var i: int;
       var server: Server;
       timeoutRate = setup.timeoutRate;
       numClients = setup.numClients;
       crashRate = setup.crashRate;
       numFailures = setup.numFailures;
+      forcedElections = setup.forcedElections;
       followers = default(set[Server]);
       // at a moment, there can be multiple leaders, e.g. partitioned network
       leaders = default(set[Server]);
       candidates = default(set[Server]);
       requestVotePendingSet = default(set[Server]);
       serverLogs = default(map[Server, seq[ServerLog]]);
-      lastSeenLogs = default(map[Server, int]);
       noLeaderRounds = 0;
 
       while (i < setup.numServers) {
@@ -99,12 +99,9 @@ machine View {
       send server, ElectionTimeout;
     }
 
-    on NotifyLog do (payload: (timestamp:int, server: Server, log: seq[ServerLog])) {
-      // only track the most up-to-date logs
-      if (!(payload.server in keys(lastSeenLogs)) || lastSeenLogs[payload.server] < payload.timestamp) {
-        lastSeenLogs[payload.server] = payload.timestamp;
-        serverLogs[payload.server] = payload.log;
-      }
+    on NotifyLog do (payload: (server: Server, log: seq[ServerLog])) {
+      // one server's reports arrive in the order it sent them, so the last is the newest
+      serverLogs[payload.server] = payload.log;
     }
 
     on ViewChangedLeader do (server: Server) {
@@ -131,6 +128,12 @@ machine View {
 
     on HeartbeatTimeout do {
       var server: Server;
+      if (forcedElections > 0) {
+        server = choose(servers);
+        send server, ElectionTimeout;
+        forcedElections = forcedElections - 1;
+      }
+
       // print format("Current view: leaders={0} followers={1} candidates={2}", leaders, followers, candidates);
       if (sizeof(leaders) == 0) {
         if (noLeaderRounds % 25 == 0 && sizeof(requestVotePendingSet) > 0) {
@@ -200,7 +203,6 @@ machine View {
       var i: int;
       clientsDone += (client);
       if (sizeof(clientsDone) == numClients) {
-        i = 0;
         while (i < sizeof(servers)) {
           send servers[i], Shutdown;
           i = i + 1;
@@ -226,9 +228,6 @@ machine View {
     var candidate: Server;
     var term: int;
     var length: int;
-    term = 0;
-    length = 0;
-    candidate = default(Server);
     // print format("Choose candidate: server |-> logs: {0}", serverLogs);
     foreach (server in servers) {
       if (candidate == default(Server)) {

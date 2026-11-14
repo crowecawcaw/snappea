@@ -9,9 +9,9 @@
 event StartTimer;
 event ElectionTimeout;
 event HeartbeatTimeout;
-event CancelTimer;
 event Tick;
 
+// snappea: driver
 machine Timer {
   var holder: machine;
   var timeoutEvent: event;
@@ -23,7 +23,7 @@ machine Timer {
       goto TimerIdle;
     }
 
-    ignore CancelTimer, Tick, StartTimer;
+    ignore Tick, StartTimer;
   }
 
   state TimerIdle {
@@ -32,7 +32,7 @@ machine Timer {
     }
 
     on Shutdown goto TimerShutdown;
-    ignore CancelTimer, Tick;
+    ignore Tick;
   }
 
   state TimerTick {
@@ -45,12 +45,11 @@ machine Timer {
     }
 
     on Shutdown goto TimerShutdown;
-    on CancelTimer goto TimerIdle;
     ignore StartTimer;
   }
 
   state TimerShutdown {
-    ignore StartTimer, CancelTimer, Tick;
+    ignore StartTimer, Tick;
   }
 
   fun checkTick() {

@@ -3,106 +3,69 @@
 // This observer checks a rule; it does not implement the system. Hot states require
 // eventual progress.
 
-spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetResponse, RaftPutResponse, BecomeLeader {
-  var localKVStore: KVStore;
-  var getRequestMap: map[Client, map[TransactionId, KeyT]];
-  var putRequestMap: map[Client, map[TransactionId, (key: KeyT, value: ValueT)]];
-  var seenId: map[Client, set[int]];
-  var respondedId : map[Client, set[int]];
-  var currentLeader: Server;
-  var term: TermId;
+// The cluster behaves like one key-value store: replaying the puts in the order of their
+// first replies gives every get its answer. A put reply from any server means the put
+// committed; later replies for the same request repeat it and are not replayed.
+spec SafetySynchronization observes ClientPutRequest, ClientGetRequest, RaftGetResponse, RaftPutResponse {
+  var store: map[KeyT, ValueT];
+  var gets: map[Client, map[TransactionId, KeyT]];
+  var puts: map[Client, map[TransactionId, (key: KeyT, value: ValueT)]];
+  var answered: map[Client, set[TransactionId]];
 
-  start state Init {
+  start state Listening {
     entry {
-      localKVStore = newStore();
-      getRequestMap = default(map[Client, map[TransactionId, KeyT]]);
-      putRequestMap = default(map[Client, map[TransactionId, (key: KeyT, value: ValueT)]]);
-      seenId = default(map[Client, set[int]]);
-      respondedId = default(map[Client, set[int]]);
-      currentLeader = default(Server);
-      term = -1;
-      goto Listening;
-    }
-  }
-
-  state Listening {
-    on BecomeLeader do (payload: BecomeLeaderData) {
-      if (payload.term > term) {
-        currentLeader = payload.leader;
-        term = payload.term;
-      }
+      store = default(map[KeyT, ValueT]);
+      gets = default(map[Client, map[TransactionId, KeyT]]);
+      puts = default(map[Client, map[TransactionId, (key: KeyT, value: ValueT)]]);
+      answered = default(map[Client, set[TransactionId]]);
     }
 
+    // a server forwards a request unchanged, so every copy records the same entry
     on ClientGetRequest do (payload: ClientGetRequestData) {
-      if (!(payload.client in keys(seenId))) {
-        seenId[payload.client] = default(set[int]);
-      }
-
-      if (!(payload.client in keys(respondedId))) {
-        respondedId[payload.client] = default(set[int]);
-      }
-
-      if (!(payload.client in keys(getRequestMap))) {
-        getRequestMap[payload.client] = default(map[TransactionId, KeyT]);
-      }
-
-      if (payload.client == payload.sender && !(payload.transactionId in seenId[payload.client])) {
-        seenId[payload.client] += (payload.transactionId);
-      }
-
-      getRequestMap[payload.client][payload.transactionId] = payload.key;
+      noteClient(payload.client);
+      gets[payload.client][payload.transactionId] = payload.key;
     }
 
     on ClientPutRequest do (payload: ClientPutRequestData) {
-      if (!(payload.client in keys(seenId))) {
-        seenId[payload.client] = default(set[int]);
-      }
-
-      if (!(payload.client in keys(respondedId))) {
-        respondedId[payload.client] = default(set[int]);
-      }
-
-      if (!(payload.client in keys(putRequestMap))) {
-        putRequestMap[payload.client] = default(map[TransactionId, (key: KeyT, value: ValueT)]);
-      }
-
-      if (payload.client == payload.sender && !(payload.transactionId in seenId[payload.client])) {
-        seenId[payload.client] += (payload.transactionId);
-      }
-
-      putRequestMap[payload.client][payload.transactionId] = (key=payload.key, value=payload.value);
+      noteClient(payload.client);
+      puts[payload.client][payload.transactionId] = (key=payload.key, value=payload.value);
     }
 
     on RaftGetResponse do (payload: RaftGetResponseData) {
-      var executionResult: ExecutionResult;
-      checkResponseValid(payload.client, payload.sender, payload.transactionId);
-      if (!(payload.client in keys(respondedId)) && currentLeader == payload.sender) {
-        respondedId[payload.client] += (payload.transactionId);
-        executionResult = executeGet(localKVStore, getRequestMap[payload.client][payload.transactionId]);
-        assert executionResult.result.success == payload.success, format("Inconsistent status: {0}", getRequestMap[payload.client][payload.transactionId]);
-        assert executionResult.result.value == payload.value, format("Inconsistent Get result! Expected {0}, got {1}", executionResult.result.value, payload.value);
+      var key: KeyT;
+      assert payload.client in gets && payload.transactionId in gets[payload.client],
+      format("get reply for transaction {0} of {1}, which sent no such get", payload.transactionId, payload.client);
+      if (!(payload.transactionId in answered[payload.client])) {
+        answered[payload.client] += (payload.transactionId);
+        key = gets[payload.client][payload.transactionId];
+        if (key in store) {
+          assert payload.success && payload.value == store[key],
+          format("get {0} by {1} of key {2}: expected value {3}, got found={4} value={5}", payload.transactionId, payload.client, key, store[key], payload.success, payload.value);
+        }
+        else {
+          assert !payload.success,
+          format("get {0} by {1} of key {2}: no answered put wrote it, got value {3}", payload.transactionId, payload.client, key, payload.value);
+        }
       }
     }
 
     on RaftPutResponse do (payload: RaftPutResponseData) {
-      var executionResult: ExecutionResult;
-      checkResponseValid(payload.client, payload.sender, payload.transactionId);
-      if (!(payload.client in keys(respondedId)) && currentLeader == payload.sender) {
-        respondedId[payload.client] += (payload.transactionId);
-        assert payload.client in keys(putRequestMap);
-        assert payload.key == putRequestMap[payload.client][payload.transactionId].key,
-        format("put response for key {0}, but the request wrote key {1}", payload.key, putRequestMap[payload.client][payload.transactionId].key);
-        executionResult = executePut(localKVStore, putRequestMap[payload.client][payload.transactionId].key, putRequestMap[payload.client][payload.transactionId].value);
-        localKVStore = executionResult.newState;
+      assert payload.client in puts && payload.transactionId in puts[payload.client],
+      format("put reply for transaction {0} of {1}, which sent no such put", payload.transactionId, payload.client);
+      assert payload.key == puts[payload.client][payload.transactionId].key,
+      format("put reply for key {0}, but the request wrote key {1}", payload.key, puts[payload.client][payload.transactionId].key);
+      if (!(payload.transactionId in answered[payload.client])) {
+        answered[payload.client] += (payload.transactionId);
+        store[payload.key] = puts[payload.client][payload.transactionId].value;
       }
     }
   }
 
-  fun checkResponseValid(client: Client, sender: Server, Id: TransactionId) {
-    assert currentLeader != default(Server), "Leader is un-initialized but got an RaftResponse!";
-    if (currentLeader == sender) {
-      assert client in keys(seenId), format("Responding to a client that has not sent any request: {0}", client);
-      assert Id in seenId[client], format("Responding to a non-existing transactionId {0} sent by {1}", Id, client);
+  fun noteClient(client: Client) {
+    if (!(client in answered)) {
+      answered[client] = default(set[TransactionId]);
+      gets[client] = default(map[TransactionId, KeyT]);
+      puts[client] = default(map[TransactionId, (key: KeyT, value: ValueT)]);
     }
   }
 }

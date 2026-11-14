@@ -7,9 +7,14 @@
 event RaftConfig: (quorumSize: int);
 
 fun setUpCluster(numServers: int, numClients: int, timeoutRate: int, crashRate: int, numFailures: int): View {
+  return setUpRacingCluster(numServers, numClients, timeoutRate, crashRate, numFailures, 0);
+}
+
+// Like setUpCluster, and also forces forcedElections election timeouts, one per View round.
+fun setUpRacingCluster(numServers: int, numClients: int, timeoutRate: int, crashRate: int, numFailures: int, forcedElections: int): View {
   announce RaftConfig, (quorumSize=numServers / 2 + 1,);
   return new View((numServers=numServers, numClients=numClients,
-  timeoutRate=timeoutRate, crashRate=crashRate, numFailures=numFailures));
+  timeoutRate=timeoutRate, crashRate=crashRate, numFailures=numFailures, forcedElections=forcedElections));
 }
 
 fun randomWorkload(numCmd: int): seq[Command] {
@@ -115,6 +120,17 @@ machine ThreeClientsOneServerReliable {
     entry {
       var view: View;
       view = setUpCluster(1, 3, 0, 0, 0);
+    }
+  }
+}
+
+// Three servers time out together: votes cross between candidates of different terms, and
+// replies arrive after their sender has moved to a newer term.
+machine ElectionRaces {
+  start state Init {
+    entry {
+      var view: View;
+      view = setUpRacingCluster(3, 1, 30, 30, 10, 6);
     }
   }
 }
