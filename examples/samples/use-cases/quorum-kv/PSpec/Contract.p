@@ -1,5 +1,6 @@
 // The register contract, stated over what clients announce when an operation starts
-// and when it returns. The spec uses only real-time order; it never sees versions.
+// and when it returns. ReadAfterWrite uses only real-time order; it never sees
+// versions. ReplicasKeepNewest checks each replica's conditional write.
 // Each write writes a distinct value, so a value names its write. 0 is the initial value.
 
 event WriteStarted: (value: int);
@@ -55,6 +56,80 @@ spec ReadAfterWrite observes WriteStarted, WriteDone, ReadStarted, ReadDone {
       readStart -= (r.reader);
     }
   }
+}
+
+// A replica handled a write: the write it was offered, and what it holds afterwards.
+event Stored: (replica: int, write: (version: Version, value: int), holds: (version: Version, value: int));
+
+// Driver: how many writes will run and how many replicas are up, before any starts.
+event ReplicationPlanned: (writes: int, replicas: int);
+
+// Replicas: after each write, a replica holds the newest version it has been offered,
+// ordered by counter and then by writer id, so late and duplicate-counter writes
+// cannot move it back. Progress (hot state): every write reaches every live replica,
+// and then all replicas hold the same version and value (they converge).
+spec ReplicasKeepNewest observes ReplicationPlanned, Stored {
+  // replica -> what it holds
+  var held: map[int, (version: Version, value: int)];
+  // replica -> writes it has handled
+  var handled: map[int, int];
+  var writes: int;
+  var replicas: int;
+
+  start state Idle {
+    on ReplicationPlanned do (p: (writes: int, replicas: int)) {
+      writes = p.writes;
+      replicas = p.replicas;
+      goto Replicating;
+    }
+    on Stored do (s: (replica: int, write: (version: Version, value: int), holds: (version: Version, value: int))) {
+      assert false, format("replica {0} stored write {1} before any write was planned", s.replica, s.write);
+    }
+  }
+
+  hot state Replicating {
+    on Stored do (s: (replica: int, write: (version: Version, value: int), holds: (version: Version, value: int))) {
+      var expected: (version: Version, value: int);
+      if (s.replica in held) { expected = held[s.replica]; }
+      if (Supersedes(s.write.version, expected.version)) { expected = s.write; }
+      assert s.holds == expected,
+        format("replica {0} holds {1} after write {2}; the newest it was offered is {3}",
+               s.replica, s.holds, s.write, expected);
+      held[s.replica] = s.holds;
+      if (!(s.replica in handled)) { handled[s.replica] = 0; }
+      handled[s.replica] = handled[s.replica] + 1;
+      assert handled[s.replica] <= writes,
+        format("replica {0} handled more than the {1} planned writes", s.replica, writes);
+      CheckConverged();
+    }
+  }
+
+  state Converged {
+    on Stored do (s: (replica: int, write: (version: Version, value: int), holds: (version: Version, value: int))) {
+      assert false, format("replica {0} stored write {1} after every write reached every replica", s.replica, s.write);
+    }
+  }
+
+  fun CheckConverged() {
+    var r: int;
+    var first: (version: Version, value: int);
+    if (sizeof(handled) < replicas) { return; }
+    foreach (r in keys(handled)) {
+      if (handled[r] < writes) { return; }
+    }
+    first = held[keys(held)[0]];
+    foreach (r in keys(held)) {
+      assert held[r] == first,
+        format("replicas did not converge: replica {0} holds {1}, another holds {2}", r, held[r], first);
+    }
+    goto Converged;
+  }
+}
+
+// The contract's version order: the higher counter wins, then the higher writer id.
+fun Supersedes(a: Version, b: Version): bool {
+  if (a.counter != b.counter) { return a.counter > b.counter; }
+  return a.writer > b.writer;
 }
 
 // Progress: every operation the driver plans returns. The driver announces the count

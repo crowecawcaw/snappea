@@ -6,7 +6,7 @@
 // From the network: this client's connection dropped.
 event Disconnected;
 // To the network: open a connection for this client to the server.
-event Connect: (client: machine, server: machine, after: int);
+event Connect: (client: machine, id: int, server: machine, after: int);
 
 machine Client {
   var id: int;
@@ -19,7 +19,7 @@ machine Client {
       id = input.id;
       server = input.server;
       network = input.network;
-      send network, Connect, (client = this, server = server, after = displayed);
+      send network, Connect, (client = this, id = id, server = server, after = displayed);
     }
     on Deliver do (d: (sn: int, msg: int)) {
       if (d.sn == displayed + 1) {
@@ -28,7 +28,7 @@ machine Client {
       }
     }
     on Disconnected do {
-      send network, Connect, (client = this, server = server, after = displayed);
+      send network, Connect, (client = this, id = id, server = server, after = displayed);
     }
   }
 }

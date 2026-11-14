@@ -43,11 +43,11 @@ machine Door {
     on Open do (ctl: machine) {
       announce DoorOpened;
       send ctl, DoorOpenAck;
-      goto Open;
+      goto DoorsOpen;
     }
   }
 
-  state Open {
+  state DoorsOpen {
     on Close do (ctl: machine) {
       if (obstructions > 0) {
         obstructions = obstructions - 1;
@@ -65,7 +65,7 @@ machine Door {
     on Open do (ctl: machine) {
       announce DoorOpened;
       send ctl, DoorOpenAck;
-      goto Open;
+      goto DoorsOpen;
     }
   }
 }
@@ -195,6 +195,6 @@ test tcObstructedDoor [main=ObstructedDoor]:
 test tcGeneratedRides [main=GeneratedRides]:
   assert DoorsAndMotion, RequestsServed in { GeneratedRides, Controller, Motor, Door, Passenger };
 
-// snappea: expect-bug "with its doors open"
+// snappea: expect-bug "car moved from floor 0 with its doors open"
 test tcBugMoveBeforeClosed [main=BuggyMoveBeforeClosed]:
   assert DoorsAndMotion, RequestsServed in { BuggyMoveBeforeClosed, EagerController, Motor, Door, Passenger };

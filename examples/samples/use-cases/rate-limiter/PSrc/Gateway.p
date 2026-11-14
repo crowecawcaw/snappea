@@ -1,6 +1,8 @@
 // An API gateway node. For each request it reads the clock once, then runs a
-// load / decide / compare-and-swap loop against the shared counter. A lost CAS means
+// get / decide / compare-and-swap loop against the shared counter. A lost CAS means
 // another gateway wrote first: reload and decide again, which may now reject.
+// A gateway handles one request at a time: it waits for the clock and the store in
+// `receive`, so every reply it gets belongs to the current request.
 
 // Requests admitted per window, across all gateways.
 fun Limit(): int { return 2; }
@@ -31,8 +33,8 @@ machine Gateway {
       send clock, Now, this;
       receive { case NowResp: (w: int) { arrival = w; } }
       while (!done) {
-        send store, Load, this;
-        receive { case Loaded: (s: CounterRecord) { rec = s; } }
+        send store, Get, this;
+        receive { case Got: (s: CounterRecord) { rec = s; } }
         window = arrival;
         count = rec.count;
         // Another gateway already counts a later window: our clock reading is stale,
@@ -47,8 +49,7 @@ machine Gateway {
         } else {
           send store, Cas, (client = this, req = r.req, expected = rec.version,
                              window = window, count = count + 1);
-          receive { case CasResp: (result: (req: int, ok: bool)) {
-            assert result.req == r.req, "CAS response belongs to another request";
+          receive { case CasResult: (result: (req: int, ok: bool)) {
             // On a lost race, loop: reload and decide against the new count.
             admitted = result.ok;
             done = result.ok;

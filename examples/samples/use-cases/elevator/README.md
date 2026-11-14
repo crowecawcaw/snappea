@@ -45,12 +45,12 @@ movement and the door's closing take time (other machines run in between).
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way | pass |
-| `tcCallWhileClosing` | Car at 0; both press 0 | The second press lands while the doors open, dwell or close: it needs its own opening | pass |
-| `tcCallWhilePassing` | Car at 2 called to 0; the other presses 1 at any moment | Press before the car reaches 1 (stop there) or after it passed (come back) | pass |
-| `tcObstructedDoor` | Doors blocked twice before closing | The car must wait, then still serve the next floor | pass |
-| `tcGeneratedRides` | Any start floor, three presses chosen from three floors, 0 or 1 obstruction | Mixed histories | pass, sampled |
-| `tcBugMoveBeforeClosed` | `EagerController` | **Expected bug**: `car moved from floor 0 with its doors open` | expected bug |
+| `tcTwoPassengers` | Car at 0; presses for 2 then 0, and for 1 | Two passengers, a reversal, a floor passed on the way. All schedules | Passes |
+| `tcCallWhileClosing` | Car at 0; both press 0 | The second press lands while the doors open, dwell or close: it needs its own opening. All schedules | Passes |
+| `tcCallWhilePassing` | Car at 2 called to 0; the other presses 1 at any moment | Press before the car reaches 1 (stop there) or after it passed (come back). All schedules | Passes |
+| `tcObstructedDoor` | Doors blocked twice before closing | The car must wait, then still serve the next floor. All schedules | Passes |
+| `tcGeneratedRides` | Any start floor, three presses chosen from three floors, 0 or 1 obstruction | Mixed histories. Sampled | Passes |
+| `tcBugMoveBeforeClosed` | `EagerController` | The motor starts before the door confirms it is closed | Expected bug: `car moved from floor 0 with its doors open` |
 
 The `ReopenedForLatePress` scenario confirms the checks reach a press for the current
 floor after the doors opened there, followed by another opening there before the car
@@ -76,13 +76,9 @@ moves.
 ## Run
 
 ```sh
-snappea check tcTwoPassengers tcCallWhileClosing tcCallWhilePassing tcObstructedDoor tcGeneratedRides --timeout 30s --deny mutation
+snappea check tcTwoPassengers tcCallWhileClosing tcCallWhilePassing tcObstructedDoor tcGeneratedRides --deny mutation
 snappea check tcBugMoveBeforeClosed     # passes only when the declared failure is found
 ```
-
-Search is automatic. A time budget does not guarantee exhaustive checking. Use
-the run's `search_complete` field or `all N schedules` output to distinguish
-completed bounded search from sampling.
 
 ## Bounds and omissions
 
@@ -92,7 +88,7 @@ modeled: door open/close timers (dwell is immediate), several cars, load limits,
 emergency stop, a door that never stops being obstructed (the bound is what makes
 "eventually served" hold), direction-specific hall buttons.
 
-Suppressed mutant: `>`/`>=` and `<`/`<=` in `NextDirection`. `Dispatch` serves the
+Two suppressions, both equivalent mutants: `>`/`>=` and `<`/`<=` in `NextDirection`. `Dispatch` serves the
 current floor before choosing a direction, so no request equals the current floor
 there and the operators agree.
 

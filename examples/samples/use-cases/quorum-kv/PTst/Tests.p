@@ -3,9 +3,9 @@
 // Three replicas; with `down`, the third never answers (crashed for good).
 fun ThreeReplicas(down: bool): seq[machine] {
   var rs: seq[machine];
-  rs += (0, new Replica());
-  rs += (1, new Replica());
-  if (down) { rs += (2, new Unreachable()); } else { rs += (2, new Replica()); }
+  rs += (0, new Replica(1));
+  rs += (1, new Replica(2));
+  if (down) { rs += (2, new Unreachable()); } else { rs += (2, new Replica(3)); }
   return rs;
 }
 
@@ -17,15 +17,16 @@ machine Unreachable {
 
 // Concurrent clients: one writer per value in `writes`, and one reader, all started
 // at once.
-type Run = (quorums: Quorums, writes: seq[int]);
+type Workload = (quorums: Quorums, writes: seq[int]);
 
 machine Clients {
   start state Running {
-    entry (run: Run) {
+    entry (run: Workload) {
       var replicas: seq[machine];
       var i: int;
       replicas = ThreeReplicas(false);
       announce OpsPlanned, sizeof(run.writes) + 1;
+      announce ReplicationPlanned, (writes = sizeof(run.writes), replicas = 3);
       while (i < sizeof(run.writes)) {
         new Writer((owner = this, replicas = replicas, quorums = run.quorums, id = i + 1, value = run.writes[i]));
         i = i + 1;
@@ -81,10 +82,11 @@ machine Sequence {
       steps = input.steps;
       replicas = ThreeReplicas(input.down);
       announce OpsPlanned, sizeof(steps);
-      goto Run;
+      announce ReplicationPlanned, (writes = Writes(steps), replicas = Live(input.down));
+      goto Stepping;
     }
   }
-  state Run {
+  state Stepping {
     entry {
       var st: Step;
       st = steps[next];
@@ -96,9 +98,25 @@ machine Sequence {
       }
     }
     on ClientDone do {
-      if (next < sizeof(steps)) { goto Run; }
+      if (next < sizeof(steps)) { goto Stepping; }
     }
   }
+}
+
+// How many of the steps are writes.
+fun Writes(steps: seq[Step]): int {
+  var st: Step;
+  var n: int;
+  foreach (st in steps) {
+    if (st.value > 0) { n = n + 1; }
+  }
+  return n;
+}
+
+// How many replicas answer.
+fun Live(down: bool): int {
+  if (down) { return 2; }
+  return 3;
 }
 
 fun Steps3(a: Step, b: Step, c: Step): seq[Step] {
@@ -144,20 +162,20 @@ machine WriteThenReadR1 {
 }
 
 test tcWriteAndReads [main=WriteAndReads]:
-  assert ReadAfterWrite, OperationsReturn in { WriteAndReads, Clients, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { WriteAndReads, Clients, Replica, Unreachable, Writer, Reader, BBDelivery };
 
 test tcTwoWriters [main=TwoWriters]:
-  assert ReadAfterWrite, OperationsReturn in { TwoWriters, Clients, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { TwoWriters, Clients, Replica, Unreachable, Writer, Reader, BBDelivery };
 
 test tcWriteThenRead [main=WriteThenRead]:
-  assert ReadAfterWrite, OperationsReturn in { WriteThenRead, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { WriteThenRead, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
 
 test tcOneReplicaDown [main=OneReplicaDown]:
-  assert ReadAfterWrite, OperationsReturn in { OneReplicaDown, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { OneReplicaDown, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
 
 test tcWriteWriteRead [main=WriteWriteRead]:
-  assert ReadAfterWrite, OperationsReturn in { WriteWriteRead, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { WriteWriteRead, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
 
-// snappea: expect-bug "returned the initial value after write"
+// snappea: expect-bug "reader 1 returned the initial value after write 1 completed"
 test tcBugReadOne [main=WriteThenReadR1]:
-  assert ReadAfterWrite, OperationsReturn in { WriteThenReadR1, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };
+  assert ReadAfterWrite, ReplicasKeepNewest, OperationsReturn in { WriteThenReadR1, Sequence, Replica, Unreachable, Writer, Reader, BBDelivery };

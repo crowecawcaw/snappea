@@ -98,6 +98,6 @@ test tcStagedRollout [main=StagedRollout]:
 test tcRollbackDuringCanary [main=RollbackDuringCanary]:
   assert RolloutSafety, RolloutCompletes in { RollbackDuringCanary, ConfigService, Node, BBDelivery, Operator };
 
-// snappea: expect-bug "applied version 2 after version 3"
+// snappea: expect-bug "node 0 applied version 2 after version 3"
 test tcBugLastArrival [main=BuggyLastArrival]:
   assert RolloutSafety, RolloutCompletes in { BuggyLastArrival, ConfigService, LastArrivalNode, BBDelivery, Operator };

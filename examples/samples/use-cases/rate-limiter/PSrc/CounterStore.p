@@ -2,17 +2,17 @@
 // the most recent window: which window it counts and how many requests it admitted.
 //
 // Real atomic primitives:
-//   load: return (window, count, version)
+//   get: return (window, count, version)
 //   cas:  if version == expected, write (window, count) and bump version
 // Everything a gateway does between them can interleave with other gateways.
 
 type CounterRecord = (window: int, count: int, version: int);
 type CompareAndSwapRequest = (client: machine, req: int, expected: int, window: int, count: int);
 
-event Load: machine;
-event Loaded: CounterRecord;
+event Get: machine;
+event Got: CounterRecord;
 event Cas: CompareAndSwapRequest;
-event CasResp: (req: int, ok: bool);
+event CasResult: (req: int, ok: bool);
 
 machine CounterStore {
   var window: int;
@@ -20,13 +20,13 @@ machine CounterStore {
   var version: int;
 
   start state Serving {
-    on Load do (client: machine) {
-      send client, Loaded, (window = window, count = count, version = version);
+    on Get do (client: machine) {
+      send client, Got, (window = window, count = count, version = version);
     }
     on Cas do (c: CompareAndSwapRequest) {
       if (c.expected != version) {
         // Another gateway committed since this request loaded the counter.
-        send c.client, CasResp, (req = c.req, ok = false);
+        send c.client, CasResult, (req = c.req, ok = false);
         return;
       }
       window = c.window;
@@ -35,7 +35,7 @@ machine CounterStore {
       version = version + 1;
       // Commit point of an admission: announce what the store now holds.
       announce Admitted, (req = c.req, window = window, count = count);
-      send c.client, CasResp, (req = c.req, ok = true);
+      send c.client, CasResult, (req = c.req, ok = true);
     }
   }
 }

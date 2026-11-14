@@ -59,22 +59,22 @@ python3 examples/samples/check_samples.py use-cases/seat-hold
 | [seat-hold](use-cases/seat-hold/) | Seat holds that expire during payment | Expiry between payment and confirm; stale timer or cancel |
 | [rate-limiter](use-cases/rate-limiter/) | Fixed-window limiter with CAS | Lost CAS, exactly at capacity, window rollover |
 | [lease-lock-fencing](use-cases/lease-lock-fencing/) | Lease lock with fencing tokens | Paused holder writes after its lease expired |
-| [idempotent-payments](use-cases/idempotent-payments/) | Payment API with idempotency keys | Concurrent retries of one key |
+| [idempotent-payments](use-cases/idempotent-payments/) | Payment API with idempotency keys | Concurrent retries of one key answered "retry later" |
 | [travel-saga](use-cases/travel-saga/) | Booking saga with compensation | Cancel while a step is in flight |
 | [transactional-outbox](use-cases/transactional-outbox/) | Outbox relay | Relay crash and replacement; missed wake-up |
 | [offline-sync](use-cases/offline-sync/) | Offline note sync with base versions | Concurrent edits from two devices |
 | [circuit-breaker](use-cases/circuit-breaker/) | Circuit breaker | Concurrent probes in half-open |
 | [elevator](use-cases/elevator/) | Elevator controller, door and motor | Never move with the door open; obstructed door |
-| [config-rollout](use-cases/config-rollout/) | Staged rollout with canary | Rollback during the canary |
+| [config-rollout](use-cases/config-rollout/) | Staged rollout gated on the canary's ack | Rollback during the canary |
 | [worker-drain](use-cases/worker-drain/) | Worker drain on scale-in | Work arriving while draining |
 | [cache-invalidation](use-cases/cache-invalidation/) | Look-aside cache with lease fills | Stale fill after an invalidation |
 | [leader-election](use-cases/leader-election/) | Term-based election | Two candidates in one term |
 | [job-queue](use-cases/job-queue/) | Queue with visibility timeouts | Slow worker finishes after redelivery |
-| [quorum-kv](use-cases/quorum-kv/) | Quorum-replicated key-value store | Overlapping reads and writes |
-| [chat-sequencing](use-cases/chat-sequencing/) | Chat message ordering | Per-room order across senders |
+| [quorum-kv](use-cases/quorum-kv/) | Quorum-replicated key-value store | Overlapping reads and writes; replicas converge |
+| [chat-sequencing](use-cases/chat-sequencing/) | Chat message ordering with resume | Per-room order across senders; resume after the last displayed seq |
 | [order-cancel-vs-ship](use-cases/order-cancel-vs-ship/) | Order cancel versus warehouse ship | Cancel between pick and ship; capture retry |
-| [online-migration](use-cases/online-migration/) | Dual-write, backfill, cutover | Backfill racing writers and deletes |
-| [consumer-group-rebalance](use-cases/consumer-group-rebalance/) | Consumer group with generations | Zombie consumer commits after rebalance |
+| [online-migration](use-cases/online-migration/) | Dual-write, backfill, cutover | Backfill racing writers and deletes; reads across cutover |
+| [consumer-group-rebalance](use-cases/consumer-group-rebalance/) | Consumer group with generations | Zombie consumer commits after rebalance; retried join |
 | [token-refresh](use-cases/token-refresh/) | Rotating refresh tokens across tabs | Both tabs refresh; lost refresh response |
 
 ## Flawed designs

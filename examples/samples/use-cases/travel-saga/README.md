@@ -15,16 +15,17 @@ newest first. The user can cancel at any moment.
 
 **Contract**
 
-- The saga ends with all three booked (`TripBooked`) or none held (`RolledBack`).
-  No orphan reservation survives, including one whose answer was in flight when the
-  user cancelled.
-- Steps run in order, one at a time, and none starts once rollback has begun.
-  Only steps that succeeded are released, newest first, and only during rollback.
-- The saga rolls back only after a failure or an accepted cancel.
-- A cancel is accepted until the trip is booked. After that it is refused and nothing
-  is undone (undoing a booked trip is a separate refund flow). A cancel after a
-  rollback is accepted and changes nothing.
-- Every saga ends, and a user who cancels gets an answer matching the decision.
+- `NoOrphans`: the saga ends with all three booked (`TripBooked`) or none held
+  (`RolledBack`). No orphan reservation survives, including one whose answer was in
+  flight when the user cancelled.
+- `NoOrphans`: steps run in order, one at a time, and none starts once rollback has
+  begun. Only steps that succeeded are released, newest first, and only during
+  rollback. The saga rolls back only after a failure or an accepted cancel.
+- `NoOrphans`: a cancel is accepted until the trip is booked. After that it is refused
+  and nothing is undone (undoing a booked trip is a separate refund flow). A cancel
+  after a rollback is accepted and changes nothing.
+- `SagaEnds` (hot state): every saga ends, and a user who cancels gets an answer
+  matching the decision.
 
 **Atomic primitives**: each service's reserve and release is one step on that
 service. The orchestrator's requests, the services' answers and the user's cancel are
@@ -48,20 +49,18 @@ answer is the classic orphan.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcFailureAtEachStep` | The driver picks which service declines (flight, hotel, car or none) | Compensation of exactly the steps that succeeded, newest first | pass, exhaustive |
-| `tcCancelRacesSaga` | Nothing fails; the user cancels at any moment | Cancel before, during each step (including the car's success racing with it), after booking | pass, exhaustive |
-| `tcCancelRacesFailure` | The car declines; the user cancels at any moment | Cancel during compensation or after rollback | pass, exhaustive |
-| `tcCancelAfterBooked` | The user cancels only after the trip is booked | Lifecycle boundary: refused, nothing released | pass, exhaustive (deterministic) |
-| `tcBugForgetsInFlightStep` | `ForgetfulSaga`; the user cancels while the car is in flight | Negative control | fails: `saga ended with the car reservation still in flight` |
+| `tcFailureAtEachStep` | The driver picks which service declines (flight, hotel, car or none) | Compensation of exactly the steps that succeeded, newest first. All schedules | Passes |
+| `tcCancelRacesSaga` | Nothing fails; the user cancels at any moment | Cancel before, during each step (including the car's success racing with it), after booking. All schedules | Passes |
+| `tcCancelRacesFailure` | The car declines; the user cancels at any moment | Cancel during compensation or after rollback. All schedules | Passes |
+| `tcCancelAfterBooked` | The user cancels only after the trip is booked | Lifecycle boundary: refused, nothing released. All schedules | Passes |
+| `tcBugForgetsInFlightStep` | `ForgetfulSaga`; the user cancels while the car is in flight | The car's late success is never released | Expected bug: `saga ended with the Car reservation still in flight` |
 
 ## Run
 
 ```sh
-snappea check tcFailureAtEachStep tcCancelRacesSaga tcCancelRacesFailure tcCancelAfterBooked
-snappea check tcBugForgetsInFlightStep    # expected bug (exit 0): the orphan above
+snappea check tcFailureAtEachStep tcCancelRacesSaga tcCancelRacesFailure tcCancelAfterBooked --deny mutation
+snappea check tcBugForgetsInFlightStep    # passes only when the declared failure is found
 ```
-
-Each passing test explores every schedule in well under a second.
 
 ## Bounds and omissions
 

@@ -7,10 +7,12 @@ questions:
   - How do I check that every node ends up on the latest version?
 ---
 
-# Staged config rollout with canary and rollback
+# Staged config rollout gated on the canary's ack, with rollback
 
 A config service rolls versioned configs out to three nodes in two stages: the canary
-(node 0) first, then, once the canary acknowledges, the other two. A node applies a
+(node 0) first, then, once the canary acknowledges that it applied the version, the
+other two. The gate is that ack alone: no health check of the canary is modeled, so
+"the canary is healthy" is out of scope. A node applies a
 pushed config only if its version is newer than the one it runs, and acknowledges
 every push. The operator can issue a new version at any time, including mid-rollout;
 the service abandons the current rollout and starts over at the canary. Pushes travel
@@ -25,12 +27,14 @@ in flight.
 
 **Contract**
 
-- A node applies only versions newer than what it runs, only versions pushed to it,
-  with the content that version was issued with.
-- The service pushes only the latest issued version (after a rollback, nothing pushes
-  the bad version again) and pushes beyond the canary only after the canary applied it.
-- Progress: once every planned version is issued, every node eventually runs the
-  latest one, and the service declares that rollout done (only when it is).
+- `RolloutSafety`: a node applies only versions newer than what it runs, only versions
+  pushed to it, with the content that version was issued with.
+- `RolloutSafety`: the service pushes only the latest issued version (after a
+  rollback, nothing pushes the bad version again) and pushes beyond the canary only
+  after the canary applied it.
+- `RolloutCompletes` (hot state): once every planned version is issued, every node
+  eventually runs the latest one, and the service declares that rollout done (only
+  when it is).
 
 **Atomic steps**: the service handles one message at a time; a node applies a config
 atomically. Each push is a separate `BBDelivery` machine, which is what lets pushes
@@ -49,9 +53,9 @@ overtake each other.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion | pass |
-| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2 | pass|
-| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | **Expected bug**: `node 0 applied version 2 after version 3` | expected bug |
+| `tcStagedRollout` | Version 2 to three nodes | The canary gate; acks; completion. All schedules | Passes |
+| `tcRollbackDuringCanary` | Version 2, then rollback as version 3 (version 1's content) at any moment | Rollback while version 2's pushes are in flight; pushes of 2 and 3 to one node in either order; late acks of version 2. Sampled | Passes |
+| `tcBugLastArrival` | `LastArrivalNode` in the rollback scenario | A delayed push of the bad version undoes the rollback | Expected bug: `node 0 applied version 2 after version 3` |
 
 The `RollbackOvertookPush` scenario confirms a node applied version 3 while a push of
 version 2 to it was still in flight (the rollback overtook the bad version).
@@ -82,7 +86,7 @@ the project import to that copy. Keep the delivery contract explicit.
 ## Run
 
 ```sh
-snappea check tcStagedRollout tcRollbackDuringCanary --timeout 2m --deny mutation
+snappea check tcStagedRollout tcRollbackDuringCanary --deny mutation
 snappea check tcBugLastArrival      # passes only when the declared failure is found
 ```
 
@@ -91,15 +95,17 @@ snappea check tcBugLastArrival      # passes only when the declared failure is f
 Three nodes, one canary, at most two new versions. Pushes are delayed and reordered
 but never lost or duplicated, so the service never retries. Not modeled: push loss and
 retry, node restarts (a node losing its applied version), health checks deciding
-whether to continue past the canary, percentage-based stages.
+whether to continue past the canary (the gate is the canary's ack only),
+percentage-based stages.
 
 Suppressed mutants, both equivalent here:
 
 - `p.version > version` → `>=` in `Node`: each version is pushed to each node once,
   so a push never equals the running version. With at-least-once delivery this would
   matter; add duplicate delivery to the courier if your network duplicates.
-- Removing `goto Idle` after the rollout completes: once every ack is in, `Rest` and
-  `Idle` handle every event alike.
+- Removing `goto Idle` after the rollout completes: each node acks each version once,
+  so no ack for this version is still coming, and `Rest` and `Idle` handle `Issue`
+  and older acks alike.
 
 ## Testing the implementation
 

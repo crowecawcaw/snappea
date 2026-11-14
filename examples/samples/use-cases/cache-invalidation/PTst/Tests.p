@@ -146,7 +146,7 @@ test tcReadWriteRead [main=ReadWriteRead]:
   assert CacheFresh, OperationsFinish in
   { ReadWriteRead, Database, LeaseCache, Reader, Writer };
 
-// snappea: expect-bug "stale value"
+// snappea: expect-bug "cache holds stale value 0 at quiescence; database has 1"
 test tcBugNaiveCache [main=BuggyStaleFillRace]:
   assert CacheFresh, OperationsFinish in
   { BuggyStaleFillRace, Workload, Database, NaiveCache, Reader, Writer };

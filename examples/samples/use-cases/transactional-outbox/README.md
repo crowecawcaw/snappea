@@ -17,11 +17,14 @@ consumer deduplicates by message id.
 
 **Contract**
 
-- Nothing is published or applied for an order whose transaction did not commit.
-- An outbox row is marked sent only after the broker has the message.
-- The consumer applies each order at most once, however many copies arrive.
-- Every committed order is eventually applied (so published), and every outbox row
-  is eventually marked sent (the outbox drains).
+- `AppliedOnce`: nothing is published or applied for an order whose transaction did
+  not commit.
+- `AppliedOnce`: an outbox row is marked sent only after the broker has the message.
+- `AppliedOnce`: the consumer applies each order at most once, however many copies
+  arrive.
+- `CommittedOrdersDelivered` and `OutboxDrains` (hot states): every committed order is
+  eventually applied (so published), and every outbox row is eventually marked sent
+  (the outbox drains).
 
 **Atomic primitives**: placing an order (order row + outbox row in one transaction,
 or nothing); fetching unsent rows, which registers the relay for a wake-up if there
@@ -55,25 +58,23 @@ at-least-once either way, so the design tolerates duplicates instead.
 
 | Test | Drives | Why it matters | Expected |
 | --- | --- | --- | --- |
-| `tcTwoRelays` | Order 1 committed, then two relays | Both publish it; the consumer gets a duplicate; marks race with publishes | pass, exhaustive |
-| `tcRelayCrashAfterPublish` | One relay crashes after the ack, before the mark; a new one starts. Order 2 aborts | The row is republished from the table; the duplicate is dropped; the aborted order is never published | pass, exhaustive |
-| `tcOrdersWhileRelayRuns` | One relay starts first; two orders commit while it sleeps or works | Commits must wake a sleeping relay; after a batch the relay must fetch again | pass, exhaustive |
-| `tcBugDualWrite` | `DualWriteOrderService`: commit, maybe crash, then publish | Negative control: the event is lost for good | fails: `CommittedOrdersDelivered detected liveness bug in hot state 'Undelivered'` |
-| `tcBugNoDedup` | `tcTwoRelays` with `NaiveConsumer` | Negative control | fails: `order 1 applied twice` |
+| `tcTwoRelays` | Order 1 committed, then two relays | Both publish it; the consumer gets a duplicate; marks race with publishes. All schedules | Passes |
+| `tcRelayCrashAfterPublish` | One relay crashes after the ack, before the mark; a new one starts. Order 2 aborts | The row is republished from the table; the duplicate is dropped; the aborted order is never published. All schedules | Passes |
+| `tcOrdersWhileRelayRuns` | One relay starts first; two orders commit while it sleeps or works | Commits must wake a sleeping relay; after a batch the relay must fetch again. All schedules | Passes |
+| `tcBugDualWrite` | `DualWriteOrderService`: commit, maybe crash, then publish | The service crashes after the commit and the event is lost for good | Expected bug: `CommittedOrdersDelivered detected liveness bug in hot state 'Undelivered'` |
+| `tcBugNoDedup` | `tcTwoRelays` with `NaiveConsumer` | The duplicate is applied | Expected bug: `order 1 applied twice` |
 
 ## Run
 
 ```sh
-snappea check tcTwoRelays tcRelayCrashAfterPublish tcOrdersWhileRelayRuns --timeout 30s
-snappea check tcBugDualWrite tcBugNoDedup   # both expected bugs match (exit 0)
+snappea check tcTwoRelays tcRelayCrashAfterPublish tcOrdersWhileRelayRuns --deny mutation
+snappea check tcBugDualWrite tcBugNoDedup   # passes only when both declared failures are found
 ```
-
-With `--timeout`, each passing test explores every schedule in about two seconds or
-less. Without it, `tcTwoRelays` may stop early once coverage stops growing.
 
 ## Bounds and omissions
 
-At most two orders and two relays, one injected crash. The broker never loses an
+At most two orders and two relays, one injected crash. A relay publishes one row at a
+time and waits for the broker's ack in `receive`, so the ack it gets is for that row. The broker never loses an
 acked message and delivers in the order it receives. Relays keep polling forever in
 production; in the model a relay with nothing to do sleeps, and a test ends when
 everything is idle. The crash is injected by a flag in the relay (test scaffolding);
@@ -82,6 +83,10 @@ redelivery after a consumer crash (the consumer's apply and record must stay one
 transaction), per-key ordering across relays (two relays can publish orders out of
 order), outbox row cleanup, and the dedup table's retention window (a duplicate
 arriving after its id is purged would be applied twice).
+
+One suppression: removing the crashed relay's `goto Crashed`. The "dead" relay then
+keeps running beside its replacement, which is the two-relay case the contract already
+allows.
 
 ## Testing the implementation
 

@@ -6,14 +6,14 @@
 event Set: (client: machine, req: int, window: int, count: int);
 event SetOk;
 
-// A store with load and unconditional set (a plain key-value GET/SET).
+// A store with get and unconditional set (a plain key-value GET/SET).
 machine PlainCounterStore {
   var window: int;
   var count: int;
 
   start state Serving {
-    on Load do (client: machine) {
-      send client, Loaded, (window = window, count = count, version = 0);
+    on Get do (client: machine) {
+      send client, Got, (window = window, count = count, version = 0);
     }
     on Set do (s: (client: machine, req: int, window: int, count: int)) {
       window = s.window;
@@ -40,8 +40,8 @@ machine BlindGateway {
       var count: int;
       send clock, Now, this;
       receive { case NowResp: (w: int) { arrival = w; } }
-      send store, Load, this;
-      receive { case Loaded: (s: CounterRecord) { rec = s; } }
+      send store, Get, this;
+      receive { case Got: (s: CounterRecord) { rec = s; } }
       window = arrival;
       count = rec.count;
       if (rec.window > window) { window = rec.window; }

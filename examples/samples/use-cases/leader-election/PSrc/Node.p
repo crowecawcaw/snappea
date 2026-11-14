@@ -35,7 +35,7 @@ event RoundLost: (id: int, term: int);
 event ClientReq;
 
 // Durable state a node starts from (all zero for a fresh node).
-type Disk = (id: int, term: int, votedTerm: int);
+type DurableState = (id: int, term: int, votedTerm: int);
 
 machine Node {
   // Durable.
@@ -47,7 +47,7 @@ machine Node {
     replies: int, leaderTerm: int);
 
   start state Init {
-    entry (d: Disk) {
+    entry (d: DurableState) {
       id = d.id;
       term = d.term;
       votedTerm = d.votedTerm;

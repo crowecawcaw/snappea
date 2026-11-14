@@ -19,8 +19,9 @@ machine BlindCopyNewStore {
       Put(w.key, w.row);
       send w.client, NewWritten, (key = w.key,);
     }
-    on ReadRow do (r: (client: machine, key: int)) {
-      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, reader: int, key: int)) {
+      announce ReadServed, (table = NewTable, reader = r.reader, key = r.key);
+      send r.client, RowRead, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 
@@ -57,8 +58,9 @@ machine InsertIfAbsentNewStore {
       }
       send w.client, NewWritten, (key = w.key,);
     }
-    on ReadRow do (r: (client: machine, key: int)) {
-      send r.client, Row, (key = r.key, row = RowOf(rows, r.key));
+    on ReadRow do (r: (client: machine, reader: int, key: int)) {
+      announce ReadServed, (table = NewTable, reader = r.reader, key = r.key);
+      send r.client, RowRead, (key = r.key, row = RowOf(rows, r.key));
     }
   }
 }
@@ -82,7 +84,7 @@ machine EagerRouter {
       send writer, WriteGranted;
     }
     ignore EndWrite, ReadDone;
-    on Route do (r: (client: machine, key: int)) {
+    on Route do (r: (client: machine, reader: int, key: int)) {
       if (readsFromNew) {
         send newStore, ReadRow, r;
       } else {

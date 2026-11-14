@@ -30,19 +30,27 @@ machine CardProcessor {
 // A client paying with idempotency key `key`. It sends every attempt in `apis` at once:
 // one attempt is a plain request; two model a double click (two servers), or a
 // timed-out first attempt retried before or after the first one finished (its
-// response counts as lost to the user, but is still checked).
+// response counts as lost to the user, but is still checked). On "retry later" it
+// sends the same request again, through the load balancer to either server.
 machine PayingClient {
   var owner: machine;
   var outstanding: int;
+  var apis: seq[machine];
+  var amount: int;
   start state Paying {
     entry (input: (owner: machine, key: int, amount: int, apis: seq[machine])) {
       var api: machine;
       owner = input.owner;
+      apis = input.apis;
+      amount = input.amount;
       foreach (api in input.apis) {
         announce Attempted, (key = input.key, amount = input.amount);
         send api, Charge, (client = this, key = input.key, amount = input.amount);
         outstanding = outstanding + 1;
       }
+    }
+    on ChargeConflict do (c: (key: int)) {
+      send choose(apis), Charge, (client = this, key = c.key, amount = amount);
     }
     on ChargeResponse do (r: (key: int, result: ChargeResult)) {
       announce Answered, r;
@@ -82,7 +90,7 @@ fun Only(api: machine): seq[machine] {
 
 // Double click: the same key reaches both servers at once. Every order of claims,
 // the processor call and completion is explored: one claims and charges, the other
-// finds the key in progress (waits for the result) or done (returns it).
+// finds the key in progress (answers "retry later") or done (returns it).
 machine DoubleClick {
   start state Run {
     entry (sys: PaymentSystem) {
@@ -123,9 +131,9 @@ machine DeclinedStaysDeclined {
       announce AttemptsPlanned, 3;
       Pay(this, 1, 5, Only(sys.a));
     }
-    on ClientDone goto TopUp;
+    on ClientDone goto ToppingUp;
   }
-  state TopUp {
+  state ToppingUp {
     entry { send sys.processor, TopUp, (driver = this, amount = 5); }
     on ToppedUp goto Retry;
   }
@@ -140,7 +148,7 @@ machine DeclinedStaysDeclined {
 }
 
 // Independent keys: two payments with different keys at once, on different servers,
-// with funds for only one. Exactly one is approved; neither waits for the other or
+// with funds for only one. Exactly one is approved; neither is told to retry by the other or
 // gets the other's result.
 machine IndependentKeys {
   start state Run {

@@ -9,12 +9,12 @@ questions:
 
 # Term-based leader election
 
-Three nodes (four in one test, two in focused restart tests) elect a leader the way Raft does, without the log: a
-node whose election timer fires increments its term, votes for itself and asks the
-others for votes; a node grants at most one vote per term; a candidate with a majority
-of the cluster becomes leader. A higher term in any request or reply makes a node adopt
-it and step down. Only the leader accepts client requests.
-Nodes can crash and restart, and messages are delayed arbitrarily.
+Three nodes (four in one test, two in focused restart tests) elect a leader the way
+Raft does, without the log: a node whose election timer fires increments its term,
+votes for itself and asks the others for votes; a node grants at most one vote per
+term; a candidate with a majority of the cluster becomes leader. A higher term in any
+request or reply makes a node adopt it and step down. Only the leader accepts client
+requests. Nodes can crash and restart, and messages are delayed arbitrarily.
 
 **Contract**
 
@@ -27,9 +27,9 @@ Nodes can crash and restart, and messages are delayed arbitrarily.
   so a leader that saw a higher term has stepped down.
 - Progress (`SomeLeaderElected`, bounded): once elections start, some node becomes
   leader. Assumptions: at most one instantaneous crash/restart, messages are delayed
-  but not lost, and if every candidate of a
-  round loses, one node's timer eventually fires alone after the earlier messages were
-  handled (what Raft's randomized timeouts provide).
+  but not lost, and if every candidate of a round loses, one node's timer eventually
+  fires alone after the earlier messages were handled (what Raft's randomized
+  timeouts provide).
 - Progress (`CandidaciesConclude`): every candidacy hears back from every peer,
   unless a newer candidacy supersedes it or a crash discards it. Replies already in
   flight can still arrive after cancellation, but cannot revive the old tally.
@@ -39,8 +39,9 @@ Nodes can crash and restart, and messages are delayed arbitrarily.
 
 **Atomic primitives** (one handler each): timeout (term + 1 and self-vote, persisted,
 then send requests); answer a RequestVote (adopt a higher term, grant if this node has
-not voted in that term, persist, reply); handle a reply; answer a client request. `term` and `votedTerm` are
-durable; the whole campaign record is volatile and is discarded on restart.
+not voted in that term, persist, reply); handle a reply; answer a client request.
+`term` and `votedTerm` are durable; the whole campaign record is volatile and is
+discarded on restart.
 
 ## Files
 
@@ -53,21 +54,39 @@ durable; the whole campaign record is volatile and is discarded on restart.
 
 ## Test cases
 
-| Test | Drives | Why it matters |
-| --- | --- | --- |
-| `tcTwoCandidates` | Nodes 1 and 2 stand at once; node 3 decides | The core race: either candidate may see the other's request first and stand in a higher term |
-| `tcSplitVote` | Node 3 restarts having voted for itself in term 1; nodes 1 and 2 stand in term 1 | Split vote: nobody wins term 1, both report the loss, the uncontested round must elect |
-| `tcHigherTermReply` | Node 3 (and sometimes node 2) restarts at term 5; node 1 stands in term 1 | A candidate or leader gets a reply with a higher term; a loser must next stand above it |
-| `tcStaleVoteReply` | Node 1's timer fires twice in a row | Replies to its term-1 requests arrive during its term-2 candidacy and must not count |
-| `tcOneNodeDown` | Node 3 never answers | A majority, not unanimity: one grant plus the self-vote must win |
-| `tcFourNodesOneDown` | Four nodes, one never answers; node 1 stands | Exactly at the boundary: two votes of four are half, not a majority, and must not win; three must |
-| `tcDeposedLeader` | Node 1 stands in term 1, node 3 (restarted at term 5) in term 6; a client request to node 1 at any moment | A leader that sees a higher term in a request or a reply must stop accepting requests |
-| `tcGeneratedElection` | One or two candidates, maybe a crash and restart of a non-candidate | Crashes at any moment, including between granting one candidate and seeing the other |
-| `tcCandidateRestart` | A timeout followed by a crash, while replies race with the crash | The old campaign is discarded; scenarios require crashes both before and after winning, followed by refusal of a client request before reelection |
-| `tcSelfVoteSurvivesRestart` | Two self-votes in term 1; the loser restarts before the competitor's delayed request | A persisted self-vote must prevent a second vote in the same term; the next term can succeed |
-| `tcRequestStepDownRestart` | A controlled peer's higher-term request makes the candidate step down, then it crashes | The higher term and granted vote survive a former-candidate restart |
-| `tcReplyStepDownRestart` | A controlled peer rejects the campaign with a higher term, then the target crashes | The higher term learned from a reply survives restart; recovery advances beyond it |
-| `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | **Expected bug**: `node 3 voted twice in term 1: for 2 and for 1` |
+| Test | Drives | Why it matters | Expected |
+| --- | --- | --- | --- |
+| `tcTwoCandidates` | Nodes 1 and 2 stand at once; node 3 decides | The core race: either candidate may see the other's request first and stand in a higher term. All schedules | Passes |
+| `tcSplitVote` | Node 3 restarts having voted for itself in term 1; nodes 1 and 2 stand in term 1 | Split vote: nobody wins term 1, both report the loss, the uncontested round must elect. All schedules | Passes |
+| `tcHigherTermReply` | Node 3 (and sometimes node 2) restarts at term 5; node 1 stands in term 1 | A candidate or leader gets a reply with a higher term; a loser must next stand above it. All schedules | Passes |
+| `tcStaleVoteReply` | Node 1's timer fires twice in a row | Replies to its term-1 requests arrive during its term-2 candidacy and must not count. All schedules | Passes |
+| `tcOneNodeDown` | Node 3 never answers | A majority, not unanimity: one grant plus the self-vote must win. All schedules | Passes |
+| `tcFourNodesOneDown` | Four nodes, one never answers; node 1 stands | Exactly at the boundary: two votes of four are half, not a majority, and must not win; three must. All schedules | Passes |
+| `tcDeposedLeader` | Node 1 stands in term 1, node 3 (restarted at term 5) in term 6; a client request to node 1 at any moment | A leader that sees a higher term in a request or a reply must stop accepting requests. Sampled | Passes |
+| `tcGeneratedElection` | One or two candidates, maybe a crash and restart of a non-candidate | Crashes at any moment, including between granting one candidate and seeing the other. Sampled | Passes |
+| `tcCandidateRestart` | A timeout followed by a crash, while replies race with the crash | The old campaign is discarded; scenarios require crashes both before and after winning, followed by refusal of a client request before reelection. All schedules | Passes |
+| `tcSelfVoteSurvivesRestart` | Two self-votes in term 1; the loser restarts before the competitor's delayed request | A persisted self-vote must prevent a second vote in the same term; the next term can succeed. All schedules | Passes |
+| `tcRequestStepDownRestart` | A controlled peer's higher-term request makes the candidate step down, then it crashes | The higher term and granted vote survive a former-candidate restart. All schedules | Passes |
+| `tcReplyStepDownRestart` | A controlled peer rejects the campaign with a higher term, then the target crashes | The higher term learned from a reply survives restart; recovery advances beyond it. All schedules | Passes |
+| `tcBugVoteNotPersisted` | `ForgetfulNode`, two candidates, node 3 crashes | The restarted voter forgot its vote and grants again | Expected bug: `node 3 voted twice in term 1: for 2 and for 1` |
+
+## What building it taught
+
+- The safety spec found a real design bug in a first draft: the candidate concluded
+  its round ("heard every reply, lost") before counting the grant in that same last
+  reply, so it reported a loss and then became leader. The check "never report losing a
+  term you won" exists because the driver announces what it was told
+  (`LossReported`).
+- Safety alone left 30 mutants alive. Announcing every answer (`VoteAnswered`, not only
+  grants) let `CandidaciesConclude` check that "heard all replies" is true, and
+  announcing each node's starting disk state (`Disk`) made restored terms checkable.
+- `tcOneNodeDown` and `tcFourNodesOneDown` separate majority from unanimity.
+- An earlier version suppressed the leader's step-down mutants as unobservable
+  ("voting only"). They were not equivalent: a deposed leader kept accepting work.
+  Giving the leader one observable action (`ClientAnswered`) and a scenario that
+  deposes it (`tcDeposedLeader`) replaced six suppressions with assertions. A
+  hard-coded `votes >= 2` needed a coverage suppression; the general majority rule
+  with a four-node test checks the even-size boundary instead.
 
 ## Run
 
@@ -75,15 +94,12 @@ durable; the whole campaign record is volatile and is discarded on restart.
 snappea check tcTwoCandidates tcSplitVote tcHigherTermReply tcStaleVoteReply tcOneNodeDown \
   tcFourNodesOneDown tcDeposedLeader tcGeneratedElection tcCandidateRestart \
   tcSelfVoteSurvivesRestart tcRequestStepDownRestart tcReplyStepDownRestart \
-  --timeout 30s --deny mutation
+  --deny mutation
 snappea check tcBugVoteNotPersisted      # passes when it finds the double vote above
 ```
 
-Focused tests expose particular races without relying on a large generated
-workload. `CrashBeforeWinning` and `RestartAfterWinning` require evidence that the
-candidate-restart test actually exercised both roles. Larger concurrent workloads
-may remain sampled; use the current report's completion status rather than a fixed
-schedule count or runtime claim.
+The `CrashBeforeWinning` and `RestartAfterWinning` scenarios require evidence that
+the candidate-restart test exercised both roles.
 
 ## Bounds and omissions
 
@@ -104,13 +120,11 @@ The spec retains historical winners to check one leader per term, but retires a
 node's authority when it restarts. A client request sent after the restart and before
 the fresh timer must be refused even if that node won the old term.
 
-The two candidate `goto Follower` mutation exceptions remain honest equivalences:
-both roles refuse clients, keep accounting for already-sent requests, and discard
-the entire campaign on crash. The higher-term guard prevents old replies from
-winning; only a new timeout starts a candidacy in the new term. Crash handling is
-now the same in both roles, so the old state-policy warning no longer hides an
-untested crash boundary. The leader's step-down and restart transitions remain
-observable through client acceptance.
+Two suppressions, both equivalent mutants: removing a candidate's `goto Follower`
+after it sees a higher term. Both roles refuse clients, handle vote requests and
+replies the same way, and discard the whole campaign on crash; the higher-term guard
+keeps old replies from winning, and only a new timeout starts a candidacy. The
+leader's step-down is not suppressed: it is observable through client acceptance.
 
 Raft persists `votedFor` so a repeated request from the same candidate can be granted
 again. These tests send each candidate's request once; the whole voting rule here is
@@ -118,31 +132,15 @@ again. These tests send each candidate's request once; the whole voting rule her
 
 The uncontested round is the progress assumption made concrete: a candidate that hears
 every reply without winning tells the driver (`RoundLost`), and once every candidate of
-the round has, the driver fires one node's timer alone. Without such an assumption a
-bounded checker can always find split votes that repeat until the bound.
-
-## What building it taught
-
-- The safety spec found a real design bug in a first draft: the candidate concluded
-  its round ("heard every reply, lost") before counting the grant in that same last
-  reply, so it reported a loss and then became leader. The check "never report losing a
-  term you won" exists because the driver announces what it was told
-  (`LossReported`).
-- Safety alone left 30 mutants alive. Announcing every answer (`VoteAnswered`, not only
-  grants) let `CandidaciesConclude` check that "heard all replies" is true, and
-  announcing each node's starting disk state (`Disk`) made restored terms checkable.
-- `tcOneNodeDown` and `tcFourNodesOneDown` separate majority from unanimity.
-- An earlier version suppressed the leader's step-down mutants as unobservable
-  ("voting only"). They were not equivalent: a deposed leader kept accepting work.
-  Giving the leader one observable action (`ClientAnswered`) and a scenario that
-  deposes it (`tcDeposedLeader`) replaced six suppressions with assertions. A
-  hard-coded `votes >= 2` needed a coverage suppression; the general majority rule
-  with a four-node test checks the even-size boundary instead.
+the round has, the driver fires any one node's timer alone. If that node loses (it was
+behind on terms), its replies told it the highest term, so the driver fires the same
+node again and it wins. Without such an assumption a bounded checker can always find
+split votes that repeat until the bound.
 
 ## Testing the implementation
 
-Emit `ElectionStarted` after the candidate persists its term and self-vote, `VoteAnswered` after a
-voter persists and before it replies, `BecameLeader` on the role change, and
+Emit `ElectionStarted` after the candidate persists its term and self-vote,
+`VoteAnswered` after a voter persists and before it replies, `BecameLeader` on the role change, and
 `ClientAnswered` where a node accepts or redirects a client write. To force
 the persistence race: let node 3 grant node 1, crash and restart node 3 before node 2's
 request reaches it (hold that request in a test transport), then deliver it. The
@@ -153,12 +151,3 @@ retain queued replies, and restart from disk. Before firing another timer, send 
 client request (must refuse) or a competing request in the already-voted term (must
 not receive another vote). Then let one new election run without another crash.
 
-Negative controls declare `// snappea: expect-bug "message"`. A matching bug
-passes the test; a different failure or no discovered bug fails it. Check their
-failure identity across seeds with `snappea check 'tcBug*' --no-mutation
---expect-bug-seeds 1,2,3 --workers 1 --timeout 10s`. Passing negative controls do
-not fill coverage gaps or detect mutants in the correct design.
-
-Search is complete only when this run reports `all N schedules` (or JSON
-`search_complete: true`). A timeout, seed, or historical schedule count does not
-guarantee completeness. An incomplete passing run is sampled evidence.

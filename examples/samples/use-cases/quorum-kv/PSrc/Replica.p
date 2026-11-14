@@ -6,7 +6,7 @@
 // (R + W > N), a write that starts after another completed always gets a higher
 // version: no synchronized clocks needed, unlike client-supplied timestamps. Two
 // concurrent writers can pick the same counter, so the version is (counter, writer id),
-// encoded as counter * 10 + writer id, and the writer id breaks the tie.
+// and the writer id breaks the tie.
 //
 // Real atomic primitives, one handler each on a replica:
 //   read:  return the stored (version, value)
@@ -15,26 +15,43 @@
 // returned, and even after a newer write: the version check keeps the newer value.
 // Everything a client does between them can interleave with other clients.
 
+// A write's version: its counter, then the writer id to break ties. (0, 0) is the
+// initial value's version.
+type Version = (counter: int, writer: int);
+
+// True when version a is newer than version b: a higher counter, or the same counter
+// and a higher writer id.
+fun Newer(a: Version, b: Version): bool {
+  if (a.counter > b.counter) { return true; }
+  if (a.counter < b.counter) { return false; }
+  // snappea-lint: allow mutation:swap-operator -- a version names one write, so an equal version carries the value already stored
+  return a.writer > b.writer;
+}
+
 event ReplicaRead: (client: machine);
-event ReplicaReadResp: (version: int, value: int);
-event ReplicaWrite: (client: machine, version: int, value: int);
+event ReplicaReadResp: (version: Version, value: int);
+event ReplicaWrite: (client: machine, version: Version, value: int);
 event ReplicaWriteResp;
 
 machine Replica {
-  var version: int;
+  var id: int;
+  var version: Version;
   var value: int;
 
   start state Serving {
+    entry (replicaId: int) { id = replicaId; }
     on ReplicaRead do (r: (client: machine)) {
       send r.client, ReplicaReadResp, (version = version, value = value);
     }
-    on ReplicaWrite do (w: (client: machine, version: int, value: int)) {
+    on ReplicaWrite do (w: (client: machine, version: Version, value: int)) {
       // Last writer wins by version; an older version arriving late is ignored.
-      // snappea-lint: allow mutation:swap-operator -- a version names one write, so an equal version carries the value already stored
-      if (w.version > version) {
+      if (Newer(w.version, version)) {
         version = w.version;
         value = w.value;
       }
+      // commit point: the conditional write
+      announce Stored, (replica = id, write = (version = w.version, value = w.value),
+                        holds = (version = version, value = value));
       send w.client, ReplicaWriteResp;
     }
   }
