@@ -23,7 +23,8 @@ carry over to tests of a real implementation.
 The suite checks lint, coverage and mutation testing. Negative controls declare
 `// snappea: expect-bug "message"`; the checker requires that failure on each of three
 seeds. CI runs
-[`check_samples.py`](check_samples.py); see [AUTHORING.md](AUTHORING.md) to add one.
+[`check_samples.py`](check_samples.py); see [AUTHORING.md](AUTHORING.md) to add one and
+[STYLE.md](STYLE.md) for conventions.
 
 ```sh
 cargo build -p snappea --bin snappea

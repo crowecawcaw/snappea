@@ -11,6 +11,8 @@ questions:
 
 Every sample is a P project that an agent can copy as a reference. It must be correct,
 small enough to read in one sitting, and checked by the toolchain, not only by eye.
+Follow the [style guide](STYLE.md) for naming, code layout, suppressions and the
+README format.
 
 ## Layout
 
