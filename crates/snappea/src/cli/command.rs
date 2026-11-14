@@ -767,9 +767,18 @@ Advisory rules remain warnings, including under --deny lint.
 
   --list-rules  List available rule IDs and descriptions without loading sources
 
-Suppress an intentional finding on the following declaration or statement:
-  // snappea-lint: allow unused-payload-field -- intentionally abstract this field
-See docs/linting.md for rule details and suppression scope.
+Each finding says what is wrong, where, and how to fix it. Fix it first; suppress
+only an intended one, on its own line before the declaration or statement the
+finding points at:
+  // snappea-lint: allow unused-payload-field -- the spec checks counts, not amounts
+A suppression that matches no finding is reported as `unused-suppression`.
+`snappea check TEST` lints only what the selected tests need; run this command to
+see every finding.
+
+Examples:
+  snappea check lint
+  snappea check lint Model.pproj
+  snappea check lint --list-rules
 ";
 
 fn lint(args: &[String], host: &mut dyn Host) -> i32 {
@@ -805,6 +814,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
                 .rules()
                 .map(|r| (r.id(), r.description()))
                 .chain(snappea_lint::PROGRAM_RULES.iter().copied())
+                .chain(snappea_lint::COMMENT_RULES.iter().copied())
                 .collect();
             let rules: Vec<_> = all
                 .iter()
@@ -822,15 +832,14 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
             Ok(loaded) => {
                 let sm = loaded.sources.source_map();
                 let findings = crate::driver::lint::findings(host, &sm, &loaded.analysis.program)?;
-                if crate::driver::lint::report(host, &sm, &findings) != 0 {
-                    return Err(Exit(ERROR));
+                let errors = crate::driver::lint::report(host, &sm, &findings);
+                let json = crate::driver::lint::findings_json(&sm, &findings);
+                if errors != 0 {
+                    // the findings, not their text again: stderr has that
+                    return Ok((ERROR, json!({"error": crate::driver::lint::summary(errors), "findings": json})));
                 }
                 host.out_line(if findings.is_empty() { "Lint passed." } else { "Lint passed with advisory findings." });
-                let findings: Vec<_> = findings.iter().map(|f| {
-                    let loc = sm.location(f.span);
-                    json!({"rule": f.rule, "severity": "advisory", "message": f.message, "file": loc.file, "line": loc.line, "column": loc.col})
-                }).collect();
-                Ok((OK, json!({"findings": findings})))
+                Ok((OK, json!({"findings": json})))
             }
             Err(e) => {
                 for (stream, text, color) in out {
@@ -1115,14 +1124,21 @@ fn run_check(
     let all_tests = loaded.analysis.program.test_cases();
     let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
     let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
-    let lint_findings = crate::driver::lint::gate_selected(
+    let lint_findings = match crate::driver::lint::gate_selected(
         con.inner,
         &loaded.sources,
         &loaded.analysis.program,
         gates.lint,
         &selected_tests,
         &intents,
-    )?;
+    ) {
+        Ok(n) => n,
+        // the findings, not their text again: stderr has that
+        Err(crate::driver::lint::LintFailed { exit, findings: Some(findings), summary }) => {
+            return Ok((exit.0, json!({"error": summary, "lint": {"findings": findings}})))
+        }
+        Err(e) => return Err(e.into()),
+    };
     if !cfg.expected_bug_seeds.is_empty()
         && !selected_tests.iter().any(|tc| {
             crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)

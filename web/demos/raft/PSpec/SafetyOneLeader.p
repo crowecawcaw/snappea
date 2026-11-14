@@ -13,7 +13,6 @@ spec SafetyOneLeader observes BecomeLeader{
       termToLeader = default(map[int, Server]);
     }
 
-    // snappea-lint: allow unused-payload-field -- one leader per term needs only the term and the leader
     on BecomeLeader do (payload: (term:int, leader:Server, log: seq[ServerLog], commitIndex: int)) {
       if (payload.term in keys(termToLeader)) {
         assert termToLeader[payload.term] == payload.leader, format("At term {0} there are multiple leaders: {1} and {2}.", payload.term, termToLeader[payload.term], payload.leader);

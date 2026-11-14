@@ -158,12 +158,33 @@ pub struct Threads {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Exit(pub i32);
 
-/// Prints `Error: {msg}` on stderr; returns exit code 1.
+/// Prints `Error: {msg}` on stderr, upstream's text; returns exit code 1. A `snappea`
+/// command (a host that [shows hints](Host::shows_hints)) prints it like its other errors
+/// instead: `error: {msg}`, with a lowercase first word and no final period.
 pub(crate) fn report_and_exit(host: &mut dyn Host, msg: &str) -> Exit {
-    host.write(Stream::Err, "Error: ", Some(Color::Red));
-    host.write(Stream::Err, msg, Some(Color::Yellow));
+    if host.shows_hints() {
+        host.write(Stream::Err, "error: ", Some(Color::Red));
+        host.write(Stream::Err, &snappea_style(msg), None);
+    } else {
+        host.write(Stream::Err, "Error: ", Some(Color::Red));
+        host.write(Stream::Err, msg, Some(Color::Yellow));
+    }
     host.write(Stream::Err, "\n", None);
     Exit(1)
+}
+
+/// An upstream-style message (`Could not find any *.p file.`) in the style of `snappea`'s
+/// own errors (`could not find any *.p file`). A first word that is a name (`P file`) or
+/// an acronym keeps its case.
+fn snappea_style(msg: &str) -> String {
+    let msg = msg.strip_suffix('.').filter(|m| !m.contains(". ")).unwrap_or(msg);
+    let mut chars = msg.chars();
+    match (chars.next(), chars.next()) {
+        (Some(first), Some(second)) if first.is_ascii_uppercase() && second.is_ascii_lowercase() => {
+            format!("{}{}", first.to_ascii_lowercase(), &msg[1..])
+        }
+        _ => msg.to_string(),
+    }
 }
 
 /// [`report_and_exit`], followed by `hint: {hint}` when the host [shows hints](Host::shows_hints).

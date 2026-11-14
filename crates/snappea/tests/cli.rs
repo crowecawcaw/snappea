@@ -385,7 +385,7 @@ fn time_tracking() {
     }
     assert_eq!(snappea(&mut h, &["replay", schedule]), 1, "{}{}", h.stdout, h.stderr);
     assert_eq!(snappea(&mut h, &["check", "--latency", "missing.toml"]), 2);
-    assert!(h.stderr.contains("Cannot read latency file 'missing.toml'"), "{}", h.stderr);
+    assert!(h.stderr.contains("error: cannot read latency file 'missing.toml'"), "{}", h.stderr);
 }
 
 #[test]
@@ -806,14 +806,14 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     h.add_file("coverage.p", "event ePing;\n// snappea-lint: allow coverage:nope -- typo\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
          test tcMain [main=Main]: { Main };\n");
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation"]), 2);
-    assert!(h.stderr.contains("unknown or empty lint rule ID"), "{}", h.stderr);
+    assert!(h.stderr.contains("unknown lint rule ID 'coverage:nope'"), "{}", h.stderr);
     h.add_file(
         "coverage.p",
         "// snappea-lint: allow coverage\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\
          test tcMain [main=Main]: { Main };\n",
     );
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation"]), 2);
-    assert!(h.stderr.contains("coverage suppression needs a reason"), "{}", h.stderr);
+    assert!(h.stderr.contains("coverage suppression has no reason"), "{}", h.stderr);
 }
 
 #[test]
@@ -1433,7 +1433,7 @@ fn lint_reports_state_events_and_progress_no_check_depends_on() {
     // the fields and events a check reads are not reported
     assert!(!h.stderr.contains("'served'"), "{}", h.stderr);
     assert!(!h.stderr.contains("'eResp'"), "{}", h.stderr);
-    assert!(h.stderr.contains("help: assert on the field in a spec"), "{}", h.stderr);
+    assert!(h.stderr.contains("help: if a wrong value would be a bug, check it"), "{}", h.stderr);
 
     // suppressions name the rule; a field takes one too
     let allowed = WEAK
