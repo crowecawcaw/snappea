@@ -78,6 +78,8 @@ pub type PairSet = FxHashSet<(u32, u32)>;
 /// Coverage accumulated over all schedules (`CoverageInfo`).
 #[derive(Debug, Clone, Default)]
 pub struct CoverageInfo {
+    /// Queue policies examined for actual pending events, used only by mutation selection.
+    pub queue_policies: FxHashSet<(StateId, EventId)>,
     /// Declared machines and monitors, in declaration order, with whether each is a monitor.
     pub declared: Vec<(MachineId, bool)>,
     /// `(state node, event)` pairs received / sent.
@@ -143,6 +145,7 @@ impl CoverageInfo {
                 self.declared.push(d);
             }
         }
+        self.queue_policies.extend(other.queue_policies);
         self.received.extend(other.received);
         self.sent.extend(other.sent);
         self.links.extend(other.links);
@@ -311,6 +314,17 @@ impl Coverage {
 }
 
 impl Runtime<'_> {
+    pub(crate) fn cov_queue_policy(&mut self, m: usize, event: EventId) {
+        let Some(cov) = &mut self.coverage else { return };
+        let Some(state) = self.machines[m].state else { return };
+        if matches!(
+            self.prog.state(state).handler_for(event).map(|h| &h.action),
+            Some(HandlerAction::Ignore | HandlerAction::Defer)
+        ) {
+            cov.info.queue_policies.insert((state, event));
+        }
+    }
+
     pub(crate) fn cov_machine_enter(&mut self, m: usize) {
         if let (Some(cov), Some(s)) = (self.coverage.as_mut(), self.machines[m].state) {
             cov.state_enter(false, m, s);

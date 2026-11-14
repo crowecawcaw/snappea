@@ -1617,6 +1617,7 @@ impl<'p> Runtime<'p> {
         while i < self.machines[m].inbox.queue.len() {
             let id = self.machines[m].inbox.queue[i].id;
             if self.is_ignored(m, id) {
+                self.cov_queue_policy(m, id);
                 if check_only {
                     i += 1;
                 } else {
@@ -1630,6 +1631,7 @@ impl<'p> Runtime<'p> {
                 }
                 return self.machines[m].inbox.queue.remove(i);
             }
+            self.cov_queue_policy(m, id);
             i += 1;
         }
         None
@@ -1698,6 +1700,9 @@ impl<'p> Runtime<'p> {
                         continue;
                     }
                     if let Some(raised) = self.machines[m].inbox.raised.take() {
+                        if self.is_ignored(m, raised.id) {
+                            self.cov_queue_policy(m, raised.id);
+                        }
                         if raised.id == GOTO_EVENT || !self.is_ignored(m, raised.id) {
                             self.cov_handle_raised(m, raised.id);
                             self.machines[m].stage = Stage::Handle(raised);
@@ -1906,6 +1911,7 @@ impl<'p> Runtime<'p> {
                             self.begin_goto(m, target, with, e);
                         }
                         Some(HandlerAction::Ignore) | Some(HandlerAction::Defer) => {
+                            self.cov_queue_policy(m, e.id);
                             self.machines[m].stage = Stage::Loop;
                         }
                         None => {
@@ -2721,6 +2727,9 @@ impl<'p> Runtime<'p> {
     /// `--timed` dequeue: removes the picked event, dropping ignored events queued
     /// ahead of it as `try_dequeue` does.
     fn timed_take(&mut self, m: usize, has_default: bool) -> Result<Option<Event>, Stop> {
+        for i in 0..self.machines[m].inbox.queue.len() {
+            self.cov_queue_policy(m, self.machines[m].inbox.queue[i].id);
+        }
         let Some(mut i) = self.timed_pick(m, None, has_default)? else { return Ok(None) };
         let mut j = 0;
         while j < i {

@@ -12,6 +12,9 @@ pub const MUTATIONS: &[&str] = &[
     "empty-body",
     "drop-conjunct",
     "drop-disjunct",
+    "remove-defer",
+    "defer-to-ignore",
+    "remove-ignore",
 ];
 
 /// Whether `id` names mutation testing: `mutation`, or `mutation:<kind>`.

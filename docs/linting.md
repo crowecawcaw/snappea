@@ -406,7 +406,8 @@ The same comment excludes code from `snappea check`'s mutation testing:
 `allow mutation` for every mutant directly on the following statement or declaration,
 or `allow mutation:<kind>`
 (`remove-statement`, `condition-true`, `condition-false`, `swap-operator`, `remove-not`,
-`flip-boolean`, `empty-body`, `drop-conjunct`, `drop-disjunct`) for one kind; after a `mutation:<kind>`, a bare kind
+`flip-boolean`, `empty-body`, `drop-conjunct`, `drop-disjunct`, `remove-defer`,
+`defer-to-ignore`, `remove-ignore`) for one kind; after a `mutation:<kind>`, a bare kind
 names another, so `allow mutation:remove-statement,condition-false` allows both. See
 [mutation testing](checking-models.md#suppressing-a-mutant).
 

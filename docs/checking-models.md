@@ -554,8 +554,20 @@ A mutant changes one place in the code of the machines under test:
 | `swap-operator` | `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-`, `&&` and `\|\|` |
 | `drop-conjunct` | `a && b` becomes `a` or `b`, in separate mutants |
 | `drop-disjunct` | `a \|\| b` becomes `a` or `b`, in separate mutants |
+| `remove-defer` | removes one event from a state's `defer` declaration |
+| `defer-to-ignore` | discards one deferred event instead of retaining it for a later state |
+| `remove-ignore` | removes one event from a state's `ignore` declaration |
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
+
+Queue-policy mutants run only when a passing test examined that policy for an
+actual pending event (or matched it while handling a raised event). Merely entering
+the state is not enough. An unhandled-event failure detects a removed policy;
+a progress spec can detect a deferred request silently lost by `defer-to-ignore`.
+Declarations listing several events produce separate mutants for each event.
+These policies do not add required code-coverage points. Mutation suppressions
+apply directly before `defer` or `ignore`, for example
+`// snappea-lint: allow mutation:remove-ignore -- reason`.
 
 Global functions declared under `PTst/` are test scaffolding and are not mutated,
 even when design code calls them. Production helpers they call outside `PTst/`
