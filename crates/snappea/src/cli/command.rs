@@ -68,10 +68,10 @@ Runs test cases over many schedules (event orders, nondeterministic choices) to
 find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj or
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
-Sources are linted first; findings fail with exit status 2. `check lint` only lints;
+Sources are linted first; blocking findings fail with exit status 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
-Lint findings and required coverage gaps fail the check; undetected mutants are
+Blocking lint findings and required coverage gaps fail the check; undetected mutants are
 warnings. Silence an intended finding in the source with a
 `// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
 fails for one run.
@@ -756,7 +756,8 @@ Usage: snappea check lint [SOURCE...] [--list-rules]
 
 Type-checks and lints .p or .pproj sources without exploring schedules or writing
 checker output. Fast; use it while editing. The same rules run before `snappea check`.
-Exit status: 0 clean, 2 unsuppressed findings or source errors.
+Exit status: 0 with no blocking findings, 2 blocking findings or source errors.
+Advisory rules remain warnings, including under --deny lint.
 
   --list-rules  List available rule IDs and descriptions without loading sources
 
@@ -803,7 +804,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
                 .iter()
                 .map(|(id, description)| {
                     host.out_line(&format!("{}  {}", id, description));
-                    json!({"id": id, "description": description})
+                    json!({"id": id, "description": description, "severity": if snappea_lint::is_advisory(id) { "advisory" } else { "error" }})
                 })
                 .collect();
             return Ok((OK, json!({"rules": rules})));
@@ -813,11 +814,17 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         let Buffered { out, .. } = quiet;
         match loaded {
             Ok(loaded) => {
-                if crate::driver::lint::run(host, &loaded.sources, &loaded.analysis.program)? != 0 {
+                let sm = loaded.sources.source_map();
+                let findings = crate::driver::lint::findings(host, &sm, &loaded.analysis.program)?;
+                if crate::driver::lint::report(host, &sm, &findings) != 0 {
                     return Err(Exit(ERROR));
                 }
-                host.out_line("Lint passed.");
-                Ok((OK, json!({"findings": []})))
+                host.out_line(if findings.is_empty() { "Lint passed." } else { "Lint passed with advisory findings." });
+                let findings: Vec<_> = findings.iter().map(|f| {
+                    let loc = sm.location(f.span);
+                    json!({"rule": f.rule, "severity": "advisory", "message": f.message, "file": loc.file, "line": loc.line, "column": loc.col})
+                }).collect();
+                Ok((OK, json!({"findings": findings})))
             }
             Err(e) => {
                 for (stream, text, color) in out {
