@@ -195,6 +195,20 @@ pub trait Strategy {
     fn observe_state(&mut self, _hash: u64, _live: bool) -> bool {
         true
     }
+    /// Whether the search records the state graph for the fair-cycle analysis (see
+    /// [`crate::checker::fairness`]): the step at which this schedule reached the last
+    /// state it recorded (0 when none). The runtime then describes the next observed
+    /// state with [`Strategy::note_live_facts`] before [`Strategy::observe_state`].
+    fn live_graph_step(&self) -> Option<usize> {
+        None
+    }
+    /// The transition to, and the state of, the next [`Strategy::observe_state`].
+    fn note_live_facts(&mut self, _facts: crate::checker::fairness::LiveFacts) {}
+    /// The record of the state graph, once the search is over (see
+    /// [`Strategy::live_graph_step`]).
+    fn take_live_graph(&mut self) -> Option<crate::checker::fairness::LiveGraph> {
+        None
+    }
     /// After [`Strategy::observe_state`] ended a schedule at a state where a liveness
     /// monitor was not cold: the cycle, if that state is one the schedule passed before
     /// (see [`crate::checker::exhaustive::ExhaustiveStrategy::closed_cycle`]).
@@ -573,7 +587,7 @@ impl Strategy for ComboStrategy {
 // ---------------------------------------------------------------------------
 
 /// One recorded decision of a schedule.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ScheduleStep {
     Operation(u64),
     Bool(bool),

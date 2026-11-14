@@ -438,8 +438,9 @@ fn dfs_prunes_unfair_cycles_and_cycles_that_leave_the_hot_state() {
     assert_eq!(r.report.num_bugs, 0, "{:?}", r.report.bug_reports);
     let stats = r.exhaustive.unwrap();
     assert!(stats.finished && stats.live_cycle_prunes > 0);
-    assert!(!stats.complete(), "an unfair hot cycle leaves liveness unverified");
-    assert!(stats.text(1, 10, "..").contains("liveness was not verified"));
+    // the fair-cycle analysis finds every hot cycle starves the worker
+    assert!(stats.complete(), "{stats:?}");
+    assert!(stats.text(1, 10, "..").contains("No fair cycle keeps a liveness monitor"));
 
     // a monitor that enters a cold state in every cycle
     let cold = "event eTick;
@@ -493,10 +494,9 @@ fn a_lasso_must_take_fair_choices_both_ways_but_not_plain_ones() {
             let r = check(&src(choice), &opts(strategy, 200));
             assert_eq!(r.report.num_bugs, 0, "{choice} {strategy}: {:?}", r.report.bug_reports);
         }
-        // the search cannot rule out a fair cycle through the state, so it does not
-        // claim to have verified liveness
+        // every hot cycle declines to answer, so none is fair: liveness is verified
         let stats = check(&src(choice), &opts(StrategyKind::Dfs, 0)).exhaustive.unwrap();
-        assert!(stats.finished && !stats.complete(), "{choice}: {stats:?}");
+        assert!(stats.live_cycle_prunes > 0 && stats.complete(), "{choice}: {stats:?}");
     }
     // a cycle that takes both values of a choice (at alternate ticks) and stays hot is
     // a liveness bug
@@ -554,10 +554,50 @@ fn a_timer_that_may_fire_at_every_tick_passes_with_or_without_a_write_only_count
             let r = check(&src, &opts(strategy, 200));
             assert_eq!(r.report.num_bugs, 0, "{counter:?} {strategy}: {:?}", r.report.bug_reports);
         }
-        // the counter does not change what the exhaustive search sees
+        // the counter does not change what the exhaustive search sees, and no hot cycle
+        // is fair
         let stats = check(&src, &opts(StrategyKind::Dfs, 0)).exhaustive.unwrap();
-        assert!(stats.finished && stats.depth_bound_hits == 0 && stats.live_cycle_prunes > 0, "{counter:?}: {stats:?}");
+        assert!(stats.live_cycle_prunes > 0 && stats.complete(), "{counter:?}: {stats:?}");
     }
+}
+
+/// Two loops through the same hot state: one takes `$` one way, the other the other way.
+/// Neither cycle is fair alone, so the lasso check on the cycle a schedule closes never
+/// reports them, but an execution that alternates them is fair and never answers.
+const TWO_LOOPS: &str = "event eTick; event eTock; event eReq; event eDone;
+    spec Answered observes eReq, eDone {
+      start cold state Idle { on eReq goto Waiting; }
+      hot state Waiting { on eDone goto Idle; }
+    }
+    machine Main { start state S {
+      entry { announce eReq; send this, eTick; }
+      on eTick do { if ($) { send this, eTick; } else { send this, eTock; } }
+      on eTock do { send this, eTick; }
+    } }
+    test tcMain [main=Main]: assert Answered in { Main };";
+
+#[test]
+fn a_livelock_of_two_loops_that_each_decline_a_choice_is_reported_and_replays() {
+    for strategy in [StrategyKind::Dfs, StrategyKind::RandomDfs, StrategyKind::Auto] {
+        let r = check(TWO_LOOPS, &opts(strategy, 0));
+        assert_eq!(r.report.num_bugs, 1, "{strategy}: {:?}", r.exhaustive);
+        let bug = &r.report.bug_reports[0];
+        assert!(bug.contains("detected liveness bug in hot state 'Waiting': the last"), "{bug}");
+        let trace = ScheduleTrace::parse(r.schedule_trace.as_ref().unwrap()).unwrap();
+        let start = trace.lasso.expect("a lasso");
+        // the cycle takes `$` both ways
+        let cycle = &trace.steps[start..];
+        use snappea::checker::strategy::ScheduleStep;
+        assert!(cycle.contains(&ScheduleStep::Bool(true)) && cycle.contains(&ScheduleStep::Bool(false)), "{cycle:?}");
+        let replay = check(TWO_LOOPS, &CheckerOptions { replay: Some(trace), ..opts(StrategyKind::Replay, 1) });
+        assert!(replay.replay_error.is_none(), "{:?}", replay.replay_error);
+        assert_eq!(&replay.report.bug_reports, &r.report.bug_reports);
+        assert!(r.readable_trace.unwrap().contains("repeat them forever"));
+    }
+    // answering on `true` ends both loops' fairness: every fair execution answers
+    let answered = TWO_LOOPS.replace("if ($) { send this, eTick; }", "if ($) { announce eDone; }");
+    let stats = check(&answered, &opts(StrategyKind::Dfs, 0)).exhaustive.unwrap();
+    assert!(stats.complete(), "{stats:?}");
 }
 
 #[test]

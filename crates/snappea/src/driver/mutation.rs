@@ -1342,7 +1342,7 @@ impl Mutants<'_> {
             step_bound,
             schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
             complete: res.exhaustive.as_ref().is_some_and(|x| x.complete()),
-            live_cycles: res.exhaustive.as_ref().is_some_and(|x| x.liveness_unverified()),
+            live_cycles: res.exhaustive.as_ref().is_some_and(|x| x.live_cycles_unchecked()),
         })
     }
 

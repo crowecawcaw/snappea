@@ -107,12 +107,39 @@ start directly with feedback, unless their implementation declares itself search
 (`ForeignFunctions::searchable` in the [Rust library](library.md)). Stalling
 changes strategy; it never certifies a model as safe.
 
-Exhaustive search checks liveness on cycles. When a schedule returns to a state already
-on its own path while a liveness monitor is hot, the steps since that state form a
-cycle the model can repeat forever. If the monitor stayed out of cold states through
-the cycle, and the cycle is fair (every machine that could run at every step of it ran,
-and every choice made in it, `$`, `$$` or `choose`, took each of its values there), the
-check fails at once:
+Exhaustive search decides liveness from the graph of states it explored. A liveness
+bug is an execution that goes on forever, is fair, and keeps a liveness monitor out of
+its cold states while it keeps returning to a hot one. Fair means:
+
+- **Scheduling**: a machine that can run at every step from some point on eventually
+  runs.
+- **Choices**: a choice that is made again and again (`$`, `$$`, `choose`, or a
+  foreign `TryRandom*`, told apart by where it is in the code and how many values it
+  has) eventually takes each of its values, as in upstream P and in sampled schedules.
+
+So a timer whose `if ($)` keeps choosing not to fire, or a network that keeps choosing
+to lose the retry, is not a liveness bug: a fair run eventually takes the other branch.
+`$` and `$$` behave the same here. To check progress when losses can go on forever,
+bound them with a counter (see `snappea guide faults`).
+
+The verdict comes in two ways:
+
+1. **On the way.** When a schedule returns to a state on its own path, the steps since
+   that state form a cycle. If the monitor stayed out of cold states through it and the
+   cycle alone is fair, the check fails at once. A retry loop that never succeeds is
+   found on the first schedule that closes it, as cheaply as a deadlock.
+2. **At the end.** While it explores, the search records each state where a liveness
+   monitor is not cold and each transition between such states: which machine ran and
+   which values its choices took. When every state has been explored, it splits that
+   graph into strongly connected components and drops what fairness rules out: the
+   transitions of a choice that never takes one of its values inside the component, and
+   components where some machine can always run but never does. A component left over in
+   which the monitor is hot is a fair cycle, made of possibly several loops through the
+   same states (one loop taking `$` one way, another the other way), and the check fails
+   with a schedule that reaches it and goes around it once. If none is left, liveness
+   is verified.
+
+Either way the report is the same:
 
 ```
 Answered detected liveness bug in hot state 'Waiting': the last 6 steps return to an
@@ -120,19 +147,19 @@ earlier state, so the model can repeat them forever without the monitor entering
 cold state.
 ```
 
-A retry loop that never succeeds is then found on the first schedule that closes it,
-as cheaply as a deadlock. Choices are fair, as in upstream P and in sampled schedules: a
-timer whose `if ($)` keeps choosing not to fire, or a network that keeps choosing to
-lose the retry, is not a liveness bug, because a fair run eventually takes the other
-branch. `$` and `$$` behave the same here. To check progress when losses can go on
-forever, bound them with a counter (see `snappea guide faults`). The saved schedule
-ends with the cycle and names its start in a `--snappea-lasso:<step>` header;
-`snappea replay` checks that the end returns to that state. Other cycles are pruned.
-A search that pruned a cycle through a state where a liveness monitor was not cold (an
-unfair cycle, or one that leaves the hot state) has not verified liveness, since another
-cycle through that state could be a bug: it continues with fair feedback search, and the
-test case is reported incomplete. Cycles through states where every liveness monitor is
-cold do not count, with any number of workers.
+The saved schedule ends with the cycle and names its start in a `--snappea-lasso:<step>`
+header; `snappea replay` checks that the end returns to that state. The verdict is the
+same on any number of workers: they share one explored-state cache and their records
+are combined before the analysis. Cycles through states where every liveness monitor is
+cold do not count.
+
+Liveness is verified only by a search that explored every state: one stopped by the
+time limit, the depth bound or auto's handoff to sampling leaves it unverified, and the
+test case is reported incomplete. The record costs memory only for tests with hot spec
+states, roughly 100 bytes per explored state; a record that outgrows its budget (3
+million states and transitions) is dropped, the search finishes for safety, and auto
+continues with fair feedback search, which checks hot monitors' temperature
+(`state exploration finished, but liveness remains unverified: ...`).
 
 The state cache leaves out fields, locals and event payloads that no assertion,
 condition, send or spec depends on (the values the `unchecked-state` lint reports): such
@@ -650,8 +677,8 @@ longer than the last on that test case (at most 100 schedules), up to a budget p
 case learned from the first turns: 3 times the schedules that 95% of the detected
 mutants needed, at least 100 and at most 1000 (1000 when fewer than 20 were detected).
 Each test case gets the whole budget, so a large test case does not starve a small one
-that would detect the mutant. When a turn's exhaustive search pruned a cycle while a
-liveness monitor was hot without settling whether the cycle can repeat forever, the
+that would detect the mutant. When a turn's exhaustive search closed a cycle while a
+liveness monitor was hot without settling whether a fair cycle can repeat forever, the
 mutant's later turns on that test case run fair schedules, which check hot monitors'
 temperature, so a mutant that loops without progress is found in a short turn. JSON gives it as `schedules_per_mutant`. `snappea check
 mutation` then keeps giving undetected mutants turns, up to 1000 schedules per test

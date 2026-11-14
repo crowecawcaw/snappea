@@ -19,6 +19,7 @@ pub mod driver_facts;
 pub mod engine;
 pub mod equivalent;
 pub mod exhaustive;
+pub mod fairness;
 pub mod feedback;
 pub mod flow_lints;
 pub mod foreign;
