@@ -346,3 +346,85 @@ pub fn evidence_lines(artifacts: &[Artifact]) -> Vec<String> {
     }
     lines
 }
+
+/// Native behavioral obligations. Absence is bounded evidence only when every
+/// selected positive search completed. Suppressed scenarios are optional.
+pub fn contract(
+    prog: &crate::sema::Program,
+    artifacts: &[Artifact],
+    complete: bool,
+    suppressions: &[(crate::syntax::Span, String)],
+) -> serde_json::Value {
+    let obligations: Vec<_> = prog
+        .machines
+        .iter()
+        .filter(|m| m.is_scenario() && !m.span.is_dummy())
+        .filter_map(|m| {
+            let entries: Vec<_> = artifacts.iter().flat_map(|a| &a.scenarios).filter(|e| e.name == m.cs_name).collect();
+            if entries.is_empty() {
+                return None;
+            }
+            let reached = entries.iter().any(|e| e.satisfied);
+            let reason = suppressions
+                .iter()
+                .filter(|(scope, _)| {
+                    scope.file == m.span.file && scope.start <= m.span.start && scope.end >= m.span.end
+                })
+                .min_by_key(|(scope, _)| scope.end - scope.start)
+                .map(|(_, r)| r);
+            let loc = prog.sources.location(m.span);
+            Some(serde_json::json!({
+                "name": m.name,
+                "required": reason.is_none(),
+                "optional_reason": reason,
+                "status": if reached { "reached" } else if complete { "not_reached" } else { "unresolved" },
+                "file": loc.file,
+                "line": loc.line,
+                "best_states_visited": entries.iter().map(|e| e.max_states_visited).max().unwrap_or(0),
+                "monitor_states": entries.iter().map(|e| e.monitor_states).max().unwrap_or(0),
+                "witnesses": artifacts.iter().filter(|a| a.scenarios.iter().any(|e| e.name == m.cs_name && e.satisfied))
+                    .map(|a| &a.test_case).collect::<Vec<_>>(),
+            }))
+        })
+        .collect();
+    serde_json::json!({
+        "status": if obligations.iter().any(|o| o["required"] == true && o["status"] != "reached") {
+            if complete { "failed" } else { "unresolved" }
+        } else { "passed" },
+        "search_complete": complete,
+        "obligations": obligations,
+    })
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn aggregates_witnesses_and_distinguishes_incomplete_search() {
+        let mut sources = crate::syntax::SourceMap::new();
+        sources.add(
+            "observer.p",
+            "event E; scenario Pending observes E { start state Wait { on E goto Done; } cold state Done {} }",
+        );
+        let analysis = crate::sema::compile(&sources, &Default::default()).unwrap();
+        let prog = &analysis.program;
+        let mut report = TestReport::default();
+        report.scenarios.push(crate::checker::engine::ScenarioCoverage {
+            name: prog.machines[0].cs_name.clone(),
+            total_states: 2,
+            ..Default::default()
+        });
+        let missing = from_report(&report, "serialized");
+        assert_eq!(contract(prog, &[missing.clone()], false, &[])["obligations"][0]["status"], "unresolved");
+        assert_eq!(contract(prog, &[missing.clone()], true, &[])["obligations"][0]["status"], "not_reached");
+        report.scenarios[0].trigger_count = 1;
+        let reached = from_report(&report, "overlapping");
+        let combined = contract(prog, &[missing.clone(), reached], false, &[]);
+        assert_eq!(combined["status"], "passed");
+        assert_eq!(combined["obligations"][0]["witnesses"][0], "overlapping");
+        let optional = contract(prog, &[missing], true, &[(prog.machines[0].span, "optional exploration".into())]);
+        assert_eq!(optional["status"], "passed");
+        assert_eq!(optional["obligations"][0]["required"], false);
+    }
+}

@@ -1372,6 +1372,27 @@ fn run_check(
         list.extend(add.iter().cloned());
         list.sort();
     }
+    let behavioral = scenario::contract(prog, &scenarios, incomplete == 0 && failed == 0, &coverage_suppressions);
+    let broad_exemptions: Vec<_> = coverage_suppressions
+        .iter()
+        .flat_map(|(span, reason)| {
+            prog.machines
+                .iter()
+                .filter(move |m| {
+                    !m.span.is_dummy()
+                        && span.file == m.span.file
+                        && span.start <= m.span.start
+                        && span.end >= m.span.end
+                })
+                .map(|m| {
+                    let loc = prog.sources.location(m.span);
+                    let counts = map.hidden_points(&suite, m.span);
+                    json!({"machine": m.name, "file": loc.file, "line": loc.line, "reason": reason,
+                    "hidden_points": counts.values().sum::<usize>(), "hidden_kinds": counts})
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let required_missing = required.statements.covered < required.statements.total
         || required.branches.covered < required.branches.total
         || required.handlers.covered < required.handlers.total
@@ -1467,8 +1488,43 @@ fn run_check(
                 plural(required_gap_count)
             ));
         }
+        con.inner.out_line(&format!(
+            "Safety: {}.",
+            if failed > 0 {
+                "test expectations failed"
+            } else if incomplete > 0 {
+                "no unexpected failure found; search incomplete"
+            } else {
+                "test expectations met; bounded searches complete"
+            }
+        ));
+        con.inner.out_line(&format!("Behavioral coverage contract: {}.", behavioral["status"].as_str().unwrap()));
+        for o in behavioral["obligations"].as_array().unwrap() {
+            con.inner.out_line(&format!(
+                "  [{}] {} ({}), {}:{}; observer progress {}/{} states",
+                o["status"].as_str().unwrap(),
+                o["name"].as_str().unwrap(),
+                if o["required"] == true { "required" } else { "optional" },
+                o["file"].as_str().unwrap_or(""),
+                o["line"],
+                o["best_states_visited"],
+                o["monitor_states"]
+            ));
+        }
+        con.inner.out_line(&format!("Code coverage (raw): {}", suite.summary()));
+        con.inner.out_line(&format!("Code coverage (required after exemptions): {required}"));
+        for e in &broad_exemptions {
+            con.inner.out_line(&format!("Broad coverage exemption: {}:{} exempts entire machine {}; {} uncovered points hidden ({:?}). Reason: {}. Prefer a narrower scope; --json lists details.",
+                e["file"].as_str().unwrap_or(""), e["line"], e["machine"].as_str().unwrap(),
+                e["hidden_points"], e["hidden_kinds"], e["reason"].as_str().unwrap()));
+        }
+        if !uncovered_suppressed.is_empty() {
+            con.inner.out_line("A clean required coverage gate with exemptions does not establish complete code or behavioral coverage.");
+        }
         if !scenarios.is_empty() {
-            con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            if incomplete == 0 && failed == 0 {
+                con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            }
             if cfg.verbose {
                 for line in scenario::evidence_lines(&scenarios) {
                     con.inner.out_line(&line);
@@ -1709,6 +1765,9 @@ fn run_check(
         "output": format!("{}/", out),
         "coverage": coverage,
         "coverage_failed": coverage_failed,
+        "safety": {"status": if failed > 0 { "failed" } else if incomplete > 0 { "incomplete" } else { "passed" }},
+        "behavioral_coverage": behavioral,
+        "coverage_exemptions": broad_exemptions,
         "mutation": mutation,
         "warnings": warnings,
         "expected_bug_seed_checks": seed_checks,
@@ -1884,6 +1943,7 @@ fn check_summary(
         "failed": failed,
         "incomplete": incomplete,
         "coverage_failed": coverage_failed,
+        "safety": {"status": if failed > 0 { "failed" } else if incomplete > 0 { "incomplete" } else { "passed" }},
         "coverage_gaps": coverage_gaps,
         "uncovered": uncovered.iter().take(5).map(|u| json!({
             "file": u.file,
