@@ -30,7 +30,10 @@ Write down, in DESIGN.md:
 - 5-10 concrete scenarios that could break the contract. Always consider: two clients
   that read the same version; a retry after another request changed the state
   (including retries of rejected or empty results); two objects sharing one store;
-  each precondition false on its own; values exactly at each boundary.
+  each precondition false on its own; values exactly at each boundary;
+- what must eventually happen, and what could stop it forever: a holder crashes, a
+  release or reply is lost, a cleanup needs the thing it cleans up. These are
+  liveness risks; safety assertions cannot find them.
 
 ## 2. Model the algorithm, not the API
 
@@ -58,6 +61,11 @@ Write down, in DESIGN.md:
 - Do not finish with --no-mutation or --warn coverage. Use them only while iterating.
   If search is incomplete, shrink the bounds or raise --timeout. If mutation testing
   runs out of time, finish it with `snappea check mutation --mutation-timeout 5m`.
+- A passing check covers only what the specs assert. Without a `hot` monitor state it
+  checks safety only, so a lock or request stuck forever still passes. For each
+  liveness risk from step 1, keep a spec hot until it is resolved (`snappea guide
+  spec-patterns`), and give the resolving mechanism a test where it is the only way
+  forward.
 - A bug found here is the payoff: write it down, fix the design, then implement.
 
 ## 4. Implement, then test what the model explored

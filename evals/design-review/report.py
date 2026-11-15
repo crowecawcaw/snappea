@@ -20,10 +20,11 @@ for run in sorted(RUNS.glob(f"{prefix}*")):
     stats = json.loads((run / "stats.json").read_text())
     s, p = grade["score"], stats["process"]
     found = [k for k, v in grade["issues"].items() if v["verdict"] == "found"]
-    rows.append((run.name, meta["arm"], s["found"], s["partial"], s["checker_confirmed"],
+    label = meta.get("label", meta["arm"])
+    rows.append((run.name, label, s["found"], s["partial"], s["checker_confirmed"],
                  s["other_valid"], s["other_invalid"], p["checker_runs"], p["checker_runs_reporting_bug"],
                  stats["final_check"]["status"], ",".join(found)))
-    by_arm[meta["arm"]].append(s)
+    by_arm[label].append(s)
 hdr = ("run", "arm", "found", "partial", "chk_conf", "oth_ok", "oth_bad", "checks", "chk_bugs", "final", "issues")
 print(" | ".join(hdr))
 for r in rows:

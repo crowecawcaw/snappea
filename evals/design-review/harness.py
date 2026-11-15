@@ -69,11 +69,11 @@ def binary(arm: str) -> Path:
     return Path(ROOT / "target/release" / ARMS[arm]["bin"])
 
 
-def docker_args(work: Path, arm: str) -> list[str]:
+def docker_args(work: Path, arm: str, bin_path: Path | None = None) -> list[str]:
     return ["docker", "run", "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--memory", "2g", "--cpus", "2",
             "--pids-limit", "256", "--user", "1000:1000", "-e", "HOME=/tmp",
-            "--mount", f"type=bind,src={binary(arm)},dst={ARMS[arm]['dst']},readonly",
+            "--mount", f"type=bind,src={bin_path or binary(arm)},dst={ARMS[arm]['dst']},readonly",
             "--mount", f"type=bind,src={work},dst=/work"]
 
 
@@ -104,19 +104,20 @@ def cmd_start(a):
     src = CACHE / a.task / "src"
     if not src.exists():
         sys.exit(f"run `python harness.py prepare {a.task}` first")
-    if not binary(a.arm).exists():
-        sys.exit(f"build {binary(a.arm)} first: cargo build --release -p snappea --bins")
+    bin_path = Path(a.binary).resolve() if a.binary else binary(a.arm)
+    if not bin_path.exists():
+        sys.exit(f"build {bin_path} first: cargo build --release -p snappea --bins")
     work = run / "work"
     shutil.copytree(src, work / "src")
     (work / "model").mkdir()
     task_md = (task_dir(a.task) / "TASK.md").read_text().replace("{tool_line}", ARMS[a.arm]["tool_line"])
     (work / "TASK.md").write_text(task_md)
     subprocess.run(["chown", "-R", "1000:1000", str(work)], check=False)
-    subprocess.run([*docker_args(work, a.arm), "-d", "--name", container(a.run_id), "-w", "/work",
+    subprocess.run([*docker_args(work, a.arm, bin_path), "-d", "--name", container(a.run_id), "-w", "/work",
                     IMAGE, "sleep", "infinity"], check=True, capture_output=True)
-    sha = subprocess.run(["sha256sum", str(binary(a.arm))], capture_output=True, text=True).stdout.split()[0]
+    sha = subprocess.run(["sha256sum", str(bin_path)], capture_output=True, text=True).stdout.split()[0]
     rev = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    meta = {"run_id": a.run_id, "task": a.task, "arm": a.arm, "model": a.model, "limits": LIMITS,
+    meta = {"run_id": a.run_id, "task": a.task, "arm": a.arm, "label": a.label or a.arm, "binary": str(bin_path), "model": a.model, "limits": LIMITS,
             "binary_sha256": sha, "snappea_commit": rev, "started": time.time()}
     (run / "meta.json").write_text(json.dumps(meta, indent=2))
     prompt = PROMPT.format(harness=HERE / "harness.py", run_id=a.run_id, calls=LIMITS["calls"],
@@ -183,14 +184,14 @@ def process_stats(run: Path) -> dict:
     }
 
 
-def final_check(run: Path, arm: str) -> dict:
+def final_check(run: Path, arm: str, bin_path: Path | None = None) -> dict:
     """Run the arm's checker on the frozen model in a fresh container."""
     model = run / "submission" / "model"
     if not model.exists() or not any(model.rglob("*.p")):
         return {"status": "no-model"}
     cmd = "cd /work/model && " + ("snappea check --json" if arm == "snappea" else "p check")
     try:
-        r = subprocess.run([*docker_args(run / "submission", arm), "--rm", IMAGE, "bash", "-c", cmd],
+        r = subprocess.run([*docker_args(run / "submission", arm, bin_path), "--rm", IMAGE, "bash", "-c", cmd],
                            text=True, capture_output=True, timeout=600)
     except subprocess.TimeoutExpired:
         return {"status": "timeout"}
@@ -214,7 +215,7 @@ def cmd_finish(a):
     if a.reply:
         reply = Path(a.reply).read_text() if Path(a.reply).is_file() else a.reply
         (run / "agent-final.txt").write_text(reply)
-    stats = {"process": process_stats(run), "final_check": final_check(run, meta["arm"])}
+    stats = {"process": process_stats(run), "final_check": final_check(run, meta["arm"], Path(meta["binary"]) if meta.get("binary") else None)}
     (run / "stats.json").write_text(json.dumps(stats, indent=2))
     print(json.dumps(stats, indent=2))
 
@@ -289,6 +290,8 @@ def main():
     p = sub.add_parser("start")
     p.add_argument("--task", required=True); p.add_argument("--arm", required=True, choices=ARMS)
     p.add_argument("--run-id", required=True); p.add_argument("--model", default="unspecified")
+    p.add_argument("--binary", help="checker binary to pin for this cohort (default: target/release)")
+    p.add_argument("--label", help="condition name for report.py (default: the arm)")
     p.set_defaults(fn=cmd_start)
     p = sub.add_parser("bridge"); p.add_argument("run_id"); p.set_defaults(fn=cmd_bridge)
     p = sub.add_parser("finish"); p.add_argument("run_id"); p.add_argument("--reply")
