@@ -277,7 +277,7 @@ fn deadlock_reports_name_the_hot_spec() {
     let (code, out) = check(DEADLOCK, &["--warn", "lint"]);
     assert_eq!(code, 1, "{out}");
     assert!(
-        out.contains("Deadlock detected. Main(1) is waiting to receive an event, but no other controlled tasks are enabled, while spec Finishes is in hot state 'Busy' (pending = 1)."),
+        out.contains("Deadlock detected. Main(1) is waiting to receive an event, but no other controlled tasks are enabled, while spec Finishes is in hot state 'Busy' (pending = 1); blocked receives: Main(1) waits for 'eDone'."),
         "{out}"
     );
     let mut h = host(DEADLOCK);
@@ -285,6 +285,7 @@ fn deadlock_reports_name_the_hot_spec() {
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let report = v["test_cases"][0]["bug"]["report"].as_str().unwrap_or_default().to_string();
     assert!(report.contains("while spec Finishes is in hot state 'Busy'"), "{}", h.stdout);
+    assert!(report.contains("blocked receives: Main(1) waits for 'eDone'"), "{}", h.stdout);
     // A deadlock has a failure identity, so expected-bug seeds can be compared.
     let identity = &v["test_cases"][0]["bug"]["identity"];
     assert_eq!(identity["kind"], "deadlock", "{}", h.stdout);
@@ -298,6 +299,21 @@ fn deadlock_reports_name_the_hot_spec() {
         ),
         "{log}"
     );
+}
+
+const DEADLOCK_MULTIPLE_RECEIVES: &str = "event eZed;\n\
+     event eAlpha;\n\
+     machine Main {\n\
+       start state S { entry { receive { case eZed: { } case eAlpha: { } } } }\n\
+     }\n\
+     // snappea-lint: allow no-model-machine -- deadlock report fixture\n\
+     test tcStuck [main=Main]: { Main };\n";
+
+#[test]
+fn deadlock_reports_sort_multiple_expected_events_without_a_hot_spec() {
+    let (code, out) = check(DEADLOCK_MULTIPLE_RECEIVES, &["--warn", "lint"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("blocked receives: Main(1) waits for 'eAlpha' or 'eZed'."), "{out}");
 }
 
 const UNHANDLED: &str = "event eA;\n\

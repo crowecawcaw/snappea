@@ -1297,6 +1297,48 @@ impl<'p> Runtime<'p> {
                 msg.push_str(", while ");
                 msg.push_str(&hot.join(" and "));
             }
+
+            // The inbox already has the receive wait set. Show the declared event cases
+            // in the native report so a missing send is visible without opening the trace.
+            // `PHalt` is added to every wait set implicitly; show it only when it is the
+            // only possible event, since otherwise it obscures the events the model asks for.
+            let mut waits: Vec<(String, String, String)> = self
+                .ops
+                .iter()
+                .filter(|o| o.status == OpStatus::BlockedOnReceive)
+                .filter_map(|o| {
+                    let m = o.machine?;
+                    let machine = &self.machines[m];
+                    let mut events: Vec<String> = machine
+                        .inbox
+                        .waiting
+                        .as_deref()?
+                        .iter()
+                        .filter(|&&e| e != self.prog.halt_event)
+                        .map(|&e| self.event_name(e).to_string())
+                        .collect();
+                    events.sort();
+                    events.dedup();
+                    if events.is_empty() {
+                        events.push(self.event_name(self.prog.halt_event).to_string());
+                    }
+                    let state = self.state_name(machine.state);
+                    Some((
+                        self.prog.machine(machine.decl).name.clone(),
+                        state,
+                        format!(
+                            "{} waits for {}",
+                            o.name,
+                            events.iter().map(|e| format!("'{}'", e)).collect::<Vec<_>>().join(" or ")
+                        ),
+                    ))
+                })
+                .collect();
+            waits.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
+            if !waits.is_empty() {
+                msg.push_str("; blocked receives: ");
+                msg.push_str(&waits.into_iter().map(|(_, _, wait)| wait).collect::<Vec<_>>().join("; "));
+            }
         }
         msg.push('.');
         Err(self.report_bug(msg))
