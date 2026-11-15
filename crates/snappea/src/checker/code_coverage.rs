@@ -578,6 +578,23 @@ impl CodeMap {
         (open, accepted)
     }
 
+    /// Raw uncovered point counts in an exemption scope, including children hidden
+    /// by the compact gap rendering.
+    pub fn hidden_points(&self, coverage: &CodeCoverage, scope: Span) -> std::collections::BTreeMap<String, usize> {
+        let mut counts = std::collections::BTreeMap::new();
+        for (i, point) in self.points.iter().enumerate() {
+            let span = self.point_spans[i];
+            if !coverage.hit.contains(&(i as u32))
+                && span.file == scope.file
+                && scope.start <= span.start
+                && scope.end >= span.end
+            {
+                *counts.entry(point.kind.name().to_owned()).or_insert(0) += 1;
+            }
+        }
+        counts
+    }
+
     /// Unsuppressed advisory gaps, grouped without classifying rendered messages.
     pub fn advisory_uncovered(
         &self,

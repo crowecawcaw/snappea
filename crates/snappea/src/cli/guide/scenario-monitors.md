@@ -109,3 +109,37 @@ so events from unrelated operations cannot satisfy the intended sequence.
 
 Use an existing design event when it establishes the same fact. Keep correctness
 assertions in specs; a satisfied scenario alone does not prove correctness.
+
+## Native behavioral coverage contract
+
+Native `snappea check` reports safety, behavioral coverage, raw structural
+coverage, required structural coverage after exemptions, and broad exemptions
+separately. JSON exposes `safety`, `behavioral_coverage`, `coverage`, and
+`coverage_exemptions`. Compatibility output and artifact schemas are unchanged.
+
+A named scenario is required by default. A scoped `allow coverage -- reason`
+on its declaration makes it optional; it remains visible in the contract.
+Keep required evaluation observers in grader-owned source files passed alongside
+the model, independent of candidate-authored monitors. Review their event history
+and state transitions: author-written scenarios can be weak. No tooling can
+validate a natural-language exemption reason or discover every meaningful race.
+
+An obligation is reached if any selected positive test witnesses it. Expected-bug
+tests do not satisfy obligations. Otherwise it is `not_reached` only when all
+selected positive searches completed without unexpected failures, and
+`unresolved` when any search is incomplete. Neither is a safety counterexample
+or proof of unreachability outside the selected bounded workload.
+Required missing and unresolved obligations fail the coverage gate (exit 1);
+`--warn coverage` reports them without failing that gate. Optional obligations
+do not fail it. Safety and mutation gates still apply independently.
+
+Progress counts are observer-defined states visited in one schedule, not an
+inferred semantic explanation or a percentage of completion. Witness test names
+refer to the unchanged per-test scenario artifacts and their accepting event
+histories; these histories are not full replay schedules.
+
+Machine-wide exemptions print their declaration location, reason, and counts by
+kind of raw uncovered point, including children collapsed in compact gap output.
+JSON retains these counts even when zero. Prefer handler or branch scopes for
+impossible routes and defensive guards. A passing required gate with exemptions
+does not imply full branch coverage.

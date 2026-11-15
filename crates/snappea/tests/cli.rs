@@ -1755,3 +1755,46 @@ fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
     assert!(h.stdout.contains("eTimeout: call Timeout versus ignore"), "{}", h.stdout);
     assert!(h.stdout.contains("1 mutation suppression advisory"), "{}", h.stdout);
 }
+
+#[test]
+fn behavioral_obligation_requires_actual_pending_overlap() {
+    for (history, expected) in [
+        ("announce Begin, 1; announce End, 1; announce Begin, 2; announce End, 2;", "not_reached"),
+        ("announce Begin, 1; announce Begin, 2; announce End, 1; announce End, 2;", "reached"),
+    ] {
+        let mut h = host();
+        h.add_file(
+            "overlap.p",
+            &format!(
+                r#"
+event Begin: int;
+event End: int;
+// snappea-lint: allow coverage -- exercise different histories in this regression
+machine Main {{
+    start state S {{ entry {{ {history} }} }}
+}}
+scenario ConcurrentPending observes Begin, End {{
+    var a: bool;
+    var b: bool;
+    start state Waiting {{
+        on Begin do (key: int) {{
+            if (key == 1) {{ a = true; }} else {{ b = true; }}
+            if (a && b) {{ goto Overlap; }}
+        }}
+        on End do (key: int) {{
+            if (key == 1) {{ a = false; }} else {{ b = false; }}
+        }}
+    }}
+    cold state Overlap {{ }}
+}}
+test tc [main=Main]: {{ Main }};
+"#
+            ),
+        );
+        snappea(&mut h, &["check", "overlap.p", "--no-mutation", "--warn", "lint", "--json"]);
+        let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        assert_eq!(result["behavioral_coverage"]["obligations"][0]["status"], expected, "{result}");
+        assert_eq!(result["behavioral_coverage"]["obligations"][0]["required"], true);
+        assert_eq!(result["coverage_exemptions"][0]["machine"], "Main");
+    }
+}
