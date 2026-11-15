@@ -85,3 +85,15 @@ symptom alone is partial.
   arithmetic itself allows two writers with all servers up and no restarts is wrong.
 - `cmd/namespace-lock.go` refcounting holds `lockMapMutex` around every ref change at
   this commit (the atomic refcount race, 6de410a0, came later).
+
+## Valid extras (not scored as known issues)
+
+Classify these as "valid" other claims.
+
+- `localLocker.RLock`/`RUnlock` use only `args.Resources[0]`, so a multi-resource read
+  lock registers on the first resource only and a writer on another resource is granted.
+  Latent at this commit: the only multi-resource caller (multi-object delete in
+  `cmd/xl-zones.go`) takes a write lock. Reworked in 9cdd981c.
+- A grant whose reply is lost (RPC error after the server granted) is counted as not
+  granted and never released, leaving an orphan entry. Same family as K3 when the report
+  also covers lost releases; on its own, grade K3 "partial".
