@@ -416,8 +416,14 @@ mod contract_tests {
             ..Default::default()
         });
         let missing = from_report(&report, "serialized");
-        assert_eq!(contract(prog, &[missing.clone()], false, &[])["obligations"][0]["status"], "unresolved");
-        assert_eq!(contract(prog, &[missing.clone()], true, &[])["obligations"][0]["status"], "not_reached");
+        assert_eq!(
+            contract(prog, std::slice::from_ref(&missing), false, &[])["obligations"][0]["status"],
+            "unresolved"
+        );
+        assert_eq!(
+            contract(prog, std::slice::from_ref(&missing), true, &[])["obligations"][0]["status"],
+            "not_reached"
+        );
         report.scenarios[0].trigger_count = 1;
         let reached = from_report(&report, "overlapping");
         let combined = contract(prog, &[missing.clone(), reached], false, &[]);
