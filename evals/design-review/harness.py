@@ -169,7 +169,7 @@ def process_stats(run: Path) -> dict:
         if (run / "transcript.jsonl").exists() else []
     checks = [c for c in calls if CHECK_RE.search(c["command"])]
     out = lambda c: c["result"]["stdout"] + c["result"]["stderr"]
-    bug_re = re.compile(r"Checker found a bug|\"result\":\s*\"bug\"|\bfound \d+ bug", re.I)
+    bug_re = re.compile(r"Checker found a bug|\"result\":\s*\"bug\"|\bfound [1-9]\d* bugs?\b", re.I)
     return {
         "commands": len(calls),
         "minutes": round(calls[-1]["elapsed"] / 60, 1) if calls else 0,
@@ -177,7 +177,7 @@ def process_stats(run: Path) -> dict:
         "checker_runs_ok_exit0": sum(c["result"]["exit_code"] == 0 for c in checks),
         "checker_runs_exit1": sum(c["result"]["exit_code"] == 1 for c in checks),
         "checker_runs_error": sum(c["result"]["exit_code"] not in (0, 1) for c in checks),
-        "checker_runs_reporting_bug": sum(bool(bug_re.search(out(c))) and c["result"]["exit_code"] != 0
+        "checker_runs_reporting_bug": sum(bool(bug_re.search(out(c)))
                                           for c in checks),
         "used_guide": any(re.search(r"snappea\s+guide", c["command"]) for c in calls),
     }
