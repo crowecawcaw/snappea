@@ -78,9 +78,14 @@ FLAW_CLASSES = {
     "duplicate-grant": ["test_duplicated_grant_counts_once"],
     "stale-release": ["test_delayed_release_does_not_free_a_later_hold"],
     "read-sharing": ["test_readers_share", "test_independent_resources"],
+    "clock-drift-or-lost-lease": ["test_long_hold_is_kept", "test_cut_off_holder_steps_down",
+                                  "test_holder_that_reaches_a_minority_steps_down",
+                                  "test_slow_renewals_are_not_trusted", "test_long_hold_after_heal_is_kept",
+                                  "test_late_replies_then_silence"],
+    "restart-under-long-hold": ["test_restart_under_a_long_hold"],
     "contention-liveness": ["test_competing_writers_take_turns", "test_split_vote_resolves",
                             "test_minority_down", "test_single_writer_acquires_and_releases"],
-    "fuzz-safety": ["test_random_faults_safety"],
+    "fuzz-safety": ["test_random_faults_safety", "test_random_faults_long_holds"],
 }
 
 
