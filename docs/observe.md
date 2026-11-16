@@ -52,9 +52,8 @@ run: a handler for an event the spec's `observes` list leaves out
 status 2 unless a `// snappea-lint: allow unobserved-handler -- reason` comment
 suppresses it. Model-test rules such as `unselected-spec` do not apply here.
 
-On a terminal or in CI (`CI` set) the output is text; otherwise (agents, scripts,
-supervisors) it is the JSON result below. `--format text|json` or `--json` chooses,
-as does `SNAPPEA_FORMAT=text|json`, and `--json-report FILE` also writes the JSON to
+The output is text by default. `--json` (or `--format json`, or `SNAPPEA_FORMAT=json`)
+prints the JSON result below instead, and `--json-report FILE` also writes the JSON to
 `FILE`, for a run whose text people read.
 
 `snappea-compat observe` takes PObserve's options instead (`-pf`, `-pp`, `-l A B ...`,
@@ -87,7 +86,7 @@ that PObserve doesn't have (`--all-specs`, `--check-hot`, `--strict`,
 | `--check-hot` | Also report a key whose spec is in a hot state after its last event, with the message `snappea check` uses for liveness bugs at the end of an execution. |
 | `--strict` | Require at least one successfully checked relevant event per selected spec, after key filtering. |
 | `--unknown-events error\|warn\|ignore` | What to do with event names no loaded P source declares (default `error`; `snappea-compat` keeps PObserve's `ignore`). See [Unknown event names](#unknown-event-names). |
-| `--format text\|json`, `--json` | Print text or the JSON result (default: text on a terminal or in CI, else JSON). |
+| `--format text\|json`, `--json` | Print text or the JSON result (default: text). |
 | `--json-report FILE` | Also write the JSON result to `FILE`. |
 | `-v`, `--verbose` | Show progress, logged messages and each error's events. |
 

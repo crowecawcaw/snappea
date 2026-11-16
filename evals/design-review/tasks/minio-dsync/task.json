@@ -1,0 +1,18 @@
+{
+  "subject": "MinIO's distributed locking subsystem",
+  "repo": "https://github.com/minio/minio",
+  "commit": "10fd53d6bbc847e61bff12749f0ff35e20bd7ce2",
+  "date": "2020-03-14",
+  "paths": [
+    "pkg/dsync/drwmutex.go",
+    "pkg/dsync/dsync.go",
+    "pkg/dsync/retry.go",
+    "pkg/dsync/rpc-client-interface.go",
+    "cmd/local-locker.go",
+    "cmd/lock-rest-client.go",
+    "cmd/lock-rest-server.go",
+    "cmd/lock-rest-server-common.go",
+    "cmd/namespace-lock.go"
+  ],
+  "known_issues": 5
+}

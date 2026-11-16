@@ -1,0 +1,16 @@
+{
+  "subject": "PostgreSQL's logical replication subscriber (launcher, apply and table-sync workers)",
+  "repo": "https://github.com/postgres/postgres",
+  "commit": "b38006ef6d1ba2f56cc4962ed17956b74c9fa0c4",
+  "date": "2017-04-04",
+  "paths": [
+    "src/backend/replication/logical/launcher.c",
+    "src/backend/replication/logical/tablesync.c",
+    "src/backend/replication/logical/worker.c",
+    "src/include/replication/worker_internal.h",
+    "src/include/replication/logicallauncher.h",
+    "src/include/catalog/pg_subscription_rel.h",
+    "src/backend/commands/subscriptioncmds.c"
+  ],
+  "known_issues": 8
+}

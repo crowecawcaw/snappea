@@ -9,85 +9,77 @@ questions:
 
 # Model a design with P, then test the code against it
 
-P finds bugs that only appear in some orderings: two clients read the same version,
-a retry arrives after the state changed, a step fails between read and write. Use it
-for shared state, retries, concurrency and recovery. Pure transformations need only
-ordinary tests.
+Use P where bugs depend on ordering or failure: shared state, retries, concurrency,
+timeouts, recovery. Do the steps in order. Read each guide page whole, not through
+`head`. Topics: `snappea guide --help`. Runnable models: `snappea guide examples`.
 
-The model is worth what it changes in the code and tests. Follow these steps in order.
-More: `snappea guide testing` (testing the implementation), `snappea guide syntax`
-(P syntax and a complete small model), `snappea guide examples` (runnable models), and
-`snappea guide --help` for every topic.
+## 1. Write the risks in DESIGN.md, before code
 
-## 1. List the risks (before any code)
+- The contract as checkable sentences ("a retry returns its first result and has no
+  further effect").
+- The real atomic primitives (one CAS on one key, a lock, a transaction). Everything
+  else interleaves.
+- The failure model: can messages be lost, duplicated, reordered or late? Can a node
+  crash or restart mid-operation, and what survives? What do timers, leases and
+  retries do? Answer every item of `snappea guide checklist`.
+- 5-10 scenarios that could break the contract (`snappea guide scenarios`).
+- What must eventually happen, and what could block it forever (a holder crashes, a
+  release or reply is lost). Safety assertions cannot find these; each needs a
+  liveness spec (`snappea guide spec-patterns`).
 
-Write down, in DESIGN.md:
+## 2. Model each concern's algorithm, not the API
 
-- the contract in checkable sentences ("a retried request returns its first result and
-  has no further effect");
-- the real atomic primitives (one compare-and-swap on one key, a lock, a transaction).
-  Everything else can interleave;
-- 5-10 concrete scenarios that could break the contract. Always consider: two clients
-  that read the same version; a retry after another request changed the state
-  (including retries of rejected or empty results); two objects sharing one store;
-  each precondition false on its own; values exactly at each boundary.
+- Model what you want to validate, not the whole system: one model per part with its
+  own state and failure modes (usually 1-3), one test case per risk. Abstract what a
+  model leaves out to its contract; where models meet, one model's spec asserts what
+  another assumes (`snappea guide modeling`).
+- A store machine holding exactly what the real store holds; its handlers are the
+  real primitives (`load` returns (version, value); `cas` succeeds only at the
+  current version).
+- Client machines run the algorithm: load, receive, decide, cas, retry. A whole
+  operation in one handler assumes the race away (`snappea guide modeling`).
+- Faults come from bounded driver machines (`snappea guide faults`).
+- A safety spec computing expected results from the driver's announced requests,
+  not design code; a hot-state liveness spec per "must eventually".
+- 2-3 clients, small `choose(n)` inputs, a fixed test per scenario. Clients retry
+  until they succeed; giving up after N attempts hides a stuck state. Shape:
+  `snappea guide example cas-retry`. Syntax: `snappea guide syntax`.
 
-## 2. Model the algorithm, not the API
-
-- One machine for the store, holding exactly what the real store holds. Its handlers
-  are the real primitives: `load` replies with (version, value); `cas` succeeds only at
-  the current version.
-- Client machines run your algorithm: send load, receive, decide, send cas, retry on
-  failure. Every `send`/`receive` is a point where another client can run. If the
-  whole operation is one handler, the model assumes the race away.
-- A `spec` monitor computes the expected results from the contract and the history of
-  requests, independently of the algorithm, and asserts each actual result. Announce
-  events at the store's commit, not after a reply, or the monitor sees them out of order.
-- Drive it with 2-3 clients and small `choose(n)` inputs, plus fixed tests for the
-  scenarios from step 1. `snappea guide example cas-retry` is a complete model of
-  this shape.
+Reviewing existing code instead: list hypotheses from the checklist, group them by
+machinery, one model per group and one test per hypothesis, expecting failure; write
+a fixed variant only after the group is tried (`snappea guide modeling`).
 
 ## 3. Check until it passes for real
 
-    snappea check            # every test case, then coverage and mutation checks
+    snappea check A.pproj    # every test case of one model, then coverage and mutation
 
-- Exit 1 is work to do: a bug (fix the design; keep the scenario) or a coverage gap
-  (add a scenario). Undetected mutants are warnings, but each one usually means an
-  assertion is missing; read them, add the assertion, or suppress an equivalent one
-  with a reason. `--deny mutation` makes them fail the check.
-- Do not finish with --no-mutation or --warn coverage. Use them only while iterating.
-  If search is incomplete, shrink the bounds or raise --timeout. If mutation testing
-  runs out of time, finish it with `snappea check mutation --mutation-timeout 5m`.
-- A bug found here is the payoff: write it down, fix the design, then implement.
+- Exit 1: a bug (fix the design, keep the scenario) or a coverage gap (add a
+  scenario). Exit 0 with `summary.incomplete` > 0 is not a pass.
+- A failing test lists up to 3 distinct failures (`--max-bugs`) and every spec still
+  hot at the failure: read them all before changing the model. Lint failures do not
+  stop the search; bugs come first.
+- Each undetected mutant usually means a missing assertion: add it, or suppress an
+  equivalent one with a reason.
+- Do not finish with `--no-mutation` or `--warn coverage`. Incomplete search: shrink
+  bounds, split the model, or raise `--timeout`; for mutation, `snappea check
+  mutation --mutation-timeout 5m`.
+- Without a hot spec state the check is safety only: a lock stuck forever passes.
+  Keep a spec hot until each liveness risk from step 1 resolves, and give each
+  timeout, lease or retry a test where it is the only way forward.
+- A bug found here is the payoff: record it, fix the design, then implement.
 
-## 4. Implement, then test what the model explored
+## 4. Implement, then test what the models explored
 
-For each scenario and each bug the model found, write a test that makes it happen on
-the real code. Random thread stress rarely hits a race; force it (`snappea guide
-testing` shows how):
-
-- wrap the store so a competing call runs between this call's load and its
-  compare-and-swap, or so two calls read the same version before either writes;
-- retry a request after another request changed the state, through a second object.
-
-Add an observation test: run real calls, record their actual arguments and results as
-events, and check them against your P spec. In Python: `pip install pysnappea`, then
-`from snappea import check_events`.
-
-## 5. Prove the tests can fail
-
-Break your implementation on purpose, one change at a time (ignore the
-compare-and-swap result, drop a retry memo, flip a boundary `<` to `<=`, keep state in
-the object instead of the store). Run the tests each time; every break must fail a
-test. Add a test for any that pass. Restore the code.
+Force each scenario and model bug on the real code, add an observation test against
+the P specs of every model, then break the code on purpose until every break fails a
+test (`snappea guide testing`, `snappea guide python`).
 
 ## Done means
 
-- `snappea check` exits 0, with complete search or stated bounds.
-- The implementation's tests pass, including forced-interleaving and observation tests.
-- Every deliberate break from step 5 fails a test.
-- DESIGN.md states the contract, primitives, scenarios, model bounds, what the model
-  found, and what is not covered.
-
-Before accepting a passing model, use `snappea guide spec-patterns` to check that
-inputs, replies and the full planned work are pinned down by independent specs.
+- `snappea check` exits 0 for every model, with complete search or stated bounds.
+- Implementation tests pass, including forced-interleaving and observation tests;
+  every deliberate break fails one.
+- DESIGN.md (or the report) states the contract, primitives, failure model,
+  models with their assumptions and seams, scenarios, bounds, what each model found
+  and what is not covered, and answers every `snappea guide checklist` item: yes /
+  no / not applicable, with the model that covers it or a reason.

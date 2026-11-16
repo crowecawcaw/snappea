@@ -9,43 +9,27 @@ questions:
 
 # Timers, crashes and lossy networks
 
-Faults are the environment, not the design. Model them in machines marked
-`// snappea: driver` (on its own line before the machine): drivers are not mutated, so
-mutation testing judges the design's handling of a fault, not the fault itself.
-
-The marker is what matters, not the folder. Put fault injectors in `PTst/` with the
-other drivers. A timer that the design itself creates (a lease timer the lock service
-starts for each grant) can stay in `PSrc/` next to the code that arms it, but mark
-the timer machine as a driver: when it fires is the environment's choice. The code
-that creates, cancels or reacts to it is design and stays unmarked.
-
-## Reusable building blocks
-
-For bounded loss, duplication, reordering and late replies, import the published
-`BBNetwork` building block instead of writing another courier. Export it with
-`snappea guide example building-blocks --out vendor`, then include
-`vendor/building-blocks/Network.pproj` from your project's `IncludeProject`.
-The bundle's README defines its budgets and delivery contract; its consumer example
-shows the import. These are ordinary P sources that you can pin and review with your
-model, not built-in channel syntax. Couriers still add scheduling choices.
-
-The recipes below explain smaller mechanisms you may need to adapt.
+- Mark each fault injector `// snappea: driver` (own line, before the machine), so
+  mutation judges the design's handling, not the fault. Mark a timer the design arms
+  too: when it fires is the environment's choice.
+- Bound every fault with a counter: `$` is fair, so "every retry is lost" is not a
+  liveness bug without a bound. One loss, duplicate or crash usually finds the bug.
+- Network loss, duplication, reordering, late replies: import `BBNetwork`
+  (`snappea guide example building-blocks --out vendor`, then include
+  `vendor/building-blocks/Network.pproj` from `IncludeProject`).
 
 ## Timer with cancel
 
 ```p
 event eStartTimer; event eCancelTimer; event eTimeout; event eFire;
 
-// Fires at any time after it is started, unless cancelled first. A timeout already
-// sent can still arrive after a cancel: the client must ignore a late one.
+// Fires any time after start unless cancelled. A timeout already sent can still
+// arrive after a cancel: the client must ignore it.
 // snappea: driver
 machine Timer {
   var client: machine;
   start state Init { entry (c: machine) { client = c; goto Idle; } }
-  state Idle {
-    on eStartTimer goto Armed;
-    ignore eCancelTimer, eFire;
-  }
+  state Idle { on eStartTimer goto Armed; ignore eCancelTimer, eFire; }
   state Armed {
     entry { send this, eFire; }
     on eFire goto Idle with { send client, eTimeout; }
@@ -55,19 +39,16 @@ machine Timer {
 }
 ```
 
-## Crash and restart with an epoch
+## Crash and restart in place
 
-Keep the fields that stand in for persisted state; reset volatile ones in the crash
-handler. Bump an epoch so work queued before the crash is recognised and dropped.
-This in-machine shortcut fits a process that restarts in place. When the restarted
-process is a new machine, keep durable state in a separate storage machine
-(`snappea guide recovery`).
+The crash handler resets volatile fields and bumps an epoch so work queued before the
+crash is dropped. For a process replaced by a new machine: `snappea guide recovery`.
 
 ```p
 event eCrash; event eReq: machine; event eResp; event eWork: int;
 
 machine Server {
-  var epoch: int;               // stands in for a persisted counter: survives a crash
+  var epoch: int;               // persisted: survives a crash
   var pending: seq[machine];    // volatile: lost in a crash
   start state Serving {
     on eReq do (c: machine) { pending += (sizeof(pending), c); send this, eWork, epoch; }
@@ -84,9 +65,6 @@ machine Server {
 // snappea: driver
 machine Crasher { start state S { entry (s: Server) { if ($) { send s, eCrash; } } } }
 ```
-
-To model a process that dies, `raise halt` in the crash handler and have the driver
-create a new machine that recovers from a separate storage machine.
 
 ## Bounded lossy, duplicating network
 
@@ -109,27 +87,13 @@ machine Network {
 }
 ```
 
-- Bound the losses. Upstream P's `UnReliableSend` decides each loss with `$`. The
-  checker treats such choices as fair, so "every retry is lost" is not a liveness bug:
-  the exhaustive search verifies progress assuming the network eventually delivers. A
-  loss counter states the bound explicitly and keeps the search small.
-- Bound duplicates and crashes the same way: once each is usually enough to find bugs.
+## Mutants around faults
 
-## Mutation testing and faults
-
-- Removing an `if` on a bare `$` or `choose()` with an empty branch, or the only
-  statement of its other branch, is not run: the checker already explores the run
-  where the branch is skipped.
-- Emptying the handler of an event that every test case sends only as the whole branch
-  of `if ($)` (a crash injected with `if ($) { send s, eCrash; }`), and no spec observes,
-  is reported as likely equivalent: a handler that does nothing is the history where the
-  fault never happened. The report gives the suppression line to add if you agree. An
-  event sent in both branches of a choice is always delivered, so it does not qualify.
-- A surviving mutant under a `$` condition in a machine that stands in for the
-  environment means the machine needs `// snappea: driver`.
-- Best-effort operations (cancelling a timer, warming a cache, sending a hint) are
-  meant to be undetectable: the design must be correct with or without them. Suppress
-  their removal with a reason; one comment can name several kinds:
+- A survivor under `$` in an environment stand-in: mark that machine a driver.
+- Emptying the handler of an event sent only as the whole branch of `if ($)`, and
+  observed by no spec, is reported as likely equivalent (the fault never happened), with a suppression line.
+- Best-effort operations (cancel a timer, a hint) must not be needed for
+  correctness. Suppress their removal with a reason:
 
 ```p
 // snappea-lint: allow mutation-nested:remove-statement,condition-false -- best-effort cancel

@@ -93,7 +93,7 @@ Relative paths in environment variables resolve against the process working dire
   reorder events or interpret monitor semantics themselves.
 - CLI helpers MUST pass `--json-report` and read results from the report, never from
   console output, and pass `--format text` when they show snappea's output to people
-  (a subprocess's stdout is not a terminal, so it defaults to JSON). The report's
+  (so a `SNAPPEA_FORMAT=json` in the environment does not change it). The report's
   `exit_code` is the exit status: 0 pass, 1 spec violation, 2 tool or input error; a
   configuration or compile error gives `{"exit_code": 2, "error": "..."}`. Classify
   errors by their `kind`.

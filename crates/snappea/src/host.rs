@@ -68,10 +68,6 @@ pub trait Host {
     fn threads(&self) -> Option<Threads> {
         None
     }
-    /// Whether stdout is a terminal: commands then print text rather than JSON by default.
-    fn stdout_is_terminal(&self) -> bool {
-        false
-    }
     /// Whether stderr is a terminal: `snappea check` then shows a live status line there.
     fn stderr_is_terminal(&self) -> bool {
         false
@@ -306,9 +302,6 @@ impl Host for Buffered<'_> {
     fn threads(&self) -> Option<Threads> {
         self.inner.threads()
     }
-    fn stdout_is_terminal(&self) -> bool {
-        self.inner.stdout_is_terminal()
-    }
     fn stderr_is_terminal(&self) -> bool {
         self.inner.stderr_is_terminal()
     }
@@ -490,9 +483,6 @@ impl Host for Quiet<'_> {
     fn threads(&self) -> Option<Threads> {
         self.inner.threads()
     }
-    fn stdout_is_terminal(&self) -> bool {
-        self.inner.stdout_is_terminal()
-    }
     fn env_var(&self, name: &str) -> Option<String> {
         self.inner.env_var(name)
     }
@@ -626,8 +616,6 @@ pub struct MemHost {
     pub seed: u32,
     /// [`Host::threads`]; `None` by default.
     pub threads: Option<Threads>,
-    /// [`Host::stdout_is_terminal`]; true by default.
-    pub terminal: bool,
     /// [`Host::stderr_is_terminal`]; false by default.
     pub stderr_terminal: bool,
     /// Called with each [`Host::progress`] snapshot; `None` by default.
@@ -654,7 +642,6 @@ impl MemHost {
             clock: || 0.0,
             seed: 0,
             threads: None,
-            terminal: true,
             stderr_terminal: false,
             on_progress: None,
             env: BTreeMap::new(),
@@ -704,10 +691,6 @@ fn not_a_directory(p: &Path) -> io::Error {
 }
 
 impl Host for MemHost {
-    fn stdout_is_terminal(&self) -> bool {
-        self.terminal
-    }
-
     fn stderr_is_terminal(&self) -> bool {
         self.stderr_terminal
     }

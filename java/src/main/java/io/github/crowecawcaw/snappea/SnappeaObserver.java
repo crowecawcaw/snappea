@@ -251,7 +251,7 @@ public final class SnappeaObserver {
         }
         // One -l per log, so a log path is never taken for a source (.p/.pproj) or an option.
         logs.forEach(p -> args.addAll(List.of("-l", p.toString())));
-        // Text on the console (kept in console.txt for people), whatever CI or SNAPPEA_FORMAT say;
+        // Text on the console (kept in console.txt for people), whatever SNAPPEA_FORMAT says;
         // the result is read from the JSON report.
         args.addAll(List.of("--format", "text", "--json-report", report.toString(),
                 "--unknown-events", unknownEvents.option()));

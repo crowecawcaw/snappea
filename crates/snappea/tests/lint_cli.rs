@@ -13,7 +13,7 @@ const MODEL: &str = "event E;\nspec Passive observes E { start state S { on E go
 #[test]
 fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     let mut h = MemHost::new("/w");
-    h.terminal = false;
+    h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     h.add_file("model.p", MODEL);
     for command in [&["check", "lint"][..], &["check"], &["check", "lint"]] {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
@@ -91,7 +91,7 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     assert!(!h.stderr.contains("--warn lint"), "{}", h.stderr);
 
     // JSON: the bug, the findings, and what was skipped
-    h.terminal = false;
+    h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["exit_code"], 1);
@@ -112,7 +112,7 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
 #[test]
 fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
     let mut h = MemHost::new("/w");
-    h.terminal = false;
+    h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     h.add_file("model.p", MODEL);
     for (command, skipped) in
         [(&["check"][..], "coverage and mutation testing"), (&["check", "mutation"], "mutation testing")]
@@ -127,10 +127,10 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(result["summary"]["lint_failed"], true);
         assert_eq!(result["summary"]["coverage_gaps"], 0);
         assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
-        h.terminal = true;
+        h.env.remove("SNAPPEA_FORMAT");
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
         assert!(h.stdout.contains(&format!("but lint failed (1 finding); {skipped} skipped.")), "{}", h.stdout);
-        h.terminal = false;
+        h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     }
     // --warn lint still runs the full pipeline
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint"]), 1);
@@ -154,12 +154,12 @@ fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
     assert!(h.stdout.contains("Checking "), "{}", h.stdout);
     assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 1 lint finding, "), "{}", h.stdout);
     // `all` warns on every check; JSON counts what was only warned about
-    h.terminal = false;
+    h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all"]), 0, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["warnings"]["lint"], 1, "{}", result);
     assert!(result["warnings"]["coverage"].as_u64().unwrap() > 0, "{}", result);
-    h.terminal = true;
+    h.env.remove("SNAPPEA_FORMAT");
     // other checks keep their defaults, and a single check overrides `all`
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint"]), 1, "{}{}", h.stdout, h.stderr);
     assert!(h.stdout.contains("Coverage requirements were not met"), "{}", h.stdout);
@@ -659,7 +659,7 @@ fn complementary_specs_share_payload_checks_without_blocking_deny_lint() {
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(h.stderr.contains("warning[payload-field-checked-by-other-spec]"), "{}", h.stderr);
     assert!(!h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
-    h.terminal = false;
+    h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
     let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(json["findings"].as_array().unwrap().len(), 2, "{json}");
@@ -767,7 +767,6 @@ fn check_with_selected_tests_notes_the_findings_it_skipped() {
         test tcGood [main=Main]: assert Safety, Live in { Main, Server };\n\
         test tcWeak [main=Main]: assert Safety in { Main, Server };\n";
     let mut h = MemHost::new("/w");
-    h.terminal = true;
     h.add_file("model.p", model);
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
     assert!(h.stderr.contains("error[no-progress-spec]: test 'tcWeak'"), "{}", h.stderr);

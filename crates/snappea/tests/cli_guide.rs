@@ -34,6 +34,7 @@ const EXAMPLES: &[&str] = &[
     "bounded-history",
     "durable-retry",
     "versioned-publication",
+    "lease-lock",
 ];
 
 #[test]
@@ -42,6 +43,7 @@ fn every_topic_prints_markdown() {
     for topic in [
         "",
         "workflow",
+        "checklist",
         "testing",
         "modeling",
         "scenarios",
@@ -123,6 +125,7 @@ fn guide_text_points_only_to_existing_topics_and_examples() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/guide");
     let topics = [
         "workflow",
+        "checklist",
         "testing",
         "modeling",
         "scenarios",
@@ -273,6 +276,11 @@ fn example_models_pass_and_their_broken_cases_fail_for_the_stated_reason() {
         ("durable-retry", &["check", "tcReappliedReplay"], Some("one request caused more than one effect")),
         ("versioned-publication", &["check", "Revalidated.p"], None),
         ("versioned-publication", &["check", "StaleRetry.p"], Some("was validated for version")),
+        (
+            "lease-lock",
+            &["check", "tcNoFault", "tcPausedHolder", "tcCrashedHolder", "tcLostRelease", "--no-mutation"],
+            None,
+        ),
     ];
     for (example, args, expected) in checks {
         let o = snappea(args, &out.join(example));
@@ -351,6 +359,23 @@ fn reusable_building_blocks_import_and_check() {
     let all = snappea(&["check", project, "--format", "text"], &dir);
     assert!(all.status.success(), "{}", text(&all));
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn lease_lock_broken_design_fails_liveness_and_the_whole_example_passes() {
+    let dir = temp("lease-lock");
+    assert!(snappea(&["guide", "example", "lease-lock", "--out", "."], &dir).status.success());
+    let dir = dir.join("lease-lock");
+    // The no-expiry tests declare their liveness bug, so they pass only when it is found.
+    let broken = snappea(&["check", "tcNoExpiry*", "--no-mutation", "--format", "text"], &dir);
+    let out = text(&broken);
+    assert!(broken.status.success(), "{out}");
+    assert_eq!(out.matches("(expected bug: ").count(), 2, "{out}");
+    assert!(out.contains("liveness bug in hot state 'ClientWaitingForLock'"), "{out}");
+    // Everything as exported, mutation testing included.
+    let all = snappea(&["check", "--format", "text"], &dir);
+    assert!(all.status.success(), "{}", text(&all));
+    std::fs::remove_dir_all(dir.parent().unwrap()).ok();
 }
 
 #[test]
