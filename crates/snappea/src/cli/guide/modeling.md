@@ -15,6 +15,7 @@ questions:
 - Name independent actors, owned/shared state, real storage primitives, and relevant identities/versions.
 - Start small: two competing clients, one resource, a few values. Retain distinctions that permit the defect; omit unrelated detail.
 - State atomicity, message delay/duplication, persistence, bounds, and omissions. Ask whether each omission could change the property.
+- Keep one model per directory, variants included: `snappea check` reads the `.p` files in it and its immediate subfolders, so copies collide as duplicate declarations. Or check files by name (`snappea check a.p`).
 
 ## Preserve interference
 

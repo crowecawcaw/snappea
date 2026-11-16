@@ -57,8 +57,17 @@ impl<'a> Errors<'a> {
     }
 
     pub fn duplicate_declaration(&self, span: Span, dup: &str, existing: &str, existing_span: Span) -> Diagnostic {
+        let help = if span.file == existing_span.file {
+            "rename one of the two declarations".to_string()
+        } else {
+            format!(
+                "these look like separate models; check each file alone, e.g. `snappea check {}`, \
+                 or keep one model per directory; otherwise rename one of the two declarations",
+                self.sm.file(existing_span.file).name
+            )
+        };
         Diagnostic::new(span, format!("'{}' duplicates declaration '{}' at {}", dup, existing, self.loc(existing_span)))
-            .help("rename one of the two declarations")
+            .help(help)
     }
 
     pub fn redeclare_global_param(&self, span: Span, dup: &str, existing: &str, existing_span: Span) -> Diagnostic {

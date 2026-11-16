@@ -155,3 +155,17 @@ fn payload_mistakes_say_what_the_event_takes() {
     let h = help("event eR: int; machine M { start state S { on eR do (x: bool) { } } }");
     assert!(h.starts_with("the handler's parameter receives the event's payload, of type int"), "{h}");
 }
+
+#[test]
+fn duplicate_declarations_in_two_files_suggest_separate_models() {
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("A.p", "event eA;\n");
+    sm.add("variants/B.p", "event eA;\n");
+    let a = match snappea::sema::compile(&sm, &snappea::sema::Options::default()) {
+        Err(snappea::sema::CompileError::Analysis(a)) => a,
+        r => panic!("not a type error: {r:?}"),
+    };
+    let h = a.diagnostics(&sm)[0].help.clone().unwrap();
+    assert!(h.starts_with("these look like separate models; check each file alone, e.g. `snappea check A.p`"), "{h}");
+    assert_eq!(help("event eA;\nevent eA;\n"), "rename one of the two declarations");
+}
