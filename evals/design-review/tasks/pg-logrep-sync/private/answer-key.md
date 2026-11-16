@@ -283,3 +283,17 @@ naming the symptom alone is partial.
   `wait_for_sync_status_change` for a slow catch-up, it reads no stream and sends no
   feedback, so the publisher's `wal_sender_timeout` can drop its connection.
 
+- SIGTERM while a sync worker waits in SYNCWAIT: `wait_for_sync_status_change` returns
+  false, the caller still writes SYNCWAIT to `pg_subscription_rel` and commits the copy
+  (`tablesync.c` L816-825). The next start of that table's sync worker reaches the
+  `default:` case ("unknown relation state") and errors forever, so the table never
+  becomes READY and apply skips its changes. Removed in effect by `9fcf670c2e` (SIGTERM
+  raises an error) and `e3a815d2fa` (SYNCWAIT kept in shared memory only). Found
+  independently by two solvers in the first round.
+- Skipped transactions do not advance origin progress: `apply_handle_commit` commits
+  and records progress only if a local transaction was started, so a transaction whose
+  changes were all skipped (table not yet READY) leaves progress behind; a crash after
+  the table turns READY replays it onto the READY table. Plausible from the code; no
+  upstream fix identified. If the report also names progress recorded at the commit's
+  start (`final_lsn` / `commit_lsn` instead of `end_lsn`), that is K7 found; this
+  mechanism alone is K7 "partial" plus this valid extra.
