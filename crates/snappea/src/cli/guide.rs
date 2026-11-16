@@ -158,6 +158,12 @@ pub(super) const EXAMPLES: &[Example] = &[
             ("test_completion.py", include_str!("guide/examples/versioned-publication/test_completion.py")),
         ],
     },
+    Example {
+        name: "lease-lock",
+        main: "LeaseLock.p",
+        about: "Lock leases and fencing tokens: a liveness spec that catches a lock held forever.",
+        files: &[("LeaseLock.p", include_str!("guide/examples/lease-lock/LeaseLock.p"))],
+    },
 ];
 
 const HELP_HEAD: &str = "\
