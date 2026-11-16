@@ -29,20 +29,8 @@ pub const PROGRAM_RULES: &[(&str, &str)] = &[
         "Advisory: this spec omits a payload field that companion specs read in every selected test using it.",
     ),
     (
-        "unused-design-payload-field",
-        "Advisory: a design event handler never reads a named payload field outside diagnostic output.",
-    ),
-    (
         "shared-spec-helper",
         "Advisory: a selected spec and design machine call the same global helper, so a shared mistake may escape the oracle.",
-    ),
-    (
-        "unchecked-state",
-        "A model or spec field is written, but no assertion, condition, spec or sent event depends on it.",
-    ),
-    (
-        "unchecked-event",
-        "The model sends an event that no spec observes and whose handlers change nothing a check depends on.",
     ),
     (
         "no-progress-spec",
@@ -95,13 +83,7 @@ pub const UNUSED_SUPPRESSION: &str = "unused-suppression";
 /// Whether a rule reports an advisory rather than blocking a check. Advisory findings
 /// remain warnings even with `--deny lint`; source suppressions work as usual.
 pub fn is_advisory(rule: &str) -> bool {
-    matches!(
-        rule,
-        "shared-spec-helper"
-            | "unused-design-payload-field"
-            | "payload-field-checked-by-other-spec"
-            | UNUSED_SUPPRESSION
-    )
+    matches!(rule, "shared-spec-helper" | "payload-field-checked-by-other-spec" | UNUSED_SUPPRESSION)
 }
 
 /// An actionable diagnostic; advisory rules do not fail CLI linting.

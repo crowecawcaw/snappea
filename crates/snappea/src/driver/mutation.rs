@@ -368,7 +368,7 @@ impl Report {
             let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
             for (i, (m, ..)) in list {
                 let why = if let Some(v) = &m.unchecked {
-                    format!(" (only writes '{}', which no check depends on: see the unchecked-state lint)", v)
+                    format!(" (only writes '{}', which no check depends on)", v)
                 } else if let Verdict::Undetected { unchanged: true, .. } = self.verdicts[*i] {
                     format!(" (never changes a value in the test cases: {})", m.unchanged)
                 } else {

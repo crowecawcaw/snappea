@@ -165,8 +165,7 @@ continues with fair feedback search, which checks hot monitors' temperature
 (`state exploration finished, but liveness remains unverified: ...`).
 
 The state cache leaves out fields, locals and event payloads that no assertion,
-condition, send or spec depends on (the values the `unchecked-state` lint reports): such
-a value cannot change what happens next, so a write-only counter neither keeps the
+condition, send or spec depends on, directly or through other variables: such a value cannot change what happens next, so a write-only counter neither keeps the
 search from finishing nor hides a cycle.
 
 By default the selected test cases **share 10 seconds**: each gets the time left divided
@@ -838,11 +837,10 @@ schedules the test cases explored, not every schedule: add a scenario that reach
 such a state, and the mutant runs. On Raft, about one surviving mutant in ten never
 changes a value.
 
-A mutant whose change only writes a variable no check depends on (the
-[`unchecked-state`](linting.md#unchecked-state-and-events) analysis: no assertion,
+A mutant whose change only writes a variable no check depends on (no assertion,
 condition, spec or sent event reads it, directly or through other variables) is not
 run either: no test case can notice it. The console says `(only writes 'log', which no
-check depends on: see the unchecked-state lint)` and JSON names the variable as
+check depends on)` and JSON names the variable as
 `unchecked_variable`. Only changes inside a plain assignment, append or map write whose
 values involve no call, `new`, choice or operation that can fail are skipped.
 

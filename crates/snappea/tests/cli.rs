@@ -1422,29 +1422,18 @@ const WEAK: &str = "event eReq: Client;\n\
      test tcServe [main=Driver]: assert Counted in { Server, Client, Driver };\n";
 
 #[test]
-fn lint_reports_state_events_and_progress_no_check_depends_on() {
+fn lint_reports_tests_without_a_progress_spec() {
     let mut h = host();
     h.add_file("serve.p", WEAK);
     assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 2);
-    for (rule, at, text) in [
-        ("unchecked-state", "serve.p:7:", "machine Server writes field 'log' 1 time, but no assertion"),
-        ("unchecked-event", "serve.p:14:", "machine Server sends 'eAck', but no spec observes it"),
-        ("no-progress-spec", "serve.p:34:", "test 'tcServe' waits for the model's responses"),
-    ] {
-        let found = h.stderr.find(&format!("error[{}]: {}", rule, text));
-        let found = found.unwrap_or_else(|| panic!("no {} finding:\n{}", rule, h.stderr));
-        assert!(h.stderr[found..].contains(at), "{} not at {}:\n{}", rule, at, h.stderr);
-    }
-    // the fields and events a check reads are not reported
-    assert!(!h.stderr.contains("'served'"), "{}", h.stderr);
-    assert!(!h.stderr.contains("'eResp'"), "{}", h.stderr);
-    assert!(h.stderr.contains("help: if a wrong value would be a bug, check it"), "{}", h.stderr);
+    let found = h.stderr.find("error[no-progress-spec]: test 'tcServe' waits for the model's responses");
+    let found = found.unwrap_or_else(|| panic!("no no-progress-spec finding:\n{}", h.stderr));
+    assert!(h.stderr[found..].contains("serve.p:34:"), "not at the test:\n{}", h.stderr);
+    // fields and events no check depends on are not lint findings
+    assert!(!h.stderr.contains("unchecked-"), "{}", h.stderr);
 
-    // suppressions name the rule; a field takes one too
-    let allowed = WEAK
-        .replace("var log", "// snappea-lint: allow unchecked-state -- kept for debugging\nvar log")
-        .replace("send c, eAck;", "// snappea-lint: allow unchecked-event -- acks are informational\nsend c, eAck;")
-        .replace("test tcServe", "// snappea-lint: allow no-progress-spec -- safety only\ntest tcServe");
+    // the suppression goes on the test declaration
+    let allowed = WEAK.replace("test tcServe", "// snappea-lint: allow no-progress-spec -- safety only\ntest tcServe");
     h.add_file("serve.p", &allowed);
     assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 0, "{}", h.stderr);
 }

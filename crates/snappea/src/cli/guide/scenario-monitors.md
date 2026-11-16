@@ -31,7 +31,8 @@ scenario ConflictThenRetry observes eCasResp, eWritten {
   `hot` never fails a test here.
 - `snappea check` ignores observed events a state does not handle; `snappea-compat`
   fails as upstream P does, so add `ignore E;` there.
-- An event only a scenario observes is still `unchecked-event`; observe it in a spec.
+- A scenario checks nothing: an event only a scenario observes is unchecked, so
+  observe it in a spec too.
 - Make the pattern distinguish the race: announce an event at the branch only the
   race takes, and compare operation IDs so unrelated operations cannot match.
 

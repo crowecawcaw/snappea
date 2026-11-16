@@ -90,9 +90,8 @@ Keep bounds grounded in the application contract, not in a desire for a green ch
   explains that another selected spec checks the field; no suppression is needed.
 - **Suppressions carry reasons** and are rare. An undetected mutant is usually a
   missing assertion or scenario; suppress only equivalent mutants.
-- **New lints** (`unchecked-state`, `unchecked-event`, `no-progress-spec`) flag fields
-  and events no check depends on, and tests that wait for replies with no hot spec.
-  Fix them by checking the value or adding a progress spec, not by suppressing.
+- **`no-progress-spec`** flags tests that wait for replies with no hot spec. Fix it by
+  adding a progress spec, not by suppressing.
 - **Scenario monitors describe evidence.** They ignore unrelated observed events
   implicitly. Use explicit handlers only when an event changes the scenario's
   meaning. Safety and progress specs still fail on unhandled observed events.

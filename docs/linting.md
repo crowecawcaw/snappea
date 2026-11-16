@@ -4,7 +4,6 @@ personas: ["application-developer", "coding-agent"]
 questions:
   - "Which modeling mistakes do lints detect?"
   - "How do I fix or suppress a finding?"
-  - "Which model state and events can no test notice?"
   - "Why does a test need a hot spec?"
   - "Why must a driver announce its plan before later stages?"
   - "Why does a suppression report that it matches no finding?"
@@ -83,11 +82,8 @@ model covers every requirement or faithfully represents the implementation.
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
 | `scenario-cold-start` | A scenario starts in an accepting (`cold`) state, so it accepts before any event. | Mark the start state `hot` (or leave it unmarked) and the accepting state `cold`. |
 | `enum-value-shadows-machine` | An enum value has the name of a machine, spec or scenario, so the name means the enum value in expressions and the machine in types. | Rename the enum value, e.g. with a prefix. |
-| `unchecked-state` | A model or spec field is written, but no assertion, condition, spec or sent event depends on it. | Assert on it in a spec or the driver, send it in an observed event, or remove it. |
-| `unchecked-event` | The model sends an event that no spec observes and whose handlers change nothing a check depends on. | Observe it in a spec, or act on it where it is received; remove the send if nothing should. |
 | `no-progress-spec` | A test's driver, or a model machine, waits for the model's responses, but none of the test's specs has a hot state. | Add a spec that is `hot` while a request is pending, and select it in the test. |
 | `unplanned-driver-stage` | A driver starts more model work only after a model notification that is not a reply to its own request, and no driver of the test announces, before it waits on the model, a plan a spec with a `hot` state observes. | Announce the planned operations before starting any, and keep a spec `hot` until they all finished. |
-| `unused-design-payload-field` | Advisory: a design receiver never reads a named payload field outside diagnostic output. | Act on the field, or suppress an intentional abstraction. |
 | `shared-spec-helper` | Advisory: a selected spec and design machine call the same global helper, directly or transitively. | Compute expected results independently, or suppress intentional shared utilities. |
 | `unreachable-statement` | A statement follows a `goto`, a `raise`, or a call to a function that always does one, so it never runs. | Remove the statement, or move it before what leaves the state. |
 | `invalid-suppression` | A `// snappea-lint: allow` comment is malformed, names an unknown rule ID, shares its line with code, or covers no code. | Fix the comment; the help suggests the closest rule ID. Cannot be suppressed. |
@@ -289,51 +285,6 @@ scenario RefundAfterPay observes ePay, eRefund {
 }
 ```
 
-### Unchecked state and events
-
-A test fails only through a check: an assertion (in the model, a driver or a spec), a
-condition that decides what runs next, a send, or an operation that can fail. The
-type-checked model is analyzed for what each of those depends on, through assignments,
-function calls and returns, `new` payloads and event payloads into any machine. A
-field nothing depends on can hold any value and every test passes:
-
-```p
-machine Server {
-  var served: int;
-  var log: seq[int];              // error[unchecked-state]: nothing reads it
-  start state S {
-    on eReq do (c: Client) {
-      served = served + 1;
-      log += (sizeof(log), served);
-      announce eServed, served;   // a spec checks `served`
-      send c, eAck;               // error[unchecked-event]: no spec observes eAck,
-    }                             // and the client's handler does nothing
-  }
-}
-```
-
-`unchecked-state` reports fields of model machines and specs that are written but
-that no check depends on, at the field's declaration. `unchecked-event` reports
-an event the model sends or announces that no spec observes and that no machine acts
-on: its handlers (in every machine) neither assert, change state, create machines,
-nor write or send anything a check depends on. When only a scenario observes the event,
-the finding says so: scenarios measure coverage and check nothing. An event a machine handles in some states
-but not others counts as checked, since it can fail as unhandled; so does `halt`.
-Driver machines (see [mark driver machines](#mark-driver-machines)) and a test's main
-machine are not reported: they are the checks. The analysis over-approximates:
-collections count as one value and every handler of an event receives every payload
-sent with it, so a field it reports is unchecked in every test, and one it does not
-report may still be checked only weakly. A field kept for debugging or printing is a
-fine reason to suppress:
-
-```p
-  // snappea-lint: allow unchecked-state -- trace for debugging only
-  var log: seq[int];
-```
-
-Mutation testing skips the changes these findings explain (see
-[mutation testing](checking-models.md#mutation-testing)).
-
 ### No progress spec
 
 A safety spec checks what the model does, not that it does anything. A test whose
@@ -519,7 +470,6 @@ be where the rule reports, which is not always where the cause is:
 | `unused-payload-field`, `payload-field-checked-by-other-spec` | the spec's handler for the event (or its state or spec), not the test that selects the spec |
 | `unselected-spec`, `permissive-monitor` | the spec |
 | `no-model-machine`, `no-progress-spec` | the test (`no-progress-spec` for a waiting design machine: that machine) |
-| `unchecked-state` | the field or its machine |
 | `unplanned-driver-stage` | the statement that starts the later stage, or the driver machine |
 
 A lint suppression that matches no finding produces the advisory `unused-suppression`
@@ -588,29 +538,3 @@ its declaration:
 // snappea-lint: allow shared-spec-helper -- reviewed representation conversion; invariant is independent
 fun RowKey(row: (id: int, value: int)): int { return row.id; }
 ```
-
-### Unused design payload fields (advisory)
-
-`unused-design-payload-field` points out named tuple fields that a selected design
-machine's receiving handler never reads outside diagnostic output. For example,
-a response receiver that checks `reply.id` but ignores `reply.value` may have
-abstracted away the result it should act on. This is a review prompt: metadata
-and intentionally simplified protocols can legitimately ignore fields. No event
-names or presumed request/reply conventions affect the rule.
-
-The analysis covers `on Event do` handlers and `receive` cases, including captured
-payload reads in nested receive cases. It excludes drivers, specs, scenarios,
-`goto` transition callbacks and destination entry actions. Assertion messages and
-side-effect-free `print` expressions do not count as behavioral reads; expressions
-that can call code, choose values or fail still count. Direct tuple-field assignment
-is a write, not a read of the incoming value. A bare unconditional `assert false`
-handler (optionally preceded by diagnostic output) already rejects the event and
-is exempt.
-
-This is a conservative syntactic check, not data-flow proof: passing or copying the
-whole payload counts all fields as used, as do reads even after overwriting them.
-Only top-level named fields are checked, and not those holding machine references
-(a vote's sender, a reply address), as for `unused-payload-field`. Unreachable handlers and intentional
-abstractions can still generate advisories. Suppress a reviewed abstraction with
-`// snappea-lint: allow unused-design-payload-field -- reason` on its handler or
-machine. Advisories never fail the lint gate, including with `--deny lint`.
