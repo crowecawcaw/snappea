@@ -2,104 +2,72 @@
 diataxis: how-to
 personas: [application-developer, coding-agent]
 questions:
-  - What must an independent spec check?
-  - How do I track completion without going cold too early?
+  - How do I check that something eventually happens?
+  - How do I catch a lock or request that is stuck forever?
   - How do I test timeouts and eventual convergence?
+  - What must an independent safety spec check?
 ---
-# Pin down the contract
 
-Use this checklist before accepting mutation survivors. A passing model only proves
-what its specs actually require, within the modeled bounds.
+# Specs: liveness and independent safety checks
 
-- Compare the design's outgoing requests, decisions and replies with the driver's
-  announced intent: operation kind, content, base version and correlation ID. A
-  correct final result can hide an incorrect request.
-- Assert generated IDs are unique. Track replies by ID so two replies for one
-  request cannot stand in for the missing reply to another.
-- Turn assumptions in comments into assertions, including who may retry or rejoin.
-- Check an invariant from the moment it must hold, including initialization and
-  intermediate phases, not only after a final phase flag.
-- Decide whether fairness or bounded wait is part of the contract before suppressing
-  survivors in a policy function. Progress alone does not specify a scheduling policy.
-- Derive expected results independently. Sharing a design helper with the spec can
-  change both sides of a comparison under mutation and hide a bug.
+A check proves only what specs assert, within the bounds. Bound every fault
+(`snappea guide faults`); nothing progresses if every attempt can be lost.
 
-## Reusable building blocks
+## Liveness: a hot spec for every "must eventually"
 
-Import `BBRequestReplies` when the contract is one terminal reply per unique logical
-request ID. Export `snappea guide example building-blocks --out vendor`, include its
-`RequestReplies.pproj`, and select the spec in your test. The guide bundle's README
-explains the `BBPlan`, `BBRequested` and `BBReplied` adapter events and a runnable
-consumer. Use the block directly rather than copying another completion counter.
-It checks planned completion and IDs; keep independent specs for reply contents.
-Retries reuse a logical ID, and only actual terminal replies discharge obligations.
+- A spec in a `hot` state owes something. The check fails if a run ends, or can
+  repeat forever, with the spec hot. Without a hot state, a lock held forever passes.
+- Name hot states after the promise (`LockPending`); failures report the name.
+- Phases: `Starting` (hot, awaiting the plan), `Owing` (hot), `Settled` (cold). Start
+  hot and require a nonzero plan, announced by the driver before workers start, or a
+  driver doing nothing passes.
+- Go cold only when all planned work has arrived and every obligation settled, not
+  when the pending map is momentarily empty. Recheck after every event that can
+  settle it, including crashes.
+- Track requests by ID (pending map, or requested map plus replied set): on a reply,
+  assert requested and not yet replied, check contents, remove. Do not just count.
+  One terminal reply per request ID: import `BBRequestReplies` from
+  `snappea guide example building-blocks` (see its README).
 
-## Declare the work before starting it
+## Stuck resources: make the timeout the only way forward
 
-A spec that starts cold can pass when the driver never does any work. Start hot,
-require a nonzero plan, then announce each actor's intent before sending its request.
-Keep the plan separate from observations emitted by the design: removing the design's
-work must not remove the expectation too.
+- For every lock, lease or slot, test a holder that crashes, or whose release is
+  lost, and never returns. Only a timeout, expiry or recovery can then free it;
+  removing that mechanism must fail the liveness spec.
+- Drivers must not give up. A client that stops after N attempts ends the run cleanly
+  while the resource stays stuck, so no spec sees it. Retry until success: a retry
+  loop that never succeeds is a cycle reported in the hot state. Do not test or send
+  a growing attempt counter: the state never repeats, the search hits its depth
+  bound, and liveness stays unverified. A driver that must stop instead probes after
+  a quiet point (below) and asserts the resource is free.
+- Deliver a reply after its timeout, also after a retry. Tag replies with operation
+  IDs so an old reply cannot finish new work.
+- Giving up satisfies "every request ends": assert the real promise on the give-up
+  event (for example, every node answered).
+- Inject failures independently of the success path: a crasher started by
+  timer-start vanishes with a mutant that removes timer-start.
+- Prefer notifications to poll loops. Do not add a stop message that wakes blocked
+  workers; it hides a missing wake-up. Let finished workers block.
 
-`snappea guide example bounded-history` contains a runnable `CapacityOracle`:
-`eBegin` declares the client and command counts before clients are created;
-`eRequested` records each command; independent maps and sets check decisions,
-replies and inspections. The final client completion checks every planned count.
-Its `zero-work.jsonl` and `incomplete.jsonl` probes demonstrate failures when no work
-is planned or a promise remains outstanding.
+## Convergence after a quiet point
 
-A counter and a hot state suffice for interchangeable units of work. For requests
-with identities, use a pending map or a requested map plus a replied set. On reply,
-assert the ID was requested and has not replied already, check its contents, then
-remove that obligation. Do not merely decrement a global count.
+For "not stale forever": stop writes, drain in-flight work through explicit
+acknowledgements or a barrier, announce `eQuiesced`, then read and compare with the
+promised state. Silence or a timer does not prove draining. This checks convergence
+after a bounded quiet phase only.
 
-## Keep the spec hot until the whole plan settles
+## Safety: check independently
 
-Think of three phases: `Starting` (hot, waiting for the plan), `Owing` (hot, waiting
-for the promised effects and replies), and `Settled` (cold). Name hot states after
-the promise they track, such as `TransferPending`; liveness failures report that name.
+- Derive expected results from the contract, the driver's announced intent and the
+  history. Never reuse a design helper or trust the design's `valid` flag: a mutant
+  changes both sides.
+- Compare outgoing requests and replies with the intent (kind, content, base version,
+  correlation ID); a correct final result can hide a wrong request.
+- Announce at the store's commit, not after the reply. Where an announcement cannot
+  prove a state change, check a later public read.
+- Assert that generated IDs are unique. Assert only promised constraints. Check
+  invariants from initialization on; turn assumptions in comments into assertions.
 
-Do not go cold just because the pending map is temporarily empty: another actor may
-not have announced its request yet. Require both all planned work to have arrived
-and all its obligations to have settled. Recheck completion after every event that
-can satisfy its condition, including crashes if they discharge planned work.
-
-`snappea guide example durable-retry` demonstrates completion across retries and
-crashes; `invalid-premature-done.jsonl` rejects a completion announcement before all
-requested effects commit. `snappea guide example bounded-history` handles concurrent
-IDs, and `snappea guide syntax` gives a smaller sequential example. Export any example
-with `snappea guide example NAME --out DIR`; its header lists the passing and broken
-checks to run.
-
-## Make the timeout necessary in a test
-
-Give every timeout a test where it is the only way forward, for example a holder
-that crashes without releasing its lease. Removing the timer must fail a progress
-spec. Also deliver a reply after the timeout, including after a retry or a later
-operation; tag replies with operation IDs so an old reply cannot finish new work.
-See `snappea guide faults` for timer and network recipes.
-
-A timer can fire before useful work completes. State the actual promise: for example,
-if giving up is allowed only after every node answered, record answers per node and
-assert that condition on the give-up event. A timeout itself is not evidence that
-all replies are lost. Bound failures, or state the fairness assumption needed for
-progress; no protocol can guarantee a reply if every attempt may be lost forever.
-
-Inject failures independently of the design's own success path. A crasher triggered
-only by timer-start will disappear along with a mutant that removes timer-start.
-Do not add a stop message merely to end a test if it also wakes blocked workers:
-that can hide a missing wake-up. Let workers block when done; finite execution can
-end when no machine has runnable work, while hot specs still detect unfinished work.
-
-## Probe convergence after a modeled quiet point
-
-To check “not stale indefinitely” in a finite test, stop new writes, wait for modeled
-in-flight work to drain using explicit acknowledgements or a barrier, announce
-`eQuiesced`, then perform a real read and compare it with the promised final state.
-Silence or an arbitrary timer does not establish that all messages have drained.
-This checks convergence after that bounded quiet phase, not unbounded eventual
-consistency under continuing writes.
-
-Extra probe clients and replies can multiply schedules. If the contract is about
-the node's value at read time, an observation at that node can be cheaper than a
-round-trip reply. Keep a real reply when reply delivery is part of the promise.
+Examples: `snappea guide example bounded-history` (`zero-work.jsonl` and
+`incomplete.jsonl` fail), `snappea guide example durable-retry`
+(`invalid-premature-done.jsonl` fails).

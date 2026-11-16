@@ -4,53 +4,44 @@ personas: [application-developer, coding-agent]
 questions:
   - Which state survives a crash, and how do I model a restart?
   - Which retry and stale-message histories should I check?
-  - How do I bound recovery so progress specs stay meaningful?
+  - How do I keep stale holders and stale evidence from writing?
 ---
 
-# Recovery and retry
-
-## Preserve the right state
-
-- Separate durable effects/outcome records from volatile worker memory, pending replies, and local flags.
-- Restart clears volatile state; retain committed durable state unless modeling storage loss explicitly.
-- Inject crashes, timeouts and message loss from driver machines; see `snappea guide faults` for recipes.
-- Preserve request identity across retries. Generating a new ID changes the idempotency contract.
-- Model effect + outcome memo atomically only if a real primitive co-commits them. Otherwise allow a crash between writes.
+# Crashes, restarts and retries
 
 ## Model a crash
 
-- A crash is an event, such as `eCrash` from the driver. A machine handles events one at a time, so the crash lands between its handlers, never inside one. To allow a crash between two writes, put them in different handlers: send yourself a continue event after the first.
-- Keep durable state in a separate storage machine that survives the crash; the crashed machine drops its fields, or a fresh one replaces it and reloads from storage.
-- Give each incarnation an epoch. Requests and replies carry it; on restart, drop replies from an earlier epoch, since the new incarnation holds no state for the requests they answer.
-- Let the driver choose when to crash (`$` before each step, with a budget of one), and announce the crash so the spec knows which effects may be missing.
+- Durable state (effects, outcome records) survives a restart; volatile state
+  (memory, pending replies, flags) does not, unless you model storage loss.
+- Keep durable state in a storage machine. The crashed machine drops its fields, or
+  a new machine replaces it (`raise halt` in the old one) and reloads from storage.
+- A crash is a driver event (`eCrash`); it lands between handlers, never inside one.
+  Writes that do not commit together go in separate handlers (send yourself a
+  continue event after the first).
+- The driver chooses when (`$` before each step, budget of one) and announces the
+  crash so specs know which effects may be missing. Recipe: `snappea guide faults`.
+- Give each incarnation an epoch carried by requests and replies; drop replies from
+  earlier epochs.
 
-## Histories to challenge
+## Histories to check
 
-- Commit effect → lose response → restart → retry the same ID. Missing response does not imply missing commit.
-- Complete A → B advances the same state → retry A. If promised, return A's original result without reapplying A over B.
-- Track original per-request responses separately from current state; they can legitimately differ.
-- Distinguish replay/no-op log records from new state-changing effects.
-- See durable retry (`snappea guide example durable-retry`) for correct and split-commit/reapplied-effect variants.
+- Commit, lose the reply, restart, retry the same ID. A missing reply does not mean
+  a missing commit.
+- Complete A, let B change the same state, retry A: if promised, return A's original
+  result without reapplying it. Track original replies apart from current state.
+- Retries keep the request ID; a new ID changes the idempotency contract.
+- Effect and outcome record are one step only if a real primitive commits them
+  together.
+- A holder that crashes holding a lock: `snappea guide spec-patterns`.
+- Runnable: `snappea guide example durable-retry`,
+  `snappea guide example blob-publication`.
 
-## Stale evidence
+## Stale holders and evidence
 
-- Keep the old version, concurrent update, and stale retry explicit.
-- Version/lease checks protect writes only when enforced at the atomic update.
-- After CAS conflict, reread, recompute, and revalidate version-dependent work; changing only the expected version may publish stale evidence.
-- See versioned publication (`snappea guide example versioned-publication`).
+- A version, lease or fencing check protects a write only if the atomic update
+  enforces it. A holder whose lease expired can still act.
+- After a CAS conflict, reread, recompute and revalidate; changing only the expected
+  version can publish stale evidence (`snappea guide example versioned-publication`).
 
-## Bounds and progress
-
-- Start with one request/effect/restart; add actors and IDs when they change the claim.
-- State omitted crash points, expiration, conflicting payloads under one ID, network behavior, and storage failures.
-- Completion needs assumptions such as eventual recovery and scheduling. Safety may not.
-- A bounded pass does not establish arbitrary-crash or implementation correctness.
-
-## Exercise the storage protocol
-
-`snappea guide example blob-publication --out /tmp` exports separate durable staging
-and root-CAS model steps, a Python implementation, and saved crash/retry tests.
-Crashes before publication leave invisible staged records; a lost response after CAS
-retries from the durable outcome. A losing publisher rereads and rebuilds both heads
-and its outcome map. The README states the finite record, request and crash bounds;
-Python storage simulates durable state across worker recreation, not machine restart.
+Start with one request, effect and restart. State omitted crash points, expiry,
+network behavior and storage failures.

@@ -14,26 +14,31 @@ const TOPICS: &[(&str, &str, &str)] = &[
         include_str!("guide/workflow.md"),
     ),
     (
-        "testing",
-        "Force the model's interleavings in implementation tests; check real calls",
-        include_str!("guide/testing.md"),
+        "checklist",
+        "Model review checklist: actors, network, crashes, time, specs, search",
+        include_str!("guide/checklist.md"),
     ),
     ("modeling", "What to model: boundaries, atomic steps, interference", include_str!("guide/modeling.md")),
-    ("scenarios", "Choose scenarios and independent oracles that can fail", include_str!("guide/scenarios.md")),
-    ("recovery", "Crashes, retries and durable state", include_str!("guide/recovery.md")),
+    ("scenarios", "Choose test scenarios and drivers; act on coverage and mutants", include_str!("guide/scenarios.md")),
+    (
+        "spec-patterns",
+        "Liveness (hot states, stuck resources, timeouts) and independent safety specs",
+        include_str!("guide/spec-patterns.md"),
+    ),
+    ("faults", "Model timers, crashes and lossy networks as bounded drivers", include_str!("guide/faults.md")),
+    ("recovery", "Crashes, restarts, retries and durable state", include_str!("guide/recovery.md")),
+    (
+        "testing",
+        "Force the model's interleavings in implementation tests; prove tests can fail",
+        include_str!("guide/testing.md"),
+    ),
+    ("python", "Capture real Python calls and check them against P specs", include_str!("guide/python.md")),
     (
         "scenario-monitors",
         "`scenario` monitors: prove a test reached a race; read their summary",
         include_str!("guide/scenario-monitors.md"),
     ),
-    (
-        "spec-patterns",
-        "Pin down inputs, replies and progress; test timeouts and convergence",
-        include_str!("guide/spec-patterns.md"),
-    ),
-    ("faults", "Model timers, crashes and lossy networks as drivers", include_str!("guide/faults.md")),
-    ("python", "Capture real Python calls and check them against P specs", include_str!("guide/python.md")),
-    ("syntax", "P syntax and a complete small model", include_str!("guide/syntax.md")),
+    ("syntax", "P syntax: a complete small model and common mistakes", include_str!("guide/syntax.md")),
 ];
 
 pub(super) struct Example {

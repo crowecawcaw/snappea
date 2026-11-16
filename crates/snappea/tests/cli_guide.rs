@@ -42,6 +42,7 @@ fn every_topic_prints_markdown() {
     for topic in [
         "",
         "workflow",
+        "checklist",
         "testing",
         "modeling",
         "scenarios",
@@ -123,6 +124,7 @@ fn guide_text_points_only_to_existing_topics_and_examples() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/guide");
     let topics = [
         "workflow",
+        "checklist",
         "testing",
         "modeling",
         "scenarios",
