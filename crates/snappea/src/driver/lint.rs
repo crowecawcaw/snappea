@@ -182,32 +182,60 @@ fn reported_at(rule: &str) -> &'static str {
     }
 }
 
-/// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and stop
-/// the check (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print
-/// as warnings and the check
-/// goes on. Returns how many findings there were.
+/// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and fail
+/// (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print as warnings
+/// and the check goes on. Returns how many findings there were.
 pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
-    gate_selected(host, sources, prog, gate, &prog.test_cases(), &[]).map_err(Exit::from)
+    gate_selected(host, sources, prog, gate, &prog.test_cases(), &[]).map_err(|e| {
+        e.print(host, &sources.source_map());
+        e.exit
+    })
 }
 
-/// Lint findings stopped a check: the exit status, and the blocking findings as JSON
-/// (see [`findings_json`]) for a machine-readable result.
+/// Blocking lint findings fail a check, or the sources did not parse: the exit status,
+/// and the findings as JSON (see [`findings_json`]) for a machine-readable result.
+/// Blocking findings are not printed yet, so a check can report its bugs first; print
+/// them with [`LintFailed::print`].
 #[derive(Debug)]
 pub struct LintFailed {
     pub exit: Exit,
-    /// `None` when the sources did not parse.
+    /// `None` when the sources did not parse (that error is already printed).
     pub findings: Option<Value>,
     /// The line that ends the human-readable report.
     pub summary: String,
+    /// The number of blocking findings.
+    pub count: usize,
+    /// The findings to print, blocking and advisory.
+    pending: Vec<Finding>,
+    /// Blocking findings only in tests that were not selected.
+    skipped: usize,
 }
 
-impl From<LintFailed> for Exit {
-    fn from(e: LintFailed) -> Exit {
-        e.exit
+impl LintFailed {
+    /// Prints the findings with their source and fix, and the summary line, to stderr.
+    pub fn print(&self, host: &mut dyn Host, sm: &SourceMap) {
+        if self.findings.is_some() {
+            report(host, sm, &self.pending);
+            skipped_note(host, self.skipped);
+        }
+    }
+}
+
+fn skipped_note(host: &mut dyn Host, skipped: usize) {
+    if skipped > 0 {
+        host.write(
+            Stream::Err,
+            &format!(
+                "note: {} lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them\n",
+                skipped
+            ),
+            None,
+        );
     }
 }
 
 /// Test-specific lints follow selection; expected failures do not need progress specs.
+/// Blocking findings with [`Gate::Deny`] are returned unprinted as [`LintFailed`].
 /// When `tests` leaves some out, findings only those tests have are skipped, with a note
 /// saying how many, and suppressions are not reported as unused.
 pub fn gate_selected(
@@ -217,18 +245,21 @@ pub fn gate_selected(
     gate: Gate,
     tests: &[TestCase],
     intents: &[TestIntent],
-) -> Result<usize, LintFailed> {
+) -> Result<usize, Box<LintFailed>> {
     let sm = sources.source_map();
     let parse_failed = |host: &mut dyn Host, e| LintFailed {
         exit: syntax_error(host, &sm, e),
         findings: None,
         summary: String::new(),
+        count: 0,
+        pending: Vec::new(),
+        skipped: 0,
     };
     let all = prog.test_cases();
     let partial = tests.len() < all.len();
     let (mut findings, used) = match collect(&sm, prog, tests, intents, partial) {
         Ok(c) => c,
-        Err(e) => return Err(parse_failed(host, e)),
+        Err(e) => return Err(Box::new(parse_failed(host, e))),
     };
     let mut skipped = 0;
     if partial {
@@ -244,37 +275,27 @@ pub fn gate_selected(
         findings.extend(unused_suppressions(&sm, &findings, &used));
         sort(&mut findings);
     }
-    let note = |host: &mut dyn Host| {
-        if skipped > 0 {
-            host.write(
-                Stream::Err,
-                &format!(
-                    "note: {} lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them\n",
-                    skipped
-                ),
-                None,
-            );
-        }
-    };
     if gate == Gate::Deny {
-        let count = report(host, &sm, &findings);
-        note(host);
+        let count = findings.iter().filter(|f| !snappea_lint::is_advisory(f.rule)).count();
         if count > 0 {
-            host.write(Stream::Err, &format!("{}\n", WARN_HINT), None);
-            return Err(LintFailed {
+            return Err(Box::new(LintFailed {
                 exit: Exit(2),
                 findings: Some(findings_json(&sm, &findings)),
                 summary: summary(count),
-            });
+                count,
+                pending: findings,
+                skipped,
+            }));
         }
+        report(host, &sm, &findings);
     } else {
         for f in &findings {
             let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f)));
             host.write(Stream::Err, &text, Some(Color::Yellow));
             host.write(Stream::Err, "\n", None);
         }
-        note(host);
     }
+    skipped_note(host, skipped);
     if gate == Gate::Warn && !findings.is_empty() {
         host.write(Stream::Err, &format!("Lint: {} finding(s) reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n", findings.len()), None);
     }
@@ -288,10 +309,6 @@ pub fn intent<'a>(prog: &Program, test: &TestCase, intents: &'a [TestIntent]) ->
         _ => None,
     }
 }
-
-/// How to check a model before its lint findings are addressed.
-const WARN_HINT: &str =
-    "hint: to look for bugs before addressing these, pass --warn lint; the findings are then reported as warnings";
 
 /// Like [`run`], with only the rules that apply when checking logs against specs
 /// ([`snappea_lint::OBSERVATION_RULES`]).

@@ -22,8 +22,9 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 ```
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
-schedules. Unsuppressed lint findings stop the check with exit status 2; run
-`snappea check lint` to inspect them without exploration. A project that lists
+schedules. Unsuppressed lint findings fail the check, but its test cases still run and
+report bugs; coverage and mutation testing are skipped. The exit status is 1 when a test
+case failed, else 2. Run `snappea check lint` to inspect the findings without exploration. A project that lists
 foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
 would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
 It selects search strategies automatically.
@@ -230,7 +231,7 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | blocking rules fail (exit 2, before exploring); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
@@ -244,7 +245,7 @@ fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `a
 names every check; a single check overrides `all`):
 
 ```sh
-snappea check --warn lint        # look for bugs in a model before addressing its lints
+snappea check --warn lint        # run coverage and mutation testing before addressing lints
 snappea check --warn coverage    # explore while the test suite is still being built
 snappea check --deny mutation    # CI: also fail on undetected mutants
 ```
