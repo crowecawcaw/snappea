@@ -2104,12 +2104,15 @@ fn little_to_explore(case: &check::CaseOutcome) -> bool {
 }
 
 /// Why a passing test case's search did not cover every schedule, for the JSON report:
+/// `memory_limit` (memory use neared the limit, so the search stopped),
 /// `exhaustive_search_unfinished` (more time may finish it), `timed_model_sampled` (time
 /// tracking keeps clocks growing, so a model that loops cannot be exhausted) or `sampled`
 /// (too many schedules: the search sampled them).
 fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
     if case.bugs > 0 || case.exhaustive_finished == Some(true) {
         None
+    } else if case.memory_stop.is_some() {
+        Some("memory_limit")
     } else if case.exhaustive_unfinished.is_some() {
         Some("exhaustive_search_unfinished")
     } else if case.time_tracked {
@@ -2117,6 +2120,14 @@ fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
     } else {
         Some("sampled")
     }
+}
+
+/// The next step for a search that memory use stopped.
+fn memory_hint(m: check::MemoryStop) -> String {
+    format!(
+        "search stopped at {} MB of {} MB memory; shrink bounds (fewer machines, retries or faults per test case) or split the model into smaller test cases",
+        m.used_mb, m.limit_mb
+    )
 }
 
 /// A `--timeout` worth trying for a search still running after `elapsed` seconds.
@@ -2231,6 +2242,10 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
     }
     if let Some(reason) = incomplete_reason(case) {
         v["incomplete_reason"] = json!(reason);
+    }
+    if let Some(m) = case.memory_stop {
+        v["memory_limit_reached"] = json!({"used_mb": m.used_mb, "limit_mb": m.limit_mb});
+        v["hint"] = json!(memory_hint(m));
     }
     if !case.auto_handoffs.is_empty() {
         v["auto_handoffs"] = json!(case
@@ -2360,6 +2375,8 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
             } else {
                 ", timed model: sampled"
             }
+        } else if case.memory_stop.is_some() {
+            ", memory limit reached"
         } else if case.timed_out {
             ", time limit reached"
         } else if case.plateaued {
@@ -2371,6 +2388,9 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
     let time = duration(case.elapsed);
     if case.bugs == 0 {
         host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));
+        if let Some(m) = case.memory_stop {
+            host.out_line(&format!("      hint: {}", memory_hint(m)));
+        }
         if !boundary && little_to_explore(case) {
             host.out_line(
                 "      note: every schedule reaches nearly the same states, so this test checks little more than one run would",

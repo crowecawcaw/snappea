@@ -54,6 +54,11 @@ pub trait Host {
     fn now(&self) -> f64;
     /// Peak memory use of the process in gigabytes, or 0 if unknown.
     fn max_memory_gb(&self) -> f64;
+    /// The process's memory use now and the most it may use, if known; checks stop their
+    /// search before reaching the limit (see [`crate::driver::check::MemoryGuard`]).
+    fn memory(&self) -> Option<MemoryUse> {
+        None
+    }
     /// A fresh random seed (used when `--seed` is not given).
     fn random_seed(&mut self) -> u32;
     /// Seconds since the Unix epoch (wall-clock time, for timestamped names), or 0 if unknown.
@@ -157,6 +162,16 @@ pub struct Threads {
 /// A command stopped after reporting the problem on the console; holds the exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Exit(pub i32);
+
+/// The process's memory use ([`Host::memory`]), in bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryUse {
+    /// Resident memory now.
+    pub resident: u64,
+    /// The most the process may use: its container's (cgroup's) memory limit, or the
+    /// machine's memory when there is none.
+    pub limit: u64,
+}
 
 /// Prints `Error: {msg}` on stderr, upstream's text; returns exit code 1. A `snappea`
 /// command (a host that [shows hints](Host::shows_hints)) prints it like its other errors
@@ -278,6 +293,9 @@ impl Host for Buffered<'_> {
     }
     fn max_memory_gb(&self) -> f64 {
         self.inner.max_memory_gb()
+    }
+    fn memory(&self) -> Option<MemoryUse> {
+        self.inner.memory()
     }
     fn random_seed(&mut self) -> u32 {
         self.inner.random_seed()
@@ -460,6 +478,9 @@ impl Host for Quiet<'_> {
     fn max_memory_gb(&self) -> f64 {
         self.inner.max_memory_gb()
     }
+    fn memory(&self) -> Option<MemoryUse> {
+        self.inner.memory()
+    }
     fn random_seed(&mut self) -> u32 {
         self.inner.random_seed()
     }
@@ -613,6 +634,8 @@ pub struct MemHost {
     pub on_progress: Option<fn(&crate::driver::progress::Progress)>,
     /// [`Host::env_var`]; empty by default.
     pub env: BTreeMap<String, String>,
+    /// [`Host::memory`]; `None` by default.
+    pub memory: Option<MemoryUse>,
 }
 
 impl Default for MemHost {
@@ -635,6 +658,7 @@ impl MemHost {
             stderr_terminal: false,
             on_progress: None,
             env: BTreeMap::new(),
+            memory: None,
         };
         h.create_dir_all(Path::new(cwd)).expect("an empty file system has no files in the way");
         h
@@ -805,6 +829,10 @@ impl Host for MemHost {
 
     fn max_memory_gb(&self) -> f64 {
         0.0
+    }
+
+    fn memory(&self) -> Option<MemoryUse> {
+        self.memory
     }
 
     fn random_seed(&mut self) -> u32 {
