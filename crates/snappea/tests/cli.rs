@@ -1501,6 +1501,36 @@ fn a_timed_model_that_never_ends_says_it_was_sampled() {
 }
 
 #[test]
+fn a_search_near_the_memory_limit_stops_and_says_so() {
+    let mut h = host();
+    // resident memory already past three quarters of the limit: the search stops at once
+    h.memory = Some(snappea::host::MemoryUse { resident: 800 << 20, limit: 1000 << 20 });
+    // one worker checks before its first schedule; with more, the thread that watches them does
+    let args = ["check", "tcFine", "coins.p", "--seed", "1", "-j", "1", "--no-mutation", "--warn", "all"];
+    snappea(&mut h, &[&args[..], &["--format", "text"]].concat());
+    assert!(h.stdout.contains("memory limit reached"), "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("hint: search stopped at 800 MB of 1000 MB memory; shrink bounds"), "{}", h.stdout);
+    assert!(h.stdout.contains("Search incomplete for 1 test case"), "{}", h.stdout);
+    snappea(&mut h, &[&args[..], &["--json"]].concat());
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let case = &v["test_cases"][0];
+    assert_eq!(case["incomplete_reason"], "memory_limit", "{}", case);
+    assert_eq!(case["memory_limit_reached"]["limit_mb"], 1000, "{}", case);
+    assert_eq!(case["time_limit_reached"], false, "{}", case);
+    assert_eq!(v["summary"]["safety"]["status"], "incomplete", "{}", v["summary"]);
+    // upstream-compatible output keeps upstream's text for a stopped search
+    compat(&mut h, &["check", "coins.p", "-tc", "tcFine", "--schedules", "100"]);
+    assert!(h.stdout.contains("... Checker timed out."), "{}", h.stdout);
+
+    // below the share, nothing changes
+    h.memory = Some(snappea::host::MemoryUse { resident: 100 << 20, limit: 1000 << 20 });
+    snappea(&mut h, &[&args[..], &["--json"]].concat());
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["test_cases"][0]["search_complete"], true, "{}", v["test_cases"][0]);
+    assert!(v["test_cases"][0].get("memory_limit_reached").is_none(), "{}", v["test_cases"][0]);
+}
+
+#[test]
 fn a_passing_check_reports_where_schedules_branch() {
     let mut h = host();
     snappea(&mut h, &["check", "tcFine", "coins.p", "--seed", "1", "--no-mutation", "--warn", "all", "--json"]);

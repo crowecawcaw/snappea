@@ -55,6 +55,13 @@ to:
 * Files are enumerated in sorted order; elapsed time and memory figures differ.
 * An action that runs forever without reaching a scheduling point is reported as a bug
   (upstream hangs).
+* A search stops once the process uses three quarters of its memory limit (its
+  container's limit, or the machine's memory), and prints `... Checker timed out.`;
+  upstream runs on until the system kills it.
+* A `.trace.json` keeps at most 2,000,000 vector-clock entries in all; past that, a
+  `ClockLimit` entry notes the limit and later entries have no `clock`. Upstream writes
+  every clock: a long schedule that keeps creating machines makes its trace grow with
+  the square of the schedule's length.
 * Nesting deeper than 128 levels is a parse error, `nesting is too deep` (upstream has
   no limit). Blocks, statements, expressions, types and each operand of an operator
   chain such as `a + b + c` count a level; the upstream tests nest at most 16 deep.

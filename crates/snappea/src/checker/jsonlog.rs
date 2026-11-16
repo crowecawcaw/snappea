@@ -156,7 +156,6 @@ pub struct Details {
     pub monitor: Option<String>,
     pub strategy: Option<String>,
     pub strategy_description: Option<String>,
-    pub clock: Option<Vec<(String, i64)>>,
     /// Identity of the payload for matching sends with dequeues (not serialized).
     pub payload_key: String,
 }
@@ -164,7 +163,7 @@ pub struct Details {
 impl Details {
     /// `replace_nulls` is the bug-trace post-processing that turns nulls into `"null"`
     /// strings and always writes a payload; the verbose log skips it.
-    fn to_json(&self, replace_nulls: bool) -> Json {
+    fn to_json(&self, replace_nulls: bool, clock: Option<Json>) -> Json {
         let mut f: Vec<(String, Json)> = Vec::new();
         let mut s = |k: &str, v: &Option<String>| {
             if let Some(v) = v {
@@ -229,8 +228,8 @@ impl Details {
                 f.push((k.into(), Json::str(v.clone())));
             }
         }
-        if let Some(c) = &self.clock {
-            f.push(("clock".into(), Json::Obj(c.iter().map(|(k, v)| (k.clone(), Json::Int(*v))).collect())));
+        if let Some(c) = clock {
+            f.push(("clock".into(), c));
         }
         if let Some(i) = &self.inspection {
             f.push(("inspection".into(), i.clone()));
@@ -239,50 +238,88 @@ impl Details {
     }
 }
 
-/// `VectorClockGenerator`.
+/// A vector clock: (machine index, count), in the order upstream's dictionary keeps them.
+/// A machine's own count comes first.
+type Clock = Vec<(u32, i64)>;
+
+/// The most vector-clock entries one trace keeps, summed over its log entries; each is
+/// about 30 bytes of `.trace.json`. A clock lists every machine that ever touched its
+/// machine, so a long schedule that keeps creating machines (say, a timer per retry)
+/// would otherwise need memory and output quadratic in its length. Entries past the
+/// budget carry no clock.
+pub const CLOCK_BUDGET: usize = 2_000_000;
+
+/// `VectorClockGenerator`, on interned machine names.
 #[derive(Debug, Clone, Default)]
 struct VectorClocks {
-    clocks: HashMap<String, Vec<(String, i64)>>,
-    unhandled_sends: HashMap<String, Vec<(String, i64)>>,
+    names: Vec<String>,
+    ids: HashMap<String, u32>,
+    /// Each machine's clock, by machine index.
+    clocks: Vec<Clock>,
+    unhandled_sends: HashMap<String, Clock>,
     /// send id -> (sent count, received count)
     send_counts: HashMap<String, (i64, i64)>,
-}
-
-fn vc_get(v: &[(String, i64)], k: &str) -> Option<i64> {
-    v.iter().find(|(m, _)| m == k).map(|(_, c)| *c)
+    /// Scratch for `merge`: a key's position in the local clock (`u32::MAX`: absent).
+    pos: Vec<u32>,
+    /// Past the clock budget: still match sends with receives (an unmatched receive drops
+    /// its entry, as upstream's handler throws) but keep no clocks.
+    matching_only: bool,
 }
 
 impl VectorClocks {
-    fn merge(&mut self, machine: &str, sender: &[(String, i64)]) {
-        let local = self.clocks.get(machine).cloned().unwrap_or_default();
-        let mut keys: Vec<String> = Vec::new();
-        for (k, _) in local.iter().chain(sender.iter()) {
-            if k != machine && !keys.contains(k) {
-                keys.push(k.clone());
+    fn id(&mut self, name: &str) -> u32 {
+        if let Some(&id) = self.ids.get(name) {
+            return id;
+        }
+        let id = self.names.len() as u32;
+        self.names.push(name.to_string());
+        self.ids.insert(name.to_string(), id);
+        self.clocks.push(if self.matching_only { Vec::new() } else { vec![(id, 0)] });
+        self.pos.push(u32::MAX);
+        id
+    }
+
+    /// Merges `sender` into `machine`'s clock: each key both have takes the larger count,
+    /// then the sender's other keys follow in its order. Linear in the clocks' sizes.
+    fn merge(&mut self, machine: u32, sender: &[(u32, i64)]) {
+        let local = &mut self.clocks[machine as usize];
+        for (i, (k, _)) in local.iter().enumerate() {
+            self.pos[*k as usize] = i as u32;
+        }
+        for &(k, sv) in sender {
+            if k == machine {
+                continue;
+            }
+            match self.pos[k as usize] {
+                u32::MAX => {
+                    self.pos[k as usize] = local.len() as u32;
+                    local.push((k, sv));
+                }
+                p => {
+                    let slot = &mut local[p as usize].1;
+                    *slot = sv.max(*slot);
+                }
             }
         }
-        let entry = self.clocks.get_mut(machine).unwrap();
-        for k in keys {
-            match vc_get(entry, &k) {
-                Some(lv) => {
-                    if let Some(sv) = vc_get(sender, &k) {
-                        let slot = entry.iter_mut().find(|(m, _)| *m == k).unwrap();
-                        slot.1 = sv.max(lv);
-                    }
-                }
-                None => entry.push((k.clone(), vc_get(sender, &k).unwrap_or(0))),
-            }
+        for (k, _) in local.iter() {
+            self.pos[*k as usize] = u32::MAX;
         }
     }
 
-    /// `HandleLogEntry`; `false` when upstream's handler throws (the entry is dropped).
-    fn handle(&mut self, ty: &str, d: &mut Details) -> bool {
-        let Some(machine) = d.id.clone().or_else(|| d.monitor.clone()).or_else(|| d.sender.clone()) else {
-            return false;
-        };
-        let entry = self.clocks.entry(machine.clone()).or_insert_with(|| vec![(machine.clone(), 0)]);
-        if let Some(slot) = entry.iter_mut().find(|(m, _)| *m == machine) {
-            slot.1 += 1;
+    /// Stops tracking clocks (see `matching_only`) and frees them.
+    fn drop_clocks(&mut self) {
+        self.matching_only = true;
+        self.clocks.iter_mut().for_each(|c| *c = Vec::new());
+        self.unhandled_sends.values_mut().for_each(|c| *c = Vec::new());
+    }
+
+    /// `HandleLogEntry`: the entry's clock (empty once clocks are dropped), or `None` when
+    /// upstream's handler throws (the entry is dropped).
+    fn handle(&mut self, ty: &str, d: &Details) -> Option<Clock> {
+        let name = d.id.as_deref().or(d.monitor.as_deref()).or(d.sender.as_deref())?;
+        let machine = self.id(name);
+        if let Some(own) = self.clocks[machine as usize].first_mut() {
+            own.1 += 1;
         }
         match ty {
             "SendEvent" => {
@@ -296,42 +333,53 @@ impl VectorClocks {
                 counts.0 += 1;
                 let id = format!("{}:_{}", general, counts.0);
                 if self.unhandled_sends.contains_key(&id) {
-                    return false;
+                    return None;
                 }
-                let clock = self.clocks[&machine].clone();
+                let clock = self.clocks[machine as usize].clone();
                 self.unhandled_sends.insert(id, clock);
             }
             "MonitorProcessEvent" => {
                 if let Some(s) = &d.sender {
-                    let Some(sc) = self.clocks.get(s).cloned() else { return false };
-                    self.merge(&machine, &sc);
+                    let sender = *self.ids.get(s.as_str())?;
+                    let sc = self.clocks[sender as usize].clone();
+                    self.merge(machine, &sc);
                 }
             }
             "ReceiveEvent" | "DequeueEvent" => {
-                let general = format!("_{}:_{}:_{}", machine, d.event.as_deref().unwrap_or(""), d.payload_key);
-                let Some(&(sent, received)) = self.send_counts.get(&general) else { return false };
+                let general = format!("_{}:_{}:_{}", name, d.event.as_deref().unwrap_or(""), d.payload_key);
+                let &(sent, received) = self.send_counts.get(&general)?;
                 if received == sent {
                     self.send_counts.remove(&general);
                 } else {
                     self.send_counts.get_mut(&general).unwrap().1 += 1;
                 }
                 let id = format!("{}:_{}", general, received);
-                let Some(sc) = self.unhandled_sends.remove(&id) else { return false };
-                self.merge(&machine, &sc);
+                let sc = self.unhandled_sends.remove(&id)?;
+                self.merge(machine, &sc);
             }
             _ => {}
         }
-        d.clock = Some(self.clocks[&machine].clone());
-        true
+        Some(self.clocks[machine as usize].clone())
     }
+}
+
+/// One entry of a [`JsonLog`].
+#[derive(Debug, Clone)]
+struct Entry {
+    ty: String,
+    details: Details,
+    /// Its vector clock; `None` for an entry without one.
+    clock: Option<Box<[(u32, i64)]>>,
 }
 
 /// The JSON log of one schedule.
 #[derive(Debug, Clone, Default)]
 pub struct JsonLog {
     inspection_count: usize,
-    entries: Vec<(String, Details)>,
+    entries: Vec<Entry>,
     vc: VectorClocks,
+    /// Vector-clock entries kept so far (see [`CLOCK_BUDGET`]).
+    clock_entries: usize,
 }
 
 impl JsonLog {
@@ -339,39 +387,80 @@ impl JsonLog {
         JsonLog::default()
     }
 
+    fn note(&mut self, ty: &str, text: String) {
+        let details = Details { log: Some(text), ..Details::default() };
+        self.entries.push(Entry { ty: ty.into(), details, clock: None });
+    }
+
     /// `JsonWriter.AddToLogs`.
-    pub fn add(&mut self, ty: &str, mut d: Details, update_vc: bool) {
+    pub fn add(&mut self, ty: &str, d: Details, update_vc: bool) {
         // Bound browser-only snapshots without dropping any ordinary trace events.
         if ty == "Inspection" {
             self.inspection_count += 1;
             if self.inspection_count > 10_000 {
                 if self.inspection_count == 10_001 {
-                    self.entries.push(("InspectionLimit".into(), Details { log: Some("Variable capture limit reached (10,000 snapshots). Later values remain last known; messages and failures are still recorded.".into()), ..Details::default() }));
+                    self.note("InspectionLimit", "Variable capture limit reached (10,000 snapshots). Later values remain last known; messages and failures are still recorded.".into());
                 }
                 return;
             }
         }
-        if update_vc && !self.vc.handle(ty, &mut d) {
-            return;
+        let mut clock = None;
+        if update_vc {
+            let Some(c) = self.vc.handle(ty, &d) else { return };
+            if !self.vc.matching_only {
+                if self.clock_entries + c.len() > CLOCK_BUDGET {
+                    self.vc.drop_clocks();
+                    self.note(
+                        "ClockLimit",
+                        format!(
+                            "Vector clock limit reached ({} clock entries over {} machines). Later entries have no clock; messages and failures are still recorded.",
+                            self.clock_entries,
+                            self.vc.names.len()
+                        ),
+                    );
+                } else {
+                    self.clock_entries += c.len();
+                    clock = Some(c.into_boxed_slice());
+                }
+            }
         }
-        self.entries.push((ty.to_string(), d));
+        self.entries.push(Entry { ty: ty.to_string(), details: d, clock });
+    }
+
+    fn entry_json(&self, e: &Entry, replace_nulls: bool) -> Json {
+        let names = &self.vc.names;
+        let clock = e
+            .clock
+            .as_ref()
+            .map(|c| Json::Obj(c.iter().map(|&(k, v)| (names[k as usize].clone(), Json::Int(v))).collect()));
+        Json::Obj(vec![
+            ("type".into(), Json::str(e.ty.clone())),
+            ("details".into(), e.details.to_json(replace_nulls, clock)),
+        ])
     }
 
     /// The log as a JSON array of `{type, details}` entries (see `Details::to_json`).
     pub fn to_json(&self, replace_nulls: bool) -> Json {
-        Json::Arr(
-            self.entries
-                .iter()
-                .map(|(t, d)| {
-                    Json::Obj(vec![("type".into(), Json::str(t.clone())), ("details".into(), d.to_json(replace_nulls))])
-                })
-                .collect(),
-        )
+        Json::Arr(self.entries.iter().map(|e| self.entry_json(e, replace_nulls)).collect())
     }
 
-    /// The `.trace.json` file contents.
+    /// The `.trace.json` file contents: `to_json(true).to_pretty()`, built one entry at a
+    /// time so the whole trace is never held twice.
     pub fn to_json_text(&self) -> String {
-        self.to_json(true).to_pretty()
+        if self.entries.is_empty() {
+            return "[]".into();
+        }
+        let mut out = String::from("[");
+        for (i, e) in self.entries.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            newline(&mut out, 1);
+            self.entry_json(e, true).write(&mut out, 1);
+        }
+        newline(&mut out, 0);
+        out.push(']');
+        out
     }
 }
 
@@ -421,5 +510,130 @@ pub fn payload_key(v: Option<&Value>, prog: &Program) -> String {
     match v {
         None | Some(Value::Null) => String::new(),
         Some(v) => v.to_escaped(prog),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn send(from: &str, to: &str, key: usize) -> Details {
+        Details {
+            id: Some(from.into()),
+            sender: Some(from.into()),
+            target: Some(to.into()),
+            event: Some("e".into()),
+            payload_key: key.to_string(),
+            ..Details::default()
+        }
+    }
+
+    fn dequeue(at: &str, key: usize) -> Details {
+        Details { id: Some(at.into()), event: Some("e".into()), payload_key: key.to_string(), ..Details::default() }
+    }
+
+    /// A hub that hears from a new timer machine `n` times and forwards each to a
+    /// server: the hub's and server's clocks list every timer, so all clocks together
+    /// grow with the square of `n`.
+    fn timers(n: usize) -> JsonLog {
+        let mut log = JsonLog::new();
+        for i in 0..n {
+            let timer = format!("Timer({i})");
+            log.add("CreateStateMachine", Details { id: Some(timer.clone()), ..Details::default() }, true);
+            log.add("SendEvent", send(&timer, "Hub", i), true);
+            log.add("DequeueEvent", dequeue("Hub", i), true);
+            log.add("SendEvent", send("Hub", "Server", i), true);
+            log.add("DequeueEvent", dequeue("Server", i), true);
+        }
+        log
+    }
+
+    type NamedClock = Vec<(String, i64)>;
+
+    /// Upstream's `VectorClockGenerator` on machine names, as written before they were
+    /// interned (sends and dequeues only).
+    fn reference_clocks(entries: &[(&str, Details)]) -> Vec<NamedClock> {
+        let mut clocks: HashMap<String, NamedClock> = HashMap::new();
+        let mut unhandled: HashMap<String, NamedClock> = HashMap::new();
+        let mut counts: HashMap<String, (i64, i64)> = HashMap::new();
+        let mut out = Vec::new();
+        for (ty, d) in entries {
+            let m = d.id.clone().unwrap();
+            let e = clocks.entry(m.clone()).or_insert_with(|| vec![(m.clone(), 0)]);
+            e.iter_mut().find(|(x, _)| *x == m).unwrap().1 += 1;
+            if *ty == "SendEvent" {
+                let g = format!("_{}:_e:_{}", d.target.as_deref().unwrap(), d.payload_key);
+                let c = counts.entry(g.clone()).or_insert((-1, 0));
+                c.0 += 1;
+                unhandled.insert(format!("{}:_{}", g, c.0), clocks[&m].clone());
+            } else if *ty == "DequeueEvent" {
+                let g = format!("_{}:_e:_{}", m, d.payload_key);
+                let (sent, received) = counts[&g];
+                if received == sent {
+                    counts.remove(&g);
+                } else {
+                    counts.get_mut(&g).unwrap().1 += 1;
+                }
+                let s = unhandled.remove(&format!("{}:_{}", g, received)).unwrap();
+                let local = clocks[&m].clone();
+                let mut keys: Vec<String> = Vec::new();
+                for (k, _) in local.iter().chain(&s) {
+                    if *k != m && !keys.contains(k) {
+                        keys.push(k.clone());
+                    }
+                }
+                let e = clocks.get_mut(&m).unwrap();
+                for k in keys {
+                    let sv = s.iter().find(|(x, _)| *x == k).map(|p| p.1);
+                    match e.iter_mut().find(|(x, _)| *x == k) {
+                        Some(slot) => slot.1 = sv.map_or(slot.1, |sv| sv.max(slot.1)),
+                        None => e.push((k, sv.unwrap_or(0))),
+                    }
+                }
+            }
+            out.push(clocks[&m].clone());
+        }
+        out
+    }
+
+    #[test]
+    fn interned_clocks_match_upstreams_generator() {
+        let mut entries = Vec::new();
+        for i in 0..6 {
+            let timer = format!("Timer({i})");
+            entries.push(("SendEvent", send(&timer, "Hub", i % 2)));
+            entries.push(("SendEvent", send("Server", "Hub", 0)));
+            entries.push(("DequeueEvent", dequeue("Hub", i % 2)));
+            entries.push(("DequeueEvent", dequeue("Hub", 0)));
+            entries.push(("SendEvent", send("Hub", "Server", i)));
+            entries.push(("DequeueEvent", dequeue("Server", i)));
+        }
+        let mut log = JsonLog::new();
+        for (ty, d) in &entries {
+            log.add(ty, d.clone(), true);
+        }
+        let expected = reference_clocks(&entries);
+        assert_eq!(log.entries.len(), expected.len());
+        for (e, want) in log.entries.iter().zip(expected) {
+            let got: NamedClock =
+                e.clock.as_ref().unwrap().iter().map(|&(k, v)| (log.vc.names[k as usize].clone(), v)).collect();
+            assert_eq!(got, want, "{} of {:?}", e.ty, e.details.id);
+        }
+        assert_eq!(log.to_json_text(), log.to_json(true).to_pretty());
+    }
+
+    #[test]
+    fn a_trace_keeps_a_bounded_number_of_clock_entries() {
+        // about 4 * 3000^2 / 2 = 18 million clock entries without the budget
+        let log = timers(3000);
+        assert!(log.clock_entries <= CLOCK_BUDGET, "{}", log.clock_entries);
+        let limit = log.entries.iter().position(|e| e.ty == "ClockLimit").expect("the budget is reached");
+        assert!(log.entries[limit + 1..].iter().all(|e| e.clock.is_none()));
+        // every event is still recorded, once
+        assert_eq!(log.entries.iter().filter(|e| e.ty != "ClockLimit").count(), 5 * 3000);
+        assert!(log.vc.clocks.iter().all(Vec::is_empty) && log.vc.unhandled_sends.is_empty());
+        // a short trace keeps every clock
+        let short = timers(50);
+        assert!(short.entries.iter().all(|e| e.clock.is_some()));
     }
 }
