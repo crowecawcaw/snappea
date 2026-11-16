@@ -39,8 +39,9 @@ const CHECK_OTHER: Option[] = [
 ];
 
 const CHECK_MUTATION: Option[] = [
+  ["--mutation", "Run mutation testing after the test cases pass. Off by default; --mutation-timeout and --deny mutation imply it."],
   ["--mutation-timeout <DURATION>", "Time limit for mutation testing. Default 30s."],
-  ["--no-mutation", "Skip mutation testing."],
+  ["--no-mutation", "Accepted for compatibility; does nothing, since mutation testing is off by default."],
 ];
 
 const OBSERVE: Option[] = [
@@ -236,7 +237,8 @@ snappea check [SOURCE...] [TEST...] [options]
           does not establish that the model is correct. The default timeout is fixed at ten seconds per test.
         </p>
         <p>
-          When every test case passes, <code>check</code> then runs them against mutants: copies of the model with
+          With <code>--mutation</code>, when every test case passes, <code>check</code> then runs them against
+          mutants (it is off by default, since it judges the specs rather than finding bugs): copies of the model with
           one small change, such as a removed statement, an <code>if</code> forced one way, or <code>&lt;</code>{" "}
           swapped for <code>&lt;=</code>. A change no test case detects is listed with its line: the code ran, but no
           spec or assertion depends on what it does. Add a spec, an assertion or a test case that would fail with the

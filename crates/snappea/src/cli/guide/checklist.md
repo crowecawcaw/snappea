@@ -68,6 +68,7 @@ covers it or a reason. Format: question -> evidence -> `snappea guide <topic>`.
     `summary.incomplete` is 0 -> modeling
 18. Is every scenario reached and all model code covered? -> no coverage gaps ->
     scenarios, scenario-monitors
-19. Is every undetected mutant fixed or suppressed with a reason? -> scenarios
+19. If you ran `--mutation`, does each undetected mutant the contract cares about have
+    a check? -> add it, or suppress an equivalent one with a reason -> scenarios
 20. Can the implementation's tests fail? -> each deliberate break fails a test ->
     testing

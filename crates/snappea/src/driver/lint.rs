@@ -5,7 +5,7 @@ use crate::host::{Color, Exit, Host, Stream};
 use crate::project::Sources;
 use crate::sema::diag::{render_coded, render_snippet, render_with_level};
 use crate::sema::{Program, TestCase};
-use crate::syntax::{ParseError, SourceMap};
+use crate::syntax::{ParseError, SourceMap, Span};
 use serde_json::{json, Value};
 use snappea_lint::{Finding, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
 
@@ -52,20 +52,24 @@ fn collect(
     let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
     let positive: Vec<_> =
         tests.iter().filter(|tc| intent(prog, tc, intents).is_none_or(|i| i.expected_bug.is_none())).cloned().collect();
-    let mut program: Vec<Finding> =
+    let mut program: Vec<(Finding, Option<Span>)> =
         crate::checker::checked::lints_with_progress_tests(prog, tests, &positive, &drivers)
             .into_iter()
             .filter(|f| !f.span.is_dummy())
             .map(|f| {
                 let finding = Finding::new(f.rule, f.span, f.message);
-                match f.help {
+                let finding = match f.help {
                     Some(help) => finding.with_help(help),
                     None => finding,
-                }
+                };
+                (finding, f.test)
             })
             .collect();
     used.extend(snappea_lint::suppress_program_findings(sm, &mut program).unwrap_or_default());
-    findings.extend(program);
+    // a wait in several tests is reported for each, so a suppression before one test
+    // covers only that test: keep the first one left
+    program.dedup_by(|(b, _), (a, _)| a.rule == "no-progress-spec" && a.rule == b.rule && a.span == b.span);
+    findings.extend(program.into_iter().map(|(f, _)| f));
     sort(&mut findings);
     Ok((findings, used))
 }
@@ -171,12 +175,9 @@ fn reported_at(rule: &str) -> &'static str {
         "tautological-assert" => "the assert statement",
         "announce-and-send" => "the second of the two statements",
         "enum-value-shadows-machine" => "the enum declaration",
-        "unchecked-state" => "the field declaration or its machine",
-        "unchecked-event" => "the send or announce statement, or its machine",
-        "no-progress-spec" => "the test declaration, or the machine that waits for a reply",
+        "no-progress-spec" => "the test declaration (or, for a machine that waits for a reply, that machine)",
         "unplanned-driver-stage" => "the statement that starts the later stage, or the driver machine",
         "unreachable-statement" => "the statement that never runs",
-        "unused-design-payload-field" => "the design machine's handler for the event",
         "shared-spec-helper" => "the helper function declaration",
         _ => "the declaration or statement the finding points at",
     }
@@ -347,12 +348,9 @@ pub fn help(f: &Finding) -> String {
         "announce-and-send" => "remove the `announce`, since specs observe the `send`; if the announcement means something else, give it its own event",
         "unused-payload-field" => "if the contract depends on the field, check it against what the spec knows (for example, that a reply carries the value the request asked for); do not add an assertion that cannot fail just to read it",
         "payload-field-checked-by-other-spec" => "keep each spec focused on its own obligation; review whether this division of payload checks matches the contract",
-        "unused-design-payload-field" => "use the field in this receiver when its value affects the contract, or remove it from the event when nothing needs it",
         "shared-spec-helper" => "compute expected results independently in the spec; sharing a proven representation or formatting utility may be intentional",
         "unobserved-handler" => "add the event to the monitor's `observes` list, or remove the handler",
         "scenario-never-accepts" => "mark the state the scenario should reach `cold`",
-        "unchecked-state" => "if a wrong value would be a bug, check it: assert on it in a spec or the test driver, or send it in an event a spec observes; otherwise remove the field",
-        "unchecked-event" => "make a spec observe the event and check it, or have the machine that receives it act on it; remove the send if nothing should",
         "no-progress-spec" => "add a spec with a `hot` state the model leaves only by answering (for example, hot while a request is pending), and select it with `assert` in the test",
         "unplanned-driver-stage" => "announce the plan before starting any work (e.g. `announce eOpsPlanned, n;` in the driver's first entry), and make a selected spec observe it and stay `hot` until every planned operation finished",
         "unreachable-statement" => "remove the statement, or move it before what leaves the state if it should run",

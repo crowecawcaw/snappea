@@ -127,9 +127,8 @@ in some schedule).
   environment and its faults, so it is marked `// snappea: driver`: its dropped reply
   is test input and is not mutated.
 
-The negative control `StaleReplyClient` ignores `r.id` on purpose, so the payload lint
-reports exactly its flaw. The suppression there names that: `negative control: its
-flaw is that it ignores r.id`.
+The negative control `StaleReplyClient` ignores `r.id` on purpose; `tcBugStaleReply`
+shows the spec catching that flaw.
 
 ## Try this
 

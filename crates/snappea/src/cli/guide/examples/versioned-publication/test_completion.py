@@ -18,7 +18,7 @@ class CompletionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, 'Dropped.p').write_text(source.replace(completion, 'entry { }'))
             checked = subprocess.run(
-                [binary, 'check', 'Dropped.p', '--no-mutation', '--timeout', '5s', '--json'],
+                [binary, 'check', 'Dropped.p', '--timeout', '5s', '--json'],
                 cwd=tmp, text=True, capture_output=True, timeout=30)
         self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
         report = json.loads(checked.stdout)

@@ -42,8 +42,8 @@ Run the included consumer to see the import work:
 
 ```sh
 cd vendor/building-blocks
-snappea check tcReplies tcNetworkFaults Example.pproj --no-mutation
-snappea check tcDuplicate tcMissing Example.pproj --no-mutation  # negative controls
+snappea check tcReplies tcNetworkFaults Example.pproj
+snappea check tcDuplicate tcMissing Example.pproj  # negative controls
 snappea check Example.pproj                                      # everything, with mutation testing
 ```
 

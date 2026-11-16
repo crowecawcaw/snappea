@@ -25,7 +25,7 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
     }
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["rules"].as_array().unwrap().len(), 21);
+    assert_eq!(result["rules"].as_array().unwrap().len(), 18);
     h.add_file(
         "model.p",
         "// snappea-lint: allow no-model-machine -- CLI lint success fixture\nmachine Main { start state S {} }",
@@ -39,14 +39,14 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
 #[test]
 fn frozen_agent_models_type_check_and_report_the_expected_weaknesses() {
     for (source, expected) in [
-        (include_str!("../../snappea-lint/tests/models/agent-p01.p"), "tautological-assert"),
-        (include_str!("../../snappea-lint/tests/models/agent-p03.p"), "unused-payload-field"),
-        (include_str!("../../snappea-lint/tests/models/agent-p06.p"), "permissive-monitor"),
+        (include_str!("../../snappea-lint/tests/models/agent-p01.p"), "error[tautological-assert]"),
+        (include_str!("../../snappea-lint/tests/models/agent-p03.p"), "warning[unused-payload-field]"),
+        (include_str!("../../snappea-lint/tests/models/agent-p06.p"), "error[permissive-monitor]"),
     ] {
         let mut h = MemHost::new("/w");
         h.add_file("model.p", source);
-        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
-        assert!(h.stderr.contains(&format!("error[{expected}]")), "{}{}", h.stdout, h.stderr);
+        run(&mut h, &["check", "lint", "model.p"]);
+        assert!(h.stderr.contains(expected), "{}{}", h.stdout, h.stderr);
         assert!(h.files_under("PCheckerOutput").is_empty());
     }
 }
@@ -63,7 +63,7 @@ fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     assert_eq!(h.stderr, lint);
     assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
     assert!(
-        h.stdout.ends_with("but lint failed (1 finding); coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
+        h.stdout.ends_with("but lint failed (1 finding); coverage skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
         "{}",
         h.stdout
     );
@@ -106,7 +106,7 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     assert_eq!(result["summary"]["lint_failed"], true);
     assert_eq!(result["summary"]["message"], "1 of 1 test case failed; lint failed (1 finding)");
     assert_eq!(result["coverage"], serde_json::json!({"skipped": "lint failed"}));
-    assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+    assert_eq!(result["mutation"], serde_json::json!({"skipped": "not requested (--mutation runs it)"}));
 }
 
 #[test]
@@ -114,9 +114,11 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
     let mut h = MemHost::new("/w");
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     h.add_file("model.p", MODEL);
-    for (command, skipped) in
-        [(&["check"][..], "coverage and mutation testing"), (&["check", "mutation"], "mutation testing")]
-    {
+    for (command, skipped, mutation) in [
+        (&["check"][..], "coverage", "not requested (--mutation runs it)"),
+        (&["check", "--mutation"], "coverage and mutation testing", "lint failed"),
+        (&["check", "mutation"], "mutation testing", "lint failed"),
+    ] {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2, "{}{}", h.stdout, h.stderr);
         let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
         assert_eq!(result["exit_code"], 2);
@@ -126,7 +128,7 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(result["summary"]["status"], "lint_failed");
         assert_eq!(result["summary"]["lint_failed"], true);
         assert_eq!(result["summary"]["coverage_gaps"], 0);
-        assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+        assert_eq!(result["mutation"], serde_json::json!({ "skipped": mutation }));
         h.env.remove("SNAPPEA_FORMAT");
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
         assert!(h.stdout.contains(&format!("but lint failed (1 finding); {skipped} skipped.")), "{}", h.stdout);
@@ -257,11 +259,11 @@ fn source_discovery_pproj_and_parse_errors_work_without_running_schedules() {
 fn help_rules_and_bad_options_do_not_need_sources() {
     let mut h = MemHost::new("/empty");
     assert_eq!(run(&mut h, &["check", "lint", "--list-rules"]), 0);
-    assert_eq!(h.stdout.lines().count(), 21);
+    assert_eq!(h.stdout.lines().count(), 18);
     assert!(h.stdout.contains("invalid-suppression") && h.stdout.contains("unused-suppression"));
     assert!(h.stdout.contains("unused-payload-field"));
     assert!(h.stdout.contains("announce-and-send"));
-    assert!(h.stdout.contains("unchecked-state"));
+    assert!(!h.stdout.contains("unchecked-state") && !h.stdout.contains("unchecked-event"));
     assert!(h.stdout.contains("unplanned-driver-stage") && h.stdout.contains("unreachable-statement"));
     assert_eq!(run(&mut h, &["check", "lint", "--help"]), 0);
     assert!(h.stdout.contains("Usage: snappea check lint"));
@@ -542,102 +544,6 @@ fn shared_helper_warning_follows_check_test_selection() {
     assert!(result["warnings"].get("lint").is_none(), "{result}");
 }
 
-fn payload_findings(body: &str, prefix: &str) -> Vec<serde_json::Value> {
-    let mut h = MemHost::new("/w");
-    h.add_file(
-        "payload.p",
-        &format!(
-            r#"
-        event Reply: (id: int, value: int);
-        fun Consume(p: (id: int, value: int)) {{ assert p.id >= 0; }}
-        {prefix}
-        machine Worker {{ start state S {{ on Reply do (p: (id: int, value: int)) {{ {body} }} }} }}
-        machine Main {{ start state S {{ entry {{ new Worker(); }} }} }}
-        test tc [main=Main]: {{ Main, Worker }};
-    "#
-        ),
-    );
-    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
-    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    result["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|f| f["rule"] == "unused-design-payload-field")
-        .cloned()
-        .collect()
-}
-
-#[test]
-fn design_payload_advisory_distinguishes_behavior_from_diagnostic_reads() {
-    for body in [
-        "assert p.id >= 0;",
-        "assert p.id >= 0, format(\"{0}\", p.value);",
-        "print format(\"{0}\", p.value); assert p.id >= 0;",
-        "p.value = 42; assert p.id >= 0;",
-    ] {
-        let findings = payload_findings(body, "");
-        assert_eq!(findings.len(), 1, "{body}: {findings:?}");
-        assert!(findings[0]["message"].as_str().unwrap().contains("p.value"));
-        assert_eq!(findings[0]["severity"], "advisory");
-    }
-    for body in [
-        "assert p.id >= p.value;",
-        "Consume(p);",
-        "var copy: (id: int, value: int); copy = p; assert copy.id >= 0;",
-        "assert false;",
-        "print format(\"{0}\", p.id); { assert false; }",
-    ] {
-        assert!(payload_findings(body, "").is_empty(), "{body}");
-    }
-    assert!(payload_findings("assert p.id >= 0;", "// snappea: driver").is_empty());
-    assert!(payload_findings(
-        "assert p.id >= 0;",
-        "// snappea-lint: allow unused-design-payload-field -- intentional metadata"
-    )
-    .is_empty());
-}
-
-#[test]
-fn design_payload_advisory_reads_nested_receive_captures() {
-    let findings = payload_findings(
-        "receive { case Reply: (next: (id: int, value: int)) { assert p.id == next.id; assert p.value == next.value; } }", "");
-    assert!(findings.is_empty(), "{findings:?}");
-    let findings = payload_findings(
-        "assert p.id >= 0; receive { case Reply: (next: (id: int, value: int)) { assert next.id >= 0; } }",
-        "",
-    );
-    assert_eq!(findings.len(), 2, "{findings:?}");
-}
-
-#[test]
-fn design_payload_advisories_do_not_fail_checks_and_skip_goto_plumbing() {
-    let mut h = MemHost::new("/w");
-    let source = r#"
-        event Reply: (id: int, value: int);
-        machine Worker {
-            fun Handle(p: (id: int, value: int)) { assert p.id >= 0; }
-            start state S { on Reply do Handle; }
-        }
-        machine Main { start state S { entry { var w: machine; w = new Worker(); send w, Reply, (id = 1, value = 2); } } }
-        test tc [main=Main]: { Main, Worker };
-    "#;
-    h.add_file("payload.p", source);
-    assert_eq!(
-        run(&mut h, &["check", "payload.p", "--deny", "lint", "--no-mutation", "--json"]),
-        0,
-        "{}{}",
-        h.stdout,
-        h.stderr
-    );
-    assert!(h.stderr.contains("warning[unused-design-payload-field]"), "{}", h.stderr);
-    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["warnings"]["lint"], 1);
-    h.add_file("payload.p", &source.replace("on Reply do Handle;", "on Reply goto S with Handle;"));
-    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
-    assert!(!h.stderr.contains("unused-design-payload-field"), "{}", h.stderr);
-}
-
 const COMPLEMENTARY_PAYLOAD_SPECS: &str = r#"
 event Reading: (request: int, value: int);
 spec RequestKnown observes Reading {
@@ -675,9 +581,14 @@ fn companion_reads_cannot_leak_across_tests_or_selections() {
         &format!("{COMPLEMENTARY_PAYLOAD_SPECS}\ntest alone [main=Main]: assert RequestKnown in {{ Main, Sensor }};"),
     );
     assert_eq!(run(&mut h, &["check", "model.p", "together", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    // reported for the test without the companion, as a warning that does not fail
     for args in [vec!["check", "lint", "model.p"], vec!["check", "model.p", "alone"], vec!["check", "model.p"]] {
-        assert_eq!(run(&mut h, &args), 2, "{args:?}: {}{}", h.stdout, h.stderr);
-        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("test(s) alone"), "{}", h.stderr);
+        assert_eq!(run(&mut h, &args), 0, "{args:?}: {}{}", h.stdout, h.stderr);
+        assert!(
+            h.stderr.contains("warning[unused-payload-field]") && h.stderr.contains("test(s) alone"),
+            "{}",
+            h.stderr
+        );
     }
 }
 
@@ -689,14 +600,14 @@ fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
             .replace("on Reading do Check", "on Other do Check"),
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
-            .replace("on Reading do Check", "// snappea-lint: allow unobserved-handler -- intentionally unreachable reader fixture\n on Reading do Check"),
+            .replace("on Reading do Check", "\n// snappea-lint: allow unobserved-handler -- intentionally unreachable reader fixture\n on Reading do Check"),
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "scenario ValueValid observes Reading")
             .replace("start state Watching { on Reading do Check; }", "start state Watching { on Reading do Check; } cold state Seen {}"),
     ] {
         let mut h = MemHost::new("/w");
         h.add_file("model.p", &source);
-        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2, "{}{}", h.stdout, h.stderr);
-        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
+        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
+        assert!(h.stderr.contains("warning[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
     }
 }
 
@@ -716,10 +627,11 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
         test tc [main=Main]: assert Safety in { Main, Server };\n";
     let mut h = MemHost::new("/w");
     h.add_file("model.p", model);
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    // an advisory: reported, but lint passes
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
     // the misplaced suppression does not hide the finding, and says where it must go
     assert!(
-        h.stderr.contains("error[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
+        h.stderr.contains("warning[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
         "{}",
         h.stderr
     );
@@ -752,8 +664,9 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
             "/* snappea-lint: allow unused-payload-field -- amounts */",
         ),
     );
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
     assert!(h.stderr.contains("warning[unused-suppression]: this block comment is not read"), "{}", h.stderr);
+    assert!(h.stderr.contains("warning[unused-payload-field]"), "{}", h.stderr);
 }
 
 #[test]
@@ -801,16 +714,39 @@ fn invalid_suppression_names_the_id_and_the_closest_rule() {
 }
 
 #[test]
-fn design_receivers_may_ignore_reply_addresses() {
+fn no_progress_spec_for_a_waiting_machine_can_be_suppressed_at_the_test() {
+    let model = "event ePing: Client;\n\
+        event ePong;\n\
+        spec Pongs observes ePong { var n: int; start state S { on ePong do { n = n + 1; assert n < 3; } } }\n\
+        machine Counter { start state S { on ePing do (c: Client) { send c, ePong; } } }\n\
+        machine Client {\n\
+          start state Init { entry (c: Counter) { send c, ePing, this; goto Waiting; } }\n\
+          state Waiting { on ePong goto Done; }\n\
+          state Done { }\n\
+        }\n\
+        machine Main { start state S { entry { new Client(new Counter()); } } }\n\
+        ALLOW_A\
+        test tcA [main=Main]: assert Pongs in { Counter, Client, Main };\n\
+        ALLOW_B\
+        test tcB [main=Main]: assert Pongs in { Counter, Client, Main };\n";
+    let allow = "// snappea-lint: allow no-progress-spec -- safety only\n";
     let mut h = MemHost::new("/w");
-    h.add_file(
-        "votes.p",
-        "event eVote: (id: int, from: machine, voters: seq[Participant]);\n\
-         machine Participant { start state S {} }\n\
-         machine Coordinator { var n: int; start state S { on eVote do (v: (id: int, from: machine, voters: seq[Participant])) { n = n + v.id; assert n > 0; } } }\n\
-         machine Main { start state S { entry { new Coordinator(); } } }\n\
-         test tc [main=Main]: { Main, Coordinator, Participant };\n",
-    );
-    assert_eq!(run(&mut h, &["check", "lint", "votes.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
-    assert!(!h.stdout.contains("unused-design-payload-field"), "{}", h.stdout);
+    // reported once, at the machine, for the first test
+    h.add_file("model.p", &model.replace("ALLOW_A", "").replace("ALLOW_B", ""));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert_eq!(h.stderr.matches("error[no-progress-spec]").count(), 1, "{}", h.stderr);
+    assert!(h.stderr.contains("no spec of test 'tcA' has a hot state"), "{}", h.stderr);
+    // a suppression before one test covers only that test
+    h.add_file("model.p", &model.replace("ALLOW_A", allow).replace("ALLOW_B", ""));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert!(h.stderr.contains("no spec of test 'tcB' has a hot state"), "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    // before each test, nothing is left and no suppression is unused
+    h.add_file("model.p", &model.replace("ALLOW_A", allow).replace("ALLOW_B", allow));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    // before the waiting machine still works
+    let at_machine = model.replace("ALLOW_A", "").replace("ALLOW_B", "");
+    h.add_file("model.p", &at_machine.replace("machine Client {", &format!("{allow}machine Client {{")));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
 }

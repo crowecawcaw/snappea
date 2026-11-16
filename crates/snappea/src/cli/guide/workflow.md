@@ -51,18 +51,19 @@ a fixed variant only after the group is tried (`snappea guide modeling`).
 
 ## 3. Check until it passes for real
 
-    snappea check A.pproj    # every test case of one model, then coverage and mutation
+    snappea check A.pproj    # every test case of one model, then coverage
 
 - Exit 1: a bug (fix the design, keep the scenario) or a coverage gap (add a
   scenario). Exit 0 with `summary.incomplete` > 0 is not a pass.
 - A failing test lists up to 3 distinct failures (`--max-bugs`) and every spec still
   hot at the failure: read them all before changing the model. Lint failures do not
   stop the search; bugs come first.
-- Each undetected mutant usually means a missing assertion: add it, or suppress an
-  equivalent one with a reason.
-- Do not finish with `--no-mutation` or `--warn coverage`. Incomplete search: shrink
-  bounds, split the model, or raise `--timeout`; for mutation, `snappea check
-  mutation --mutation-timeout 5m`.
+- Do not finish with `--warn coverage`. Incomplete search: shrink bounds, split the
+  model, or raise `--timeout`.
+- Mutation testing is optional: `snappea check A.pproj --mutation` changes the model
+  slightly and reports changes no test case detects. Use it once the model passes, to
+  judge whether the specs check the contract. Act on an undetected mutant only when
+  it shows a check the contract needs; suppress an equivalent one with a reason.
 - Without a hot spec state the check is safety only: a lock stuck forever passes.
   Keep a spec hot until each liveness risk from step 1 resolves, and give each
   timeout, lease or retry a test where it is the only way forward.

@@ -53,7 +53,7 @@ def run(binary):
                 text = source.replace(old, new)
             (work / "Balance.p").write_text(text)
             result = subprocess.run(
-                [str(binary), "check", "Balance.pproj", "--no-mutation", "--timeout", "5s", "--json"],
+                [str(binary), "check", "Balance.pproj", "--timeout", "5s", "--json"],
                 cwd=work, capture_output=True, text=True, timeout=30,
             )
             report = json.loads(result.stdout)

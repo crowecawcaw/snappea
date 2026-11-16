@@ -18,8 +18,8 @@ export function Agents({ root }: { root: string }) {
         Ask the agent to record assumptions and model bounds alongside the design. A useful starting instruction is:</p>
       <Code lang="text">{`Use P to model this feature before implementing it. Snappea is installed.
 Read snappea guide. State the contract, atomic primitives, failure assumptions
-and model bounds. Check the model and investigate lints, coverage gaps and
-undetected mutations. Turn counterexamples into regression tests, then check
+and model bounds. Check the model and investigate lints and coverage gaps.
+Turn counterexamples into regression tests, then check
 real application events against the same specs. Report what remains unchecked.`}</Code>
       <Code lang="shell">{`snappea guide
 snappea guide modeling
@@ -42,8 +42,8 @@ snappea check mutation`}</Code>
         fix the model when its assumptions are wrong. Keep the scenario that exposed it.</p>
       <p><a href={l.coverage}>Coverage</a> identifies behavior the workload did not exercise.
         <a href={`${blob}/docs/linting.md`}> Lints</a> catch common weak models.
-        <a href={`${blob}/docs/checking-models.md#mutation-testing`}> Mutation testing</a> asks whether checks reject
-        changed behavior. Investigate findings rather than removing the checks to obtain a pass.</p>
+        <a href={`${blob}/docs/checking-models.md#mutation-testing`}> Mutation testing</a> (<code>snappea check --mutation</code>,
+        off by default) asks whether checks reject changed behavior. Investigate findings rather than removing the checks to obtain a pass.</p>
     </section>
     <section>
       <h2>Connect the implementation to the spec</h2>

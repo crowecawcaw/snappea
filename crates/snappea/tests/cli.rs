@@ -1046,7 +1046,7 @@ fn check_reports_mutants_that_never_change_a_value() {
          }\n\
          test tcTick [main=Driver]: assert Up in { Ticker, Driver };\n",
     );
-    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--json"]);
+    snappea(&mut h, &["check", "--mutation", "tick.p", "--warn", "coverage", "--json"]);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let swap = v["mutation"]["undetected"]
         .as_array()
@@ -1058,7 +1058,7 @@ fn check_reports_mutants_that_never_change_a_value() {
     assert_eq!(swap["changes_a_value"], false);
     assert_eq!(swap["schedules"], 0);
     assert_eq!(swap["test_cases"], serde_json::json!(["tcTick"]));
-    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text"]);
+    snappea(&mut h, &["check", "--mutation", "tick.p", "--warn", "coverage", "--format", "text"]);
     assert!(
         h.stdout.contains(
             "tick.p:12  Ticker.Big: `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never equal)\n"
@@ -1075,7 +1075,7 @@ fn check_reports_mutants_no_test_case_detects() {
     // `-` makes the total negative, which the spec detects; removing either statement of
     // the handler, or the whole body, leaves the spec nothing to fail on. The body is
     // listed, with the undetected mutants inside it. The spec and driver are not mutated.
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let m = &v["mutation"];
     assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(4), Some(1)), "{}", m);
@@ -1097,11 +1097,11 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(m["suppressed"], 0);
     assert_eq!(m["time_limit_reached"], false);
     // the same verdicts every run
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--json"]), 0);
     let again: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(again["mutation"]["undetected"], m["undetected"]);
     // the console lists them after the coverage
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 0);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--format", "text"]), 0);
     assert!(h.stdout.contains("Mutation testing: 1 of 4 mutants detected"), "{}", h.stdout);
     assert!(
         h.stdout.contains(
@@ -1112,7 +1112,7 @@ fn check_reports_mutants_no_test_case_detects() {
     );
     assert!(h.stdout.contains(", with warnings: 3 undetected mutants. Output: "), "{}", h.stdout);
     // `-v` lists the ones inside it, and JSON names their file
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 0);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--format", "text", "-v"]), 0);
     assert!(
         h.stdout.contains(
             "(and 2 more undetected inside it:)\n      counter.p:7  removed `total = total + n;`\n      counter.p:8  removed `announce eTotal, total;`\n"
@@ -1133,12 +1133,12 @@ fn check_reports_mutants_no_test_case_detects() {
         "// snappea-lint: allow mutation:remove-statement -- the spec reads every total\nannounce eTotal",
     );
     h.add_file("counter.p", &suppressed);
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--json"]), 0, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!((v["mutation"]["mutants"].as_u64(), v["mutation"]["suppressed"].as_u64()), (Some(3), Some(1)));
     assert_eq!(v["mutation"]["undetected"].as_array().unwrap().len(), 1);
     h.add_file("counter.p", &suppressed.replace("mutation:remove-statement", "mutation"));
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--json"]), 0, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["suppressed"], 1);
     // one comment can name several kinds
@@ -1149,7 +1149,7 @@ fn check_reports_mutants_no_test_case_detects() {
             "// snappea-lint: allow mutation:remove-statement,swap-operator -- both kinds\ntotal = total + n;",
         ),
     );
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["suppressed"], 2, "{}", v["mutation"]);
     // a misspelled kind fails linting rather than suppressing nothing
@@ -1172,12 +1172,26 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(snappea(&mut h, &["check", "mutation", "coins.p", "--seed", "2", "--json"]), 1);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["skipped"], "a test case failed");
-    // skipped on request, and when a test case fails
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--no-mutation", "--json"]), 0);
+    // not run unless asked for, and not counted as a partial check; `--no-mutation` is
+    // accepted and does nothing
+    for args in [&["check", "counter.p", "--json"][..], &["check", "counter.p", "--no-mutation", "--json"]] {
+        assert_eq!(snappea(&mut h, args), 0, "{args:?}");
+        let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        assert_eq!(v["mutation"], serde_json::json!({"skipped": "not requested (--mutation runs it)"}));
+        assert_eq!(v["summary"]["skipped"], serde_json::json!([]), "{}", v["summary"]);
+        assert!(v["warnings"].get("mutation").is_none(), "{}", v["warnings"]);
+    }
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 0);
+    assert!(!h.stdout.contains("utant"), "{}", h.stdout);
+    // `--mutation-timeout` and `--deny mutation` ask for it too
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--mutation-timeout", "5s", "--json"]), 0);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(v["mutation"], serde_json::json!({"skipped": "--no-mutation"}));
+    assert_eq!(v["warnings"]["mutation"], 3, "{}", v["mutation"]);
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--no-mutation", "--mutation-timeout", "5s"]), 2);
-    assert_eq!(snappea(&mut h, &["check", "coins.p", "--seed", "2", "--format", "text"]), 1);
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--no-mutation", "--mutation"]), 2);
+    assert!(h.stderr.contains("use only one of '--mutation' and '--no-mutation'"), "{}", h.stderr);
+    // skipped when a test case fails
+    assert_eq!(snappea(&mut h, &["check", "coins.p", "--seed", "2", "--mutation", "--format", "text"]), 1);
     assert!(h.stdout.contains("Mutation testing skipped: a test case failed."), "{}", h.stdout);
 }
 
@@ -1225,7 +1239,7 @@ fn mutants_no_test_case_can_detect_are_skipped_or_reported_as_likely_equivalent(
     assert_eq!(m["equivalent"][0]["change"], "`epoch + 1` → `epoch - 1`", "{}", m);
     assert_eq!(m["likely_equivalent"][0]["change"], "removed `epoch = epoch + 1;`", "{}", m);
     assert!(m["likely_equivalent"][0]["reason"].as_str().unwrap().starts_with("fault model: every send of 'eCrash'"));
-    assert_eq!(snappea(&mut h, &["check", "crash.p", "--format", "text"]), 0);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "crash.p", "--format", "text"]), 0);
     assert!(h.stdout.contains("1 equivalent (not run)"), "{}", h.stdout);
     assert!(
         h.stdout
@@ -1375,7 +1389,7 @@ fn machines_under_ptst_are_drivers_and_are_not_mutated() {
     let test = model.find("// snappea-lint: allow no-progress-spec").unwrap();
     h.add_file("PSrc/Lock.p", &format!("{}{}", &model[..split], &model[test..]));
     h.add_file("PTst/Driver.p", &model[split..test]);
-    assert_eq!(snappea(&mut h, &["check", "--json"]), 0, "{}", h.stderr);
+    assert_eq!(snappea(&mut h, &["check", "--mutation", "--json"]), 0, "{}", h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["test_cases"][0]["driver"]["machines"], serde_json::json!(["Client", "TestDriver"]));
     assert_eq!(v["test_cases"][0]["driver"]["facts"][0]["id"], "Client.sequence");
@@ -1422,29 +1436,18 @@ const WEAK: &str = "event eReq: Client;\n\
      test tcServe [main=Driver]: assert Counted in { Server, Client, Driver };\n";
 
 #[test]
-fn lint_reports_state_events_and_progress_no_check_depends_on() {
+fn lint_reports_tests_without_a_progress_spec() {
     let mut h = host();
     h.add_file("serve.p", WEAK);
     assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 2);
-    for (rule, at, text) in [
-        ("unchecked-state", "serve.p:7:", "machine Server writes field 'log' 1 time, but no assertion"),
-        ("unchecked-event", "serve.p:14:", "machine Server sends 'eAck', but no spec observes it"),
-        ("no-progress-spec", "serve.p:34:", "test 'tcServe' waits for the model's responses"),
-    ] {
-        let found = h.stderr.find(&format!("error[{}]: {}", rule, text));
-        let found = found.unwrap_or_else(|| panic!("no {} finding:\n{}", rule, h.stderr));
-        assert!(h.stderr[found..].contains(at), "{} not at {}:\n{}", rule, at, h.stderr);
-    }
-    // the fields and events a check reads are not reported
-    assert!(!h.stderr.contains("'served'"), "{}", h.stderr);
-    assert!(!h.stderr.contains("'eResp'"), "{}", h.stderr);
-    assert!(h.stderr.contains("help: if a wrong value would be a bug, check it"), "{}", h.stderr);
+    let found = h.stderr.find("error[no-progress-spec]: test 'tcServe' waits for the model's responses");
+    let found = found.unwrap_or_else(|| panic!("no no-progress-spec finding:\n{}", h.stderr));
+    assert!(h.stderr[found..].contains("serve.p:34:"), "not at the test:\n{}", h.stderr);
+    // fields and events no check depends on are not lint findings
+    assert!(!h.stderr.contains("unchecked-"), "{}", h.stderr);
 
-    // suppressions name the rule; a field takes one too
-    let allowed = WEAK
-        .replace("var log", "// snappea-lint: allow unchecked-state -- kept for debugging\nvar log")
-        .replace("send c, eAck;", "// snappea-lint: allow unchecked-event -- acks are informational\nsend c, eAck;")
-        .replace("test tcServe", "// snappea-lint: allow no-progress-spec -- safety only\ntest tcServe");
+    // the suppression goes on the test declaration
+    let allowed = WEAK.replace("test tcServe", "// snappea-lint: allow no-progress-spec -- safety only\ntest tcServe");
     h.add_file("serve.p", &allowed);
     assert_eq!(snappea(&mut h, &["check", "lint", "serve.p"]), 0, "{}", h.stderr);
 }
@@ -1453,7 +1456,7 @@ fn lint_reports_state_events_and_progress_no_check_depends_on() {
 fn mutants_that_only_write_unchecked_state_are_not_run() {
     let mut h = host();
     h.add_file("serve.p", WEAK);
-    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--json"]);
+    snappea(&mut h, &["check", "--mutation", "serve.p", "--warn", "lint", "--warn", "coverage", "--json"]);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     // reported inside the whole handler body's removal, which nothing detects either
     let log = v["mutation"]["undetected"]
@@ -1467,7 +1470,7 @@ fn mutants_that_only_write_unchecked_state_are_not_run() {
     assert_eq!(log["schedules"], 0);
     // one client, one request: every schedule is the same run
     assert_eq!(v["test_cases"][0]["little_to_explore"], true, "{}", v["test_cases"][0]);
-    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--format", "text"]);
+    snappea(&mut h, &["check", "--mutation", "serve.p", "--warn", "lint", "--warn", "coverage", "--format", "text"]);
     assert!(h.stdout.contains("hint: give the model something to get wrong"), "{}", h.stdout);
 }
 

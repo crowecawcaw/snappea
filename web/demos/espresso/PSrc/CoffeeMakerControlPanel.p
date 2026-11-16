@@ -229,7 +229,6 @@ machine CoffeeMakerControlPanel {
 
   fun StopSteamer() {
     // send an event to maker to stop steaming
-    // snappea-lint: allow unchecked-event -- the model has no steamer state to change; the real maker stops the steamer here
     send coffeeMaker, StopSteamerRequest;
   }
 

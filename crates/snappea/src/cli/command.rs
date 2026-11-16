@@ -70,21 +70,21 @@ find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
 Sources are linted first. Blocking findings fail the check, but the test cases still
-run, so bugs are reported first, then the findings; coverage and mutation testing are
+run, so bugs are reported first, then the findings; coverage (and mutation testing) is
 skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
-Blocking lint findings and required coverage gaps fail the check; undetected mutants are
-warnings. Silence an intended finding in the source with a
-`// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
-fails for one run.
+Blocking lint findings and required coverage gaps fail the check. Mutation testing runs
+only with --mutation; its undetected mutants are warnings. Silence an intended finding
+in the source with a `// snappea-lint: allow <rule> -- reason` comment. `--warn` and
+`--deny` change what fails for one run.
 
 Examples:
   snappea check                       # all test cases, sharing 10s
   snappea check 'tcRetry*' --timeout 1m   # more search time on a few
-  snappea check --no-mutation         # faster iteration while editing
   snappea check --warn lint           # explore with lint findings as warnings
-  snappea check --deny mutation       # CI: also fail on undetected mutants
+  snappea check --mutation            # also judge the specs with mutation testing
+  snappea check --deny mutation       # CI: run mutation testing, fail on undetected mutants
 
 Exploration:
       --timeout <DURATION>  Time limit per test case (accepts 90s, 5m, 1h). Without it,
@@ -125,10 +125,14 @@ What fails the check:
                             the result.
       --deny <CHECK>        Fail on CHECK's findings (default for lint and coverage)
 
-Mutation testing:
+Mutation testing (off unless asked for):
+      --mutation            Run mutation testing after the test cases pass. Use it to
+                            judge whether the specs are strong enough, not on every
+                            edit. --mutation-timeout and --deny mutation imply it.
       --mutation-timeout <DURATION>
                             Time limit for mutation testing (default: 30s)
-      --no-mutation         Skip mutation testing
+      --no-mutation         Accepted for compatibility; does nothing, since mutation
+                            testing is off by default
 
 Driver limits:
       --no-driver-facts     Do not list the limits each test's driver kept
@@ -170,8 +174,8 @@ schedule's log; read this first), bug.schedule (for `snappea replay`) and
 bug.trace.json (for `snappea observe --p-trace`); bug-2.txt and bug-2.schedule (and
 so on) for further failures. Scenario monitors also write scenario_coverage.json.
 
-When every test case passes, mutation testing follows: each mutant changes the model
-slightly (a removed statement, a forced `if`, a swapped operator). A mutant no test
+With --mutation, when every test case passes, mutation testing follows: each mutant
+changes the model slightly (a removed statement, a forced `if`, a swapped operator). A mutant no test
 case detects marks code whose effect no spec or assertion checks. Undetected mutants
 are listed as warnings; `--deny mutation` makes them fail the check. To accept one, put
 `// snappea-lint: allow mutation[:<kind>] -- reason` before the statement
@@ -878,6 +882,7 @@ const CHECK_OPTS: &[Opt] = &[
     flag("verbose", Some('v')),
     flag("list-suppressions", None),
     value("mutation-timeout", None),
+    flag("mutation", None),
     flag("no-mutation", None),
     value("warn", None),
     value("deny", None),
@@ -953,22 +958,32 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
 /// Whether and how a check runs mutation testing (time limits in seconds).
 #[derive(Debug, Clone, Copy)]
 enum Mutation {
-    /// After the check's report, unless `None` (`--no-mutation`).
+    /// After the check's report, unless `None` (not asked for: see [`mutation_timeout`]).
     After(Option<u32>),
     /// `check mutation`: instead of the coverage and scenario reports.
     Only(u32),
 }
 
-/// The time limit for mutation testing in seconds, `None` to skip it.
+/// The time limit for mutation testing after a check in seconds, or `None` when it was
+/// not asked for. `--mutation`, `--mutation-timeout` and `--deny mutation` ask for it;
+/// `--no-mutation` is the default, accepted for compatibility.
 fn mutation_timeout(a: &Args) -> Result<Option<u32>, String> {
-    match (a.has("no-mutation"), a.get("mutation-timeout")) {
-        (true, Some(_)) => Err("use only one of '--no-mutation' and '--mutation-timeout'".into()),
-        (true, None) => Ok(None),
-        (false, None) => Ok(Some(MUTATION_TIMEOUT)),
-        (false, Some(t)) => match parse_duration(t) {
+    let denied = a.all("deny").into_iter().flat_map(|v| v.split(',')).any(|n| n.trim() == "mutation");
+    if a.has("no-mutation") {
+        if a.has("mutation") {
+            return Err("use only one of '--mutation' and '--no-mutation'".into());
+        }
+        if a.get("mutation-timeout").is_some() {
+            return Err("use only one of '--no-mutation' and '--mutation-timeout'".into());
+        }
+    }
+    match a.get("mutation-timeout") {
+        Some(t) => match parse_duration(t) {
             Some(t) => Ok(Some(t)),
             None => Err(format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t)),
         },
+        None if a.has("mutation") || denied => Ok(Some(MUTATION_TIMEOUT)),
+        None => Ok(None),
     }
 }
 
@@ -1577,11 +1592,10 @@ fn run_check(
     if coverage_warned {
         skipped.push("required coverage (--warn coverage reported gaps as warnings)");
     }
-    if matches!(mutation, Mutation::After(None)) && failed == 0 && lint_failed.is_none() {
-        skipped.push("mutation testing (--no-mutation)");
-    }
+    // mutation testing is opt-in: not running it is the default, not a partial check
+    let mutation_requested = !matches!(mutation, Mutation::After(None));
     let mutation = match mutation {
-        Mutation::After(None) => json!({"skipped": "--no-mutation"}),
+        Mutation::After(None) => json!({"skipped": "not requested (--mutation runs it)"}),
         _ if lint_failed.is_some() => json!({"skipped": LINT_SKIP}),
         _ if passed.is_empty() && failed == 0 => {
             skipped.push("mutation testing (no passing positive test case)");
@@ -1727,7 +1741,11 @@ fn run_check(
     };
     let lint_line = lint_failed.as_ref().map(|lint| {
         lint.print(con.inner, &sources);
-        let skipped = if only { "mutation testing" } else { "coverage and mutation testing" };
+        let skipped = match (only, mutation_requested) {
+            (true, _) => "mutation testing",
+            (false, true) => "coverage and mutation testing",
+            (false, false) => "coverage",
+        };
         let lint_part = format!("lint failed ({} finding{})", lint.count, plural(lint.count));
         if failed > 0 {
             format!(

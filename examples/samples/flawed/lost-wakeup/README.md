@@ -105,7 +105,7 @@ parking, also fixes it.
 ## Run
 
 ```sh
-snappea check LostWakeup.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LostWakeup.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check LostWakeup.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

@@ -29,20 +29,8 @@ pub const PROGRAM_RULES: &[(&str, &str)] = &[
         "Advisory: this spec omits a payload field that companion specs read in every selected test using it.",
     ),
     (
-        "unused-design-payload-field",
-        "Advisory: a design event handler never reads a named payload field outside diagnostic output.",
-    ),
-    (
         "shared-spec-helper",
         "Advisory: a selected spec and design machine call the same global helper, so a shared mistake may escape the oracle.",
-    ),
-    (
-        "unchecked-state",
-        "A model or spec field is written, but no assertion, condition, spec or sent event depends on it.",
-    ),
-    (
-        "unchecked-event",
-        "The model sends an event that no spec observes and whose handlers change nothing a check depends on.",
     ),
     (
         "no-progress-spec",
@@ -73,15 +61,20 @@ pub const COMMENT_RULES: &[(&str, &str)] = &[
 ];
 
 /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
-/// comment covers. Returns the suppressions that covered at least one finding.
+/// comment covers. Each finding may name a second place a suppression also covers it,
+/// such as the test declaration a finding reported at a machine is about. Returns the
+/// suppressions that covered at least one finding.
 pub fn suppress_program_findings(
     sources: &SourceMap,
-    findings: &mut Vec<Finding>,
+    findings: &mut Vec<(Finding, Option<Span>)>,
 ) -> Result<Vec<SuppressionUse>, ParseError> {
     let allowed = suppression::program_suppressions(&Context::parse(sources)?);
     let mut used = Vec::new();
-    findings.retain(|f| {
-        let by: Vec<_> = allowed.iter().filter(|s| s.rule == f.rule && s.scope.contains(f.span)).collect();
+    findings.retain(|(f, also)| {
+        let covers = |s: &&LintSuppression| {
+            s.rule == f.rule && (s.scope.contains(f.span) || also.is_some_and(|a| s.scope.contains(a)))
+        };
+        let by: Vec<_> = allowed.iter().filter(covers).collect();
         used.extend(by.iter().map(|s| SuppressionUse { comment: s.comment, rule: s.rule.clone() }));
         by.is_empty()
     });
@@ -97,10 +90,7 @@ pub const UNUSED_SUPPRESSION: &str = "unused-suppression";
 pub fn is_advisory(rule: &str) -> bool {
     matches!(
         rule,
-        "shared-spec-helper"
-            | "unused-design-payload-field"
-            | "payload-field-checked-by-other-spec"
-            | UNUSED_SUPPRESSION
+        "shared-spec-helper" | "unused-payload-field" | "payload-field-checked-by-other-spec" | UNUSED_SUPPRESSION
     )
 }
 

@@ -110,7 +110,7 @@ fenced this way.
 ## Run
 
 ```sh
-snappea check LeaseWithoutFencing.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LeaseWithoutFencing.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check LeaseWithoutFencing.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

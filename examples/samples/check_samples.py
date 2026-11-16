@@ -57,7 +57,7 @@ def check_project(snappea: str, project: Path, timeout: str, mutation_timeout: s
     seeds = ["--expect-bug-seeds", "1,2,3"] if has_expected_bug else []
     output = cwd / "PCheckerOutput" / "samples"
     commands = [
-        ("check", [snappea, "--json", "check", project.name, "--no-mutation",
+        ("check", [snappea, "--json", "check", project.name,
                    *seeds, "--timeout", timeout,
                    "-o", "PCheckerOutput/samples/check", *extra]),
         ("mutation", [snappea, "--json", "check", "mutation", project.name,

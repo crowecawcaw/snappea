@@ -362,6 +362,7 @@ fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drive
                 }
                 out.push(Finding {
                     help: None,
+                    test: None,
                     rule: "unplanned-driver-stage",
                     span,
                     message: format!(
@@ -466,6 +467,7 @@ fn unreachable_statements(prog: &Program, out: &mut Vec<Finding>) {
                 };
                 out.push(Finding {
                     help: Some(help),
+                    test: None,
                     rule: "unreachable-statement",
                     span: next.span,
                     message: format!("this statement never runs: {} always leaves the state ({})", before, how),

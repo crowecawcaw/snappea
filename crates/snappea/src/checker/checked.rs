@@ -12,16 +12,16 @@
 //! (liveness included) or operation fails. The exhaustive search leaves such values out
 //! of the state it compares ([`crate::checker::compile::Unhashed`]), so they cannot
 //! change which states it sees again or which cycles it closes either. Hence removing a
-//! write to such a value never changes whether a schedule passes, which is what
-//! [`lints`] reports and mutation testing relies on to skip changes that only write such
-//! values. (Search heuristics that steer by code coverage may still explore a little
-//! differently without the write, as with any change to the code.)
+//! write to such a value never changes whether a schedule passes, which mutation testing
+//! relies on to skip changes that only write such values. (Search heuristics that steer
+//! by code coverage may still explore a little differently without the write, as with
+//! any change to the code.)
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::sema::{
     BinOp, Block, EventId, Expr, ExprKind, FunId, HandlerAction, InterfaceId, MachineId, MachineKind, Program, Stmt,
-    StmtKind, Temperature, TestCase, VarId, VarRole,
+    StmtKind, Temperature, TestCase, VarId,
 };
 use crate::syntax::Span;
 
@@ -515,6 +515,9 @@ pub struct Finding {
     pub message: String,
     /// The likely fix, when more specific than the rule's general one.
     pub help: Option<String>,
+    /// The test declaration the finding is about, when it is reported elsewhere: a
+    /// suppression before that test covers the finding too.
+    pub test: Option<Span>,
 }
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
@@ -569,10 +572,6 @@ pub(crate) fn visit_stmts(b: &Block, visit: &mut dyn FnMut(&Stmt)) {
 
 /// The lints the dataflow supports, over the machines of `tests`:
 ///
-/// * `unchecked-state`: a field of a model machine or spec is written, but no check
-///   depends on it, so a wrong value there can never fail a test case.
-/// * `unchecked-event`: a model machine sends an event no spec observes, and handling
-///   it can change nothing a check depends on.
 /// * `no-progress-spec`: a test case's driver waits on the model's events, but none of
 ///   its specs has a hot state, so a model that stops answering passes.
 pub fn lints(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
@@ -586,165 +585,9 @@ pub fn lints_with_progress_tests(
     progress_tests: &[TestCase],
     drivers: &[bool],
 ) -> Vec<Finding> {
-    let checked = analyze(prog);
-    let roles = roles(prog, tests, drivers);
     let mut out = Vec::new();
     let funs: Vec<Vec<FunId>> = (0..prog.machines.len()).map(|m| machine_funs(prog, MachineId(m as u32))).collect();
-    // unchecked-state
-    for (m, decl) in prog.machines.iter().enumerate() {
-        if !matches!(roles[m], Role::Model | Role::Spec) {
-            continue;
-        }
-        let mut writes: FxHashMap<VarId, usize> = FxHashMap::default();
-        for f in &funs[m] {
-            if let Some(b) = &prog.fun(*f).body {
-                visit_stmts(b, &mut |s| {
-                    let lhs = match &s.kind {
-                        StmtKind::Assign { lhs, .. }
-                        | StmtKind::Insert { lhs, .. }
-                        | StmtKind::Add { lhs, .. }
-                        | StmtKind::Remove { lhs, .. } => lhs,
-                        _ => return,
-                    };
-                    if let Some(v) = root(lhs) {
-                        *writes.entry(v).or_default() += 1;
-                    }
-                });
-            }
-        }
-        for v in &decl.fields {
-            let var = prog.var(*v);
-            let Some(n) = writes.get(v) else { continue };
-            if var.role != VarRole::Field || checked.checked(Node::Var(*v)) {
-                continue;
-            }
-            let what = if roles[m] == Role::Spec { "spec" } else { "machine" };
-            out.push(Finding {
-                help: None,
-                rule: "unchecked-state",
-                span: var.span,
-                message: format!(
-                    "{} {} writes field '{}' {} time{}, but no assertion, condition, spec or sent event depends on it, so a wrong value there passes every test case",
-                    what,
-                    decl.name,
-                    var.name,
-                    n,
-                    if *n == 1 { "" } else { "s" }
-                ),
-            });
-        }
-    }
-    // unchecked-event: an event matters when a spec observes it, a `receive` waits for
-    // it, or a handler of it can change something a check depends on
-    let observed: FxHashSet<EventId> = prog
-        .machines
-        .iter()
-        .enumerate()
-        .filter(|(m, _)| roles[*m] == Role::Spec)
-        .flat_map(|(_, d)| d.observes.iter().copied())
-        .collect();
-    let mut matters: FxHashSet<EventId> = observed.clone();
-    // `halt` stops the machine
-    matters.extend((0..prog.events.len()).map(|e| EventId(e as u32)).filter(|e| prog.event(*e).is_halt()));
-    // an event a machine handles in some states but not in others can fail a test case
-    // as unhandled
-    for (m, decl) in prog.machines.iter().enumerate() {
-        if !matches!(roles[m], Role::Model | Role::Driver) {
-            continue;
-        }
-        let handled = |s: &crate::sema::StateId, e: EventId| prog.state(*s).handlers.iter().any(|h| h.event == e);
-        for s in &decl.states {
-            for h in &prog.state(*s).handlers {
-                if decl.states.iter().any(|t| !handled(t, h.event)) {
-                    matters.insert(h.event);
-                }
-            }
-        }
-    }
-    let mut sent: Vec<(EventId, Span, MachineId, bool)> = Vec::new();
-    for (m, fs) in funs.iter().enumerate() {
-        for f in fs {
-            if let Some(b) = &prog.fun(*f).body {
-                visit_stmts(b, &mut |s| match &s.kind {
-                    StmtKind::Receive { cases } => matters.extend(cases.iter().map(|(e, _)| *e)),
-                    StmtKind::Send { event, .. } | StmtKind::Announce { event, .. } if roles[m] == Role::Model => {
-                        if let ExprKind::EventRef(e) = event.kind {
-                            let announce = matches!(s.kind, StmtKind::Announce { .. });
-                            sent.push((e, s.span, MachineId(m as u32), announce));
-                        }
-                    }
-                    _ => {}
-                });
-            }
-        }
-    }
-    loop {
-        let before = matters.len();
-        for s in &prog.states {
-            if roles[s.machine.idx()] == Role::Unused {
-                continue;
-            }
-            for h in &s.handlers {
-                if matters.contains(&h.event) {
-                    continue;
-                }
-                let effect = match h.action {
-                    HandlerAction::Defer | HandlerAction::Ignore => false,
-                    HandlerAction::Goto { .. } => true,
-                    HandlerAction::Do(f) => {
-                        checked.checked(Node::Payload(h.event)) || has_effect(prog, &checked, &matters, f)
-                    }
-                };
-                if effect {
-                    matters.insert(h.event);
-                }
-            }
-        }
-        if matters.len() == before {
-            break;
-        }
-    }
-    let mut reported: FxHashSet<EventId> = FxHashSet::default();
-    for (e, span, m, announce) in sent {
-        if !matters.contains(&e) && reported.insert(e) {
-            // scenarios observe events but check nothing: say so, so the author does not
-            // take the scenario for the check
-            let scenarios: Vec<&str> = prog
-                .machines
-                .iter()
-                .filter(|d| d.is_scenario() && d.observes.contains(&e))
-                .map(|d| d.name.as_str())
-                .collect();
-            let message = if !scenarios.is_empty() {
-                format!(
-                    "machine {} {} '{}', but only scenario{} {} observe{} it, and scenarios check nothing, so the model passes whatever it {}; observe it in a spec{}",
-                    prog.machine(m).name,
-                    if announce { "announces" } else { "sends" },
-                    prog.event(e).name,
-                    if scenarios.len() == 1 { "" } else { "s" },
-                    scenarios.join(", "),
-                    if scenarios.len() == 1 { "s" } else { "" },
-                    if announce { "announces" } else { "sends" },
-                    if announce { ", or let the scenario watch a sent event instead" } else { "" }
-                )
-            } else if announce {
-                format!(
-                    "machine {} announces '{}', but no spec observes it, so the model passes whatever it announces",
-                    prog.machine(m).name,
-                    prog.event(e).name
-                )
-            } else {
-                format!(
-                    "machine {} sends '{}', but no spec observes it and no machine that handles it changes anything a check depends on, so the model passes whatever it sends",
-                    prog.machine(m).name,
-                    prog.event(e).name
-                )
-            };
-            out.push(Finding { rule: "unchecked-event", span, message, help: None });
-        }
-    }
     // no-progress-spec
-    let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
     for (i, t) in prog.tests.iter().enumerate() {
         if !progress_tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i)) {
             continue;
@@ -803,6 +646,7 @@ pub fn lints_with_progress_tests(
         if waits {
             out.push(Finding {
                 help: None,
+                test: None,
                 rule: "no-progress-spec",
                 span: t.span,
                 message: format!(
@@ -813,13 +657,12 @@ pub fn lints_with_progress_tests(
             continue;
         }
         // a design machine that sends a request and waits for the reply, reported where
-        // it waits, once for all the tests
+        // it waits, once for each test, so a suppression before one test covers only its
+        // own (the caller keeps one finding per wait after suppressing)
         for (m, e, span) in crate::checker::flow_lints::waiting_machines(prog, t, &is_driver) {
-            if !waiting_reported.insert(span) {
-                continue;
-            }
             out.push(Finding {
                 help: None,
+                test: Some(t.span),
                 rule: "no-progress-spec",
                 span,
                 message: format!(
@@ -833,56 +676,8 @@ pub fn lints_with_progress_tests(
     }
     crate::checker::flow_lints::lints_for_tests(prog, progress_tests, drivers, &mut out);
     out.extend(shared_spec_helpers(prog, tests, drivers));
-    out.extend(unused_design_payloads(prog, tests, drivers));
     out.sort_by(|a, b| (a.span, a.rule).cmp(&(b.span, b.rule)));
     out
-}
-
-/// Whether running `f` (and what it calls) can change something a check depends on,
-/// given the events that matter: an assertion, a write to a checked variable, a send,
-/// announce or raise of an event that matters, a `new`, a `goto`, or a `receive`.
-fn has_effect(prog: &Program, checked: &Checked, matters: &FxHashSet<EventId>, f: FunId) -> bool {
-    let mut seen: FxHashSet<FunId> = FxHashSet::default();
-    let mut todo = vec![f];
-    while let Some(f) = todo.pop() {
-        if !seen.insert(f) {
-            continue;
-        }
-        let decl = prog.fun(f);
-        let Some(b) = &decl.body else { return true };
-        todo.extend(decl.callees.iter().copied());
-        let mut effect = false;
-        visit_stmts(b, &mut |s| {
-            effect |= match &s.kind {
-                StmtKind::Assert { .. }
-                | StmtKind::Assume { .. }
-                | StmtKind::Goto { .. }
-                | StmtKind::Ctor { .. }
-                | StmtKind::Receive { .. } => true,
-                StmtKind::Assign { lhs, .. }
-                | StmtKind::Insert { lhs, .. }
-                | StmtKind::Add { lhs, .. }
-                | StmtKind::Remove { lhs, .. } => {
-                    root(lhs).is_none_or(|v| checked.checked(Node::Var(v)) || prog.var(v).role == VarRole::GlobalParam)
-                }
-                StmtKind::Send { event, .. } | StmtKind::Announce { event, .. } | StmtKind::Raise { event, .. } => {
-                    match event.kind {
-                        ExprKind::EventRef(e) => matters.contains(&e),
-                        _ => true,
-                    }
-                }
-                _ => false,
-            };
-            // `new` inside an expression
-            let mut ctor = false;
-            each_expr(s, &mut |e| ctor |= matches!(e.kind, ExprKind::Ctor { .. }));
-            effect |= ctor;
-        });
-        if effect {
-            return true;
-        }
-    }
-    false
 }
 
 /// Calls `f` with each expression directly in statement `s` (not nested statements).
@@ -964,6 +759,7 @@ fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> 
     let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
     shared.into_iter().map(|(f, users)| Finding {
         help: None,
+        test: None,
         rule: "shared-spec-helper",
         span: prog.fun(f).span,
         message: format!(
@@ -971,142 +767,6 @@ fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> 
             prog.fun(f).name, names(users.specs), names(users.models), names(users.tests)
         ),
     }).collect()
-}
-
-/// Field-level evidence at selected design receivers, without guessing request/reply
-/// roles from event names. Whole-tuple uses are deliberately conservative.
-fn unused_design_payloads(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Finding> {
-    let mut handlers = std::collections::BTreeSet::new();
-    for test in tests {
-        for (i, role) in roles(prog, std::slice::from_ref(test), drivers).iter().enumerate() {
-            if *role != Role::Model {
-                continue;
-            }
-            let m = MachineId(i as u32);
-            for s in &prog.machine(m).states {
-                for h in &prog.state(*s).handlers {
-                    if let HandlerAction::Do(f) = h.action {
-                        handlers.insert((m, f, h.event));
-                    }
-                }
-            }
-            for f in machine_funs(prog, m) {
-                if let Some(b) = &prog.fun(f).body {
-                    visit_stmts(b, &mut |s| {
-                        if let StmtKind::Receive { cases } = &s.kind {
-                            handlers.extend(cases.iter().map(|(e, f)| (m, *f, *e)));
-                        }
-                    });
-                }
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for (m, f, event) in handlers {
-        let fun = prog.fun(f);
-        let (Some(p), Some(body)) = (fun.params.first(), &fun.body) else { continue };
-        let crate::sema::PType::NamedTuple(fields) = prog.var(*p).ty.canonicalize(prog) else { continue };
-        if rejects_unconditionally(body) {
-            continue;
-        }
-        let mut used = FxHashSet::default();
-        let mut bases = FxHashSet::default();
-        let mut writes = FxHashSet::default();
-        // Receive cases can capture the outer handler's parameter. Do not lose those
-        // reads; VarIds distinguish them from each nested case's own payload.
-        let mut bodies = vec![f];
-        let mut seen = FxHashSet::default();
-        let mut expressions = Vec::new();
-        while let Some(f) = bodies.pop() {
-            if !seen.insert(f) {
-                continue;
-            }
-            let Some(b) = &prog.fun(f).body else { continue };
-            visit_stmts(b, &mut |s| {
-                if let StmtKind::Receive { cases } = &s.kind {
-                    bodies.extend(cases.iter().map(|(_, f)| *f));
-                }
-                if matches!(&s.kind, StmtKind::Print(e) if pure(e)) {
-                    return;
-                }
-                if let StmtKind::Assign { lhs, .. } = &s.kind {
-                    // Only direct tuple writes are known not to read the old field.
-                    // Container/indexed writes may inspect old contents or fail.
-                    mark_tuple_write(lhs, &mut writes);
-                }
-                each_expr(s, &mut |e| {
-                    if let ExprKind::NamedTupleAccess { base, index } = &e.kind {
-                        if matches!(base.kind, ExprKind::Var(v) if v == *p) {
-                            bases.insert(base.span);
-                            expressions.push((e.span, Some(*index as usize)));
-                        }
-                    } else if matches!(e.kind, ExprKind::Var(v) if v == *p) {
-                        expressions.push((e.span, None));
-                    }
-                });
-            });
-        }
-        for (span, index) in &expressions {
-            if let Some(index) = index {
-                if !writes.contains(span) {
-                    used.insert(*index);
-                }
-            }
-        }
-        if expressions.iter().any(|(span, index)| index.is_none() && !bases.contains(span) && !writes.contains(span)) {
-            continue;
-        }
-        for (i, (field, ty)) in fields.iter().enumerate() {
-            // a reply address routes the event; a receiver that ignores it (counting
-            // votes, say) is not abstracting away data
-            if !used.contains(&i) && !is_address(prog, ty) {
-                out.push(Finding {
-                    help: None,
-                    rule: "unused-design-payload-field",
-                    span: prog.var(*p).span,
-                    message: format!("design machine '{}' handles '{}' without reading payload field '{}.{}' outside diagnostic output; check whether this receiver should act on it", prog.machine(m).name, prog.event(event).name, prog.var(*p).name, field),
-                });
-            }
-        }
-    }
-    out
-}
-
-fn mark_tuple_write(e: &Expr, writes: &mut FxHashSet<Span>) {
-    match &e.kind {
-        ExprKind::Var(_) => {
-            writes.insert(e.span);
-        }
-        ExprKind::NamedTupleAccess { base, .. } | ExprKind::TupleAccess { base, .. } => {
-            writes.insert(e.span);
-            mark_tuple_write(base, writes);
-        }
-        _ => {}
-    }
-}
-
-/// Whether values of `ty` are machine references (`machine`, a machine or interface, or
-/// a `seq` or `set` of them): where to send, not data.
-fn is_address(prog: &Program, ty: &crate::sema::PType) -> bool {
-    use crate::sema::{PType, PermissionOrigin};
-    match ty.canonicalize(prog) {
-        PType::Machine | PType::Permission(PermissionOrigin::Machine(_) | PermissionOrigin::Interface(_)) => true,
-        PType::Seq(t) | PType::Set(t) => is_address(prog, &t),
-        _ => false,
-    }
-}
-
-fn rejects_unconditionally(body: &Block) -> bool {
-    for s in &body.stmts {
-        match &s.kind {
-            StmtKind::Nop => {}
-            StmtKind::Print(e) if pure(e) => {}
-            StmtKind::Assert { cond, .. } => return matches!(cond.kind, ExprKind::BoolLit(false)),
-            StmtKind::Block(b) if rejects_unconditionally(b) => return true,
-            _ => return false,
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -1164,18 +824,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reports_fields_no_check_depends_on() {
-        let prog = program(MODEL);
-        let tests = prog.test_cases();
-        let found: Vec<_> = lints(&prog, &tests, &vec![false; prog.machines.len()])
-            .into_iter()
-            .filter(|f| f.rule == "unchecked-state")
-            .map(|f| f.message.split('\'').nth(1).unwrap().to_string())
-            .collect();
-        assert_eq!(found, ["copy", "log", "keyed"]);
-    }
-
     fn findings(src: &str, rule: &str) -> Vec<String> {
         let prog = program(src);
         let tests = prog.test_cases();
@@ -1184,19 +832,6 @@ mod tests {
             .filter(|f| f.rule == rule)
             .map(|f| f.message)
             .collect()
-    }
-
-    #[test]
-    fn an_event_only_a_scenario_observes_is_named_as_such() {
-        let src = "event eConflict;\n\
-            machine Store { start state S { entry { announce eConflict; } } }\n\
-            scenario Conflicted observes eConflict { start state W { on eConflict goto D; } cold state D { } }\n\
-            machine Main { start state S { entry { new Store(); } } }\n\
-            test tc [main=Main]: { Store, Main };\n";
-        assert_eq!(
-            findings(src, "unchecked-event"),
-            ["machine Store announces 'eConflict', but only scenario Conflicted observes it, and scenarios check nothing, so the model passes whatever it announces; observe it in a spec, or let the scenario watch a sent event instead"]
-        );
     }
 
     /// A driver that starts a second doctor only once the first says it is done.

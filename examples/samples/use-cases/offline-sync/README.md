@@ -105,8 +105,7 @@ messages by itself. When copying this sample outside the repository, run
 and point the project's `IncludeProject` at `vendor/building-blocks/Network.pproj`.
 
 Each client models one offline edit for its entire lifetime. Its reply request ID
-therefore cannot name another operation; the design-payload advisory is retained
-for review. Reusing a client for later edits requires matching reply IDs before
+therefore cannot name another operation, so the client does not check it. Reusing a client for later edits requires matching reply IDs before
 applying them, in addition to the version and late-reply checks shown here.
 
 ## Run
