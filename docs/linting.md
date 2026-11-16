@@ -14,10 +14,11 @@ questions:
 # Linting P models
 
 `snappea check` type-checks and lints all loaded sources before exploring schedules.
-An unsuppressed blocking lint finding stops the command with exit status **2**, before it
-creates checker output. A model bug found during exploration still exits with 1.
-`snappea check --warn lint` reports the findings as warnings and checks anyway, e.g.
-to see whether a model written for upstream P finds bugs before you address its lints
+An unsuppressed blocking lint finding fails the command, but the test cases still run,
+so any bug is reported first, then the findings; coverage and mutation testing are
+skipped. The exit status is 1 when a test case failed, else **2**.
+`snappea check --warn lint` reports the findings as warnings and runs the full check,
+including coverage and mutation testing
 (see [what fails a check](checking-models.md#what-fails-a-check)).
 
 To run linting alone:
@@ -57,8 +58,10 @@ even with `--deny lint`. `--warn lint` continues to downgrade the blocking rules
 `--list-rules` JSON includes each rule's `severity` (`error` or `advisory`). `check lint`
 JSON lists every finding in `findings`, with its `rule`, `severity`, `message`, `help`
 and source location; when lint fails, `error` holds the one-line summary, not the
-human-readable report again (that is on stderr). When lint stops `check`, its JSON has
-the same list under `lint.findings`. `check` counts advisories under `warnings.lint`.
+human-readable report again (that is on stderr). When lint fails `check`, its JSON has
+the same list under `lint.findings`, `error` and `summary.message` hold the summary,
+`summary.lint_failed` is `true`, and `coverage` and `mutation` are
+`{"skipped": "lint failed"}`. `check` counts advisories under `warnings.lint`.
 Scoped suppressions apply to both kinds.
 
 Linting identifies common weak checks. A clean result does not establish that the
