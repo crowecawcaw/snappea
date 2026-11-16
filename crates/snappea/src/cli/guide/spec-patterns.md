@@ -31,6 +31,9 @@ A check proves only what specs assert, within the bounds. Bound every fault
 
 ## Stuck resources: make the timeout the only way forward
 
+Runnable: `snappea guide example lease-lock` (no-expiry lock fails liveness; leases
+plus fencing tokens pass).
+
 - For every lock, lease or slot, test a holder that crashes, or whose release is
   lost, and never returns. Only a timeout, expiry or recovery can then free it;
   removing that mechanism must fail the liveness spec.
