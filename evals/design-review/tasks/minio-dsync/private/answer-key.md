@@ -83,6 +83,10 @@ symptom alone is partial.
 - Quorum sizes: write quorum is N/2+1 and read quorum is ceil(N/2), so a write quorum
   intersects every other read or write quorum. A report claiming the quorum
   arithmetic itself allows two writers with all servers up and no restarts is wrong.
+- `lock()` in `drwmutex.go` cannot send on a closed channel: every sender goroutine is
+  counted in `wg`, the channel is buffered to `len(restClnts)`, and `lock()` returns
+  (running `defer close(ch)`) only after `wg.Wait()`. Late grants are released by the
+  receiver goroutine. A claim of a send-on-closed-channel panic is invalid.
 - `cmd/namespace-lock.go` refcounting holds `lockMapMutex` around every ref change at
   this commit (the atomic refcount race, 6de410a0, came later).
 
