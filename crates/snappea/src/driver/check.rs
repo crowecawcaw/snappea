@@ -104,6 +104,10 @@ pub struct CheckConfig {
     /// Artifact subdirectory for a repeated expected-bug check.
     pub seed_artifact: Option<u32>,
     pub full_exploration: bool,
+    /// Distinct failures to collect per test case (`snappea check --max-bugs`; see
+    /// [`CheckerOptions::max_bugs`]). [`Style::Snappea`] only: upstream's output stops at
+    /// the first bug.
+    pub max_bugs: usize,
     pub max_unfair_steps: usize,
     pub max_fair_steps: usize,
     pub user_set_max_fair_steps: bool,
@@ -218,6 +222,7 @@ impl Default for CheckConfig {
             expected_bug_seeds: Vec::new(),
             seed_artifact: None,
             full_exploration: false,
+            max_bugs: 1,
             max_unfair_steps: 10000,
             max_fair_steps: 100000,
             user_set_max_fair_steps: false,
@@ -293,6 +298,13 @@ pub fn load_latency(host: &mut dyn Host, file: &str) -> Result<std::sync::Arc<cr
     }
 }
 
+/// Whether `name` is a file of a failure after the first: `bug-<n>.txt` or `bug-<n>.schedule`.
+fn is_more_bug_file(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("bug-") else { return false };
+    let Some(n) = rest.strip_suffix(".txt").or_else(|| rest.strip_suffix(".schedule")) else { return false };
+    !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())
+}
+
 fn sanitize_segment(name: &str) -> String {
     name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect()
 }
@@ -325,6 +337,13 @@ pub fn set_output_directory(host: &mut dyn Host, cfg: &mut CheckConfig) -> Resul
             for f in SNAPPEA_FILES {
                 let p = dir.join(f);
                 if host.is_file(&p) {
+                    host.remove_file(&p).map_err(|e| fail(host, &cfg.output_directory, e))?;
+                }
+            }
+            // the further failures of the previous run: bug-<n>.txt, bug-<n>.schedule
+            for p in host.read_dir(&dir).unwrap_or_default() {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                if is_more_bug_file(&name) && host.is_file(&p) {
                     host.remove_file(&p).map_err(|e| fail(host, &cfg.output_directory, e))?;
                 }
             }
@@ -527,6 +546,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         upstream_feedback: cfg.style == Style::Upstream,
         scenarios_ignore_unhandled: cfg.style != Style::Upstream,
         full_exploration: cfg.full_exploration,
+        max_bugs: if cfg.style == Style::Snappea { cfg.max_bugs.max(1) } else { 1 },
         replay: None,
         record_test_name: !cfg.test_case_name.is_empty(),
         verbose: cfg.verbose,
@@ -584,9 +604,31 @@ struct ConsoleOut<'h> {
     plateaued: bool,
     /// An exhaustive search is still under way.
     exhausting: bool,
+    /// Collecting further failures after the first (see [`CheckerOptions::max_bugs`]):
+    /// when the check started, and when the first bug was found.
+    more_bugs: Option<(f64, Option<f64>)>,
 }
 
+/// Fewest seconds a test case searches for further failures after its first bug.
+pub const MORE_BUGS_MIN_SECONDS: f64 = 1.0;
+
 impl ConsoleOut<'_> {
+    /// Notes that a bug was found, starting the search for further failures.
+    fn bug_found(&mut self) {
+        if let Some((_, at @ None)) = self.more_bugs.as_mut() {
+            *at = Some(self.host.now());
+        }
+    }
+
+    /// Whether the search for further failures used its time: as long as finding the
+    /// first bug took, at least [`MORE_BUGS_MIN_SECONDS`]. The deadline still applies.
+    fn more_bugs_done(&self, now: f64) -> bool {
+        match self.more_bugs {
+            Some((start, Some(at))) => now >= at + (at - start).max(MORE_BUGS_MIN_SECONDS),
+            _ => false,
+        }
+    }
+
     /// Sends a progress snapshot, if one is due, with these counts.
     fn tick(&mut self, schedules: usize, bugs: usize) {
         if let Some(t) = self.progress.as_mut() {
@@ -619,6 +661,9 @@ impl Output for ConsoleOut<'_> {
     fn schedule_finished(&mut self, schedule: usize, bug: Option<&str>) {
         // one worker: its schedules are numbered in order
         self.schedules = self.schedules.max(schedule);
+        if bug.is_some() {
+            self.bug_found();
+        }
         let bugs = match self.progress.as_ref().map(|t| &t.progress().phase) {
             Some(Phase::Check { bugs, .. }) => bugs + usize::from(bug.is_some()),
             _ => return,
@@ -630,7 +675,7 @@ impl Output for ConsoleOut<'_> {
         if self.plateau.is_some_and(|p| p.reached(now, self.schedules, self.exhausting)) {
             self.plateaued = true;
         }
-        self.plateaued || self.deadline.map(|d| now >= d).unwrap_or(false)
+        self.plateaued || self.more_bugs_done(now) || self.deadline.map(|d| now >= d).unwrap_or(false)
     }
     fn exhausting(&mut self, running: bool) {
         self.exhausting = running;
@@ -670,7 +715,9 @@ fn run_engine(
         };
         Tracker::new(phase, start, deadline.map(|d| d - start))
     });
-    let mut out = ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false, exhausting: false };
+    let more_bugs = opts.collects_bugs().then(|| (host.now(), None));
+    let mut out =
+        ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false, exhausting: false, more_bugs };
     out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
@@ -761,6 +808,9 @@ fn run_workers(
         out.schedules = pool.started();
         out.schedule_novel(novel.load(Ordering::Relaxed));
         out.exhausting = exhausting.iter().any(|e| e.load(Ordering::Relaxed));
+        if pool.found_bug() {
+            out.bug_found();
+        }
         if !timed_out.load(Ordering::Relaxed) && out.cancelled() {
             timed_out.store(true, Ordering::Relaxed);
         }
@@ -808,12 +858,33 @@ pub struct CaseOutcome {
     pub elapsed: f64,
     /// The `.schedule` file written for the bug (as `cfg.output_directory` names it).
     pub schedule_file: Option<String>,
+    /// The other specs hot when the first bug was found (see
+    /// [`crate::checker::runtime::HotSpec`]).
+    pub hot_specs: Vec<crate::checker::runtime::HotSpec>,
+    /// The number of the first buggy schedule (0: found by the liveness analysis after an
+    /// exhaustive search).
+    pub first_bug_schedule: Option<usize>,
+    /// Whether the search went on after the first bug for further failures
+    /// ([`CheckConfig::max_bugs`] > 1).
+    pub collected_bugs: bool,
+    /// Failures distinct from the first, with the `bug-<n>.schedule` written for each.
+    pub more_bugs: Vec<MoreBugFiles>,
     /// What the schedules ran, and the code they could have run, with `cfg.code_coverage`.
     pub code_coverage: Option<(crate::checker::code_coverage::Scope, crate::checker::code_coverage::Hits)>,
     /// Scenario results, also written to the per-test artifact for cross-run merging.
     pub scenario_coverage: crate::driver::scenario::Artifact,
     /// What the driver did in every schedule, with `cfg.driver_facts`.
     pub driver: Option<DriverReport>,
+}
+
+/// A failure after the first and the files written for it.
+#[derive(Debug, Clone)]
+pub struct MoreBugFiles {
+    pub bug: crate::checker::engine::MoreBug,
+    /// Its `bug-<n>.schedule` file.
+    pub schedule_file: String,
+    /// Its `bug-<n>.txt` file, when written.
+    pub trace_file: Option<String>,
 }
 
 /// What a test case's driver did in every schedule it explored.
@@ -872,7 +943,9 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         plateau,
     )?;
     let engine_elapsed = host.now() - engine_start;
-    if res.cancelled {
+    // collecting further failures ends by cancelling the search, which is no time-out
+    let collected = opts.collects_bugs() && res.report.num_bugs > 0;
+    if res.cancelled && !collected {
         host.out_line("... Checker timed out.");
     }
     let file = cfg.project_name.clone();
@@ -901,6 +974,21 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         host.out_line("Checker found a bug.");
         host.out_line("... Emitting traces:");
         schedule_file = emit_traces(host, cfg, &res, &format!("{}_0", file), engine_elapsed)?;
+    }
+    let mut more_bugs = Vec::new();
+    for (k, bug) in res.more_bugs.iter().enumerate() {
+        let base = format!("{}bug-{}", cfg.output_directory, k + 2);
+        let mut trace_file = None;
+        if let Some(t) = &bug.readable_trace {
+            let path = format!("{}.txt", base);
+            host.out_line(&format!("..... Writing {}", path));
+            write_output(host, &path, t)?;
+            trace_file = Some(path);
+        }
+        let path = format!("{}.schedule", base);
+        host.out_line(&format!("..... Writing {}", path));
+        write_output(host, &path, &bug.schedule_trace)?;
+        more_bugs.push(MoreBugFiles { bug: bug.clone(), schedule_file: path, trace_file });
     }
     if cfg.verbose {
         host.out_line("... ### Process 0 is terminating");
@@ -981,8 +1069,8 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         bug_report: res.report.bug_reports.first().cloned(),
         schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
         workers,
-        timed_out: res.cancelled && !plateaued,
-        plateaued: res.cancelled && plateaued,
+        timed_out: res.cancelled && !plateaued && !collected,
+        plateaued: res.cancelled && plateaued && !collected,
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
         exhaustive_states: res.exhaustive.as_ref().map(|x| (x.distinct_states, x.max_depth)),
         exhaustive_unfinished: res
@@ -996,6 +1084,10 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         collection_sizes: res.branching.as_ref().map(|b| b.collections(prog)).unwrap_or_default(),
         elapsed: process_elapsed,
         schedule_file,
+        hot_specs: res.report.bug_hot_specs.first().cloned().unwrap_or_default(),
+        first_bug_schedule: res.first_bug_schedule,
+        collected_bugs: opts.collects_bugs(),
+        more_bugs,
         code_coverage,
         scenario_coverage: crate::driver::scenario::from_report(&res.report, &cfg.test_case_name),
         driver,

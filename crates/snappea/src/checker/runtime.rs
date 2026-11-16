@@ -369,6 +369,20 @@ pub struct BugIdentity {
     pub column: Option<u32>,
 }
 
+/// A spec monitor in a hot state when a bug was reported, other than the spec the bug
+/// names (see [`Runtime::bug_hot_specs`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotSpec {
+    /// The spec's declared name.
+    pub spec: String,
+    /// The hot state it is in.
+    pub state: String,
+    /// `"liveness"` when the same execution also violates this spec's liveness (hot at
+    /// the end of the run or at a deadlock, or hot throughout the repeating cycle);
+    /// `"hot"` when it is only context (hot at an assertion failure, say).
+    pub kind: &'static str,
+}
+
 /// A .NET-style exception raised by P code.
 #[derive(Debug, Clone)]
 pub struct Exception {
@@ -512,6 +526,8 @@ pub struct Runtime<'p> {
     /// The first failure of this execution (see [`Failure`]).
     pub(crate) failure: Option<Failure>,
     pub(crate) bug_identity: Option<BugIdentity>,
+    /// With [`Config::snappea_reports`]: the other specs hot when the bug was reported.
+    pub(crate) bug_hot_specs: Option<Vec<HotSpec>>,
     /// See [`Setup::java_semantics`].
     pub(crate) java: Option<&'p JavaFormatter<'p>>,
     next_op_id: u64,
@@ -613,6 +629,7 @@ impl<'p> Runtime<'p> {
             handler_starts: 0,
             failure: None,
             bug_identity: None,
+            bug_hot_specs: None,
             java: java_semantics,
             next_op_id: 0,
             format_buf: String::new(),
@@ -822,9 +839,38 @@ impl<'p> Runtime<'p> {
         }
     }
 
+    /// With [`Config::snappea_reports`], records the specs other than `failing` that are
+    /// in a hot state now, as the bug about to be reported finds them; `also_failing`
+    /// says which of them this execution violates too. Only the first call counts.
+    fn note_hot_specs(&mut self, failing: Option<usize>, also_failing: &dyn Fn(&Self, usize) -> bool) {
+        if !self.config.snappea_reports || self.bug.is_some() || self.bug_hot_specs.is_some() {
+            return;
+        }
+        let hot = (0..self.monitors.len())
+            .filter(|&i| Some(i) != failing && !self.prog.machine(self.monitors[i].decl).is_scenario())
+            .filter_map(|i| {
+                let state = self.monitor_hot_state(i)?.to_string();
+                Some(HotSpec {
+                    spec: self.prog.machine(self.monitors[i].decl).name.clone(),
+                    state,
+                    kind: if also_failing(self, i) { "liveness" } else { "hot" },
+                })
+            })
+            .collect();
+        self.bug_hot_specs = Some(hot);
+    }
+
+    /// The specs other than the failing one that were hot when the bug was reported (see
+    /// [`HotSpec`]); empty without [`Config::snappea_reports`] or a bug.
+    pub fn bug_hot_specs(&self) -> &[HotSpec] {
+        self.bug_hot_specs.as_deref().unwrap_or_default()
+    }
+
     /// `OperationScheduler.NotifyAssertionFailure`.
     pub fn report_bug(&mut self, text: String) -> Stop {
         if self.bug.is_none() {
+            // any spec hot now is context for the failure
+            self.note_hot_specs(None, &|_, _| false);
             self.log(|_| format!("<ErrorLog> {}", text));
             self.log(|rt| format!("<StrategyLog> Found bug using '{}' strategy.", rt.config.strategy));
             let desc = self.config.strategy_description.clone().unwrap_or_else(|| self.strategy.description());
@@ -1019,6 +1065,8 @@ impl<'p> Runtime<'p> {
                         Actor::Monitor(i),
                         self.monitors[i].state.map(|s| self.prog.state(s).span),
                     );
+                    // another spec hot as long would fail next: the same bug
+                    self.note_hot_specs(Some(i), &|rt, j| rt.monitors[j].temperature >= threshold);
                     return Err(self.report_bug(msg));
                 }
             }
@@ -1064,6 +1112,10 @@ impl<'p> Runtime<'p> {
             if n == 1 { "it" } else { "them" },
         );
         self.identify_bug("liveness", Actor::Monitor(i), self.monitors[i].state.map(|s| self.prog.state(s).span));
+        // a spec hot throughout the cycle never cools down either
+        self.note_hot_specs(Some(i), &|rt, j| {
+            rt.liveness_monitor(&rt.monitors[j]) && rt.monitors[j].cold_at <= cycle.start
+        });
         Err(self.report_bug(msg))
     }
 
@@ -1278,6 +1330,8 @@ impl<'p> Runtime<'p> {
         if let Some(m) = stuck {
             self.identify_bug("deadlock", Actor::Machine(m), None);
         }
+        // nothing runs after a deadlock: every hot spec stays hot
+        self.note_hot_specs(None, &|_, _| true);
         if self.config.snappea_reports {
             // the promise the deadlock breaks, which does not depend on creation order
             let hot: Vec<String> = (0..self.monitors.len())
@@ -1507,6 +1561,8 @@ impl<'p> Runtime<'p> {
                         self.spec_fields_line(i)
                     );
                     self.identify_bug("liveness", Actor::Monitor(i), Some(self.prog.state(s).span));
+                    // every spec hot at the end is violated too
+                    self.note_hot_specs(Some(i), &|_, _| true);
                     let _ = self.report_bug(msg);
                     return;
                 }

@@ -44,6 +44,11 @@ pub struct CheckerOptions {
     pub feedback_frontier_guidance: bool,
     /// Keep exploring after the first bug (`--explore`).
     pub full_exploration: bool,
+    /// Distinct failures to collect before the search stops (`snappea check --max-bugs`);
+    /// 1 stops at the first bug, as upstream does. After the first, a buggy schedule
+    /// counts only when its [`failure_signature`] is new. The search still stops when
+    /// [`Output::cancelled`] says so. Ignored with `full_exploration` and replays.
+    pub max_bugs: usize,
     /// The schedule to replay with [`StrategyKind::Replay`].
     pub replay: Option<ScheduleTrace>,
     /// Replaying, report the step bound as reached at the end of the schedule, so a bug
@@ -117,6 +122,7 @@ impl Default for CheckerOptions {
             upstream_feedback: false,
             feedback_frontier_guidance: true,
             full_exploration: false,
+            max_bugs: 1,
             replay: None,
             replay_bound_at_end: false,
             max_work_per_step: crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP,
@@ -147,6 +153,12 @@ impl CheckerOptions {
     pub fn effective_liveness_threshold(&self) -> usize {
         self.liveness_temperature_threshold.unwrap_or(self.max_fair_steps / 2)
     }
+
+    /// Whether the search goes on after the first bug to collect distinct failures (see
+    /// [`CheckerOptions::max_bugs`]).
+    pub fn collects_bugs(&self) -> bool {
+        self.max_bugs > 1 && !self.full_exploration && self.strategy != StrategyKind::Replay
+    }
 }
 
 /// Accumulated statistics of a run (`TestReport`).
@@ -156,6 +168,9 @@ pub struct TestReport {
     pub bug_reports: Vec<String>,
     /// Identities aligned with bug_reports; None when a failure has no captured site.
     pub bug_identities: Vec<Option<super::runtime::BugIdentity>>,
+    /// Aligned with bug_reports: the other specs hot when each bug was found (only with
+    /// `snappea_reports`).
+    pub bug_hot_specs: Vec<Vec<super::runtime::HotSpec>>,
     pub explored_fair_schedules: usize,
     pub explored_unfair_schedules: usize,
     pub total_fair_steps: usize,
@@ -212,6 +227,7 @@ impl TestReport {
         self.num_bugs += other.num_bugs;
         self.bug_reports.extend(other.bug_reports);
         self.bug_identities.extend(other.bug_identities);
+        self.bug_hot_specs.extend(other.bug_hot_specs);
         self.explored_fair_schedules += other.explored_fair_schedules;
         self.explored_unfair_schedules += other.explored_unfair_schedules;
         self.total_fair_steps += other.total_fair_steps;
@@ -373,6 +389,30 @@ pub fn failure_site(bug: &str) -> String {
     key
 }
 
+/// When two failures are the same for [`CheckerOptions::max_bugs`]: a liveness failure by
+/// its spec and hot state, an assertion by its source location (`file:line:col`), any other
+/// error by its kind and location (or, without one, the machine and state it stopped in).
+/// Failures without a captured identity fall back to [`failure_site`].
+///
+/// ```
+/// use snappea::checker::engine::failure_signature;
+/// assert_eq!(failure_signature("Deadlock detected. a is waiting", None), "Deadlock detected. a is waiting");
+/// ```
+pub fn failure_signature(report: &str, identity: Option<&super::runtime::BugIdentity>) -> String {
+    let Some(id) = identity else { return failure_site(report) };
+    let at = match (&id.file, id.line, id.column) {
+        (file, Some(line), column) => {
+            Some(format!("{}:{}:{}", file.as_deref().unwrap_or(""), line, column.unwrap_or(0)))
+        }
+        _ => None,
+    };
+    match (id.kind.as_str(), at) {
+        ("liveness", _) => format!("liveness {} in '{}'", id.machine, id.state),
+        (kind, Some(at)) => format!("{} at {}", kind, at),
+        (kind, None) => format!("{} {} in '{}'", kind, id.machine, id.state),
+    }
+}
+
 /// Receives the console output of a run as it is produced.
 pub trait Output {
     /// A normal line (`Logger.WriteLine`).
@@ -418,6 +458,30 @@ struct BugSchedule {
     report_text: String,
     /// `Task.CurrentId` of the buggy schedule's test task.
     test_task_id: u64,
+    identity: Option<super::runtime::BugIdentity>,
+    hot_specs: Vec<super::runtime::HotSpec>,
+}
+
+impl BugSchedule {
+    fn signature(&self) -> String {
+        failure_signature(self.bug.as_deref().unwrap_or_default(), self.identity.as_ref())
+    }
+}
+
+/// A failure found after the first one (see [`CheckerOptions::max_bugs`]), distinct from it
+/// and from each other by [`failure_signature`].
+#[derive(Debug, Clone)]
+pub struct MoreBug {
+    /// The report, as for the first bug.
+    pub report: String,
+    pub identity: Option<super::runtime::BugIdentity>,
+    /// The other specs hot when it was found.
+    pub hot_specs: Vec<super::runtime::HotSpec>,
+    /// Its `.schedule` file contents.
+    pub schedule_trace: String,
+    /// Its runtime log and report, as `readable_trace` is for the first bug (none with
+    /// `verbose`).
+    pub readable_trace: Option<String>,
 }
 
 /// One recorded execution, retained only for opt-in visual inspection.
@@ -438,6 +502,12 @@ pub struct CheckResult {
     pub readable_trace: Option<String>,
     /// The reproducible schedule of the first buggy schedule (`.schedule` file).
     pub schedule_trace: Option<String>,
+    /// The number of the first buggy schedule among those explored (0 when the bug was
+    /// found by the liveness analysis after the search).
+    pub first_bug_schedule: Option<usize>,
+    /// Failures distinct from the first, in the order found (see
+    /// [`CheckerOptions::max_bugs`]).
+    pub more_bugs: Vec<MoreBug>,
     /// The runtime log of the first buggy schedule; with `log_every_schedule` (or
     /// `verbose`), the log of the last schedule explored.
     pub last_log: Vec<String>,
@@ -568,6 +638,8 @@ pub struct WorkerPool {
     exhausted: AtomicUsize,
     /// What the workers of a split exhaustive search share.
     shared: std::sync::Arc<crate::checker::exhaustive::Shared>,
+    /// With [`CheckerOptions::max_bugs`] > 1: the signatures of the failures found so far.
+    signatures: std::sync::Mutex<Vec<String>>,
 }
 
 impl WorkerPool {
@@ -580,6 +652,7 @@ impl WorkerPool {
             bugs: AtomicUsize::new(0),
             exhausted: AtomicUsize::new(0),
             shared: Default::default(),
+            signatures: Default::default(),
         }
     }
 
@@ -638,6 +711,30 @@ impl WorkerPool {
         self.stop.load(Ordering::Relaxed)
     }
 
+    /// Whether some worker found a bug.
+    pub fn found_bug(&self) -> bool {
+        self.winner.load(Ordering::Acquire) != usize::MAX
+    }
+
+    /// With [`CheckerOptions::max_bugs`] > 1: records that worker `index` found a failure
+    /// with `signature`. Returns its number among the distinct failures (0 for the first,
+    /// the one reported in full), or `None` for a repeat or once `max_bugs` were found.
+    /// Finding the last one stops every worker.
+    fn admit(&self, index: usize, signature: String, max_bugs: usize) -> Option<usize> {
+        let mut seen = self.signatures.lock().unwrap_or_else(|e| e.into_inner());
+        if seen.len() >= max_bugs || seen.contains(&signature) {
+            return None;
+        }
+        seen.push(signature);
+        if seen.len() == 1 {
+            let _ = self.winner.compare_exchange(usize::MAX, index, Ordering::AcqRel, Ordering::Acquire);
+        }
+        if seen.len() >= max_bugs {
+            self.stop.store(true, Ordering::Relaxed);
+        }
+        Some(seen.len() - 1)
+    }
+
     /// Records that worker `index` found a bug; true if it is the one reported.
     fn claim(&self, index: usize, full_exploration: bool) -> bool {
         if !full_exploration {
@@ -651,6 +748,8 @@ impl WorkerPool {
 pub struct Exploration {
     result: CheckResult,
     first_bug: Option<BugSchedule>,
+    /// Further distinct failures, with their numbers (see [`WorkerPool::admit`]).
+    more_bugs: Vec<(usize, BugSchedule)>,
     samples: Vec<(usize, String, usize, BugSchedule)>,
     /// This worker's bug is the one reported.
     won: bool,
@@ -816,7 +915,8 @@ impl<'p> Checker<'p> {
         if !stats.hot_monitors || !explored || result.cancelled {
             return None;
         }
-        if result.report.num_bugs > 0 && !opts.full_exploration {
+        let room = opts.collects_bugs() && result.report.num_bugs < opts.max_bugs;
+        if result.report.num_bugs > 0 && !opts.full_exploration && !room {
             return None;
         }
         let Some(graph) = graph else {
@@ -864,21 +964,20 @@ impl<'p> Checker<'p> {
             return None;
         };
         let identity = rt.bug_identity.clone();
+        let hot_specs = rt.bug_hot_specs().to_vec();
         let strategy_description = rt.bug_strategy_description.clone();
         drop(rt);
-        let report = &mut result.report;
-        report.num_bugs += 1;
-        report.bug_reports.push(bug.clone());
-        report.bug_identities.push(identity);
-        result.schedule_trace.get_or_insert_with(|| trace.to_text());
         Some(BugSchedule {
             trace,
             bound_hit_at: None,
             strategy_description,
             bug: Some(bug),
-            report_text: result.report.text(opts, "<StrategyLog>"),
+            // set once the bug is counted
+            report_text: String::new(),
             // the test task of a first schedule
             test_task_id: 2,
+            identity,
+            hot_specs,
         })
     }
 
@@ -966,6 +1065,8 @@ impl<'p> Checker<'p> {
         let max_iterations = if is_replay { 1 } else { opts.iterations };
         let mut i = 0usize;
         let mut first_bug: Option<BugSchedule> = None;
+        let mut more_bugs = Vec::new();
+        let collect = opts.collects_bugs();
         let mut samples = Vec::new();
         let mut won = false;
         // `Task.Id`s are handed out in order: one for the engine, then per schedule one for
@@ -1143,6 +1244,8 @@ impl<'p> Checker<'p> {
                             bug: rt.bug.clone(),
                             report_text: String::new(),
                             test_task_id,
+                            identity: None,
+                            hot_specs: Vec::new(),
                         },
                     ));
                 }
@@ -1150,10 +1253,17 @@ impl<'p> Checker<'p> {
                 r.max_step_work = r.max_step_work.max(rt.peak_step_work.max(rt.step_work));
                 r.max_machines = r.max_machines.max(rt.machines.len());
                 r.max_inbox = r.max_inbox.max(rt.peak_inbox);
-                if let Some(b) = &rt.bug {
+                // collecting distinct failures, a bug counts only the first time its
+                // signature is found, by any worker
+                let admitted = rt.bug.as_ref().and_then(|b| match collect {
+                    true => pool.admit(index, failure_signature(b, rt.bug_identity.as_ref()), opts.max_bugs),
+                    false => Some(0),
+                });
+                if let (Some(b), Some(_)) = (&rt.bug, admitted) {
                     r.num_bugs += 1;
                     r.bug_reports.push(b.clone());
                     r.bug_identities.push(rt.bug_identity.clone());
+                    r.bug_hot_specs.push(rt.bug_hot_specs().to_vec());
                 }
                 if fair {
                     r.explored_fair_schedules += 1;
@@ -1195,8 +1305,14 @@ impl<'p> Checker<'p> {
                 if let Some(e) = rt.strategy.replay_error() {
                     result.replay_error = Some(e);
                 }
-                if bug_found && !is_replay && result.schedule_trace.is_none() {
-                    won = pool.claim(index, opts.full_exploration);
+                let keep = match collect {
+                    true => admitted.is_some(),
+                    false => bug_found && !is_replay && result.schedule_trace.is_none(),
+                };
+                if keep {
+                    if !collect {
+                        won = pool.claim(index, opts.full_exploration);
+                    }
                     let mut trace = rt.trace.clone();
                     trace.is_fair = fair;
                     trace.liveness_temperature_threshold = Some(config.liveness_temperature_threshold);
@@ -1204,15 +1320,26 @@ impl<'p> Checker<'p> {
                     trace.time = time.as_ref().map(|t| t.schedule_header());
                     trace.latency =
                         time.as_ref().and_then(|t| t.profile.as_ref()).map(|p| p.entries()).unwrap_or_default();
-                    result.schedule_trace = Some(trace.to_text());
-                    first_bug = Some(BugSchedule {
+                    let found = BugSchedule {
                         trace,
                         bound_hit_at: rt.bound_hit_at,
                         strategy_description: rt.bug_strategy_description.clone(),
                         bug: rt.bug.clone(),
                         report_text: result.report.text(opts, "<StrategyLog>"),
                         test_task_id,
-                    });
+                        identity: rt.bug_identity.clone(),
+                        hot_specs: rt.bug_hot_specs().to_vec(),
+                    };
+                    match admitted {
+                        // a later failure than the run's first, possibly this worker's first
+                        Some(n) if collect && n > 0 => more_bugs.push((n, found)),
+                        _ => {
+                            won |= collect;
+                            result.schedule_trace = Some(found.trace.to_text());
+                            result.first_bug_schedule = Some(schedule);
+                            first_bug = Some(found);
+                        }
+                    }
                 }
                 if bug_found && !is_replay && opts.full_exploration {
                     let n = pool.bugs.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1238,7 +1365,10 @@ impl<'p> Checker<'p> {
                 buffers = rt.take_buffers();
             }
             // a bug that ends the run ends it, deadline or not
-            let ended_by_bug = !opts.full_exploration && result.report.num_bugs > 0;
+            let ended_by_bug = match collect {
+                true => pool.stopped(),
+                false => !opts.full_exploration && result.report.num_bugs > 0,
+            };
             if opts.strategy == StrategyKind::Auto && !ended_by_bug {
                 // the deadline may have cut this schedule short, so it must not count as
                 // an explored branch of the exhaustive search
@@ -1290,16 +1420,36 @@ impl<'p> Checker<'p> {
         result.driver_facts = driver_facts;
         result.verbose_json_trace = verbose_json.map(|v| crate::checker::jsonlog::Json::Arr(v).to_pretty());
         let live_graph = strategy.take_live_graph();
-        Ok(Exploration { result, first_bug, samples, won, time, live_graph })
+        Ok(Exploration { result, first_bug, more_bugs, samples, won, time, live_graph })
     }
 
     /// Merges what the workers explored (see [`WorkerPool`]) and replays the reported bug
     /// with logging on to produce its traces: the end of [`Checker::check`].
     pub fn finish(&self, tc: &TestCase, opts: &CheckerOptions, parts: Vec<Exploration>) -> CheckResult {
         let several = parts.len() > 1;
-        let Exploration { mut result, mut first_bug, mut samples, time, live_graph, .. } = merge(parts);
-        if let Some(bug) = self.decide_liveness(tc, opts, &mut result, live_graph, time.as_ref()) {
-            first_bug.get_or_insert(bug);
+        let Exploration { mut result, mut first_bug, mut more_bugs, mut samples, time, live_graph, .. } = merge(parts);
+        let collect = opts.collects_bugs();
+        if let Some(mut bug) = self.decide_liveness(tc, opts, &mut result, live_graph, time.as_ref()) {
+            let signature = bug.signature();
+            let repeat =
+                collect && first_bug.iter().chain(more_bugs.iter().map(|(_, b)| b)).any(|b| b.signature() == signature);
+            if !repeat {
+                let report = &mut result.report;
+                report.num_bugs += 1;
+                report.bug_reports.push(bug.bug.clone().unwrap_or_default());
+                report.bug_identities.push(bug.identity.clone());
+                report.bug_hot_specs.push(bug.hot_specs.clone());
+                bug.report_text = result.report.text(opts, "<StrategyLog>");
+                result.schedule_trace.get_or_insert_with(|| bug.trace.to_text());
+                match first_bug {
+                    None => {
+                        result.first_bug_schedule = Some(0);
+                        first_bug = Some(bug);
+                    }
+                    Some(_) if collect => more_bugs.push((usize::MAX, bug)),
+                    Some(_) => {}
+                }
+            }
         }
         if opts.inspection_trace {
             samples.sort_by_key(|s| s.0);
@@ -1328,7 +1478,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        if several && !opts.full_exploration {
+        if several && !opts.full_exploration && !collect {
             // the run ends at the first bug; one another worker hit before it stopped is not
             // reported (the reporting worker's bug comes first)
             result.report.num_bugs = result.report.num_bugs.min(1);
@@ -1367,6 +1517,19 @@ impl<'p> Checker<'p> {
         result.xml_trace = xml;
         if !config.logging {
             result.last_log = log;
+        }
+        more_bugs.sort_by_key(|(n, _)| *n);
+        for (_, more) in more_bugs {
+            let (log, _, _) =
+                self.logged_replay(tc, main, module, assignment, &config, &more, false, false, time.as_ref());
+            let readable_trace = (!opts.verbose).then(|| format!("{}\n{}", log.join("\n"), more.report_text));
+            result.more_bugs.push(MoreBug {
+                report: more.bug.clone().unwrap_or_default(),
+                identity: more.identity.clone(),
+                hot_specs: more.hot_specs.clone(),
+                schedule_trace: more.trace.to_text(),
+                readable_trace,
+            });
         }
         result
     }
@@ -1410,6 +1573,7 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
     let result = &mut merged.result;
     for p in parts {
         merged.samples.extend(p.samples);
+        merged.more_bugs.extend(p.more_bugs);
         // the analysis needs every part of the search
         merged.live_graph = match (merged.live_graph.take(), p.live_graph) {
             (Some(mut a), Some(b)) => {
