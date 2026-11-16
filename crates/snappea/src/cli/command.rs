@@ -100,6 +100,11 @@ Exploration:
                             (e.g. 1,2,3), and compare actual failure sites. Positive tests
                             still run once. Different sites are advisory; every seed
                             must find its declared failure. --timeout applies per seed.
+      --max-bugs <N>        Distinct failures to report per test case (default: 3).
+                            After the first bug the search goes on, as long as that
+                            bug took (at least 1s, within the time limit), for
+                            failures of other specs or assertions. 1 stops at the
+                            first bug, e.g. for the fastest red/green loop.
 
 Strategies are chosen automatically. A search that covers every schedule ends
 early; one that times out is incomplete.
@@ -157,10 +162,13 @@ missing statements, event handlers, or `if` branch outcomes in selected code fai
 check. Use a scoped `coverage` suppression with a reason for deliberate omissions.
 `--warn coverage` reports them as warnings instead, for exploratory checks.
 
+A bug's report lists the other specs hot at that point. Further distinct failures
+each get a line and a replay command (see --max-bugs).
+
 A bug's files go to <DIR>/<TEST>/, replacing the previous run's: bug.txt (the buggy
 schedule's log; read this first), bug.schedule (for `snappea replay`) and
-bug.trace.json (for `snappea observe --p-trace`). Scenario monitors also write
-scenario_coverage.json.
+bug.trace.json (for `snappea observe --p-trace`); bug-2.txt and bug-2.schedule (and
+so on) for further failures. Scenario monitors also write scenario_coverage.json.
 
 When every test case passes, mutation testing follows: each mutant changes the model
 slightly (a removed statement, a forced `if`, a swapped operator). A mutant no test
@@ -200,6 +208,8 @@ Options:
   -j, --workers <N>         Worker limit (default: one per CPU core)
       --seed <N>            Seed for reproducible choices
       --expect-bug-seeds <N,N,...>  Repeat negative controls and compare failure sites
+      --max-bugs <N>        Distinct failures per test case in the first run (default: 3);
+                            mutants always stop at their first failure
       --latency <FILE>[:<PROFILE>], --timed
       --warn <CHECK>, --deny <CHECK>
                             As for `snappea check`
@@ -863,6 +873,7 @@ const CHECK_OPTS: &[Opt] = &[
     value("workers", Some('j')),
     value("seed", None),
     value("expect-bug-seeds", None),
+    value("max-bugs", None),
     value("latency", None),
     flag("timed", None),
     value("out", Some('o')),
@@ -982,6 +993,11 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.seed =
             Some(s.parse().map_err(|_| format!("'--seed' needs a whole number from 0 to 4294967295, not '{}'", s))?);
     }
+    cfg.max_bugs = match uint(a, "max-bugs")? {
+        Some(0) => return Err("'--max-bugs' needs at least 1 (1 stops each test case at its first bug)".into()),
+        Some(n) => n,
+        None => MAX_BUGS,
+    };
     if let Some(seeds) = a.get("expect-bug-seeds") {
         cfg.expected_bug_seeds = seeds
             .split(',')
@@ -1078,6 +1094,9 @@ fn step_args(cfg: &CheckConfig) -> Vec<String> {
     out
 }
 
+/// Distinct failures `snappea check` collects per test case without `--max-bugs`.
+const MAX_BUGS: usize = 3;
+
 /// Seconds the test cases of a `snappea check` share without `--timeout`.
 const SUITE_BUDGET: f64 = 10.0;
 /// Least time a test case gets from the shared budget.
@@ -1094,6 +1113,7 @@ fn snappea_config() -> CheckConfig {
         iterations: 0,
         timeout: Some(10),
         suite_budget: Some(SUITE_BUDGET),
+        max_bugs: MAX_BUGS,
         ..CheckConfig::default()
     };
     cfg.input.includes = Includes::FromProject;
@@ -1191,7 +1211,7 @@ fn run_check(
     }
     let mut passed = Vec::new();
     let check_start = con.inner.now();
-    let base_seed = cfg.seed;
+    let (base_seed, base_max_bugs) = (cfg.seed, cfg.max_bugs);
     let mut seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>> = Default::default();
     for (i, (name, seed)) in planned.into_iter().enumerate() {
         cfg.test_case_name = name;
@@ -1203,6 +1223,12 @@ fn run_check(
             (left / (n - i) as f64).max(MIN_SHARE)
         });
         cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
+        // an expected-bug test passes on its first matching bug: searching on would only
+        // spend the budget the other test cases share
+        let negative = selected_tests.iter().find(|t| t.name == cfg.test_case_name).is_some_and(|tc| {
+            crate::driver::lint::intent(prog, tc, &intents).is_some_and(|i| i.expected_bug.is_some())
+        });
+        cfg.max_bugs = if negative { 1 } else { base_max_bugs };
         check::set_output_directory(&mut con, &mut cfg)?;
         let case = check::testing_process(&mut con, &loaded, &cfg)?;
         let tc = all_tests.iter().find(|t| t.name == case.test_case).unwrap();
@@ -1247,6 +1273,9 @@ fn run_check(
                     con.inner.out_line(&format!("      {l}"));
                 }
             }
+            for l in hot_spec_lines(case.bug_identity.as_ref(), &case.hot_specs) {
+                con.inner.out_line(&format!("      {l}"));
+            }
             if let Some(schedule) = &case.schedule_file {
                 con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, &cfg)));
             }
@@ -1283,7 +1312,11 @@ fn run_check(
                 con.inner.out_line(&format!(
                     "      Coverage: {}{}",
                     summary,
-                    if case.bugs > 0 { " (partial: stopped at first bug)" } else { "" }
+                    match (case.bugs > 0, case.collected_bugs) {
+                        (false, _) => "",
+                        (true, false) => " (partial: stopped at first bug)",
+                        (true, true) => " (partial: stopped after the bugs)",
+                    }
                 ));
             }
             result["coverage"] = summary.to_json();
@@ -1349,6 +1382,7 @@ fn run_check(
         }
     }
     cfg.seed = base_seed;
+    cfg.max_bugs = base_max_bugs;
     cfg.seed_artifact = None;
     negative_driver_scope.exclude(&positive_design);
     hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
@@ -1484,7 +1518,7 @@ fn run_check(
             con.inner.out_line(&l);
         }
         if failed > 0 {
-            con.inner.out_line("Coverage includes partial results from test cases stopped at their first bug.");
+            con.inner.out_line("Coverage includes partial results from test cases stopped by their bugs.");
         }
         if coverage_failed {
             con.inner.out_line(&format!("{coverage_failure_message} {coverage_failure_help}"));
@@ -2247,9 +2281,58 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
             "identity": case.bug_identity.as_ref().map(bug_identity_json),
             "schedule": case.schedule_file,
             "replay": case.schedule_file.as_ref().map(|s| replay_command(s, cfg)),
+            "also_hot": hot_specs_json(&case.hot_specs),
         });
+        if case.collected_bugs {
+            v["more_bugs"] = json!(case
+                .more_bugs
+                .iter()
+                .map(|m| json!({
+                    "report": m.bug.report,
+                    "identity": m.bug.identity.as_ref().map(bug_identity_json),
+                    "also_hot": hot_specs_json(&m.bug.hot_specs),
+                    "schedule": m.schedule_file,
+                    "trace": m.trace_file,
+                    "replay": replay_command(&m.schedule_file, cfg),
+                }))
+                .collect::<Vec<_>>());
+        }
     }
     v
+}
+
+fn hot_specs_json(specs: &[crate::checker::runtime::HotSpec]) -> Value {
+    json!(specs.iter().map(|h| json!({"spec": h.spec, "state": h.state, "kind": h.kind})).collect::<Vec<_>>())
+}
+
+/// The lines naming the specs other than the failing one that were hot when a bug was
+/// found: those the same execution violates, then those that are only context. A
+/// deadlock's report already names every hot spec.
+fn hot_spec_lines(
+    identity: Option<&crate::checker::runtime::BugIdentity>,
+    specs: &[crate::checker::runtime::HotSpec],
+) -> Vec<String> {
+    if identity.is_some_and(|i| i.kind == "deadlock") {
+        return Vec::new();
+    }
+    let list = |kind: &str| {
+        specs
+            .iter()
+            .filter(|h| h.kind == kind)
+            .map(|h| format!("{} in '{}'", h.spec, h.state))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut lines = Vec::new();
+    let failing = list("liveness");
+    if !failing.is_empty() {
+        lines.push(format!("also hot at this point: {failing}"));
+    }
+    let context = list("hot");
+    if !context.is_empty() {
+        lines.push(format!("also hot at this point (context; these specs have not failed): {context}"));
+    }
+    lines
 }
 
 /// One test case's result line, and for a bug its report and how to replay it.
@@ -2348,14 +2431,31 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
         return;
     }
     host.write(Stream::Out, "FAIL", Some(Color::Red));
-    host.out_line(&format!("  {} (bug found after {}{}, {})", case.test_case, schedules, limit, time));
+    // the search went on after the first bug: say when that bug was found
+    let found = match case.first_bug_schedule.filter(|&n| case.collected_bugs && n > 0) {
+        Some(n) => format!("{} schedule{}; {} searched{}", n, plural(n), s, workers),
+        None => format!("{}{}", schedules, limit),
+    };
+    host.out_line(&format!("  {} (bug found after {}, {})", case.test_case, found, time));
     if let Some(report) = &case.bug_report {
         for l in report.lines() {
             host.out_line(&format!("      {}", l));
         }
     }
+    for l in hot_spec_lines(case.bug_identity.as_ref(), &case.hot_specs) {
+        host.out_line(&format!("      {}", l));
+    }
     if let Some(schedule) = &case.schedule_file {
         host.out_line(&format!("      Replay: {}", replay_command(schedule, cfg)));
+    }
+    if case.more_bugs.is_empty() {
+        return;
+    }
+    let n = case.more_bugs.len();
+    host.out_line(&format!("      {} more distinct failure{} in this test case:", n, plural(n)));
+    for m in &case.more_bugs {
+        host.out_line(&format!("      - {}", m.bug.report.lines().next().unwrap_or_default()));
+        host.out_line(&format!("        Replay: {}", replay_command(&m.schedule_file, cfg)));
     }
 }
 
