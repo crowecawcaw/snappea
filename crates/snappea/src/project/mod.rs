@@ -227,7 +227,8 @@ fn report_native(
             // `message` is `line L:C detail`; the location is shown separately
             let detail =
                 message.split_once(' ').and_then(|(_, m)| m.split_once(' ')).map_or(message.as_str(), |(_, m)| m);
-            let (headline, help) = syntax_error(detail);
+            let before = &sm.file(span.file).text[..span.start as usize];
+            let (headline, help) = syntax_error(detail, before);
             vec![render_snippet(sm, Some(*span), &headline, Some(&help))]
         }
         Err(CompileError::NotSupported { file, line, col, keyword }) => {
@@ -263,14 +264,15 @@ fn report_native(
 }
 
 /// The headline and suggested fix `snappea` shows for a syntax error, from the
-/// parser's message. A reserved word used as a name gets its own headline.
-pub(crate) fn syntax_error(detail: &str) -> (String, String) {
+/// parser's message and the source text `before` the error. A reserved word used as
+/// a name gets its own headline.
+pub(crate) fn syntax_error(detail: &str, before: &str) -> (String, String) {
     match reserved_word(detail) {
         Some((word, meaning, rename)) => (
             format!("'{}' is a reserved word ({}) and cannot be used as a name", word, meaning),
             format!("rename it, e.g. '{}'; `snappea guide syntax` lists the reserved words", rename),
         ),
-        None => (format!("syntax error: {}", detail), parse_help(detail)),
+        None => (format!("syntax error: {}", detail), parse_help(detail, before)),
     }
 }
 
@@ -361,8 +363,34 @@ fn reserved_word(detail: &str) -> Option<(String, String, String)> {
     }
 }
 
-/// A suggested fix for a syntax error, from its message.
-pub(crate) fn parse_help(detail: &str) -> String {
+/// Whether the innermost open `(` in `before` starts the parameter list of an entry
+/// function or event handler (`entry (`, `do (`, `with (`).
+fn in_handler_params(before: &str) -> bool {
+    let mut depth = 0;
+    for (i, c) in before.char_indices().rev() {
+        match c {
+            ')' => depth += 1,
+            '(' if depth == 0 => {
+                let word = before[..i].trim_end();
+                let word = &word[word.rfind(|c: char| !(c.is_alphanumeric() || c == '_')).map_or(0, |j| j + 1)..];
+                return matches!(word, "entry" | "do" | "with");
+            }
+            '(' => depth -= 1,
+            '{' | '}' | ';' => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// A suggested fix for a syntax error, from its message and the source text
+/// `before` it.
+pub(crate) fn parse_help(detail: &str, before: &str) -> String {
+    if detail.starts_with("mismatched input ','") && in_handler_params(before) {
+        return "an entry function or handler takes one parameter; pass a named tuple, \
+                e.g. `entry (cfg: (a: int, b: int)) { ... cfg.a ... }`"
+            .into();
+    }
     if let Some(rest) = detail.strip_prefix("missing ") {
         let token = rest.split(" at ").next().unwrap_or(rest);
         if token == "';'" {
@@ -383,6 +411,11 @@ pub(crate) fn parse_help(detail: &str) -> String {
         return "split the expression or block into smaller functions or local variables".into();
     }
     if let Some(input) = detail.strip_prefix("no viable alternative at input '") {
+        if input.strip_prefix("delete").is_some_and(|r| r.starts_with([';', ' ', '\''])) {
+            return "P has no `delete`; to stop a machine, `raise halt;`, \
+                    or `goto` a final state that ignores further events"
+                .into();
+        }
         // `(items = items)` parses as a parenthesized assignment; a one-field named
         // tuple needs a trailing comma.
         let input = input.trim_end_matches('\'');
@@ -405,28 +438,57 @@ mod parse_help_tests {
 
     #[test]
     fn reserved_word_as_name_is_named() {
-        let (head, help) = syntax_error("mismatched input 'values' expecting Iden");
+        let (head, help) = syntax_error("mismatched input 'values' expecting Iden", "");
         assert_eq!(head, "'values' is a reserved word (the map-values function) and cannot be used as a name");
         assert!(help.contains("'vals'"), "{help}");
-        let (head, _) = syntax_error("no viable alternative at input 'to'");
+        let (head, _) = syntax_error("no viable alternative at input 'to'", "");
         assert!(head.starts_with("'to' is a reserved word"), "{head}");
-        let (head, help) = syntax_error("mismatched input 'while' expecting Iden");
+        let (head, help) = syntax_error("mismatched input 'while' expecting Iden", "");
         assert!(head.starts_with("'while' is a reserved word (a P keyword)"), "{head}");
         assert!(help.contains("'while_'"), "{help}");
         // Not about a name: keep the parser's text.
-        let (head, _) = syntax_error("no viable alternative at input 'else'");
+        let (head, _) = syntax_error("no viable alternative at input 'else'", "");
         assert_eq!(head, "syntax error: no viable alternative at input 'else'");
-        let (head, _) = syntax_error("mismatched input 'else' expecting ';'");
+        let (head, _) = syntax_error("mismatched input 'else' expecting ';'", "");
         assert!(head.starts_with("syntax error:"), "{head}");
     }
 
     #[test]
     fn one_field_named_tuple_suggests_trailing_comma() {
-        let help = parse_help("no viable alternative at input 'items=items)'");
+        let help = parse_help("no viable alternative at input 'items=items)'", "");
         assert!(help.contains("trailing comma"), "{help}");
         for other in ["x==y)", "x<=y)", "x!=y)"] {
-            let help = parse_help(&format!("no viable alternative at input '{other}'"));
+            let help = parse_help(&format!("no viable alternative at input '{other}'"), "");
             assert!(!help.contains("trailing comma"), "{other}: {help}");
         }
+    }
+
+    #[test]
+    fn handler_with_several_parameters_suggests_named_tuple() {
+        let comma = "mismatched input ',' expecting ')'";
+        for before in [
+            "machine M { start state S { entry (a: int",
+            "machine M { start state S { on e do (a: int",
+            "machine M { start state S { on e goto T with (a: int",
+        ] {
+            assert!(parse_help(comma, before).contains("named tuple"), "{before}");
+        }
+        // Functions take several parameters; a nested type's parens are skipped.
+        for before in
+            ["fun f(a: int", "fun f(a: (int, int)) { g(x", "machine M { start state S { entry (a: seq[int]) { f(x"]
+        {
+            assert!(!parse_help(comma, before).contains("named tuple"), "{before}");
+        }
+        assert!(parse_help(comma, "entry (cfg: (a: int").contains("look for"));
+    }
+
+    #[test]
+    fn delete_suggests_halt() {
+        for input in ["delete;", "delete this;", "delete'"] {
+            let help = parse_help(&format!("no viable alternative at input '{input}'"), "");
+            assert!(help.contains("raise halt;"), "{input}: {help}");
+        }
+        let help = parse_help("no viable alternative at input 'deleted;'", "");
+        assert!(!help.contains("halt"), "{help}");
     }
 }

@@ -203,6 +203,23 @@ fn syntax_guide_model_passes_and_catches_a_missing_effect() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The fixes the parse hints suggest are in the guide, and the entry-parameter form compiles.
+#[test]
+fn guide_states_the_fixes_for_common_mistakes() {
+    let syntax = include_str!("../src/cli/guide/syntax.md");
+    let entry = "entry (cfg: (a: int, b: int)) { ... cfg.a ... }";
+    assert!(syntax.contains("A one-field named tuple needs a trailing comma"));
+    assert!(syntax.contains(&format!("takes one parameter; for several values use a named tuple: `{entry}`")));
+    assert!(include_str!("../src/cli/guide/modeling.md").contains("Keep one model per directory"));
+    let dir = temp("entry-tuple");
+    let model = "machine M { start state S { entry (cfg: (a: int, b: int)) { assert cfg.a < cfg.b; raise halt; } } }\n\
+                 machine Main { start state S { entry { new M((a = 1, b = 2)); } } }\n";
+    std::fs::write(dir.join("a.p"), model).unwrap();
+    let o = snappea(&["tests", "a.p"], &dir);
+    assert!(o.status.success(), "{}", text(&o));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn example_models_pass_and_their_broken_cases_fail_for_the_stated_reason() {
     let out = temp("models");
