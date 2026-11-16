@@ -281,7 +281,9 @@ fn schedules(stdout: &str, test: &str) -> usize {
 fn workers_find_a_bug_that_replays() {
     for seed in ["1", "2", "3", "4", "5"] {
         let mut h = host();
-        assert_eq!(snappea(&mut h, &["check", "tcCoins", "--seed", seed]), 1, "{}", h.stdout);
+        // `--max-bugs 1`: the run ends at the first bug, so the bug's trace holds the
+        // statistics of the whole run, as the FAIL line counts them
+        assert_eq!(snappea(&mut h, &["check", "tcCoins", "--seed", seed, "--max-bugs", "1"]), 1, "{}", h.stdout);
         assert!(h.stdout.contains(" schedules, 4 workers, "), "{}", h.stdout);
         let txt = read(&h, &format!("{}/bug.txt", OUT));
         assert!(txt.contains("<ErrorLog> Assertion Failed: coins.p:8:1 six heads"), "{}", txt);
@@ -1799,4 +1801,148 @@ test tc [main=Main]: {{ Main }};
         assert_eq!(result["behavioral_coverage"]["obligations"][0]["required"], true);
         assert_eq!(result["coverage_exemptions"][0]["machine"], "Main");
     }
+}
+
+/// Specs one test violates in different schedules: an assertion in one, liveness in the
+/// other, with a third spec hot alongside it.
+const TWO_SPECS: &str = "event eReserve: int;\n\
+     event eRelease;\n\
+     event eDrainStart;\n\
+     spec Reservations observes eReserve, eRelease {\n\
+       start cold state Idle { on eReserve goto Owing; }\n\
+       hot state Owing { on eRelease goto Idle; on eReserve goto Owing; }\n\
+     }\n\
+     spec Drain observes eDrainStart {\n\
+       start cold state Running { on eDrainStart goto Draining; }\n\
+       hot state Draining { }\n\
+     }\n\
+     spec NoBig observes eReserve {\n\
+       start state S { on eReserve do (n: int) { assert n < 2, \"reservation too big\"; } }\n\
+     }\n\
+     machine Client {\n\
+       start state S {\n\
+         entry {\n\
+           if ($) { announce eReserve, 1; announce eDrainStart; }\n\
+           else { announce eReserve, 5; announce eRelease; }\n\
+         }\n\
+       }\n\
+     }\n\
+     // snappea-lint: allow no-model-machine -- CLI regression fixture keeps behavior in the entry machine\n\
+     test tcBoth [main=Client]: assert Reservations, Drain, NoBig in { Client };\n";
+
+const ASSERTION: &str = "Assertion Failed: two.p:13:43 reservation too big";
+
+/// The `snappea check` arguments for `two.p`, then `more`.
+fn check_two<'a>(more: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["check", "two.p", "--no-mutation", "--warn", "all"];
+    args.extend_from_slice(more);
+    args
+}
+
+#[test]
+fn check_reports_distinct_failures_of_one_test_case() {
+    let out = "PCheckerOutput/tcBoth";
+    for workers in ["1", "4"] {
+        let mut h = host();
+        h.add_file("two.p", TWO_SPECS);
+        assert_eq!(snappea(&mut h, &check_two(&["-j", workers])), 1, "{}", h.stdout);
+        // the first failure in full, the other as one line with its own replay command
+        assert!(h.stdout.contains("      1 more distinct failure in this test case:\n      - "), "{}", h.stdout);
+        assert!(h.stdout.contains(&format!("      Replay: snappea replay {out}/bug.schedule two.p\n")), "{}", h.stdout);
+        assert!(
+            h.stdout.contains(&format!("        Replay: snappea replay {out}/bug-2.schedule two.p\n")),
+            "{}",
+            h.stdout
+        );
+        assert!(h.stdout.contains(ASSERTION), "{}", h.stdout);
+        assert!(h.stdout.contains("Reservations detected liveness bug in hot state 'Owing'"), "{}", h.stdout);
+        assert_eq!(names(&h, out), ["bug-2.schedule", "bug-2.txt", "bug.schedule", "bug.trace.json", "bug.txt"]);
+        // each schedule replays its own failure
+        let assertion_first = h.stdout.contains(&format!("      {ASSERTION}\n      also hot"));
+        for (file, liveness) in [("bug.schedule", !assertion_first), ("bug-2.schedule", assertion_first)] {
+            assert_eq!(snappea(&mut h, &["replay", &format!("{out}/{file}"), "two.p"]), 1, "{}", h.stdout);
+            assert_eq!(h.stdout.contains("liveness bug"), liveness, "{file}: {}", h.stdout);
+        }
+        assert!(read(&h, &format!("{out}/bug-2.txt")).contains("<ErrorLog> "));
+
+        // JSON: the first failure as before, the others in `more_bugs`
+        assert_eq!(snappea(&mut h, &check_two(&["--json", "-j", workers])), 1);
+        let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        let case = &v["test_cases"][0];
+        assert!(case["bug"]["report"].is_string(), "{case}");
+        assert!(case["bug"]["also_hot"].is_array(), "{case}");
+        let more = case["more_bugs"].as_array().unwrap();
+        assert_eq!(more.len(), 1, "{case}");
+        assert_eq!(more[0]["schedule"], "PCheckerOutput/tcBoth/bug-2.schedule");
+        assert_eq!(more[0]["trace"], "PCheckerOutput/tcBoth/bug-2.txt");
+        assert!(more[0]["replay"].as_str().unwrap().starts_with("snappea replay PCheckerOutput/tcBoth/bug-2.schedule"));
+        assert_ne!(more[0]["identity"]["kind"], case["bug"]["identity"]["kind"], "{case}");
+
+        // `--max-bugs 1` stops at the first bug, as before, and removes the earlier
+        // run's further failures
+        assert_eq!(snappea(&mut h, &check_two(&["--max-bugs", "1", "-j", workers])), 1);
+        assert!(!h.stdout.contains("more distinct failure"), "{}", h.stdout);
+        assert!(h.stdout.contains("FAIL  tcBoth (bug found after "), "{}", h.stdout);
+        assert!(!h.stdout.contains(" searched"), "{}", h.stdout);
+        assert_eq!(names(&h, out), ["bug.schedule", "bug.trace.json", "bug.txt"]);
+        assert_eq!(snappea(&mut h, &check_two(&["--json", "--max-bugs", "1", "-j", workers])), 1);
+        let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        assert!(v["test_cases"][0].get("more_bugs").is_none(), "{v}");
+    }
+}
+
+#[test]
+fn max_bugs_needs_at_least_one() {
+    let mut h = host();
+    h.add_file("two.p", TWO_SPECS);
+    assert_eq!(snappea(&mut h, &check_two(&["--max-bugs", "0"])), 2);
+    assert!(h.stderr.contains("'--max-bugs' needs at least 1"), "{}", h.stderr);
+}
+
+#[test]
+fn a_liveness_failure_lists_every_hot_spec() {
+    let mut h = host();
+    let model = TWO_SPECS
+        .replace(
+            "if ($) { announce eReserve, 1; announce eDrainStart; }",
+            "{ announce eReserve, 1; announce eDrainStart; }",
+        )
+        .replace("else { announce eReserve, 5; announce eRelease; }", "");
+    h.add_file("two.p", &model);
+    assert_eq!(snappea(&mut h, &check_two(&[])), 1, "{}", h.stdout);
+    assert!(
+        h.stdout.contains(
+            "      Reservations detected liveness bug in hot state 'Owing' at the end of program execution.\n      also hot at this point: Drain in 'Draining'\n"
+        ),
+        "{}",
+        h.stdout
+    );
+    // the other spec fails in the same execution, so it is no second failure
+    assert!(!h.stdout.contains("more distinct failure"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &check_two(&["--json"])), 1);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let case = &v["test_cases"][0];
+    assert_eq!(
+        case["bug"]["also_hot"],
+        serde_json::json!([{"spec": "Drain", "state": "Draining", "kind": "liveness"}])
+    );
+    assert_eq!(case["more_bugs"], serde_json::json!([]));
+    // compat output is upstream's: no hot specs
+    assert_eq!(compat(&mut h, &["check", "two.p", "-tc", "tcBoth", "-s", "5"]), 1, "{}", h.stdout);
+    assert!(!h.stdout.contains("also hot"), "{}", h.stdout);
+}
+
+#[test]
+fn an_assertion_lists_hot_specs_as_context() {
+    let mut h = host();
+    let model = TWO_SPECS.replace("if ($) { announce eReserve, 1; announce eDrainStart; }", "{ }").replace("else ", "");
+    h.add_file("two.p", &model);
+    assert_eq!(snappea(&mut h, &check_two(&[])), 1, "{}", h.stdout);
+    assert!(
+        h.stdout.contains(&format!(
+            "      {ASSERTION}\n      also hot at this point (context; these specs have not failed): Reservations in 'Owing'\n"
+        )),
+        "{}",
+        h.stdout
+    );
 }

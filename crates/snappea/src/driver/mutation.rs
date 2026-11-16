@@ -798,6 +798,8 @@ pub fn run(
         activity_coverage: false,
         verbose: false,
         full_exploration: false,
+        // a mutant is detected by its first failure; searching on would only slow it
+        max_bugs: 1,
         ..engine_options(cfg, cfg.seed.unwrap_or(0))
     };
     // for the test cases a mutant runs: how often their schedules run to the step bound

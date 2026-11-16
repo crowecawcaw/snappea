@@ -5,6 +5,7 @@ questions:
   - "How do checks, exploration, coverage and mutation testing behave?"
   - "What makes a check fail?"
   - "What does a bug report say, and how do I read a runtime error, liveness or deadlock report?"
+  - "Does a failing test case report every spec it violates, or only the first?"
   - "What do the scenario coverage terms mean, and when does a scenario fail a check?"
 ---
 
@@ -297,7 +298,8 @@ limit. The [playground](../web/README.md) and the [Rust library](library.md) get
 same updates.
 
 Each test case's files go to `PCheckerOutput/<test>/`, replacing the previous run's:
-`bug.txt`, `bug.schedule`, `bug.trace.json` and, for
+`bug.txt`, `bug.schedule`, `bug.trace.json`, `bug-<n>.txt` and `bug-<n>.schedule`
+for [further failures](#several-failures-in-one-test-case) and, for
 scenario monitors, `scenario_coverage.json`. A failure includes its report and a
 `snappea replay` command. `-o DIR` selects another output folder.
 
@@ -334,22 +336,23 @@ $ snappea check
 Checking Inventory: 2 test cases
 ok    tcAtomicReserve (1000 schedules, 4 workers, 0.07s)
       Coverage: 41/49 statements, 6/10 branches, 6/9 event handlers
-FAIL  tcCheckThenReserve (bug found after 4 schedules, 4 workers, 0.00s)
+FAIL  tcCheckThenReserve (bug found after 4 schedules; 13881 searched, 4 workers, 1.01s)
       Assertion Failed: PSpec/inventory.p:27:7 reservation exceeds available stock
+      also hot at this point (context; these specs have not failed): OrdersAnswered in 'Waiting'
       Replay: snappea replay PCheckerOutput/tcCheckThenReserve/bug.schedule
-      Coverage: 43/49 statements, 5/10 branches, 8/9 event handlers (partial: stopped at first bug)
+      Coverage: 43/49 statements, 5/10 branches, 8/9 event handlers (partial: stopped after the bugs)
 Coverage of all test cases: 49/50 statements, 8/10 branches, 9/9 event handlers
 Not covered by any test case:
   PSrc/Inventory.p:46  Inventory.Serving, on eReleaseReq: if (req.order in reservations) never false
   PSrc/Inventory.p:85  OrderClient.Checking, on eAvailableResp: if (resp.units < units) never true
-Coverage includes partial results from test cases stopped at their first bug.
+Coverage includes partial results from test cases stopped by their bugs.
 Mutation testing skipped: a test case failed.
 1 of 2 test cases failed in 0.08s, peak memory 10 MB. Output: PCheckerOutput/
 ```
 
 A test case that finds a bug writes its files to `PCheckerOutput/<test>/`, replacing
 the previous run's: `bug.txt` (the buggy schedule's log), `bug.schedule` and
-`bug.trace.json`. Scenario monitors also write `scenario_coverage.json` there. `-v` adds
+`bug.trace.json`, and `bug-2.txt`, `bug-2.schedule`, ... for further distinct failures. Scenario monitors also write `scenario_coverage.json` there. `-v` adds
 upstream's progress and statistics. It exits with 0 when no bug is found, 1 when one
 is, and 2 on any other error. `snappea <command> --help` lists the options.
 
@@ -508,6 +511,79 @@ A bug's report says what failed. `snappea-compat` prints upstream's text instead
   ```
 
 The JSON result has the same text in each failed test case's `bug.report`.
+
+### Several failures in one test case
+
+A test case often checks several specs. By default `snappea check` reports up to three
+distinct failures per test case, so the first does not hide the others. Two additions
+do this, both only in `snappea check` (`snappea-compat` keeps upstream's output):
+
+* **Other hot specs at the failure.** When a bug is found, every other spec in a hot
+  state at that moment is listed after the report, from the same execution at no
+  extra search cost. After a liveness failure at the end of the run, or a repeating
+  cycle that keeps several specs hot, those specs fail too:
+
+  ```
+  Reservations detected liveness bug in hot state 'Owing' at the end of program execution.
+  also hot at this point: Drain in 'Draining'
+  ```
+
+  After an assertion or runtime error, a hot spec is only context: the execution
+  stopped before it could cool down, so it has not failed:
+
+  ```
+  Assertion Failed: two.p:13:43 reservation too big
+  also hot at this point (context; these specs have not failed): Reservations in 'Owing'
+  ```
+
+  After a potential liveness bug (a spec hot for too long in a fair schedule), another
+  spec hot as long is listed as failing, the rest as context. A deadlock's report
+  already names every hot spec, so no line is added; the JSON still lists them.
+
+* **Further failures.** After the first bug the search goes on, looking for failures
+  with a different signature, until it has `--max-bugs` of them (default 3). The
+  signature of a liveness failure is its spec and hot state; of an assertion, its
+  source location (`file:line:col`); of any other error, its kind and location (or,
+  without one, such as a deadlock, the kind and the machine and state it stopped in).
+  The same assertion failing with other values is the same failure. The first failure
+  is reported in full as before (`bug.txt`, `bug.schedule`, `bug.trace.json`); each
+  further one gets a line with its report's first line and its own replay command, and
+  `bug-<n>.txt` and `bug-<n>.schedule`:
+
+  ```
+  FAIL  tcBoth (bug found after 1 schedule; 24 searched, 4 workers, 1.01s)
+        Assertion Failed: two.p:13:43 reservation too big
+        also hot at this point (context; these specs have not failed): Reservations in 'Owing'
+        Replay: snappea replay PCheckerOutput/tcBoth/bug.schedule two.p
+        1 more distinct failure in this test case:
+        - Reservations detected liveness bug in hot state 'Owing' at the end of program execution.
+          Replay: snappea replay PCheckerOutput/tcBoth/bug-2.schedule two.p
+  ```
+
+  The FAIL line then counts the schedules to the first bug and, after `searched`, all
+  schedules explored.
+
+How long the search goes on after the first bug: for as long as finding the first bug
+took, at least one second, and never past the test case's time limit (`--timeout`, or
+its share of the 10-second budget, which still stops early once coverage stops
+growing). It stops at once when `--max-bugs` failures are found or the search is
+complete. A test case that found a bug fails even when the search for more runs out of
+time. So more failures may exist than are reported: a test case reports fewer than
+`--max-bugs` failures when the time ran out first, not because there are no others.
+Separate the specs into their own test cases, or fix the reported failures and check
+again, to be sure.
+
+`--max-bugs 1` stops each test case at its first bug, as earlier versions did; the hot
+specs are still listed. Expected-bug tests (`// snappea: expect-bug`, also with
+`--expect-bug-seeds`) always stop at their first bug: the test passes or fails on that
+bug, and searching on would only spend time the other test cases share. Mutation
+testing also stops each mutant's run at its first failure.
+
+In JSON, `bug` describes the first failure as before, and adds `bug.also_hot`: the other
+hot specs, each `{spec, state, kind}` where `kind` is `liveness` (it fails in the same
+execution) or `hot` (context only). With `--max-bugs` above 1, each failed test case has
+`more_bugs`, an array (possibly empty) of the further failures, each with `report`,
+`identity`, `also_hot`, `schedule`, `trace` and `replay`.
 
 ## Coverage
 
