@@ -51,8 +51,8 @@ Commands that read P sources take .pproj or .p files. Without any, they use the
 *.pproj file in the current folder, or else the *.p files in it and its immediate
 subfolders.
 
-Output is text on a terminal or in CI, JSON otherwise (agents, scripts).
---format text|json, --json or SNAPPEA_FORMAT=text|json override it.
+Output is text. --json, --format json or SNAPPEA_FORMAT=json print the JSON result
+instead.
 --json-report FILE also writes the JSON result to FILE.
 
 Run `snappea <command> --help` for a command's options and examples.
@@ -533,8 +533,7 @@ const OUTPUT_OPTS: &[Opt] = &[value("format", None), flag("json", None), value("
 /// The output options, for help texts.
 pub(super) const OUTPUT_HELP: &str = "\
 Output format:
-      --format <F>          text or json. Default: text on a terminal or in CI (CI
-                            set), else json. SNAPPEA_FORMAT sets the default.
+      --format <F>          text or json. Default: text, or SNAPPEA_FORMAT if set.
       --json                Same as --format json
       --json-report <FILE>  Also write the JSON result to FILE
 ";
@@ -546,8 +545,7 @@ pub(super) enum Format {
     Json,
 }
 
-/// `--json` or `--format`; else `SNAPPEA_FORMAT`; else text on a terminal or in CI (`CI`
-/// set), JSON for programs.
+/// `--json` or `--format`; else `SNAPPEA_FORMAT`; else text.
 pub(super) fn output_format(a: &Args, host: &dyn Host) -> Result<Format, String> {
     let parse = |v: &str, from: &str| match v {
         "text" => Ok(Format::Text),
@@ -566,7 +564,7 @@ pub(super) fn output_format(a: &Args, host: &dyn Host) -> Result<Format, String>
     if let Some(f) = host.env_var("SNAPPEA_FORMAT").filter(|v| !v.is_empty()) {
         return parse(&f, "SNAPPEA_FORMAT");
     }
-    Ok(if host.stdout_is_terminal() || is_ci(host) { Format::Text } else { Format::Json })
+    Ok(Format::Text)
 }
 
 /// `--progress`: how `check` shows a running check.

@@ -356,8 +356,8 @@ the previous run's: `bug.txt` (the buggy schedule's log), `bug.schedule` and
 upstream's progress and statistics. It exits with 0 when no bug is found, 1 when one
 is, and 2 on any other error. `snappea <command> --help` lists the options.
 
-On a terminal or in CI (`CI` set) the output is the text above; otherwise (agents,
-scripts) it is JSON: per test case its result, schedules, bug report and `replay`
+The output is the text above. With `--json` (or `--format json`, or
+`SNAPPEA_FORMAT=json`) it is JSON: per test case its result, schedules, bug report and `replay`
 command, coverage and driver limits (`driver`); then the coverage of all test cases
 with every uncovered entry, and the mutation testing results under `mutation`. The
 top-level `summary` says first what happened: `status` is `tests_failed`,

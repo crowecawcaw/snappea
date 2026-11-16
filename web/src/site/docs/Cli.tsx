@@ -55,7 +55,7 @@ const OBSERVE: Option[] = [
 ];
 
 const OUTPUT: Option[] = [
-  ["--format text|json", "Text or the JSON result. Default: text on a terminal or in CI (CI set), JSON otherwise."],
+  ["--format text|json", "Text or the JSON result. Default: text."],
   ["--json", "The same as --format json."],
   ["--json-report <FILE>", "Also write the JSON result to FILE."],
 ];
@@ -200,9 +200,8 @@ FAIL  tcCheckThenReserve (bug found after 3 schedules, 4 workers, 0.00s)
         <p>This makes every command usable as a CI step or a pre-commit hook as it is.</p>
         <h3 id="output">Text and JSON</h3>
         <p>
-          Every command prints text for people on a terminal or in CI, and a JSON result for agents and scripts
-          otherwise. <code>SNAPPEA_FORMAT=text</code> or <code>json</code> sets the default; these options choose per
-          run:
+          Every command prints text by default, for people and agents alike. <code>SNAPPEA_FORMAT=json</code> makes
+          the JSON result the default; these options choose per run:
         </p>
         <Options rows={OUTPUT} />
         <p>

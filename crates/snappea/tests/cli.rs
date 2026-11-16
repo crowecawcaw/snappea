@@ -519,21 +519,19 @@ fn observe_reports_coverage_and_merges_it_without_the_sources() {
 }
 
 #[test]
-fn output_is_json_for_programs_and_text_on_terminals_and_in_ci() {
+fn output_is_text_unless_json_is_asked_for() {
     let mut h = host();
-    h.terminal = false;
     assert_eq!(snappea(&mut h, &["tests"]), 0);
+    assert_eq!(h.stdout, "tcCoins\ntcFine\n");
+    assert_eq!(snappea(&mut h, &["tests", "--format", "json"]), 0);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v, serde_json::json!({"exit_code": 0, "test_cases": ["tcCoins", "tcFine"]}));
-    assert_eq!(snappea(&mut h, &["tests", "--format", "text"]), 0);
-    assert_eq!(h.stdout, "tcCoins\ntcFine\n");
-    h.env.insert("CI".into(), "true".into());
-    assert_eq!(snappea(&mut h, &["tests"]), 0);
-    assert_eq!(h.stdout, "tcCoins\ntcFine\n");
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(snappea(&mut h, &["tests"]), 0);
     assert!(h.stdout.starts_with('{'), "{}", h.stdout);
-    h.terminal = true;
+    assert_eq!(snappea(&mut h, &["tests", "--format", "text"]), 0);
+    assert_eq!(h.stdout, "tcCoins\ntcFine\n");
+    h.env.remove("SNAPPEA_FORMAT");
     assert_eq!(snappea(&mut h, &["tests", "--json"]), 0);
     assert!(h.stdout.starts_with('{'), "{}", h.stdout);
     assert_eq!(snappea(&mut h, &["tests", "--json", "--format", "text"]), 2);

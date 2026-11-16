@@ -14,9 +14,6 @@ pub struct NativeHost {
 }
 
 impl Host for NativeHost {
-    fn stdout_is_terminal(&self) -> bool {
-        io::stdout().is_terminal()
-    }
     fn stderr_is_terminal(&self) -> bool {
         io::stderr().is_terminal()
     }
