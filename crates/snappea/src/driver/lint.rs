@@ -318,7 +318,8 @@ pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> Result<usize, Exi
 }
 
 fn syntax_error(host: &mut dyn Host, sm: &SourceMap, e: ParseError) -> Exit {
-    let (headline, help) = crate::project::syntax_error(&e.message);
+    let before = &sm.file(e.span.file).text[..e.span.start as usize];
+    let (headline, help) = crate::project::syntax_error(&e.message, before);
     let text = render_snippet(sm, Some(e.span), &headline, Some(&help));
     host.write(Stream::Err, &text, None);
     Exit(2)

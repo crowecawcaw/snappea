@@ -65,6 +65,22 @@ fn a_reserved_word_used_as_a_name_is_named() {
 }
 
 #[test]
+fn common_syntax_mistakes_get_a_specific_help() {
+    let (code, out) = check("machine M { start state S { entry (a: int, b: int) { } } }\n", &[]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("help: an entry function or handler takes one parameter; pass a named tuple"), "{out}");
+    let (_, out) = check("machine M { start state S { entry { delete; } } }\n", &[]);
+    assert!(out.contains("help: P has no `delete`; to stop a machine, `raise halt;`"), "{out}");
+
+    // snappea-compat keeps upstream's text and prints no help.
+    let mut h = host("machine M { start state S { entry (a: int, b: int) { } } }\n");
+    compat(&mut h, &["check", "a.p"]);
+    let out = format!("{}{}", h.stdout, h.stderr);
+    assert!(out.contains("mismatched input ',' expecting ')'"), "{out}");
+    assert!(!out.contains("named tuple"), "{out}");
+}
+
+#[test]
 fn cast_help_suggests_to_for_conversions() {
     // `as` between an enum and int changes only the static type.
     let (code, out) = check(

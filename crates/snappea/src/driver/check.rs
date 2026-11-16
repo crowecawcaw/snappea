@@ -592,6 +592,41 @@ impl Plateau {
     }
 }
 
+/// The share of the memory limit ([`Host::memory`]) at which a search stops.
+pub const MEMORY_STOP_SHARE: f64 = 0.75;
+
+/// Stops a search before the process runs out of memory, so that the check reports it
+/// as incomplete instead of being killed (say, by a container's out-of-memory killer).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryGuard {
+    checked_at: Option<f64>,
+}
+
+/// The memory use that stopped a search, in MB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryStop {
+    pub used_mb: u64,
+    pub limit_mb: u64,
+}
+
+impl MemoryGuard {
+    /// Seconds between readings.
+    const INTERVAL: f64 = 0.05;
+
+    /// The memory use, when it has reached [`MEMORY_STOP_SHARE`] of the limit. Reads it
+    /// at most every [`Self::INTERVAL`]; `None` on a host that cannot tell.
+    pub fn check(&mut self, host: &dyn Host) -> Option<MemoryStop> {
+        let now = host.now();
+        if self.checked_at.is_some_and(|t| now >= t && now - t < Self::INTERVAL) {
+            return None;
+        }
+        self.checked_at = Some(now);
+        let m = host.memory()?;
+        (m.resident as f64 >= m.limit as f64 * MEMORY_STOP_SHARE)
+            .then_some(MemoryStop { used_mb: m.resident >> 20, limit_mb: m.limit >> 20 })
+    }
+}
+
 /// Engine output on the console, with an optional deadline (`--timeout`) and progress.
 struct ConsoleOut<'h> {
     host: &'h mut dyn Host,
@@ -607,6 +642,9 @@ struct ConsoleOut<'h> {
     /// Collecting further failures after the first (see [`CheckerOptions::max_bugs`]):
     /// when the check started, and when the first bug was found.
     more_bugs: Option<(f64, Option<f64>)>,
+    memory: MemoryGuard,
+    /// Memory use stopped the search.
+    memory_stop: Option<MemoryStop>,
 }
 
 /// Fewest seconds a test case searches for further failures after its first bug.
@@ -675,7 +713,13 @@ impl Output for ConsoleOut<'_> {
         if self.plateau.is_some_and(|p| p.reached(now, self.schedules, self.exhausting)) {
             self.plateaued = true;
         }
-        self.plateaued || self.more_bugs_done(now) || self.deadline.map(|d| now >= d).unwrap_or(false)
+        if self.memory_stop.is_none() {
+            self.memory_stop = self.memory.check(&*self.host);
+        }
+        self.memory_stop.is_some()
+            || self.plateaued
+            || self.more_bugs_done(now)
+            || self.deadline.map(|d| now >= d).unwrap_or(false)
     }
     fn exhausting(&mut self, running: bool) {
         self.exhausting = running;
@@ -695,7 +739,7 @@ fn run_engine(
     // where the test case sits in the run, and when its check started
     progress: Option<(Position, f64)>,
     plateau: Option<Plateau>,
-) -> Result<(CheckResult, usize, bool), Exit> {
+) -> Result<(CheckResult, usize, bool, Option<MemoryStop>), Exit> {
     let prog = &loaded.analysis.program;
     let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
     let opts = &CheckerOptions { assembly_name: loaded.sources.project_name.clone(), ..opts.clone() };
@@ -716,8 +760,18 @@ fn run_engine(
         Tracker::new(phase, start, deadline.map(|d| d - start))
     });
     let more_bugs = opts.collects_bugs().then(|| (host.now(), None));
-    let mut out =
-        ConsoleOut { host, deadline, progress, plateau, schedules: 0, plateaued: false, exhausting: false, more_bugs };
+    let mut out = ConsoleOut {
+        host,
+        deadline,
+        progress,
+        plateau,
+        schedules: 0,
+        plateaued: false,
+        exhausting: false,
+        more_bugs,
+        memory: MemoryGuard::default(),
+        memory_stop: None,
+    };
     out.tick(0, 0);
     let result = match threads {
         Some(threads) if workers > 1 => run_workers(&checker, tc, opts, &WorkerPool::new(workers), threads, &mut out),
@@ -727,8 +781,8 @@ fn run_engine(
         let schedules = r.report.explored_fair_schedules + r.report.explored_unfair_schedules;
         t.finish(out.host, |phase| set_counts(phase, schedules, r.report.num_bugs));
     }
-    let plateaued = out.plateaued;
-    result.map(|r| (r, workers, plateaued)).map_err(|e| report_and_exit(host, &e))
+    let (plateaued, memory_stop) = (out.plateaued, out.memory_stop);
+    result.map(|r| (r, workers, plateaued, memory_stop)).map_err(|e| report_and_exit(host, &e))
 }
 
 /// A worker's output, sent to the thread that writes the console.
@@ -836,6 +890,8 @@ pub struct CaseOutcome {
     pub timed_out: bool,
     /// It stopped before its time limit because coverage stopped growing (see [`Plateau`]).
     pub plateaued: bool,
+    /// It stopped because memory use neared the limit (see [`MemoryGuard`]).
+    pub memory_stop: Option<MemoryStop>,
     /// For an exhaustive search: whether every alternative was explored.
     pub exhaustive_finished: Option<bool>,
     /// For an exhaustive search: the distinct states it reached (summed over workers, so
@@ -931,7 +987,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         None => cfg.timeout.map(|t| engine_start + f64::from(t)),
     };
     let plateau = cfg.time_share.map(|share| Plateau::new(engine_start, share));
-    let (res, workers, plateaued) = run_engine(
+    let (res, workers, plateaued, memory_stop) = run_engine(
         host,
         loaded,
         &tc,
@@ -945,11 +1001,17 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     let engine_elapsed = host.now() - engine_start;
     // collecting further failures ends by cancelling the search, which is no time-out
     let collected = opts.collects_bugs() && res.report.num_bugs > 0;
-    if res.cancelled && !collected {
-        host.out_line("... Checker timed out.");
+    let memory_stop = memory_stop.filter(|_| res.cancelled && !collected);
+    let snappea = cfg.style == Style::Snappea;
+    match memory_stop {
+        Some(m) if snappea => {
+            host.out_line(&format!("... Checker stopped: memory use reached {} MB of {} MB.", m.used_mb, m.limit_mb))
+        }
+        // upstream has no such stop; its nearest message
+        _ if res.cancelled && !collected => host.out_line("... Checker timed out."),
+        _ => {}
     }
     let file = cfg.project_name.clone();
-    let snappea = cfg.style == Style::Snappea;
     // an output file's path: upstream's name, or snappea's
     let path = |upstream: String, snappea_name: &str| {
         format!("{}{}", cfg.output_directory, if snappea { snappea_name.to_string() } else { upstream })
@@ -1069,8 +1131,9 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         bug_report: res.report.bug_reports.first().cloned(),
         schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
         workers,
-        timed_out: res.cancelled && !plateaued && !collected,
-        plateaued: res.cancelled && plateaued && !collected,
+        timed_out: res.cancelled && !plateaued && !collected && memory_stop.is_none(),
+        plateaued: res.cancelled && plateaued && !collected && memory_stop.is_none(),
+        memory_stop,
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
         exhaustive_states: res.exhaustive.as_ref().map(|x| (x.distinct_states, x.max_depth)),
         exhaustive_unfinished: res

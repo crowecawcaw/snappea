@@ -20,6 +20,9 @@ questions:
   distinction that permits the defect.
 - State atomicity, delay, duplication, persistence, bounds and omissions, and
   whether each omission could change the property.
+- Keep one model per directory, variants included: `snappea check` reads the `.p`
+  files in it and its immediate subfolders, so copies collide as duplicate
+  declarations. Or check files by name (`snappea check a.p`).
 
 ## Split by concern, join at seams
 

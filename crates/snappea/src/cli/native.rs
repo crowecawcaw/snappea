@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Instant;
 
-use crate::host::{Color, Host, Job, LiveInput, LiveRead, LiveSource, Stream, Threads};
+use crate::host::{Color, Host, Job, LiveInput, LiveRead, LiveSource, MemoryUse, Stream, Threads};
 
 pub struct NativeHost {
     start: Instant,
@@ -122,6 +122,15 @@ impl Host for NativeHost {
             .unwrap_or(0.0)
     }
 
+    fn memory(&self) -> Option<MemoryUse> {
+        #[cfg(target_os = "linux")]
+        {
+            linux_memory()
+        }
+        #[cfg(not(target_os = "linux"))]
+        None
+    }
+
     fn random_seed(&mut self) -> u32 {
         let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let mut x = (t as u64) ^ ((std::process::id() as u64) << 32) ^ 0x9E37_79B9_7F4A_7C15;
@@ -138,6 +147,48 @@ impl Host for NativeHost {
     fn threads(&self) -> Option<Threads> {
         Some(Threads { available: std::thread::available_parallelism().map_or(1, |n| n.get()), run: run_threads })
     }
+}
+
+/// Resident memory now, and the memory limit: the smallest of the cgroup limits on the
+/// way from this process's cgroup to the root (v2 `memory.max`, v1
+/// `memory.limit_in_bytes`) and the machine's total memory.
+#[cfg(target_os = "linux")]
+fn linux_memory() -> Option<MemoryUse> {
+    static LIMIT: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    let kib = |text: &str, key: &str| -> Option<u64> {
+        let line = text.lines().find(|l| l.starts_with(key))?;
+        line.split_whitespace().nth(1)?.parse::<u64>().ok().map(|k| k * 1024)
+    };
+    let limit = *LIMIT.get_or_init(|| {
+        let total = std::fs::read_to_string("/proc/meminfo").ok().and_then(|m| kib(&m, "MemTotal:"));
+        let cgroups = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+        let mut limits: Vec<u64> = total.into_iter().collect();
+        for line in cgroups.lines() {
+            let mut parts = line.splitn(3, ':');
+            let (Some(_), Some(controllers), Some(path)) = (parts.next(), parts.next(), parts.next()) else { continue };
+            let (base, file) = if controllers.is_empty() {
+                ("/sys/fs/cgroup", "memory.max")
+            } else if controllers.split(',').any(|c| c == "memory") {
+                ("/sys/fs/cgroup/memory", "memory.limit_in_bytes")
+            } else {
+                continue;
+            };
+            // a container may see its own cgroup as the root, so try each level up to it
+            let mut dir = PathBuf::from(base).join(path.trim_start_matches('/'));
+            loop {
+                if let Some(v) = std::fs::read_to_string(dir.join(file)).ok().and_then(|s| s.trim().parse::<u64>().ok())
+                {
+                    limits.push(v);
+                }
+                if dir == Path::new(base) || !dir.pop() {
+                    break;
+                }
+            }
+        }
+        limits.into_iter().filter(|&l| l > 0).min()
+    });
+    let resident = std::fs::read_to_string("/proc/self/status").ok().and_then(|s| kib(&s, "VmRSS:"))?;
+    Some(MemoryUse { resident, limit: limit? })
 }
 
 /// Peak resident set size of the process from `getrusage`, in bytes (0 on failure).

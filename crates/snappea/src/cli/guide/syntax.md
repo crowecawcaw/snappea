@@ -86,11 +86,12 @@ test tcRequest [main=Main]: assert Contract in { Main, Service, Client };
   `receive`, `print`, `receives`, `sends`, `creates`, `safe`, `union`, `rename`,
   `compose`, `is`, `sent`, `targets`, `inflight`, `pure`, `assume`, `requires`,
   `ensures`, `invariant`, `using`, `except`, `forall`, `exists`, `prove`, `axiom`.
-- Singleton tuple value: `(id = 1,)`. `choose(n)` yields `0` to `n - 1`; `$` is a
+- A one-field named tuple needs a trailing comma: type `(id: int)`, value `(id = 1,)`. `choose(n)` yields `0` to `n - 1`; `$` is a
   Boolean. Both are fair for liveness, so bound faults (`snappea guide faults`).
 - `s += (sizeof(s), v);` appends to a seq, `s -= (i);` removes; sets `s += (v);`;
   maps `k in m`, `m[k]`, `keys(m)`. Declare a `foreach` variable as a local.
 - `module M = { Main, Service };` then `test t [main=Main]: assert Contract in M;`.
+- An entry function or handler takes one parameter; for several values use a named tuple: `entry (cfg: (a: int, b: int)) { ... cfg.a ... }`.
 - No `sender()`: put `client = this` in the payload and reply to `p.client`.
 - A state must handle (`on`, `defer`, `ignore`) every event that reaches it. A
   `receive` takes only its cases; others stay queued for the state after it.

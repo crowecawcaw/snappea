@@ -7,6 +7,7 @@ questions:
   - "What does a bug report say, and how do I read a runtime error, liveness or deadlock report?"
   - "Does a failing test case report every spec it violates, or only the first?"
   - "What do the scenario coverage terms mean, and when does a scenario fail a check?"
+  - "What happens when a check nears its memory limit?"
 ---
 
 # Checking P models
@@ -189,6 +190,11 @@ A passing test case that did not cover every schedule says why, with
   state cache makes later branches much cheaper than earlier ones.
 - `sampled`: auto handed off to sampling, or a sampling strategy was selected.
 - `timed_model_sampled`: as above, for a timed model.
+- `memory_limit`: the process neared its memory limit, so the search stopped
+  (`memory_limit_reached` in JSON gives `used_mb` and `limit_mb`). The search stops at
+  three quarters of the limit: the container's (cgroup) memory limit, or else the
+  machine's memory. The hint suggests shrinking the test's bounds (fewer machines,
+  retries or faults) or splitting the model into smaller test cases.
 
 When auto abandons exhaustive search, text and `auto_handoffs` in JSON report the
 reason and point of the handoff for each worker: its completed schedules (including
@@ -352,7 +358,7 @@ Mutation testing skipped: a test case failed.
 
 A test case that finds a bug writes its files to `PCheckerOutput/<test>/`, replacing
 the previous run's: `bug.txt` (the buggy schedule's log), `bug.schedule` and
-`bug.trace.json`, and `bug-2.txt`, `bug-2.schedule`, ... for further distinct failures. Scenario monitors also write `scenario_coverage.json` there. `-v` adds
+`bug.trace.json`, and `bug-2.txt`, `bug-2.schedule`, ... for further distinct failures. Scenario monitors also write `scenario_coverage.json` there. A `bug.trace.json` keeps at most 2,000,000 vector-clock entries; past that, a `ClockLimit` entry says so and later entries have no `clock`, so a long schedule that keeps creating machines does not need memory that grows with the square of its length. `-v` adds
 upstream's progress and statistics. It exits with 0 when no bug is found, 1 when one
 is, and 2 on any other error. `snappea <command> --help` lists the options.
 
