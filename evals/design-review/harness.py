@@ -69,8 +69,8 @@ def binary(arm: str) -> Path:
     return Path(ROOT / "target/release" / ARMS[arm]["bin"])
 
 
-def docker_args(work: Path, arm: str, bin_path: Path | None = None) -> list[str]:
-    return ["docker", "run", "--network", "none", "--cap-drop", "ALL",
+def docker_args(work: Path, arm: str, bin_path: Path | None = None, env: list[str] = ()) -> list[str]:
+    return ["docker", "run", *(x for e in env for x in ("-e", e)), "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--memory", "2g", "--cpus", "2",
             "--pids-limit", "256", "--user", "1000:1000", "-e", "HOME=/tmp",
             "--mount", f"type=bind,src={bin_path or binary(arm)},dst={ARMS[arm]['dst']},readonly",
@@ -113,11 +113,11 @@ def cmd_start(a):
     task_md = (task_dir(a.task) / "TASK.md").read_text().replace("{tool_line}", ARMS[a.arm]["tool_line"])
     (work / "TASK.md").write_text(task_md)
     subprocess.run(["chown", "-R", "1000:1000", str(work)], check=False)
-    subprocess.run([*docker_args(work, a.arm, bin_path), "-d", "--name", container(a.run_id), "-w", "/work",
+    subprocess.run([*docker_args(work, a.arm, bin_path, a.env), "-d", "--name", container(a.run_id), "-w", "/work",
                     IMAGE, "sleep", "infinity"], check=True, capture_output=True)
     sha = subprocess.run(["sha256sum", str(bin_path)], capture_output=True, text=True).stdout.split()[0]
     rev = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    meta = {"run_id": a.run_id, "task": a.task, "arm": a.arm, "label": a.label or a.arm, "binary": str(bin_path), "model": a.model, "limits": LIMITS,
+    meta = {"run_id": a.run_id, "task": a.task, "arm": a.arm, "label": a.label or a.arm, "binary": str(bin_path), "env": a.env, "model": a.model, "limits": LIMITS,
             "binary_sha256": sha, "snappea_commit": rev, "started": time.time()}
     (run / "meta.json").write_text(json.dumps(meta, indent=2))
     prompt = PROMPT.format(harness=HERE / "harness.py", run_id=a.run_id, calls=LIMITS["calls"],
@@ -295,6 +295,8 @@ def main():
     p.add_argument("--run-id", required=True); p.add_argument("--model", default="unspecified")
     p.add_argument("--binary", help="checker binary to pin for this cohort (default: target/release)")
     p.add_argument("--label", help="condition name for report.py (default: the arm)")
+    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                   help="environment variable for the solver's container, e.g. SNAPPEA_FORMAT=text")
     p.set_defaults(fn=cmd_start)
     p = sub.add_parser("bridge"); p.add_argument("run_id"); p.set_defaults(fn=cmd_bridge)
     p = sub.add_parser("finish"); p.add_argument("run_id"); p.add_argument("--reply")
