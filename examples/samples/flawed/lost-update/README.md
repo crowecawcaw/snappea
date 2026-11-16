@@ -85,7 +85,7 @@ no retry; compare-and-swap is shown because it generalizes to any update.)
 ## Run
 
 ```sh
-snappea check LostUpdate.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LostUpdate.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check LostUpdate.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

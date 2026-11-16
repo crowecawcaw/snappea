@@ -94,7 +94,8 @@ export function Home() {
           </p>
           <pre className="terminal"><code>{`snappea guide                  # workflow, built into the binary
 snappea guide examples         # runnable examples
-snappea check                  # lint, explore, report coverage and mutations
+snappea check                  # lint, explore, report coverage
+snappea check --mutation       # also check the checks with mutation testing
 snappea check --json           # structured results for agents`}</code></pre>
           <p className="home-p-links">
             <a href={l.agents}>Work with your agent</a>

@@ -114,7 +114,7 @@ cluster tolerates one failure, like a 3-node one; clusters usually have an odd s
 ## Run
 
 ```sh
-snappea check MinorityQuorum.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check MinorityQuorum.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check MinorityQuorum.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

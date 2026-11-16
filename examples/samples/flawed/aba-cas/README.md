@@ -98,7 +98,7 @@ reusing a node another thread might still be reading.
 ## Run
 
 ```sh
-snappea check AbaCas.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check AbaCas.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check AbaCas.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

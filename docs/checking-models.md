@@ -25,7 +25,7 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
 schedules. Unsuppressed lint findings fail the check, but its test cases still run and
-report bugs; coverage and mutation testing are skipped. The exit status is 1 when a test
+report bugs; coverage (and mutation testing, with `--mutation`) is skipped. The exit status is 1 when a test
 case failed, else 2. Run `snappea check lint` to inspect the findings without exploration. A project that lists
 foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
 would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
@@ -239,7 +239,7 @@ the check or is reported as a warning:
 |---|---|---|
 | `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
-| `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
+| `mutation` | runs only with `--mutation`, then warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
 Advisory lints such as `shared-spec-helper` and `unused-payload-field` report a risk that needs review, not a
 proven defect. They remain warnings even with `--deny lint`; rule-list JSON identifies
@@ -251,9 +251,9 @@ fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `a
 names every check; a single check overrides `all`):
 
 ```sh
-snappea check --warn lint        # run coverage and mutation testing before addressing lints
+snappea check --warn lint        # run coverage before addressing lints
 snappea check --warn coverage    # explore while the test suite is still being built
-snappea check --deny mutation    # CI: also fail on undetected mutants
+snappea check --deny mutation    # CI: run mutation testing and fail on undetected mutants
 ```
 
 A warned finding is still printed, labelled `warning`, and the final line says
@@ -351,7 +351,6 @@ Not covered by any test case:
   PSrc/Inventory.p:46  Inventory.Serving, on eReleaseReq: if (req.order in reservations) never false
   PSrc/Inventory.p:85  OrderClient.Checking, on eAvailableResp: if (resp.units < units) never true
 Coverage includes partial results from test cases stopped by their bugs.
-Mutation testing skipped: a test case failed.
 1 of 2 test cases failed in 0.08s, peak memory 10 MB. Output: PCheckerOutput/
 ```
 
@@ -376,7 +375,7 @@ mutants the time limit left without a first turn or without their full budget,
 and `mutants_failed_to_run` mutants the checker could not run; they change `status` only
 under `--deny mutation` (and in `check mutation`), where an untested mutant is not a
 pass. `skipped`
-lists checks a pass did not include (`--no-mutation`, `--warn coverage`), and `note`
+lists checks a pass did not include (`--warn coverage`), and `note`
 says in a sentence what a pass did not cover and what to run next.
 `--format text|json` or `--json` chooses, as does `SNAPPEA_FORMAT=text|json`, and
 `--json-report FILE` also writes the JSON to `FILE`. Every `snappea` command takes
@@ -721,13 +720,13 @@ exercised.
 
 ## Mutation testing
 
-Coverage shows what ran; it does not show whether anything checked it. When every test
-case passes, `snappea check` runs them again against mutants: copies of the model with
-one small change. A mutant that every test case still passes marks code whose effect no
-spec or assertion depends on:
+Coverage shows what ran; it does not show whether anything checked it. With
+`--mutation`, when every test case passes, `snappea check` runs them again against
+mutants: copies of the model with one small change. A mutant that every test case still
+passes marks code whose effect no spec or assertion depends on:
 
 ```
-$ snappea check tcAtomicReserve
+$ snappea check tcAtomicReserve --mutation
 ...
 Mutation testing: 19 of 39 mutants detected (1.8s)
 Not detected by any test case (every test case still passes with the change):
@@ -937,8 +936,16 @@ Add a test case that runs that code, or mark code that need not run with
 reports untested and undetected mutants without failing. A test case named `lint` or
 `mutation` is selected with a glob (`snappea check 'mutation*'`).
 
+Mutation testing is off by default: it judges whether the specs are strong enough,
+which is worth doing once a model passes, not on every edit. `--mutation` turns it on
+for `snappea check`; `--mutation-timeout` and `--deny mutation` imply it. Without them,
+JSON `mutation` is `{"skipped": "not requested (--mutation runs it)"}`, and the check is
+not reported as partial. `--no-mutation` is still accepted, for scripts that pass it,
+and does nothing; it cannot be combined with `--mutation`, `--mutation-timeout` or
+`--deny mutation`. `snappea check mutation` always runs it.
+
 In `snappea check`, mutation testing stops at its time limit, 30 seconds by default
-(`--mutation-timeout 2m` changes it, `--no-mutation` skips it). Because the schedules
+(`--mutation-timeout 2m` changes it). Because the schedules
 go round robin, a run the time limit stops has given every mutant about the same share:
 on a large model, each may get only its first turns. A mutant no test case has detected
 yet, but that the time limit stopped before its budget on a test case whose search was

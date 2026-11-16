@@ -101,7 +101,7 @@ writes; monotonic reads hold because it also covers every value the session has 
 ## Run
 
 ```sh
-snappea check StaleReplicaRead.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check StaleReplicaRead.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check StaleReplicaRead.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

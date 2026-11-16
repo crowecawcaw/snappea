@@ -106,7 +106,7 @@ conflict on what they read, not only on what they write.
 ## Run
 
 ```sh
-snappea check WriteSkew.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check WriteSkew.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check WriteSkew.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

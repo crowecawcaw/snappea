@@ -26,8 +26,8 @@
  *
  * Run from this directory:
  *   snappea check                    # all tests, with mutation testing; must pass
- *   snappea check tcNoFault tcPausedHolder tcCrashedHolder tcLostRelease --no-mutation
- *   snappea check 'tcNoExpiry*' --no-mutation   # pass by finding the liveness bug
+ *   snappea check tcNoFault tcPausedHolder tcCrashedHolder tcLostRelease
+ *   snappea check 'tcNoExpiry*'   # pass by finding the liveness bug
  *   snappea check mutation           # deeper search per mutant; detects every one
  * Suppressed mutants are marked in the code: with expiry at any time, an early or
  * missing release only ends a lease sooner or later, which no spec can tell apart.

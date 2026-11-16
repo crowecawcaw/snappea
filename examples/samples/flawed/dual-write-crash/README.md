@@ -111,7 +111,7 @@ next update with the previous update's commit result (`tcFixedStaleCommitResult`
 ## Run
 
 ```sh
-snappea check DualWriteCrash.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check DualWriteCrash.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check DualWriteCrash.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

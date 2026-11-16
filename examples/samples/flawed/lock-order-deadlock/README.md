@@ -106,7 +106,7 @@ which is what `tcFixedCycleOfThree` checks.
 ## Run
 
 ```sh
-snappea check LockOrderDeadlock.pproj            # everything: the fix, the negative controls, coverage, mutation testing
+snappea check LockOrderDeadlock.pproj --mutation # everything: the fix, the negative controls, coverage, mutation testing
 snappea check LockOrderDeadlock.pproj 'tcBug*'   # only the negative controls: each passes only when its declared bug is found
 ```
 

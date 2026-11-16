@@ -28,7 +28,7 @@ class ResponseIntegrityTests(unittest.TestCase):
             source.write_text(before + 'machine SplitCommitService {' + after)
             checked = subprocess.run(
                 [binary, 'check', 'tcDurableRetry', 'tcCompletedReplay',
-                 'tcConcurrentRetries', '--no-mutation', '--timeout', '5s', '--json'],
+                 'tcConcurrentRetries', '--timeout', '5s', '--json'],
                 cwd=work, text=True, capture_output=True, timeout=30)
         self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
         report = json.loads(checked.stdout)

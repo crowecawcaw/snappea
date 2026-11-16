@@ -1,8 +1,8 @@
 // Importable P building blocks; no special runtime or language features.
 // Export: snappea guide example building-blocks --out vendor
 // cd vendor/building-blocks
-// Passing: snappea check tcReplies tcNetworkFaults Example.pproj --no-mutation
-// Negative controls: snappea check tcDuplicate tcMissing Example.pproj --no-mutation
+// Passing: snappea check tcReplies tcNetworkFaults Example.pproj
+// Negative controls: snappea check tcDuplicate tcMissing Example.pproj
 //   passes only when tcDuplicate fails with "duplicate terminal reply for request 1"
 //   and tcMissing fails in the hot state RepliesPending (see expect-bug below).
 // Everything, with mutation testing: snappea check Example.pproj

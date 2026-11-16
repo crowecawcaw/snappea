@@ -27,11 +27,11 @@
  * inspection per ID plus every client done; dropping work cannot pass vacuously.
  *
  * Run positive tests TOGETHER to cover shared code (each narrow case can lack coverage):
- *   snappea check bounded-history.p tcFixedInputHistory tcSchedulerChoosesInterleaving tcGeneratedHistory tcConcurrentGeneratedHistory --no-mutation --timeout 5s
+ *   snappea check bounded-history.p tcFixedInputHistory tcSchedulerChoosesInterleaving tcGeneratedHistory tcConcurrentGeneratedHistory --timeout 5s
  * Negative controls (each must fail its intended property, not compile/coverage):
- *   snappea check bounded-history.p tcBrokenInputHistory --no-mutation
- *   snappea check bounded-history.p tcBrokenGeneratedHistory --no-mutation
- *   snappea check bounded-history.p tcRejectedWriteChangesState --no-mutation
+ *   snappea check bounded-history.p tcBrokenInputHistory
+ *   snappea check bounded-history.p tcBrokenGeneratedHistory
+ *   snappea check bounded-history.p tcRejectedWriteChangesState
  * First two catch excess acceptance; last catches "public stock 1, expected 0".
  *   snappea observe bounded-history.p valid-concurrent.jsonl --spec CapacityOracle --strict --check-hot
  * valid.jsonl also passes; invalid*.jsonl, incomplete.jsonl and zero-work.jsonl must

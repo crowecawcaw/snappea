@@ -46,7 +46,8 @@ transaction, and replies in the same step.
 
 ## The concept
 
-`snappea check` runs mutation testing after the tests pass. Each **undetected mutant**
+`snappea check --mutation` runs mutation testing after the tests pass (without
+`--mutation`, `snappea check` skips it). Each **undetected mutant**
 is a change to the design that no test noticed. For each one, decide:
 
 1. **A missing check**: add an assertion or a progress (hot-state) obligation. Usual.
@@ -79,7 +80,8 @@ warning[unused-payload-field]: spec 'WithdrawalsMatchBalance' never reads payloa
 error[no-progress-spec]: test 'tcTwoWithdrawals' waits for the model's responses, but none of its specs has a hot state, so a model that stops responding passes
 ```
 
-With `--warn lint` it explores, passes with full coverage, and mutation testing reports:
+With `--warn lint --mutation` it explores, passes with full coverage, and mutation
+testing reports:
 
 ```text
 Mutation testing: 1 of 14 mutants detected, 2 suppressed (0.6s)
@@ -174,7 +176,7 @@ Not detected by any test case (every test case still passes with the change):
 ```sh
 cd examples/samples/concepts/15-mutation-driven-specs
 snappea check --deny mutation
-snappea check PSrc/Account.p PSpec/Events.p weak/Withdrawals.p PTst/Tests.p --warn lint   # the weak spec
+snappea check PSrc/Account.p PSpec/Events.p weak/Withdrawals.p PTst/Tests.p --warn lint --mutation   # the weak spec
 ```
 
 ## Bounds and omissions

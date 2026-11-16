@@ -116,11 +116,12 @@ async function handle(id: number, req: Request): Promise<CompileResult | CheckRe
       diagnostics: c.diagnostics, testCase: req.testCase, millis: performance.now() - t0,
     };
   }
-  // the browser checks on one thread: mutation testing gets the test case's time limit
-  // unless the extra options set it
+  // people exploring a model see mutation testing unless they turn it off with
+  // `--no-mutation` (the CLI runs it only with `--mutation`); the browser checks on one
+  // thread, so it gets the test case's time limit unless the extra options set it
   const mutation = req.extraArgs.some((a) => /^--(no-mutation|mutation-timeout)\b/.test(a))
     ? []
-    : ["--mutation-timeout", `${req.timeout}s`];
+    : ["--mutation", "--mutation-timeout", `${req.timeout}s`];
   // people exploring a model see lint findings and coverage gaps as warnings unless they
   // ask for the CLI's strict defaults; a `--warn`/`--deny` in the extra options wins
   const gates = req.strict || req.extraArgs.some((a, i) => /^--(warn|deny)(=all)?$/.test(a) && (a.endsWith("=all") || req.extraArgs[i + 1] === "all"))

@@ -34,12 +34,12 @@ TUTORIAL = ROOT / "tests" / "upstream" / "Tutorial"
 # different shapes. Each check runs for its timeout, so the total is about 30 seconds.
 TRAINING = [
     ("1_ClientServer", ["tcMultipleClients"], ["--mutation-timeout", "5s"]),
-    ("2_TwoPhaseCommit", ["tcMultipleClientsWithFailure"], ["--no-mutation"]),
-    ("3_EspressoMachine", ["tcCrazyUserUsingCoffeeMachine"], ["--no-mutation"]),
-    ("4_FailureDetector", ["tcTest_FailureDetector"], ["--no-mutation"]),
-    ("5_Paxos", ["testBasicPaxos3on3"], ["--no-mutation"]),
-    ("6_Raft", ["oneClientThreeServersUnreliable", "twoClientsThreeServersReliable"], ["--no-mutation"]),
-    ("PriorityQueue", ["tcCheck_PriorityQueue"], ["--no-mutation"]),
+    ("2_TwoPhaseCommit", ["tcMultipleClientsWithFailure"], []),
+    ("3_EspressoMachine", ["tcCrazyUserUsingCoffeeMachine"], []),
+    ("4_FailureDetector", ["tcTest_FailureDetector"], []),
+    ("5_Paxos", ["testBasicPaxos3on3"], []),
+    ("6_Raft", ["oneClientThreeServersUnreliable", "twoClientsThreeServersReliable"], []),
+    ("PriorityQueue", ["tcCheck_PriorityQueue"], []),
 ]
 
 

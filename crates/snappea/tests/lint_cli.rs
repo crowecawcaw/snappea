@@ -63,7 +63,7 @@ fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     assert_eq!(h.stderr, lint);
     assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
     assert!(
-        h.stdout.ends_with("but lint failed (1 finding); coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
+        h.stdout.ends_with("but lint failed (1 finding); coverage skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
         "{}",
         h.stdout
     );
@@ -106,7 +106,7 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     assert_eq!(result["summary"]["lint_failed"], true);
     assert_eq!(result["summary"]["message"], "1 of 1 test case failed; lint failed (1 finding)");
     assert_eq!(result["coverage"], serde_json::json!({"skipped": "lint failed"}));
-    assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+    assert_eq!(result["mutation"], serde_json::json!({"skipped": "not requested (--mutation runs it)"}));
 }
 
 #[test]
@@ -114,9 +114,11 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
     let mut h = MemHost::new("/w");
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     h.add_file("model.p", MODEL);
-    for (command, skipped) in
-        [(&["check"][..], "coverage and mutation testing"), (&["check", "mutation"], "mutation testing")]
-    {
+    for (command, skipped, mutation) in [
+        (&["check"][..], "coverage", "not requested (--mutation runs it)"),
+        (&["check", "--mutation"], "coverage and mutation testing", "lint failed"),
+        (&["check", "mutation"], "mutation testing", "lint failed"),
+    ] {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2, "{}{}", h.stdout, h.stderr);
         let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
         assert_eq!(result["exit_code"], 2);
@@ -126,7 +128,7 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(result["summary"]["status"], "lint_failed");
         assert_eq!(result["summary"]["lint_failed"], true);
         assert_eq!(result["summary"]["coverage_gaps"], 0);
-        assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+        assert_eq!(result["mutation"], serde_json::json!({ "skipped": mutation }));
         h.env.remove("SNAPPEA_FORMAT");
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
         assert!(h.stdout.contains(&format!("but lint failed (1 finding); {skipped} skipped.")), "{}", h.stdout);

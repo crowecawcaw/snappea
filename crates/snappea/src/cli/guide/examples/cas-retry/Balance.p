@@ -26,7 +26,7 @@
  * this test bound is NOT a production retry policy or proof of fairness.
  *
  * Run from this directory:
- *   snappea check Balance.p --no-mutation --timeout 5s
+ *   snappea check Balance.p --timeout 5s
  *   python check_examples.py --binary /path/to/snappea
  * The script requires complete positives and intended assertions for lost update,
  * reapplied retry, mutation on rejection, and corrupt actual reply; compile/lint/
