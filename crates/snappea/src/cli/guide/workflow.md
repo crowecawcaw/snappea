@@ -27,8 +27,12 @@ timeouts, recovery. Do the steps in order. Read each guide page whole, not throu
   release or reply is lost). Safety assertions cannot find these; each needs a
   liveness spec (`snappea guide spec-patterns`).
 
-## 2. Model the algorithm, not the API
+## 2. Model each concern's algorithm, not the API
 
+- Model what you want to validate, not the whole system: one model per part with its
+  own state and failure modes (usually 1-3), one test case per risk. Abstract what a
+  model leaves out to its contract; where models meet, one model's spec asserts what
+  another assumes (`snappea guide modeling`).
 - A store machine holding exactly what the real store holds; its handlers are the
   real primitives (`load` returns (version, value); `cas` succeeds only at the
   current version).
@@ -41,33 +45,38 @@ timeouts, recovery. Do the steps in order. Read each guide page whole, not throu
   until they succeed; giving up after N attempts hides a stuck state. Shape:
   `snappea guide example cas-retry`. Syntax: `snappea guide syntax`.
 
+Reviewing existing code instead: list hypotheses from the checklist, group them by
+machinery, one model per group and one test per hypothesis, expecting failure; write
+a fixed variant only after the group is tried (`snappea guide modeling`).
+
 ## 3. Check until it passes for real
 
-    snappea check            # every test case, then coverage and mutation checks
+    snappea check A.pproj    # every test case of one model, then coverage and mutation
 
 - Exit 1: a bug (fix the design, keep the scenario) or a coverage gap (add a
   scenario). Exit 0 with `summary.incomplete` > 0 is not a pass.
 - Each undetected mutant usually means a missing assertion: add it, or suppress an
   equivalent one with a reason.
 - Do not finish with `--no-mutation` or `--warn coverage`. Incomplete search: shrink
-  bounds or raise `--timeout`; for mutation, `snappea check mutation
-  --mutation-timeout 5m`.
+  bounds, split the model, or raise `--timeout`; for mutation, `snappea check
+  mutation --mutation-timeout 5m`.
 - Without a hot spec state the check is safety only: a lock stuck forever passes.
   Keep a spec hot until each liveness risk from step 1 resolves, and give each
   timeout, lease or retry a test where it is the only way forward.
 - A bug found here is the payoff: record it, fix the design, then implement.
 
-## 4. Implement, then test what the model explored
+## 4. Implement, then test what the models explored
 
 Force each scenario and model bug on the real code, add an observation test against
-the P spec, then break the code on purpose until every break fails a test
-(`snappea guide testing`, `snappea guide python`).
+the P specs of every model, then break the code on purpose until every break fails a
+test (`snappea guide testing`, `snappea guide python`).
 
 ## Done means
 
-- `snappea check` exits 0 with complete search, or stated bounds.
+- `snappea check` exits 0 for every model, with complete search or stated bounds.
 - Implementation tests pass, including forced-interleaving and observation tests;
   every deliberate break fails one.
 - DESIGN.md (or the report) states the contract, primitives, failure model,
-  scenarios, bounds, what the model found and what is not covered, and answers every
-  `snappea guide checklist` item: yes / no / not applicable, with a reason.
+  models with their assumptions and seams, scenarios, bounds, what each model found
+  and what is not covered, and answers every `snappea guide checklist` item: yes /
+  no / not applicable, with the model that covers it or a reason.

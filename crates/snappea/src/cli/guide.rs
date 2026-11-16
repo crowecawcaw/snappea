@@ -15,10 +15,14 @@ const TOPICS: &[(&str, &str, &str)] = &[
     ),
     (
         "checklist",
-        "Model review checklist: actors, network, crashes, time, specs, search",
+        "Model review checklist: models and seams, actors, network, crashes, time, specs, search",
         include_str!("guide/checklist.md"),
     ),
-    ("modeling", "What to model: boundaries, atomic steps, interference", include_str!("guide/modeling.md")),
+    (
+        "modeling",
+        "What to model: one model per concern, seams, reviewing code, atomic steps",
+        include_str!("guide/modeling.md"),
+    ),
     ("scenarios", "Choose test scenarios and drivers; act on coverage and mutants", include_str!("guide/scenarios.md")),
     (
         "spec-patterns",
