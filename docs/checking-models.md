@@ -241,7 +241,7 @@ the check or is reported as a warning:
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
-Advisory lints such as `shared-spec-helper` report a risk that needs review, not a
+Advisory lints such as `shared-spec-helper` and `unused-payload-field` report a risk that needs review, not a
 proven defect. They remain warnings even with `--deny lint`; rule-list JSON identifies
 them with `"severity": "advisory"`. See [linting](linting.md) for each rule's limits.
 

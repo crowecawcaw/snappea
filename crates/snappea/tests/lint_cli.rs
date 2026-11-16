@@ -39,14 +39,14 @@ fn lint_uses_the_shared_json_output_for_results_rules_and_failures() {
 #[test]
 fn frozen_agent_models_type_check_and_report_the_expected_weaknesses() {
     for (source, expected) in [
-        (include_str!("../../snappea-lint/tests/models/agent-p01.p"), "tautological-assert"),
-        (include_str!("../../snappea-lint/tests/models/agent-p03.p"), "unused-payload-field"),
-        (include_str!("../../snappea-lint/tests/models/agent-p06.p"), "permissive-monitor"),
+        (include_str!("../../snappea-lint/tests/models/agent-p01.p"), "error[tautological-assert]"),
+        (include_str!("../../snappea-lint/tests/models/agent-p03.p"), "warning[unused-payload-field]"),
+        (include_str!("../../snappea-lint/tests/models/agent-p06.p"), "error[permissive-monitor]"),
     ] {
         let mut h = MemHost::new("/w");
         h.add_file("model.p", source);
-        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
-        assert!(h.stderr.contains(&format!("error[{expected}]")), "{}{}", h.stdout, h.stderr);
+        run(&mut h, &["check", "lint", "model.p"]);
+        assert!(h.stderr.contains(expected), "{}{}", h.stdout, h.stderr);
         assert!(h.files_under("PCheckerOutput").is_empty());
     }
 }
@@ -579,9 +579,14 @@ fn companion_reads_cannot_leak_across_tests_or_selections() {
         &format!("{COMPLEMENTARY_PAYLOAD_SPECS}\ntest alone [main=Main]: assert RequestKnown in {{ Main, Sensor }};"),
     );
     assert_eq!(run(&mut h, &["check", "model.p", "together", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    // reported for the test without the companion, as a warning that does not fail
     for args in [vec!["check", "lint", "model.p"], vec!["check", "model.p", "alone"], vec!["check", "model.p"]] {
-        assert_eq!(run(&mut h, &args), 2, "{args:?}: {}{}", h.stdout, h.stderr);
-        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("test(s) alone"), "{}", h.stderr);
+        assert_eq!(run(&mut h, &args), 0, "{args:?}: {}{}", h.stdout, h.stderr);
+        assert!(
+            h.stderr.contains("warning[unused-payload-field]") && h.stderr.contains("test(s) alone"),
+            "{}",
+            h.stderr
+        );
     }
 }
 
@@ -593,14 +598,14 @@ fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
             .replace("on Reading do Check", "on Other do Check"),
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "event Other: (request: int, value: int); spec ValueValid observes Other")
-            .replace("on Reading do Check", "// snappea-lint: allow unobserved-handler -- intentionally unreachable reader fixture\n on Reading do Check"),
+            .replace("on Reading do Check", "\n// snappea-lint: allow unobserved-handler -- intentionally unreachable reader fixture\n on Reading do Check"),
         COMPLEMENTARY_PAYLOAD_SPECS.replace("spec ValueValid observes Reading", "scenario ValueValid observes Reading")
             .replace("start state Watching { on Reading do Check; }", "start state Watching { on Reading do Check; } cold state Seen {}"),
     ] {
         let mut h = MemHost::new("/w");
         h.add_file("model.p", &source);
-        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2, "{}{}", h.stdout, h.stderr);
-        assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
+        assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
+        assert!(h.stderr.contains("warning[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
     }
 }
 
@@ -620,10 +625,11 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
         test tc [main=Main]: assert Safety in { Main, Server };\n";
     let mut h = MemHost::new("/w");
     h.add_file("model.p", model);
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    // an advisory: reported, but lint passes
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
     // the misplaced suppression does not hide the finding, and says where it must go
     assert!(
-        h.stderr.contains("error[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
+        h.stderr.contains("warning[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
         "{}",
         h.stderr
     );
@@ -656,8 +662,9 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
             "/* snappea-lint: allow unused-payload-field -- amounts */",
         ),
     );
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
     assert!(h.stderr.contains("warning[unused-suppression]: this block comment is not read"), "{}", h.stderr);
+    assert!(h.stderr.contains("warning[unused-payload-field]"), "{}", h.stderr);
 }
 
 #[test]

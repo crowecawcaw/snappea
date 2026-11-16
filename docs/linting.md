@@ -76,7 +76,7 @@ model covers every requirement or faithfully represents the implementation.
 | `no-model-machine` | A runnable test configuration contains no selected implementation machine besides its entry machine. | Put modeled behavior in a separate implementation machine and select it alongside the entry driver. |
 | `tautological-assert` | A scalar assertion is guaranteed true by its expression or preceding assignments. | Compare against independently observed state or an independent expected result. |
 | `announce-and-send` | Adjacent `announce` and `send` expose the same event and payload to a spec twice. | Remove the redundant `announce`, or suppress an intentional duplicate. |
-| `unused-payload-field` | A spec handler omits a named payload field, and at least one selected test has no companion spec that reads that event field outside diagnostic output. Fields holding machine references (reply addresses) are not checked. | Check the field when the contract depends on it, or suppress an intentional abstraction. |
+| `unused-payload-field` | Advisory: a spec handler omits a named payload field, and at least one selected test has no companion spec that reads that event field outside diagnostic output. Fields holding machine references (reply addresses) are not checked. | Check the field when the contract depends on it, or suppress an intentional abstraction. |
 | `payload-field-checked-by-other-spec` | Advisory: this handler omits a field that a companion spec reads in every selected test using the monitor. | Keep each spec focused; review whether the division matches the contract. |
 | `unobserved-handler` | A spec or scenario handles an event its `observes` list leaves out, so the handler never runs. | Add the event to `observes`, or remove the handler. |
 | `scenario-never-accepts` | A scenario has no accepting (`cold`) state, so it always reports 0 coverage. | Mark the state the scenario should reach `cold`. |
@@ -218,8 +218,10 @@ still produces the advisory `payload-field-checked-by-other-spec` when a compani
 checks it in every selected test that uses that monitor. This remains nonblocking
 with `--deny lint`; no suppression is needed just to divide responsibilities.
 
-A field with no reader in any one of those test configurations remains a blocking
-`unused-payload-field`, naming the affected tests. Selecting a companion in another
+A field with no reader in any one of those test configurations produces the advisory
+`unused-payload-field`, naming the affected tests. It is a warning: it does not fail
+`check lint` or `check`, even with `--deny lint`. Review it; the spec may be missing a
+check the contract depends on. Selecting a companion in another
 test does not help. Scenarios, unselected specs, handlers for other events, and
 handlers outside a spec's `observes` list cannot provide evidence. Printing a field
 or using it only in an assertion message does not count. Whole-tuple forwarding or

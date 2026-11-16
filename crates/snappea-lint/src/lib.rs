@@ -83,7 +83,10 @@ pub const UNUSED_SUPPRESSION: &str = "unused-suppression";
 /// Whether a rule reports an advisory rather than blocking a check. Advisory findings
 /// remain warnings even with `--deny lint`; source suppressions work as usual.
 pub fn is_advisory(rule: &str) -> bool {
-    matches!(rule, "shared-spec-helper" | "payload-field-checked-by-other-spec" | UNUSED_SUPPRESSION)
+    matches!(
+        rule,
+        "shared-spec-helper" | "unused-payload-field" | "payload-field-checked-by-other-spec" | UNUSED_SUPPRESSION
+    )
 }
 
 /// An actionable diagnostic; advisory rules do not fail CLI linting.

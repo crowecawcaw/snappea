@@ -9,7 +9,7 @@ impl Rule for UnusedPayloadField {
         "unused-payload-field"
     }
     fn description(&self) -> &'static str {
-        "A spec handler omits a named event payload field that no companion spec reads in at least one selected test"
+        "Advisory: a spec handler omits a named event payload field that no companion spec reads in at least one selected test"
     }
     fn check(&self, ctx: &Context<'_>, out: &mut Vec<Finding>) {
         self.check_selected(ctx, None, out);
