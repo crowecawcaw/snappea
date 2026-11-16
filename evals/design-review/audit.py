@@ -24,7 +24,7 @@ for line in path.read_text().splitlines():
 bad = []
 for u in uses:
     cmd = (u.get("input") or {}).get("command", "")
-    if u.get("name") == "SubagentHandback":
+    if str(u.get("name", "")).endswith("SubagentHandback"):
         continue
     if u.get("name") != "Bash" or f"harness.py bridge {run_id}" not in cmd:
         bad.append({"tool": u.get("name"), "input": json.dumps(u.get("input"))[:300]})
