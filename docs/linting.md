@@ -311,16 +311,19 @@ a machine that sends a request and then waits for the reply, in a `receive` or i
 state that handles only replies, passes when the reply never comes. A reply is an event
 another machine of the test sends while handling one of this machine's requests (in the
 handler, the functions it calls, or the entry of the state it goes to). This finding is
-reported once for all tests, at each waiting state or `receive`. A suppression before
-the machine covers all of them, for example for a design that does not promise progress:
+reported at each waiting state or `receive`, naming the first test it applies to. A
+suppression before the machine covers it in every test, for example for a design that
+does not promise progress:
 
 ```p
 // snappea-lint: allow no-progress-spec -- Paxos does not promise progress with competing proposers
 machine Proposer { ... }
 ```
 
-`no-progress-spec` reports such a test at its declaration. A test meant to check only
-safety, for example alongside another test that checks progress, can suppress it:
+`no-progress-spec` reports a waiting driver at the test's declaration. A test meant to
+check only safety, for example alongside another test that checks progress, can
+suppress it there. A suppression before the test also covers a waiting design machine
+in that test, but not in other tests:
 
 ```p
 // snappea-lint: allow no-progress-spec -- tcServeLiveness checks progress
@@ -471,7 +474,7 @@ be where the rule reports, which is not always where the cause is:
 | --- | --- |
 | `unused-payload-field`, `payload-field-checked-by-other-spec` | the spec's handler for the event (or its state or spec), not the test that selects the spec |
 | `unselected-spec`, `permissive-monitor` | the spec |
-| `no-model-machine`, `no-progress-spec` | the test (`no-progress-spec` for a waiting design machine: that machine) |
+| `no-model-machine`, `no-progress-spec` | the test (`no-progress-spec` for a waiting design machine: that test, or the machine for every test) |
 | `unplanned-driver-stage` | the statement that starts the later stage, or the driver machine |
 
 A lint suppression that matches no finding produces the advisory `unused-suppression`

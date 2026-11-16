@@ -5,7 +5,7 @@ use crate::host::{Color, Exit, Host, Stream};
 use crate::project::Sources;
 use crate::sema::diag::{render_coded, render_snippet, render_with_level};
 use crate::sema::{Program, TestCase};
-use crate::syntax::{ParseError, SourceMap};
+use crate::syntax::{ParseError, SourceMap, Span};
 use serde_json::{json, Value};
 use snappea_lint::{Finding, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
 
@@ -52,20 +52,24 @@ fn collect(
     let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
     let positive: Vec<_> =
         tests.iter().filter(|tc| intent(prog, tc, intents).is_none_or(|i| i.expected_bug.is_none())).cloned().collect();
-    let mut program: Vec<Finding> =
+    let mut program: Vec<(Finding, Option<Span>)> =
         crate::checker::checked::lints_with_progress_tests(prog, tests, &positive, &drivers)
             .into_iter()
             .filter(|f| !f.span.is_dummy())
             .map(|f| {
                 let finding = Finding::new(f.rule, f.span, f.message);
-                match f.help {
+                let finding = match f.help {
                     Some(help) => finding.with_help(help),
                     None => finding,
-                }
+                };
+                (finding, f.test)
             })
             .collect();
     used.extend(snappea_lint::suppress_program_findings(sm, &mut program).unwrap_or_default());
-    findings.extend(program);
+    // a wait in several tests is reported for each, so a suppression before one test
+    // covers only that test: keep the first one left
+    program.dedup_by(|(b, _), (a, _)| a.rule == "no-progress-spec" && a.rule == b.rule && a.span == b.span);
+    findings.extend(program.into_iter().map(|(f, _)| f));
     sort(&mut findings);
     Ok((findings, used))
 }
@@ -171,7 +175,7 @@ fn reported_at(rule: &str) -> &'static str {
         "tautological-assert" => "the assert statement",
         "announce-and-send" => "the second of the two statements",
         "enum-value-shadows-machine" => "the enum declaration",
-        "no-progress-spec" => "the test declaration, or the machine that waits for a reply",
+        "no-progress-spec" => "the test declaration (or, for a machine that waits for a reply, that machine)",
         "unplanned-driver-stage" => "the statement that starts the later stage, or the driver machine",
         "unreachable-statement" => "the statement that never runs",
         "shared-spec-helper" => "the helper function declaration",

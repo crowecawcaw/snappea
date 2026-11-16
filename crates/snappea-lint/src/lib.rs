@@ -61,15 +61,20 @@ pub const COMMENT_RULES: &[(&str, &str)] = &[
 ];
 
 /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
-/// comment covers. Returns the suppressions that covered at least one finding.
+/// comment covers. Each finding may name a second place a suppression also covers it,
+/// such as the test declaration a finding reported at a machine is about. Returns the
+/// suppressions that covered at least one finding.
 pub fn suppress_program_findings(
     sources: &SourceMap,
-    findings: &mut Vec<Finding>,
+    findings: &mut Vec<(Finding, Option<Span>)>,
 ) -> Result<Vec<SuppressionUse>, ParseError> {
     let allowed = suppression::program_suppressions(&Context::parse(sources)?);
     let mut used = Vec::new();
-    findings.retain(|f| {
-        let by: Vec<_> = allowed.iter().filter(|s| s.rule == f.rule && s.scope.contains(f.span)).collect();
+    findings.retain(|(f, also)| {
+        let covers = |s: &&LintSuppression| {
+            s.rule == f.rule && (s.scope.contains(f.span) || also.is_some_and(|a| s.scope.contains(a)))
+        };
+        let by: Vec<_> = allowed.iter().filter(covers).collect();
         used.extend(by.iter().map(|s| SuppressionUse { comment: s.comment, rule: s.rule.clone() }));
         by.is_empty()
     });

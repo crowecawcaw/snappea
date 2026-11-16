@@ -710,3 +710,41 @@ fn invalid_suppression_names_the_id_and_the_closest_rule() {
     );
     assert!(!h.stderr.contains("allow invalid-suppression"), "{}", h.stderr);
 }
+
+#[test]
+fn no_progress_spec_for_a_waiting_machine_can_be_suppressed_at_the_test() {
+    let model = "event ePing: Client;\n\
+        event ePong;\n\
+        spec Pongs observes ePong { var n: int; start state S { on ePong do { n = n + 1; assert n < 3; } } }\n\
+        machine Counter { start state S { on ePing do (c: Client) { send c, ePong; } } }\n\
+        machine Client {\n\
+          start state Init { entry (c: Counter) { send c, ePing, this; goto Waiting; } }\n\
+          state Waiting { on ePong goto Done; }\n\
+          state Done { }\n\
+        }\n\
+        machine Main { start state S { entry { new Client(new Counter()); } } }\n\
+        ALLOW_A\
+        test tcA [main=Main]: assert Pongs in { Counter, Client, Main };\n\
+        ALLOW_B\
+        test tcB [main=Main]: assert Pongs in { Counter, Client, Main };\n";
+    let allow = "// snappea-lint: allow no-progress-spec -- safety only\n";
+    let mut h = MemHost::new("/w");
+    // reported once, at the machine, for the first test
+    h.add_file("model.p", &model.replace("ALLOW_A", "").replace("ALLOW_B", ""));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert_eq!(h.stderr.matches("error[no-progress-spec]").count(), 1, "{}", h.stderr);
+    assert!(h.stderr.contains("no spec of test 'tcA' has a hot state"), "{}", h.stderr);
+    // a suppression before one test covers only that test
+    h.add_file("model.p", &model.replace("ALLOW_A", allow).replace("ALLOW_B", ""));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert!(h.stderr.contains("no spec of test 'tcB' has a hot state"), "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    // before each test, nothing is left and no suppression is unused
+    h.add_file("model.p", &model.replace("ALLOW_A", allow).replace("ALLOW_B", allow));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    // before the waiting machine still works
+    let at_machine = model.replace("ALLOW_A", "").replace("ALLOW_B", "");
+    h.add_file("model.p", &at_machine.replace("machine Client {", &format!("{allow}machine Client {{")));
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
+}

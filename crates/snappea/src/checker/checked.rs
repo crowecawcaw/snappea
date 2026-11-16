@@ -515,6 +515,9 @@ pub struct Finding {
     pub message: String,
     /// The likely fix, when more specific than the rule's general one.
     pub help: Option<String>,
+    /// The test declaration the finding is about, when it is reported elsewhere: a
+    /// suppression before that test covers the finding too.
+    pub test: Option<Span>,
 }
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
@@ -585,7 +588,6 @@ pub fn lints_with_progress_tests(
     let mut out = Vec::new();
     let funs: Vec<Vec<FunId>> = (0..prog.machines.len()).map(|m| machine_funs(prog, MachineId(m as u32))).collect();
     // no-progress-spec
-    let mut waiting_reported: FxHashSet<Span> = FxHashSet::default();
     for (i, t) in prog.tests.iter().enumerate() {
         if !progress_tests.iter().any(|tc| matches!(tc.kind, crate::sema::TestCaseKind::Test(id, _) if id.idx() == i)) {
             continue;
@@ -644,6 +646,7 @@ pub fn lints_with_progress_tests(
         if waits {
             out.push(Finding {
                 help: None,
+                test: None,
                 rule: "no-progress-spec",
                 span: t.span,
                 message: format!(
@@ -654,13 +657,12 @@ pub fn lints_with_progress_tests(
             continue;
         }
         // a design machine that sends a request and waits for the reply, reported where
-        // it waits, once for all the tests
+        // it waits, once for each test, so a suppression before one test covers only its
+        // own (the caller keeps one finding per wait after suppressing)
         for (m, e, span) in crate::checker::flow_lints::waiting_machines(prog, t, &is_driver) {
-            if !waiting_reported.insert(span) {
-                continue;
-            }
             out.push(Finding {
                 help: None,
+                test: Some(t.span),
                 rule: "no-progress-spec",
                 span,
                 message: format!(
@@ -757,6 +759,7 @@ fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> 
     let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
     shared.into_iter().map(|(f, users)| Finding {
         help: None,
+        test: None,
         rule: "shared-spec-helper",
         span: prog.fun(f).span,
         message: format!(
