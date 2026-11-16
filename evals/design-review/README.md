@@ -15,17 +15,25 @@ fresh agent a historical snapshot of a real subsystem and asks it to model the d
 P and report design bugs. A blind grader matches the report against an answer key of
 bugs that upstream later fixed or documented.
 
-## Task
+## Tasks
 
 | Task | Source | Known issues |
 | --- | --- | --- |
 | `minio-dsync` | MinIO distributed locking at `10fd53d6` (2020-03-14), 9 files, ~1,750 lines | 5 |
+| `pg-logrep-sync` | PostgreSQL logical replication workers at `b38006ef` (2017-04-04, pre-release v10), 7 files, ~4,500 lines | 8 |
 
-The answer key is in `tasks/minio-dsync/private/answer-key.md`: mutual-exclusion
+`minio-dsync`'s answer key (`tasks/minio-dsync/private/answer-key.md`) has mutual-exclusion
 violations from stale-lock maintenance (K1) and lock-server restarts (K4), and
 liveness failures from the maintenance lock (K2), fire-and-forget unlock (K3) and
-expiry that never checks the owner (K5). It also lists non-issues and valid extras so
-graders agree. The solver gets the source without Git history or tests.
+expiry that never checks the owner (K5).
+
+`pg-logrep-sync`'s key has worker-slot races and leaks (K1, K2, K6), orphaned and
+resurrected sync state (K3, K4), a handover that skips changes (K5), a crash that
+replays a transaction (K7) and an undetected DDL deadlock (K8). All were fixed during
+the v10 beta in 2017. Its TASK.md states three facts about files not included.
+
+Each key also lists non-issues and valid extras so graders agree. The solver gets the
+source without Git history or tests. `task.json` names the subject the grader sees.
 
 ## Arms
 
@@ -69,7 +77,7 @@ count, for example after an out-of-bridge command that read host files.
 
 ## Scores
 
-- **found**: known issues whose mechanism and consequence the report explains (0-5).
+- **found**: known issues whose mechanism and consequence the report explains (0-5 or 0-8).
 - **checker_confirmed**: found or partial issues the report says a P counterexample
   showed. This is the measure most tied to the tooling; code reading alone can find
   issues in either arm.

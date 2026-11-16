@@ -220,8 +220,8 @@ def cmd_finish(a):
     print(json.dumps(stats, indent=2))
 
 
-GRADER = """You are grading a design review. A reviewer was given the source of MinIO's
-distributed locking subsystem at commit {commit} and asked to find design bugs. Below are
+GRADER = """You are grading a design review. A reviewer was given the source of {subject} at
+commit {commit} and asked to find design bugs. Below are
 the answer key of known issues and the reviewer's report.
 
 For each known issue K1..K{n}, decide:
@@ -231,9 +231,9 @@ For each known issue K1..K{n}, decide:
 - "missed": otherwise.
 Also note for each found/partial issue whether the report says the P checker produced a
 counterexample for it ("checker_confirmed": true/false). Count it only when the
-counterexample's scenario exercises this issue's own mechanism: a counterexample for a
-crashed holder does not confirm lost releases, and one for a restart does not confirm
-maintenance eviction. A bug argued from code next to an unrelated counterexample is false.
+counterexample's scenario exercises this issue's own mechanism: a counterexample for one
+fault (for example a crash) does not confirm an issue caused by a different fault (for
+example a lost message). A bug argued from code next to an unrelated counterexample is false.
 Then list the report's other claimed bugs that match no known issue, and classify each as
 "valid" (a real problem in this code, explained), "invalid" (wrong, e.g. contradicted by the
 key's "Not issues" section or the code), or "vague".
@@ -265,7 +265,7 @@ def cmd_grade_prompt(a):
     report = re.sub(r"\bsnappea\b", "<checker>", report, flags=re.I)
     report = re.sub(r"`p (check|compile)", r"`<checker> \1", report)
     key = (task_dir(meta["task"]) / "private" / "answer-key.md").read_text()
-    print(GRADER.format(commit=spec["commit"][:8], n=spec["known_issues"], key=key, report=report))
+    print(GRADER.format(subject=spec["subject"], commit=spec["commit"][:8], n=spec["known_issues"], key=key, report=report))
 
 
 def cmd_record_grade(a):
