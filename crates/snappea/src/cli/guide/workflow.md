@@ -55,6 +55,9 @@ a fixed variant only after the group is tried (`snappea guide modeling`).
 
 - Exit 1: a bug (fix the design, keep the scenario) or a coverage gap (add a
   scenario). Exit 0 with `summary.incomplete` > 0 is not a pass.
+- A failing test lists up to 3 distinct failures (`--max-bugs`) and every spec still
+  hot at the failure: read them all before changing the model. Lint failures do not
+  stop the search; bugs come first.
 - Each undetected mutant usually means a missing assertion: add it, or suppress an
   equivalent one with a reason.
 - Do not finish with `--no-mutation` or `--warn coverage`. Incomplete search: shrink
