@@ -63,3 +63,16 @@ scenario RefusedTwice observes eCasResp { ... }
 ```
 
 Details: [checking models](https://github.com/crowecawcaw/snappea/blob/main/docs/checking-models.md#coverage).
+
+## Check what matched
+
+- `snappea check -v` prints one satisfying execution per covered scenario (JSON:
+  `satisfyingExecution`). Confirm it shows the race, not an ordinary ordering that
+  matches too: announce an event at the branch that distinguishes the race (for
+  example `eStalePushRejected`), require it, and compare operation or version IDs.
+- Scenarios are required by default; `// snappea-lint: allow coverage -- reason` on
+  the declaration makes one optional. Expected-bug tests satisfy none.
+- `not_reached`: every selected search completed without reaching it. `unresolved`:
+  some search was incomplete. Neither is a counterexample.
+- Machine-wide coverage exemptions are listed with counts; prefer handler or branch
+  scopes.

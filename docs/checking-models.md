@@ -22,8 +22,9 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 ```
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
-schedules. Unsuppressed lint findings stop the check with exit status 2; run
-`snappea check lint` to inspect them without exploration. A project that lists
+schedules. Unsuppressed lint findings fail the check, but its test cases still run and
+report bugs; coverage and mutation testing are skipped. The exit status is 1 when a test
+case failed, else 2. Run `snappea check lint` to inspect the findings without exploration. A project that lists
 foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
 would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
 It selects search strategies automatically.
@@ -230,7 +231,7 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | blocking rules fail (exit 2, before exploring); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
@@ -244,7 +245,7 @@ fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `a
 names every check; a single check overrides `all`):
 
 ```sh
-snappea check --warn lint        # look for bugs in a model before addressing its lints
+snappea check --warn lint        # run coverage and mutation testing before addressing lints
 snappea check --warn coverage    # explore while the test suite is still being built
 snappea check --deny mutation    # CI: also fail on undetected mutants
 ```
@@ -570,6 +571,40 @@ not a full replay or a globally shortest execution. At most 128 events and 1024
 characters per event are retained; truncation is explicit. `-v` prints the evidence
 with its test case. Older artifacts without evidence still load. See `snappea guide
 scenario-monitors` for checking that the history distinguishes the intended race.
+
+### Behavioral coverage contract
+
+Native `snappea check` reports safety, behavioral coverage, raw structural
+coverage, required structural coverage after exemptions, and broad exemptions
+separately. JSON exposes `safety`, `behavioral_coverage`, `coverage`, and
+`coverage_exemptions`. Compatibility output and artifact schemas are unchanged.
+
+A named scenario is required by default. A scoped `allow coverage -- reason`
+on its declaration makes it optional; it remains visible in the contract.
+Keep required evaluation observers in grader-owned source files passed alongside
+the model, independent of candidate-authored monitors. Review their event history
+and state transitions: author-written scenarios can be weak. No tooling can
+validate a natural-language exemption reason or discover every meaningful race.
+
+An obligation is reached if any selected positive test witnesses it. Expected-bug
+tests do not satisfy obligations. Otherwise it is `not_reached` only when all
+selected positive searches completed without unexpected failures, and
+`unresolved` when any search is incomplete. Neither is a safety counterexample
+or proof of unreachability outside the selected bounded workload.
+Required missing and unresolved obligations fail the coverage gate (exit 1);
+`--warn coverage` reports them without failing that gate. Optional obligations
+do not fail it. Safety and mutation gates still apply independently.
+
+Progress counts are observer-defined states visited in one schedule, not an
+inferred semantic explanation or a percentage of completion. Witness test names
+refer to the unchanged per-test scenario artifacts and their accepting event
+histories; these histories are not full replay schedules.
+
+Machine-wide exemptions print their declaration location, reason, and counts by
+kind of raw uncovered point, including children collapsed in compact gap output.
+JSON retains these counts even when zero. Prefer handler or branch scopes for
+impossible routes and defensive guards. A passing required gate with exemptions
+does not imply full branch coverage.
 
 The default gate checks aggregate coverage across all selected test cases. It requires
 all executable statements (including ordinary assertions), event handlers, and both

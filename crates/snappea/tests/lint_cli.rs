@@ -1,5 +1,6 @@
-//! Lint/check parity over real parsed and type-checked P models, without scheduling
-//! when a lint fails. Upstream compatibility remains independent of lint policy.
+//! Lint/check parity over real parsed and type-checked P models. A failing lint fails
+//! `check` but does not hide its bugs. Upstream compatibility remains independent of
+//! lint policy.
 use snappea::host::MemHost;
 
 fn run(host: &mut MemHost, args: &[&str]) -> i32 {
@@ -51,18 +52,92 @@ fn frozen_agent_models_type_check_and_report_the_expected_weaknesses() {
 }
 
 #[test]
-fn lint_and_check_fail_with_same_findings_before_any_output_is_written() {
+fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     let mut h = MemHost::new("/w");
     h.add_file("model.p", MODEL);
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
     let lint = h.stderr.clone();
     assert!(lint.contains("error[permissive-monitor]: ") && lint.contains(" --> model.p:2:6\n"), "{lint}");
     assert_eq!(run(&mut h, &["check", "model.p"]), 2);
-    // the same findings, then how to check anyway
-    assert!(h.stderr.starts_with(&lint), "{}", h.stderr);
-    assert!(h.stderr.ends_with("hint: to look for bugs before addressing these, pass --warn lint; the findings are then reported as warnings\n"), "{}", h.stderr);
-    assert!(!h.stdout.contains("Checking "), "{}", h.stdout);
-    assert!(h.files_under("PCheckerOutput").is_empty());
+    // the same findings, after the test cases ran
+    assert_eq!(h.stderr, lint);
+    assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
+    assert!(
+        h.stdout.ends_with("but lint failed (1 finding); coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
+        "{}",
+        h.stdout
+    );
+    assert!(!h.stdout.contains("Coverage") && !h.stdout.contains("Mutation"), "{}", h.stdout);
+}
+
+#[test]
+fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
+    let mut h = MemHost::new("/w");
+    let buggy = MODEL
+        .replace("machine Main { start state S {} }", "machine Main { start state S { entry { assert false; } } }");
+    h.add_file("model.p", &buggy);
+    assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
+    // the bug and its replay on stdout, the lint finding on stderr, then the summary
+    let fail = h.stdout.find("FAIL  t ").expect(&h.stdout);
+    let replay = h.stdout.find("Replay: snappea replay ").expect(&h.stdout);
+    assert!(fail < replay, "{}", h.stdout);
+    assert!(h.stderr.contains("error[permissive-monitor]: ") && h.stderr.contains("Lint failed: 1 finding(s)."));
+    assert!(
+        h.stdout.lines().last().unwrap().starts_with("1 of 1 test case failed and lint failed (1 finding) in "),
+        "{}",
+        h.stdout
+    );
+    assert!(h.stdout.contains("Fix the bugs first"), "{}", h.stdout);
+    assert!(!h.stderr.contains("--warn lint"), "{}", h.stderr);
+
+    // JSON: the bug, the findings, and what was skipped
+    h.terminal = false;
+    assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["exit_code"], 1);
+    assert_eq!(result["failed"], 1);
+    assert_eq!(result["test_cases"][0]["result"], "bug", "{}", result);
+    assert!(result["test_cases"][0]["bug"]["replay"].as_str().is_some(), "{}", result);
+    assert_eq!(result["lint"]["failed"], true);
+    assert_eq!(result["lint"]["errors"], 1);
+    assert_eq!(result["lint"]["findings"][0]["rule"], "permissive-monitor", "{}", result);
+    assert!(result["error"].as_str().unwrap().starts_with("Lint failed: 1 finding(s)."), "{}", result);
+    assert_eq!(result["summary"]["status"], "tests_failed");
+    assert_eq!(result["summary"]["lint_failed"], true);
+    assert_eq!(result["summary"]["message"], "1 of 1 test case failed; lint failed (1 finding)");
+    assert_eq!(result["coverage"], serde_json::json!({"skipped": "lint failed"}));
+    assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+}
+
+#[test]
+fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
+    let mut h = MemHost::new("/w");
+    h.terminal = false;
+    h.add_file("model.p", MODEL);
+    for (command, skipped) in
+        [(&["check"][..], "coverage and mutation testing"), (&["check", "mutation"], "mutation testing")]
+    {
+        assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2, "{}{}", h.stdout, h.stderr);
+        let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        assert_eq!(result["exit_code"], 2);
+        assert_eq!(result["failed"], 0);
+        assert_eq!(result["test_cases"][0]["result"], "ok", "{}", result);
+        assert_eq!(result["lint"]["findings"][0]["rule"], "permissive-monitor", "{}", result);
+        assert_eq!(result["summary"]["status"], "lint_failed");
+        assert_eq!(result["summary"]["lint_failed"], true);
+        assert_eq!(result["summary"]["coverage_gaps"], 0);
+        assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+        h.terminal = true;
+        assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
+        assert!(h.stdout.contains(&format!("but lint failed (1 finding); {skipped} skipped.")), "{}", h.stdout);
+        h.terminal = false;
+    }
+    // --warn lint still runs the full pipeline
+    assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint"]), 1);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["summary"]["status"], "coverage_failed", "{}", result);
+    assert_eq!(result["summary"]["lint_failed"], false);
+    assert_eq!(result["warnings"]["lint"], 1);
 }
 
 #[test]
@@ -223,7 +298,7 @@ test t [main=Main]: assert Watch in { Main, Worker };
 "#;
 
 #[test]
-fn unobserved_handler_fails_check_before_execution_and_the_fix_passes() {
+fn unobserved_handler_fails_check_and_the_fix_passes() {
     let mut h = MemHost::new("/w");
     h.add_file("model.p", DEAD_HANDLER);
     assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation"]), 2);
@@ -235,8 +310,8 @@ fn unobserved_handler_fails_check_before_execution_and_the_fix_passes() {
     assert!(h.stderr.contains(" --> model.p:6:8\n"), "{}", h.stderr);
     assert!(h.stderr.contains("add the event to the monitor's `observes` list, or remove the handler"), "{}", h.stderr);
     assert!(h.stderr.contains("`// snappea-lint: allow unobserved-handler -- reason`"), "{}", h.stderr);
-    assert!(!h.stdout.contains("Checking "), "{}", h.stdout);
-    assert!(h.files_under("PCheckerOutput").is_empty());
+    // the test case still runs, and the finding follows it
+    assert!(h.stdout.contains("Checking ") && h.stdout.contains("but lint failed (1 finding)"), "{}", h.stdout);
     // upstream's warning text is not repeated next to the finding
     assert!(!h.stdout.contains("[Warning:]") && !h.stderr.contains("[Warning:]"), "{}{}", h.stdout, h.stderr);
 

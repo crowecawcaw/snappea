@@ -5,7 +5,7 @@
 //! time tracking) and its own output: a line per test case, the bug's report and replay
 //! command, and a folder per test case ([`Style::Snappea`]). The upstream-style progress shows
 //! with `--verbose`. Exit status: 0 when no bug or required coverage gap is found, 1 when
-//! either is, 2 on any other error.
+//! either is, 2 on blocking lint findings without a bug, or any other error.
 
 use std::path::Path;
 
@@ -56,7 +56,8 @@ Output is text on a terminal or in CI, JSON otherwise (agents, scripts).
 --json-report FILE also writes the JSON result to FILE.
 
 Run `snappea <command> --help` for a command's options and examples.
-Exit status: 0 no bug or required coverage gap, 1 bug or coverage gap, 2 error.
+Exit status: 0 no bug or required coverage gap, 1 bug or coverage gap, 2 error or
+blocking lint findings (with no bug).
 ";
 
 const CHECK_HELP: &str = "\
@@ -68,7 +69,9 @@ Runs test cases over many schedules (event orders, nondeterministic choices) to
 find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj or
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
-Sources are linted first; blocking findings fail with exit status 2. `check lint` only lints;
+Sources are linted first. Blocking findings fail the check, but the test cases still
+run, so bugs are reported first, then the findings; coverage and mutation testing are
+skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
 Blocking lint findings and required coverage gaps fail the check; undetected mutants are
@@ -80,7 +83,7 @@ Examples:
   snappea check                       # all test cases, sharing 10s
   snappea check 'tcRetry*' --timeout 1m   # more search time on a few
   snappea check --no-mutation         # faster iteration while editing
-  snappea check --warn lint           # look for bugs before addressing lint findings
+  snappea check --warn lint           # explore with lint findings as warnings
   snappea check --deny mutation       # CI: also fail on undetected mutants
 
 Exploration:
@@ -209,7 +212,8 @@ mutants; `allow mutation-nested[:<kind>]` before a handler, function or machine 
 the mutants inside it. See docs/checking-models.md.
 Exit status: 0 every mutant detected; 1 a mutant undetected, a mutant not tested (the
 time limit stopped it, or no passing test case ran its code) or a test case failed;
-2 error. Raise --mutation-timeout when mutants are not tested.
+2 error, or blocking lint findings (the test cases run, mutation testing does not).
+Raise --mutation-timeout when mutants are not tested.
 ";
 
 const REPLAY_HELP: &str = "\
@@ -1126,7 +1130,10 @@ fn run_check(
     let all_tests = loaded.analysis.program.test_cases();
     let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
     let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
-    let lint_findings = match crate::driver::lint::gate_selected(
+    // Blocking lint findings fail the check, but the test cases still run so their bugs
+    // are reported; coverage and mutation testing are skipped, since the model is about
+    // to change. The findings print after the test cases.
+    let (lint_findings, lint_failed) = match crate::driver::lint::gate_selected(
         con.inner,
         &loaded.sources,
         &loaded.analysis.program,
@@ -1134,13 +1141,12 @@ fn run_check(
         &selected_tests,
         &intents,
     ) {
-        Ok(n) => n,
-        // the findings, not their text again: stderr has that
-        Err(crate::driver::lint::LintFailed { exit, findings: Some(findings), summary }) => {
-            return Ok((exit.0, json!({"error": summary, "lint": {"findings": findings}})))
-        }
-        Err(e) => return Err(e.into()),
+        Ok(n) => (n, None),
+        Err(e) if e.findings.is_some() => (0, Some(e)),
+        Err(e) => return Err(e.exit),
     };
+    // what lint failing skips, as reported in the JSON result
+    const LINT_SKIP: &str = "lint failed";
     if !cfg.expected_bug_seeds.is_empty()
         && !selected_tests.iter().any(|tc| {
             crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
@@ -1273,7 +1279,7 @@ fn run_check(
         if let Some((s, h)) = &case.code_coverage {
             selected_scope.add(s);
             let summary = CodeMap::new(prog, &probes, s).coverage(h).summary();
-            if !only {
+            if !only && lint_failed.is_none() {
                 con.inner.out_line(&format!(
                     "      Coverage: {}{}",
                     summary,
@@ -1293,7 +1299,7 @@ fn run_check(
                 result["expected_bug_design_coverage"] = design_coverage.summary().to_json();
                 result["expected_bug_design_coverage"]["partial"] =
                     json!(case.bugs > 0 || case.exhaustive_finished != Some(true));
-                if !only {
+                if !only && lint_failed.is_none() {
                     con.inner.out_line(&format!(
                         "      Expected-bug design coverage (separate): {}",
                         design_coverage.summary()
@@ -1314,7 +1320,7 @@ fn run_check(
             }
         }
         if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
-            if !only {
+            if !only && lint_failed.is_none() {
                 for l in driver_lines(d, &case) {
                     con.inner.out_line(&l);
                 }
@@ -1372,6 +1378,27 @@ fn run_check(
         list.extend(add.iter().cloned());
         list.sort();
     }
+    let behavioral = scenario::contract(prog, &scenarios, incomplete == 0 && failed == 0, &coverage_suppressions);
+    let broad_exemptions: Vec<_> = coverage_suppressions
+        .iter()
+        .flat_map(|(span, reason)| {
+            prog.machines
+                .iter()
+                .filter(move |m| {
+                    !m.span.is_dummy()
+                        && span.file == m.span.file
+                        && span.start <= m.span.start
+                        && span.end >= m.span.end
+                })
+                .map(|m| {
+                    let loc = prog.sources.location(m.span);
+                    let counts = map.hidden_points(&suite, m.span);
+                    json!({"machine": m.name, "file": loc.file, "line": loc.line, "reason": reason,
+                    "hidden_points": counts.values().sum::<usize>(), "hidden_kinds": counts})
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let required_missing = required.statements.covered < required.statements.total
         || required.branches.covered < required.branches.total
         || required.handlers.covered < required.handlers.total
@@ -1381,8 +1408,9 @@ fn run_check(
         + required.handlers.total
         - required.handlers.covered
         + scenario_gaps.len();
-    let coverage_warned = !only && failed == 0 && gates.coverage == Gate::Warn && required_missing;
-    let coverage_failed = !only && failed == 0 && gates.coverage == Gate::Deny && required_missing;
+    let coverage_gated = !only && failed == 0 && lint_failed.is_none() && required_missing;
+    let coverage_warned = coverage_gated && gates.coverage == Gate::Warn;
+    let coverage_failed = coverage_gated && gates.coverage == Gate::Deny;
     let coverage_failure_message = format!(
         "Required coverage was not reached within the run budget ({} point{}).",
         required_gap_count,
@@ -1397,7 +1425,7 @@ fn run_check(
         }
     );
     let excluded = selected_scope.excluded(prog);
-    if !only {
+    if !only && lint_failed.is_none() {
         if n > 1 {
             con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
         }
@@ -1467,8 +1495,43 @@ fn run_check(
                 plural(required_gap_count)
             ));
         }
+        con.inner.out_line(&format!(
+            "Safety: {}.",
+            if failed > 0 {
+                "test expectations failed"
+            } else if incomplete > 0 {
+                "no unexpected failure found; search incomplete"
+            } else {
+                "test expectations met; bounded searches complete"
+            }
+        ));
+        con.inner.out_line(&format!("Behavioral coverage contract: {}.", behavioral["status"].as_str().unwrap()));
+        for o in behavioral["obligations"].as_array().unwrap() {
+            con.inner.out_line(&format!(
+                "  [{}] {} ({}), {}:{}; observer progress {}/{} states",
+                o["status"].as_str().unwrap(),
+                o["name"].as_str().unwrap(),
+                if o["required"] == true { "required" } else { "optional" },
+                o["file"].as_str().unwrap_or(""),
+                o["line"],
+                o["best_states_visited"],
+                o["monitor_states"]
+            ));
+        }
+        con.inner.out_line(&format!("Code coverage (raw): {}", suite.summary()));
+        con.inner.out_line(&format!("Code coverage (required after exemptions): {required}"));
+        for e in &broad_exemptions {
+            con.inner.out_line(&format!("Broad coverage exemption: {}:{} exempts entire machine {}; {} uncovered points hidden ({:?}). Reason: {}. Prefer a narrower scope; --json lists details.",
+                e["file"].as_str().unwrap_or(""), e["line"], e["machine"].as_str().unwrap(),
+                e["hidden_points"], e["hidden_kinds"], e["reason"].as_str().unwrap()));
+        }
+        if !uncovered_suppressed.is_empty() {
+            con.inner.out_line("A clean required coverage gate with exemptions does not establish complete code or behavioral coverage.");
+        }
         if !scenarios.is_empty() {
-            con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            if incomplete == 0 && failed == 0 {
+                con.inner.write(Stream::Out, &scenario::merge(&scenarios), None);
+            }
             if cfg.verbose {
                 for line in scenario::evidence_lines(&scenarios) {
                     con.inner.out_line(&line);
@@ -1482,11 +1545,12 @@ fn run_check(
     if coverage_warned {
         skipped.push("required coverage (--warn coverage reported gaps as warnings)");
     }
-    if matches!(mutation, Mutation::After(None)) && failed == 0 {
+    if matches!(mutation, Mutation::After(None)) && failed == 0 && lint_failed.is_none() {
         skipped.push("mutation testing (--no-mutation)");
     }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
+        _ if lint_failed.is_some() => json!({"skipped": LINT_SKIP}),
         _ if passed.is_empty() && failed == 0 => {
             skipped.push("mutation testing (no passing positive test case)");
             con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
@@ -1549,14 +1613,29 @@ fn run_check(
         n,
         incomplete,
         coverage_failed,
-        required_gap_count,
-        &required_uncovered,
+        // coverage was not checked when lint failed
+        if lint_failed.is_some() { 0 } else { required_gap_count },
+        if lint_failed.is_some() { &[] } else { &required_uncovered },
         mutation_time_limit_reached,
         (undetected, mutation_failed, deeper),
         untested,
         &skipped,
     );
     summary["scenario_gaps"] = json!(scenario_gaps.len());
+    summary["lint_failed"] = json!(lint_failed.is_some());
+    if let Some(lint) = &lint_failed {
+        if failed == 0 {
+            summary["status"] = json!("lint_failed");
+            summary["message"] = json!(lint.summary);
+        } else {
+            summary["message"] = json!(format!(
+                "{}; lint failed ({} finding{})",
+                summary["message"].as_str().unwrap_or_default(),
+                lint.count,
+                plural(lint.count)
+            ));
+        }
+    }
     let out = match cfg.output_path.trim_end_matches('/') {
         "" if cfg.output_path.is_empty() => ".",
         o => o,
@@ -1614,7 +1693,30 @@ fn run_check(
     } else {
         "No bugs found"
     };
-    con.inner.out_line(&if only && failed == 0 && passed.is_empty() {
+    let lint_line = lint_failed.as_ref().map(|lint| {
+        lint.print(con.inner, &sources);
+        let skipped = if only { "mutation testing" } else { "coverage and mutation testing" };
+        let lint_part = format!("lint failed ({} finding{})", lint.count, plural(lint.count));
+        if failed > 0 {
+            format!(
+                "{} of {} test case{} failed and {} in {}{}; {} skipped. Fix the bugs first (replay each with the command above), then fix or suppress the lint findings. Output: {}/",
+                failed, n, plural(n), lint_part, elapsed, memory, skipped, out
+            )
+        } else {
+            let incomplete = if incomplete > 0 {
+                format!("; search incomplete for {} test case{}", incomplete, plural(incomplete))
+            } else {
+                String::new()
+            };
+            format!(
+                "{success} in {}{}{}, but {}; {} skipped. Fix or suppress the lint findings above, then check again. Output: {}/",
+                elapsed, memory, incomplete, lint_part, skipped, out
+            )
+        }
+    });
+    con.inner.out_line(&if let Some(line) = lint_line {
+        line
+    } else if only && failed == 0 && passed.is_empty() {
         format!(
             "Test expectations met in {}{}; mutation testing skipped: no passing positive test case.",
             elapsed, memory
@@ -1682,7 +1784,8 @@ fn run_check(
             "warnings": warnings,
             "expected_bug_seed_checks": seed_checks,
         });
-        return Ok((if failed > 0 || mutation_failed { BUG } else { OK }, result));
+        let code = if failed > 0 || mutation_failed { BUG } else { OK };
+        return Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()));
     }
     let mut coverage = suite.to_json(false);
     coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
@@ -1699,6 +1802,9 @@ fn run_check(
     } else {
         Value::Null
     };
+    if lint_failed.is_some() {
+        coverage = json!({"skipped": LINT_SKIP});
+    }
     let result = json!({
         "summary": summary,
         "project": cfg.project_name,
@@ -1709,12 +1815,33 @@ fn run_check(
         "output": format!("{}/", out),
         "coverage": coverage,
         "coverage_failed": coverage_failed,
+        "safety": {"status": if failed > 0 { "failed" } else if incomplete > 0 { "incomplete" } else { "passed" }},
+        "behavioral_coverage": behavioral,
+        "coverage_exemptions": broad_exemptions,
         "mutation": mutation,
         "warnings": warnings,
         "expected_bug_seed_checks": seed_checks,
         "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
-    Ok((if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK }, result))
+    let code = if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK };
+    Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()))
+}
+
+/// A check's exit status and result when its blocking lint findings `lint` failed it:
+/// 1 when a test case failed (the bug is the first thing to fix), else 2, as when lint
+/// alone runs. The result keeps the lint-failure fields `error` and `lint.findings`.
+fn with_lint_failure(
+    code: i32,
+    mut result: Value,
+    failed: usize,
+    lint: Option<&crate::driver::lint::LintFailed>,
+) -> (i32, Value) {
+    let Some(lint) = lint else {
+        return (code, result);
+    };
+    result["error"] = json!(lint.summary);
+    result["lint"] = json!({"failed": true, "errors": lint.count, "findings": lint.findings});
+    (if failed > 0 { BUG } else { ERROR }, result)
 }
 
 /// Mutants of the selected code that got no verdict (see [`crate::driver::mutation::Report`]).
@@ -1884,6 +2011,7 @@ fn check_summary(
         "failed": failed,
         "incomplete": incomplete,
         "coverage_failed": coverage_failed,
+        "safety": {"status": if failed > 0 { "failed" } else if incomplete > 0 { "incomplete" } else { "passed" }},
         "coverage_gaps": coverage_gaps,
         "uncovered": uncovered.iter().take(5).map(|u| json!({
             "file": u.file,

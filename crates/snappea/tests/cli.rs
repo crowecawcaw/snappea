@@ -1633,7 +1633,7 @@ fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
 }
 
 #[test]
-fn duplicate_announce_and_send_fails_lint_before_checking() {
+fn duplicate_announce_and_send_fails_lint_after_checking() {
     let mut h = host();
     let source = "event eDone: int;\n\
         machine Main { start state S { entry { var s: Server; s = new Server(); announce eDone, 42; send s, eDone, 42; } } }\n\
@@ -1644,7 +1644,9 @@ fn duplicate_announce_and_send_fails_lint_before_checking() {
     assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation", "--format", "text"]), 2);
     assert!(h.stderr.contains("announce-and-send"), "{}{}", h.stdout, h.stderr);
     assert!(h.stderr.contains("specs observe sends too"), "{}", h.stderr);
-    assert!(!h.stdout.contains("Checking"));
+    // the test case still runs; coverage is skipped
+    assert!(h.stdout.contains("Checking"), "{}", h.stdout);
+    assert!(h.stdout.contains("but lint failed (1 finding)") && !h.stdout.contains("Coverage"), "{}", h.stdout);
     h.add_file("duplicate.p", &source.replace("announce eDone, 42; ", ""));
     assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
 }
@@ -1754,4 +1756,47 @@ fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
     assert!(h.stdout.contains("warning[suppressed-state-transition]"), "{}", h.stdout);
     assert!(h.stdout.contains("eTimeout: call Timeout versus ignore"), "{}", h.stdout);
     assert!(h.stdout.contains("1 mutation suppression advisory"), "{}", h.stdout);
+}
+
+#[test]
+fn behavioral_obligation_requires_actual_pending_overlap() {
+    for (history, expected) in [
+        ("announce Begin, 1; announce End, 1; announce Begin, 2; announce End, 2;", "not_reached"),
+        ("announce Begin, 1; announce Begin, 2; announce End, 1; announce End, 2;", "reached"),
+    ] {
+        let mut h = host();
+        h.add_file(
+            "overlap.p",
+            &format!(
+                r#"
+event Begin: int;
+event End: int;
+// snappea-lint: allow coverage -- exercise different histories in this regression
+machine Main {{
+    start state S {{ entry {{ {history} }} }}
+}}
+scenario ConcurrentPending observes Begin, End {{
+    var a: bool;
+    var b: bool;
+    start state Waiting {{
+        on Begin do (key: int) {{
+            if (key == 1) {{ a = true; }} else {{ b = true; }}
+            if (a && b) {{ goto Overlap; }}
+        }}
+        on End do (key: int) {{
+            if (key == 1) {{ a = false; }} else {{ b = false; }}
+        }}
+    }}
+    cold state Overlap {{ }}
+}}
+test tc [main=Main]: {{ Main }};
+"#
+            ),
+        );
+        snappea(&mut h, &["check", "overlap.p", "--no-mutation", "--warn", "lint", "--json"]);
+        let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+        assert_eq!(result["behavioral_coverage"]["obligations"][0]["status"], expected, "{result}");
+        assert_eq!(result["behavioral_coverage"]["obligations"][0]["required"], true);
+        assert_eq!(result["coverage_exemptions"][0]["machine"], "Main");
+    }
 }
