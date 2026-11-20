@@ -113,6 +113,35 @@ check found and how you fixed it.
 """
 
 
+GUARD_TASK = """# Make this model catch design mistakes
+
+`/work/DESIGN.md` describes a component and the contract it must keep. `/work/model` is
+a P model of it:
+
+- `PSrc/`: the design. It is correct today.
+- `PSpec/`: specs for the contract. They may be incomplete.
+- `PTst/`: the environment and the test cases. They may be incomplete.
+
+The team will keep changing the design. Make the specs and test cases strong enough
+that a change to `PSrc/` that breaks the contract in DESIGN.md, under the conditions
+DESIGN.md says can happen, makes a test case fail. {tool_line}
+
+Your `PSpec/` and `PTst/` will be run against the design as it is, and against hidden
+versions of `PSrc/` that each carry one realistic design mistake. You score one point
+for each mistake that some test case catches. A test case that fails on the correct
+design is discarded and counts against you.
+
+Rules:
+
+- Add or change anything in `PSpec/` and `PTst/`. Put new machines, specs and tests
+  there.
+- Do not change `PSrc/`. Your work is run against other versions of it, with the same
+  events, machine names and creation inputs.
+
+Also write `/work/NOTES.md`: what you added and which mistakes each addition catches.
+"""
+
+
 HARDEN_TASK = """# Make this design keep its contract
 
 `/work/DESIGN.md` describes a component and the contract it must keep. `/work/model` is
@@ -134,7 +163,7 @@ machine names or what a machine takes when created. Add or change anything in
 Also write `/work/NOTES.md`: each problem you found, how you found it, and the fix.
 """
 
-MODES = ("review", "build", "harden", "impl")
+MODES = ("review", "build", "harden", "impl", "guard")
 
 
 def task_dir(task: str) -> Path:
@@ -342,7 +371,7 @@ def cmd_start(a):
     bin_path = Path(a.binary).resolve() if a.binary else ROOT / "target/release" / ARMS[a.arm]["bin"]
     if not bin_path.exists():
         sys.exit(f"build {bin_path} first: cargo build --release -p snappea --bins")
-    if a.mode not in task_modes(a.task):
+    if a.mode not in task_modes(a.task) and not (a.mode == "guard" and load_task(a.task).get("bug")):
         sys.exit(f"task {a.task} has modes {task_modes(a.task)}")
     work = run / "work"
     public = task_dir(a.task) / "public"
@@ -358,7 +387,8 @@ def cmd_start(a):
         shutil.copy(public / "DESIGN.md", work / "DESIGN.md")
         # A task may word its own assignment, e.g. when its specs are incomplete on purpose.
         own = public / "TASK.md"
-        text = own.read_text() if own.exists() else {"review": TASK, "build": BUILD_TASK, "harden": HARDEN_TASK}[a.mode]
+        text = GUARD_TASK if a.mode == "guard" else own.read_text() if own.exists() else {
+            "review": TASK, "build": BUILD_TASK, "harden": HARDEN_TASK}[a.mode]
     (work / "TASK.md").write_text(text.replace("{tool_line}", ARMS[a.arm]["tool_line"]))
     workdir = "/work" if a.mode == "impl" else "/work/model"
     wrapper = None
@@ -531,6 +561,7 @@ def main():
     p.add_argument("--mode", default="review", choices=MODES,
                    help="review: write tests that catch the bugs in a given design. build: write the design from a "
                         "skeleton. harden: fix a given design. impl: the task's own files and grader. "
+                        "guard: strengthen specs and tests of a correct design; hidden design mistakes judge it. "
                         "Hidden tests judge build, harden and impl")
     p.add_argument("--check-flags", default="", metavar="FLAGS",
                    help="flags a wrapper adds to every `check`, e.g. '--no-mutation', to try other defaults")
