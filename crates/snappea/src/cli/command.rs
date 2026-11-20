@@ -70,8 +70,8 @@ find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj
 .p file, a TEST a test case name or a glob (`*`, `?`). Without tests, all run.
 
 Sources are linted first. Blocking findings fail the check, but the test cases still
-run, so bugs are reported first, then the findings; coverage and mutation testing are
-skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints;
+run, so bugs are reported first, then the findings. Mutation testing runs too when no
+test case failed; coverage is skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints;
 `check mutation` only runs mutation testing. See their --help.
 
 Lint findings, required coverage gaps and undetected mutants fail the check. Only
@@ -1167,8 +1167,8 @@ fn run_check(
     let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
     let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
     // Blocking lint findings fail the check, but the test cases still run so their bugs
-    // are reported; coverage and mutation testing are skipped, since the model is about
-    // to change. The findings print after the test cases.
+    // are reported, and mutation testing runs when none failed, so one run lists every
+    // gap; coverage is skipped. The findings print after the test cases.
     let (lint_findings, lint_failed) = match crate::driver::lint::gate_selected(
         con.inner,
         &loaded.sources,
@@ -1604,7 +1604,9 @@ fn run_check(
     }
     let mutation = match mutation {
         Mutation::After(None) => json!({"skipped": "--no-mutation"}),
-        _ if lint_failed.is_some() => json!({"skipped": LINT_SKIP}),
+        // a test case that failed leaves lint as the next thing to fix; mutation testing
+        // still runs after a lint failure, since its findings are independent of lint's
+        _ if lint_failed.is_some() && failed > 0 => json!({"skipped": LINT_SKIP}),
         _ if passed.is_empty() && failed == 0 => {
             skipped.push("mutation testing (no passing positive test case)");
             con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
@@ -1670,7 +1672,6 @@ fn run_check(
     // pass with mutants it did not test
     let mutation_failed =
         (undetected > 0 || (untested.any() && (only || gates.strict))) && gates.mutation == Gate::Deny;
-    let deeper = mutation.get("deeper_search_may_detect").and_then(Value::as_bool).unwrap_or(false);
     let mut summary = check_summary(
         failed,
         n,
@@ -1680,7 +1681,7 @@ fn run_check(
         if lint_failed.is_some() { 0 } else { required_gap_count },
         if lint_failed.is_some() { &[] } else { &required_uncovered },
         mutation_time_limit_reached,
-        (undetected, mutation_failed, deeper),
+        (undetected, mutation_failed),
         untested,
         &skipped,
     );
@@ -1748,11 +1749,21 @@ fn run_check(
     };
     let lint_line = lint_failed.as_ref().map(|lint| {
         lint.print(con.inner, &sources);
-        let skipped = if only { "mutation testing" } else { "coverage and mutation testing" };
-        let lint_part = "lint failed".to_string();
+        let mutation_ran = mutation.get("skipped").is_none();
+        let skipped = match (only, mutation_ran) {
+            (true, false) => "; mutation testing skipped",
+            (false, false) => "; coverage and mutation testing skipped",
+            (true, true) => "",
+            (false, true) => "; coverage skipped",
+        };
+        let lint_part = if undetected > 0 {
+            "lint failed, and the test cases pass with each change listed as error[undetected-mutant]".to_string()
+        } else {
+            "lint failed".to_string()
+        };
         if failed > 0 {
             format!(
-                "{} of {} test case{} failed and {} in {}{}; {} skipped. Fix the bugs first (replay each with the command above), then fix or suppress the lint findings. Output: {}/",
+                "{} of {} test case{} failed and {} in {}{}{}. Fix the bugs first (replay each with the command above), then fix or suppress the lint findings. Output: {}/",
                 failed, n, plural(n), lint_part, elapsed, memory, skipped, out
             )
         } else {
@@ -1762,13 +1773,14 @@ fn run_check(
                 String::new()
             };
             format!(
-                "{success} in {}{}{}, but {}; {} skipped. Fix or suppress the lint findings above, then check again. Output: {}/",
+                "{success} in {}{}{}, but {}{}. Fix or suppress each finding above, then check again. Output: {}/",
                 elapsed, memory, incomplete, lint_part, skipped, out
             )
         }
     });
     // nothing was skipped or left as a warning: say that the model needs no more work
-    let done = if skipped.is_empty() && warnings.is_empty() && !untested.any() { format!("{DONE} ") } else { String::new() };
+    let done =
+        if skipped.is_empty() && warnings.is_empty() && !untested.any() { format!("{DONE} ") } else { String::new() };
     con.inner.out_line(&if let Some(line) = lint_line {
         line
     } else if only && failed == 0 && passed.is_empty() {
@@ -1799,10 +1811,7 @@ fn run_check(
             _ => format!("Mutation testing found undetected mutants in {}{}{}.", elapsed, memory, with_warnings),
         }
     } else if failed == 0 && mutation_failed && !coverage_failed && undetected > 0 {
-        format!(
-            "{success} in {}{}, but mutation testing failed: {} Output: {}/",
-            elapsed, memory, UNDETECTED, out
-        )
+        format!("{success} in {}{}, but mutation testing failed: {} Output: {}/", elapsed, memory, UNDETECTED, out)
     } else if failed == 0 && mutation_failed && !coverage_failed {
         format!("Mutation testing incomplete in {}{}: {}. Output: {}/", elapsed, memory, untested.describe(), out)
     } else if failed == 0 && coverage_failed {
@@ -1982,7 +1991,7 @@ fn check_summary(
     coverage_gaps: usize,
     uncovered: &[crate::checker::code_coverage::Uncovered],
     mutation_time_limit_reached: bool,
-    (mutants_undetected, mutation_failed, deeper): (usize, bool, bool),
+    (mutants_undetected, mutation_failed): (usize, bool),
     untested: Untested,
     skipped: &[&str],
 ) -> Value {
@@ -2857,19 +2866,19 @@ mod tests {
             context: "Main.S, on ePing".into(),
             what: "if (x) never true".into(),
         };
-        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false, false), Untested::default(), &[]);
+        let coverage = check_summary(0, 2, 0, true, 3, &[uncovered], true, (0, false), Untested::default(), &[]);
         assert_eq!(coverage["status"], "coverage_failed");
         assert_eq!(coverage["message"], "Required coverage was not reached within the run budget (3 points)");
         assert_eq!(coverage["uncovered"][0]["file"], "coverage.p");
         assert_eq!(coverage["mutation_time_limit_reached"], true);
 
-        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false, false), Untested::default(), &[]);
+        let failed = check_summary(1, 2, 0, false, 0, &[], false, (0, false), Untested::default(), &[]);
         assert_eq!(failed["status"], "tests_failed");
 
-        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false, false), Untested::default(), &[]);
+        let incomplete = check_summary(0, 2, 1, false, 0, &[], false, (0, false), Untested::default(), &[]);
         assert_eq!(incomplete["status"], "search_incomplete");
 
-        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false, false), Untested::default(), &[]);
+        let passed = check_summary(0, 2, 0, false, 0, &[], false, (0, false), Untested::default(), &[]);
         assert_eq!(passed["status"], "passed");
         assert!(passed["note"].is_null());
     }
@@ -2884,14 +2893,14 @@ mod tests {
             0,
             &[],
             false,
-            (0, false, false),
+            (0, false),
             Untested::default(),
             &["mutation testing (--no-mutation)"],
         );
         assert_eq!(partial["status"], "passed");
         assert!(partial["note"].as_str().unwrap().starts_with("Not checked: mutation testing (--no-mutation)."));
 
-        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true, false), Untested::default(), &[]);
+        let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true), Untested::default(), &[]);
         assert_eq!(denied["status"], "mutation_failed");
         // the message names no count: the JSON field has it
         assert_eq!(
@@ -2899,24 +2908,21 @@ mod tests {
             "The test cases pass with changes to the model that a spec or assertion should detect"
         );
         assert_eq!(denied["mutants_undetected"], 2);
+        assert!(denied["note"].is_null(), "{}", denied["note"]);
 
         // undetected mutants reported as warnings (--warn mutation) keep their count and add no note
-        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false, false), Untested::default(), &[]);
+        let weak = check_summary(0, 1, 0, false, 0, &[], false, (4, false), Untested::default(), &[]);
         assert_eq!(weak["status"], "passed");
         assert_eq!(weak["mutants_undetected"], 4);
         assert!(weak["note"].is_null(), "{}", weak["note"]);
-        // nor does an incomplete search for them: the note about a deeper search is gone
-        let shallow = check_summary(0, 1, 0, false, 0, &[], false, (2, true, true), Untested::default(), &[]);
-        assert_eq!(shallow["status"], "mutation_failed");
-        assert!(shallow["note"].is_null(), "{}", shallow["note"]);
 
         let untested = Untested { not_tested: 17, ..Untested::default() };
-        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false, false), untested, &[]);
+        let unfinished = check_summary(0, 1, 0, false, 0, &[], true, (0, false), untested, &[]);
         assert_eq!(unfinished["mutants_not_tested"], 17);
         assert_eq!(unfinished["status"], "passed");
         assert!(unfinished["note"].as_str().unwrap().contains("17 mutants not tested"));
         // a gate that denies undetected mutants fails when it could not test them all
-        let gated = check_summary(0, 1, 0, false, 0, &[], true, (0, true, false), untested, &[]);
+        let gated = check_summary(0, 1, 0, false, 0, &[], true, (0, true), untested, &[]);
         assert_eq!(gated["status"], "mutation_incomplete");
         assert!(gated["message"].as_str().unwrap().contains("17 mutants not tested before the time limit"));
         assert!(gated["note"].as_str().unwrap().contains("--mutation-timeout"), "{}", gated["note"]);

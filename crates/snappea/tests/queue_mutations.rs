@@ -119,7 +119,9 @@ fn queue_mutation_cli_reports_reached_policies_and_honors_kind_suppressions() {
     let source = MODEL.replace("defer Data;", "// snappea-lint: allow mutation:defer-to-ignore -- intentional delayed-data loss for this fixture\n        defer Data;");
     let mut host = MemHost::new("/w");
     host.add_file("queue.p", &source);
-    let args = ["check", "mutation", "queue.p", "--json", "--warn", "all", "--list-suppressions"].map(str::to_owned);
+    // queue-policy mutants run only with `--strict`
+    let args = ["check", "mutation", "queue.p", "--json", "--warn", "all", "--strict", "--list-suppressions"]
+        .map(str::to_owned);
     assert_eq!(snappea::cli::run(&args, &mut host), 0, "{}{}", host.stdout, host.stderr);
     let output: serde_json::Value = serde_json::from_str(&host.stdout).unwrap();
     let report = &output["mutation"];
@@ -131,6 +133,16 @@ fn queue_mutation_cli_reports_reached_policies_and_honors_kind_suppressions() {
         report["suppressed_details"].as_array().unwrap().iter().any(|m| m["mutation"] == "defer-to-ignore"),
         "{report}"
     );
+    assert_eq!(report["stale_suppressions"].as_array().unwrap().len(), 0, "{report}");
+    // without `--strict` no queue policy is mutated, and the suppression of one is not stale
+    let args = ["check", "mutation", "queue.p", "--json", "--warn", "all"].map(str::to_owned);
+    host.stdout.clear();
+    host.stderr.clear();
+    assert_eq!(snappea::cli::run(&args, &mut host), 0, "{}{}", host.stdout, host.stderr);
+    let output: serde_json::Value = serde_json::from_str(&host.stdout).unwrap();
+    let report = &output["mutation"];
+    assert_eq!(report["suppressed"], 0, "{report}");
+    assert!(report["mutants"].as_u64().unwrap() < 3, "{report}");
     assert_eq!(report["stale_suppressions"].as_array().unwrap().len(), 0, "{report}");
 }
 

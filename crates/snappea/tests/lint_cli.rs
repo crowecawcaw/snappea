@@ -63,11 +63,12 @@ fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     assert_eq!(h.stderr, lint);
     assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
     assert!(
-        h.stdout.ends_with("but lint failed; coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
+        h.stdout.ends_with("but lint failed; coverage skipped. Fix or suppress each finding above, then check again. Output: PCheckerOutput/\n"),
         "{}",
         h.stdout
     );
-    assert!(!h.stdout.contains("Coverage") && !h.stdout.contains("Mutation"), "{}", h.stdout);
+    // mutation testing still runs, so one run lists every gap; coverage does not
+    assert!(!h.stdout.contains("Coverage") && h.stdout.contains("Mutation testing ("), "{}", h.stdout);
 }
 
 #[test]
@@ -81,7 +82,10 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     let fail = h.stdout.find("FAIL  t ").expect(&h.stdout);
     let replay = h.stdout.find("Replay: snappea replay ").expect(&h.stdout);
     assert!(fail < replay, "{}", h.stdout);
-    assert!(h.stderr.contains("error[permissive-monitor]: ") && h.stderr.contains("\nLint failed. Each finding's help says how to fix it"));
+    assert!(
+        h.stderr.contains("error[permissive-monitor]: ")
+            && h.stderr.contains("\nLint failed. Each finding's help says how to fix it")
+    );
     assert!(
         h.stdout.lines().last().unwrap().starts_with("1 of 1 test case failed and lint failed in "),
         "{}",
@@ -114,9 +118,7 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
     let mut h = MemHost::new("/w");
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     h.add_file("model.p", MODEL);
-    for (command, skipped) in
-        [(&["check"][..], "coverage and mutation testing"), (&["check", "mutation"], "mutation testing")]
-    {
+    for (command, skipped) in [(&["check"][..], "; coverage skipped"), (&["check", "mutation"], "")] {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2, "{}{}", h.stdout, h.stderr);
         let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
         assert_eq!(result["exit_code"], 2);
@@ -126,10 +128,10 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(result["summary"]["status"], "lint_failed");
         assert_eq!(result["summary"]["lint_failed"], true);
         assert_eq!(result["summary"]["coverage_gaps"], 0);
-        assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
+        assert!(result["mutation"]["skipped"].is_null(), "{}", result["mutation"]);
         h.env.remove("SNAPPEA_FORMAT");
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
-        assert!(h.stdout.contains(&format!("but lint failed; {skipped} skipped.")), "{}", h.stdout);
+        assert!(h.stdout.contains(&format!("but lint failed{skipped}. Fix")), "{}", h.stdout);
         h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     }
     // --warn lint still runs the full pipeline
@@ -146,13 +148,13 @@ fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
     h.add_file("model.p", MODEL);
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint,coverage"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(h.stderr.contains("warning[permissive-monitor]: ") && !h.stderr.contains("error["), "{}", h.stderr);
-    assert!(
-        h.stderr.contains("\nLint findings reported as warnings (--warn lint); checking anyway."),
-        "{}",
-        h.stderr
-    );
+    assert!(h.stderr.contains("\nLint findings reported as warnings (--warn lint); checking anyway."), "{}", h.stderr);
     assert!(h.stdout.contains("Checking "), "{}", h.stdout);
-    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: lint findings, coverage gaps."), "{}", h.stdout);
+    assert!(
+        h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: lint findings, coverage gaps."),
+        "{}",
+        h.stdout
+    );
     // `all` warns on every check; JSON counts what was only warned about
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all"]), 0, "{}{}", h.stdout, h.stderr);
@@ -474,7 +476,13 @@ fn shared_spec_helpers_are_advisory_reported_and_failing_only_with_strict() {
     assert_eq!(result["findings"][0]["file"], "shared.p");
     assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
     assert!(h.stderr.contains("\nLint failed. "), "{}", h.stderr);
-    assert_eq!(run(&mut h, &["check", "shared.p", "--strict", "--no-mutation", "--json"]), 2, "{}{}", h.stdout, h.stderr);
+    assert_eq!(
+        run(&mut h, &["check", "shared.p", "--strict", "--no-mutation", "--json"]),
+        2,
+        "{}{}",
+        h.stdout,
+        h.stderr
+    );
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["summary"]["status"], "lint_failed");
     assert_eq!(result["lint"]["errors"], 1);

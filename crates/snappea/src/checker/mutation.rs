@@ -132,6 +132,10 @@ pub struct Mutant {
     pub under_choice: bool,
     /// The removed statement is a `send` or an `announce`.
     pub emits: bool,
+    /// The changed code only updates variables: no send, announce, raise, goto, call,
+    /// assertion or early exit. Removing it is a value-level change, like a removed
+    /// assignment.
+    pub updates_only: bool,
     /// For a removed `send` or `announce` of a named event: the event, and the specs of
     /// the test cases that observe it. They are the specs that could require it.
     pub emitted: Option<(String, Vec<String>)>,
@@ -145,8 +149,8 @@ impl Mutant {
     /// fail only with `--strict`.
     pub fn blocking(&self) -> bool {
         match self.change {
-            Change::EmptyBody | Change::Force(_) => true,
-            Change::Remove => self.coarse || self.emits,
+            Change::EmptyBody | Change::Force(_) => !self.updates_only,
+            Change::Remove => (self.coarse && !self.updates_only) || self.emits,
             _ => false,
         }
     }
@@ -338,6 +342,7 @@ pub(crate) fn mutants_with_observers(
                     context: context.clone(),
                     description: format!("removed the whole body ({} statements)", effects),
                     coarse: true,
+                    updates_only: body.stmts.iter().all(updates_only),
                     changes: Vec::new(),
                     unchanged: "",
                     unchecked: None,
@@ -476,6 +481,7 @@ pub(crate) fn mutants_with_observers(
                 context: context.clone(),
                 description,
                 coarse,
+                updates_only: matches!(&target, Target::Stmt(s, Change::Remove | Change::Force(_)) if updates_only(s)),
                 changes,
                 unchanged,
                 unchecked: unchecked.get(&stmt).cloned(),
@@ -607,6 +613,7 @@ pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Ve
                         context: format!("{}.{}, on {}", machine.name, st.name, event),
                         description,
                         coarse: false,
+                        updates_only: false,
                         changes: Vec::new(),
                         unchanged: "",
                         unchecked: None,
@@ -897,6 +904,22 @@ fn empty_statement(s: &Stmt) -> bool {
 }
 
 /// Whether removing `s` removes other statements: an `if`, `while` or `foreach`.
+/// Whether `s` only updates variables (see [`Mutant::updates_only`]).
+fn updates_only(s: &Stmt) -> bool {
+    match &s.kind {
+        StmtKind::Nop
+        | StmtKind::Print(_)
+        | StmtKind::Assign { .. }
+        | StmtKind::Insert { .. }
+        | StmtKind::Add { .. }
+        | StmtKind::Remove { .. } => true,
+        StmtKind::Block(b) => b.stmts.iter().all(updates_only),
+        StmtKind::While { body, .. } | StmtKind::Foreach { body, .. } => updates_only(body),
+        StmtKind::If { then_branch, else_branch, .. } => updates_only(then_branch) && updates_only(else_branch),
+        _ => false,
+    }
+}
+
 fn compound(s: &Stmt) -> bool {
     matches!(s.kind, StmtKind::If { .. } | StmtKind::While { .. } | StmtKind::Foreach { .. })
 }

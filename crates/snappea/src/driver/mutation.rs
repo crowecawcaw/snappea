@@ -391,8 +391,7 @@ impl Report {
         }
         let location = |m: &Mutant| format!("{}:{}", m.file, m.line);
         let failing = self.failing();
-        let undetected: Vec<_> =
-            self.undetected_indexed().into_iter().filter(|(i, _)| failing.contains(i)).collect();
+        let undetected: Vec<_> = self.undetected_indexed().into_iter().filter(|(i, _)| failing.contains(i)).collect();
         if !undetected.is_empty() {
             let list = &undetected[..undetected.len().min(shown)];
             for (i, (m, ..)) in list {

@@ -25,7 +25,8 @@ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 
 `snappea check` type-checks and [lints](linting.md) the sources before exploring
 schedules. Unsuppressed lint findings fail the check, but its test cases still run and
-report bugs; coverage and mutation testing are skipped. The exit status is 1 when a test
+report bugs. Mutation testing still runs when no test case failed, so one run lists
+every gap; coverage is skipped. The exit status is 1 when a test
 case failed, else 2. Run `snappea check lint` to inspect the findings without exploration. A project that lists
 foreign (`.cs`, `.java`) files also fails, since snappea cannot run them and the check
 would leave that code out; pass `--ignore-foreign-files` to check the P model anyway.
@@ -238,7 +239,7 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules are off | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage is skipped); advisory rules are off | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
 | `mutation` | fails (exit 1) on an undetected mutant a spec or another machine could see; other mutants are not run | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
@@ -753,7 +754,8 @@ By default only the mutants a spec or another machine could see are run: a remov
 `send` or `announce`, an emptied body, a removed `if`, `while` or `foreach`, and an `if`
 condition replaced by a constant. Each undetected one fails the check, and its help
 names what would detect it; for a removed `send` or `announce` it names the specs that
-observe the event. `--strict` also runs the value-level mutants in the table below.
+observe the event. A body or branch that only updates variables counts as a value-level
+change, like a removed assignment. `--strict` also runs the value-level mutants in the table below.
 Mutation testing is skipped when only some test cases are selected, since a test case
 left out may be the one that detects a mutant; `snappea check mutation TEST` runs it
 on a selection.

@@ -60,8 +60,8 @@ JSON lists every finding in `findings`, with its `rule`, `severity`, `message`, 
 and source location; when lint fails, `error` holds the one-line summary, not the
 human-readable report again (that is on stderr). When lint fails `check`, its JSON has
 the same list under `lint.findings`, `error` and `summary.message` hold the summary,
-`summary.lint_failed` is `true`, and `coverage` and `mutation` are
-`{"skipped": "lint failed"}`. With `--strict --warn lint`, `check` counts advisories under `warnings.lint`.
+`summary.lint_failed` is `true`, and `coverage` is
+`{"skipped": "lint failed"}`; so is `mutation` when a test case failed. With `--strict --warn lint`, `check` counts advisories under `warnings.lint`.
 Scoped suppressions apply to both kinds.
 
 Linting identifies common weak checks. A clean result does not establish that the

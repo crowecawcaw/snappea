@@ -151,8 +151,36 @@ mutation testing, and solvers wrote it off as unobservable.
 | lean | no mutation testing, no driver limits | 3/4 runs pass, 5.5 min | 12/18, 5.0 min |
 | focus | undetected mutants are a note, not a warning; at most five listed; re-assignments of the same value hidden | 3/3 runs pass, 5.5 min | 14/18, 4.7 min |
 
-Focus keeps the scores of base at the cost of lean, so it is now the default
-behavior. Lean loses a little on both tasks.
+Focus keeps the scores of base at the cost of lean. Lean loses a little on both tasks.
+
+### Blocking mutants
+
+The default now runs only the mutants a spec or another machine could see (a removed
+`send` or `announce`, an emptied body, a removed or forced branch) and fails the check
+on each undetected one. `--strict` runs the rest. The console prints no mutant or lint
+counts. Three runs per cell unless noted.
+
+| Variant | `offline-sync` guard | `leader-election` build | `circuit-breaker` build | `token-refresh` guard | `online-migration` guard |
+| --- | --- | --- | --- | --- | --- |
+| block (first wording) | 14/18 (3, 5, 6), 5.9 min | 3/3 runs pass, 5.4 min | 3/3 runs pass, 7.2 min | | |
+| block2 (error-style lines, help names the observing specs) | 12/18 (3, 4, 5), 4.5 min | | | 10/10 (2 runs) | 12/12 (2 runs) |
+
+No run raised a false alarm. The scores are within noise of base and focus at this
+sample size; time per run is lower than base on every task. What the transcripts show:
+
+- The silent replay was caught by 2 of 3 block runs and 0 of 3 block2 runs, against 1
+  in 12 before. In block2 only one run saw the mutant at all: one stopped with lint
+  failing, which then skipped mutation testing, and one passed `--no-mutation` on
+  every check. Mutation testing now runs after a lint failure for this reason.
+- The run that did see it wrote that requiring `Replayed` "at a fixed point would fail
+  on the correct design", and left the check failing rather than suppress. The help
+  names the spec to extend but not how to require an event without fixing its order.
+- On `token-refresh` both runs found all five mistakes and each left two or three
+  blocking mutants in `Tab.p` undetected, calling one equivalent. A blocking mutant an
+  agent cannot detect or justify costs time at the end of a run.
+- A removed body or branch that only updates variables is now left to `--strict`: it
+  blocked a guide example on an entry that sets fields to their default values.
+- One `circuit-breaker` run silenced a forced branch with a blanket `allow mutation`.
 
 ### Tasks where the arms tie
 

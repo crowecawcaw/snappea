@@ -684,7 +684,10 @@ fn check_reports_what_never_ran() {
     let mut h = host();
     h.add_file("ping.p", PING);
     assert_eq!(
-        snappea(&mut h, &["check", "ping.p", "--warn", "coverage", "--warn", "mutation", "--json-report", "result.json"]),
+        snappea(
+            &mut h,
+            &["check", "ping.p", "--warn", "coverage", "--warn", "mutation", "--json-report", "result.json"]
+        ),
         0,
         "{}",
         h.stdout
