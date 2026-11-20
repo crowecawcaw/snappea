@@ -31,9 +31,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 RUNS = HERE / "runs"
-IMAGE = "debian:bookworm-slim"
+IMAGE = "python:3.12-slim"
 OUTPUT_LIMIT = 16000
-LIMITS = {"calls": 60, "seconds": 40 * 60, "command_seconds": 180}
+LIMITS = {"calls": 40, "seconds": 20 * 60, "command_seconds": 120}
 GRADE_TIMEOUT = "10s"
 MODEL_DIRS = ("PSrc", "PSpec", "PTst")
 
@@ -113,12 +113,38 @@ check found and how you fixed it.
 """
 
 
+HARDEN_TASK = """# Make this design keep its contract
+
+`/work/DESIGN.md` describes a component and the contract it must keep. `/work/model` is
+a P model of it:
+
+- `PSrc/`: the design, as the team plans to implement it.
+- `PSpec/`: specs for the contract.
+- `PTst/`: the environment and the test cases.
+
+Every test case passes, so the team believes the design is correct. It may not be.
+Find the behaviors of the design in `PSrc/` that break the contract in DESIGN.md under
+the conditions DESIGN.md says can happen, and fix them in `PSrc/`. {tool_line}
+
+Your `PSrc/` will be judged by running it against hidden specs and test cases that
+cover the contract and the conditions in DESIGN.md. Do not change event declarations,
+machine names or what a machine takes when created. Add or change anything in
+`PSpec/` and `PTst/`.
+
+Also write `/work/NOTES.md`: each problem you found, how you found it, and the fix.
+"""
+
+MODES = ("review", "build", "harden", "impl")
+
+
 def task_dir(task: str) -> Path:
     return HERE / "tasks" / task
 
 
 def load_task(task: str) -> dict:
-    spec = tomllib.loads((task_dir(task) / "private" / "bugs.toml").read_text())
+    path = task_dir(task) / "private" / "bugs.toml"
+    spec = tomllib.loads(path.read_text()) if path.exists() else {}
+    spec.setdefault("bug", [])
     spec["name"] = task
     return spec
 
@@ -223,9 +249,38 @@ def grade_design(task: str, psrc: Path) -> dict:
             "failed": {t: r["message"] for t, r in res["tests"].items() if r["result"] != "ok"}}
 
 
+def grade_impl(task: str, submission: Path) -> dict:
+    """Run the task's own grader on a frozen /work; it prints {"passed": [...], "failed": {...}}."""
+    r = subprocess.run([sys.executable, str(task_dir(task) / "private" / "grade.py"), str(submission)],
+                       text=True, capture_output=True, timeout=900)
+    try:
+        g = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return {"status": "error", "error": (r.stdout + r.stderr)[-1500:], "passed": [], "failed": {}, "tests": 0}
+    return {"status": "ok", "tests": len(g["passed"]) + len(g["failed"]), "passed": sorted(g["passed"]), "failed": g["failed"]}
+
+
+def task_modes(task: str) -> list[str]:
+    if (task_dir(task) / "private" / "grade.py").exists():
+        return ["impl"]
+    return load_task(task).get("modes") or (["review", "build"] if (task_dir(task) / "skeleton").exists() else ["review"])
+
+
+def calibrate_impl(task: str) -> bool:
+    sol = grade_impl(task, task_dir(task) / "private" / "solution")
+    start = grade_impl(task, task_dir(task) / "public")
+    ok = sol["status"] == "ok" and not sol["failed"] and sol["tests"] > 0 and (start["status"] != "ok" or start["failed"])
+    print(f"{task}: impl, solution passes {len(sol['passed'])}/{sol['tests']}, starter passes "
+          f"{len(start['passed'])}/{start['tests']}: " + ("ok" if ok else f"FAILED {sol} {start}"))
+    return ok
+
+
 def cmd_calibrate(a):
     ok = True
     for task in a.tasks or sorted(p.name for p in (HERE / "tasks").iterdir()):
+        if "impl" in task_modes(task):
+            ok = calibrate_impl(task) and ok
+            continue
         ids = bug_ids(task)
         start = grade_tests(task, task_dir(task) / "public")
         ref = grade_tests(task, task_dir(task) / "private" / "reference")
@@ -234,7 +289,16 @@ def cmd_calibrate(a):
             problems.append(f"starter must pass on every design: {start}")
         if ref["status"] != "ok" or ref["found"] != sorted(ids) or ref["false_alarms"]:
             problems.append(f"reference must pass on the fixed design and find each bug: {ref}")
-        print(f"{task}: {len(ids)} bugs, starter {start['tests']} tests, reference {ref['tests']} tests: "
+        if "build" in task_modes(task):
+            with tempfile.TemporaryDirectory() as tmp:
+                model = Path(tmp) / "m"
+                write_model(model, task, [], task_dir(task) / "public")
+                shutil.rmtree(model / "PSrc")
+                shutil.copytree(task_dir(task) / "skeleton", model / "PSrc")
+                sk = run_tests(model, "2s")
+            if "error" in sk:
+                problems.append(f"skeleton must compile with the public specs and tests: {sk['error']}")
+        print(f"{task} [{', '.join(task_modes(task))}]: {len(ids)} bugs, starter {start['tests']} tests, reference {ref['tests']} tests: "
               + ("ok" if not problems else "FAILED"))
         for b in ids:
             print(f"  {b}: {', '.join(ref.get('found_by', {}).get(b, ['NOT FOUND']))}")
@@ -248,12 +312,27 @@ def container(run_id: str) -> str:
     return f"snappea-mg-{run_id}"
 
 
-def docker_args(work: Path, arm: str, bin_path: Path, env: list[str] = ()) -> list[str]:
+WRAPPER = """#!/bin/sh
+# Adds default flags to `check`, to try a different default output without rebuilding.
+if [ "$1" = check ]; then
+  shift
+  case "$1" in mutation|lint|coverage) exec /usr/local/lib/checker-real check "$@" ;; esac
+  exec /usr/local/lib/checker-real check {flags} "$@"
+fi
+exec /usr/local/lib/checker-real "$@"
+"""
+
+
+def docker_args(work: Path, arm: str, bin_path: Path, env: list[str] = (), wrapper: Path | None = None) -> list[str]:
+    if wrapper:
+        mounts = ["--mount", f"type=bind,src={bin_path},dst=/usr/local/lib/checker-real,readonly",
+                  "--mount", f"type=bind,src={wrapper},dst={ARMS[arm]['dst']},readonly"]
+    else:
+        mounts = ["--mount", f"type=bind,src={bin_path},dst={ARMS[arm]['dst']},readonly"]
     return ["docker", "run", *(x for e in env for x in ("-e", e)), "--network", "none", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--memory", "2g", "--cpus", "1",
             "--pids-limit", "256", "--user", "1000:1000", "-e", "HOME=/tmp",
-            "--mount", f"type=bind,src={bin_path},dst={ARMS[arm]['dst']},readonly",
-            "--mount", f"type=bind,src={work},dst=/work"]
+            *mounts, "--mount", f"type=bind,src={work},dst=/work"]
 
 
 def cmd_start(a):
@@ -263,20 +342,37 @@ def cmd_start(a):
     bin_path = Path(a.binary).resolve() if a.binary else ROOT / "target/release" / ARMS[a.arm]["bin"]
     if not bin_path.exists():
         sys.exit(f"build {bin_path} first: cargo build --release -p snappea --bins")
+    if a.mode not in task_modes(a.task):
+        sys.exit(f"task {a.task} has modes {task_modes(a.task)}")
     work = run / "work"
-    write_model(work / "model", a.task, bug_ids(a.task) if a.mode == "review" else [], task_dir(a.task) / "public")
-    if a.mode == "build":
-        shutil.rmtree(work / "model" / "PSrc")
-        shutil.copytree(task_dir(a.task) / "skeleton", work / "model" / "PSrc")
-    shutil.copy(task_dir(a.task) / "public" / "DESIGN.md", work / "DESIGN.md")
-    (work / "TASK.md").write_text((TASK if a.mode == "review" else BUILD_TASK).replace("{tool_line}", ARMS[a.arm]["tool_line"]))
+    public = task_dir(a.task) / "public"
+    if a.mode == "impl":
+        # The task brings its whole /work, with its own TASK.md.
+        shutil.copytree(public, work)
+        text = (work / "TASK.md").read_text()
+    else:
+        write_model(work / "model", a.task, bug_ids(a.task) if a.mode in ("review", "harden") else [], public)
+        if a.mode == "build":
+            shutil.rmtree(work / "model" / "PSrc")
+            shutil.copytree(task_dir(a.task) / "skeleton", work / "model" / "PSrc")
+        shutil.copy(public / "DESIGN.md", work / "DESIGN.md")
+        # A task may word its own assignment, e.g. when its specs are incomplete on purpose.
+        own = public / "TASK.md"
+        text = own.read_text() if own.exists() else {"review": TASK, "build": BUILD_TASK, "harden": HARDEN_TASK}[a.mode]
+    (work / "TASK.md").write_text(text.replace("{tool_line}", ARMS[a.arm]["tool_line"]))
+    workdir = "/work" if a.mode == "impl" else "/work/model"
+    wrapper = None
+    if a.check_flags:
+        wrapper = run / "checker-wrapper.sh"
+        wrapper.write_text(WRAPPER.replace("{flags}", a.check_flags))
+        wrapper.chmod(0o755)
     subprocess.run(["chown", "-R", "1000:1000", str(work)], check=False)
-    subprocess.run([*docker_args(work, a.arm, bin_path, a.env), "-d", "--name", container(a.run_id),
-                    "-w", "/work/model", IMAGE, "sleep", "infinity"], check=True, capture_output=True)
+    subprocess.run([*docker_args(work, a.arm, bin_path, a.env, wrapper), "-d", "--name", container(a.run_id),
+                    "-w", workdir, IMAGE, "sleep", "infinity"], check=True, capture_output=True)
     sha = hashlib.sha256(bin_path.read_bytes()).hexdigest()
     rev = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     meta = {"run_id": a.run_id, "task": a.task, "mode": a.mode, "arm": a.arm, "label": a.label or a.arm, "binary": str(bin_path),
-            "env": a.env, "model": a.model, "limits": LIMITS, "binary_sha256": sha, "snappea_commit": rev,
+            "env": a.env, "check_flags": a.check_flags, "workdir": workdir, "model": a.model, "limits": LIMITS, "binary_sha256": sha, "snappea_commit": rev,
             "started": time.time()}
     (run / "meta.json").write_text(json.dumps(meta, indent=2))
     prompt = PROMPT.format(harness=HERE / "harness.py", run_id=a.run_id, calls=LIMITS["calls"],
@@ -303,7 +399,8 @@ def snapshot(run: Path, call: int):
 
 def cmd_bridge(a):
     run = RUNS / a.run_id
-    limits = json.loads((run / "meta.json").read_text())["limits"]
+    meta = json.loads((run / "meta.json").read_text())
+    limits = meta["limits"]
     state_path = run / "bridge-state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {"started": time.time(), "calls": 0}
     elapsed = time.time() - state["started"]
@@ -316,7 +413,7 @@ def cmd_bridge(a):
     start = time.time()
     timeout = min(limits["command_seconds"], max(1, limits["seconds"] - elapsed))
     try:
-        r = subprocess.run(["docker", "exec", "-w", "/work/model", container(a.run_id), "bash", "-c", command],
+        r = subprocess.run(["docker", "exec", "-w", meta.get("workdir", "/work/model"), container(a.run_id), "bash", "-c", command],
                            text=True, capture_output=True, timeout=timeout)
         result = {"exit_code": r.returncode, "stdout": r.stdout, "stderr": r.stderr}
     except subprocess.TimeoutExpired:
@@ -406,8 +503,11 @@ def cmd_grade(a):
     for run_id in a.run_ids:
         run = RUNS / run_id
         meta = json.loads((run / "meta.json").read_text())
-        if meta.get("mode") == "build":
-            grade = grade_design(meta["task"], run / "submission" / "model" / "PSrc")
+        if meta.get("mode") in ("build", "harden", "impl"):
+            if meta["mode"] == "impl":
+                grade = grade_impl(meta["task"], run / "submission")
+            else:
+                grade = grade_design(meta["task"], run / "submission" / "model" / "PSrc")
             grade["process"] = process_stats(run)
             (run / "grade.json").write_text(json.dumps(grade, indent=2))
             print(run_id, json.dumps({k: grade[k] for k in ("status", "passed", "failed")})[:1500])
@@ -428,8 +528,12 @@ def main():
     p = sub.add_parser("start")
     p.add_argument("--task", required=True); p.add_argument("--arm", required=True, choices=ARMS)
     p.add_argument("--run-id", required=True); p.add_argument("--model", default="unspecified")
-    p.add_argument("--mode", default="review", choices=("review", "build"),
-                   help="review: find the bugs written into a given design. build: write the design; hidden tests judge it")
+    p.add_argument("--mode", default="review", choices=MODES,
+                   help="review: write tests that catch the bugs in a given design. build: write the design from a "
+                        "skeleton. harden: fix a given design. impl: the task's own files and grader. "
+                        "Hidden tests judge build, harden and impl")
+    p.add_argument("--check-flags", default="", metavar="FLAGS",
+                   help="flags a wrapper adds to every `check`, e.g. '--no-mutation', to try other defaults")
     p.add_argument("--binary", help="checker binary to pin for this cohort (default: target/release)")
     p.add_argument("--label", help="condition name for report.py (default: the arm)")
     p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
