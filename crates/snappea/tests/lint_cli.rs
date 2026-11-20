@@ -63,7 +63,7 @@ fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     assert_eq!(h.stderr, lint);
     assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
     assert!(
-        h.stdout.ends_with("but lint failed (1 finding); coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
+        h.stdout.ends_with("but lint failed; coverage and mutation testing skipped. Fix or suppress the lint findings above, then check again. Output: PCheckerOutput/\n"),
         "{}",
         h.stdout
     );
@@ -81,9 +81,9 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     let fail = h.stdout.find("FAIL  t ").expect(&h.stdout);
     let replay = h.stdout.find("Replay: snappea replay ").expect(&h.stdout);
     assert!(fail < replay, "{}", h.stdout);
-    assert!(h.stderr.contains("error[permissive-monitor]: ") && h.stderr.contains("Lint failed: 1 finding(s)."));
+    assert!(h.stderr.contains("error[permissive-monitor]: ") && h.stderr.contains("\nLint failed. Each finding's help says how to fix it"));
     assert!(
-        h.stdout.lines().last().unwrap().starts_with("1 of 1 test case failed and lint failed (1 finding) in "),
+        h.stdout.lines().last().unwrap().starts_with("1 of 1 test case failed and lint failed in "),
         "{}",
         h.stdout
     );
@@ -101,10 +101,10 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     assert_eq!(result["lint"]["failed"], true);
     assert_eq!(result["lint"]["errors"], 1);
     assert_eq!(result["lint"]["findings"][0]["rule"], "permissive-monitor", "{}", result);
-    assert!(result["error"].as_str().unwrap().starts_with("Lint failed: 1 finding(s)."), "{}", result);
+    assert!(result["error"].as_str().unwrap().starts_with("Lint failed. Each finding's help"), "{}", result);
     assert_eq!(result["summary"]["status"], "tests_failed");
     assert_eq!(result["summary"]["lint_failed"], true);
-    assert_eq!(result["summary"]["message"], "1 of 1 test case failed; lint failed (1 finding)");
+    assert_eq!(result["summary"]["message"], "1 of 1 test case failed; lint failed");
     assert_eq!(result["coverage"], serde_json::json!({"skipped": "lint failed"}));
     assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
 }
@@ -129,7 +129,7 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(result["mutation"], serde_json::json!({"skipped": "lint failed"}));
         h.env.remove("SNAPPEA_FORMAT");
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2);
-        assert!(h.stdout.contains(&format!("but lint failed (1 finding); {skipped} skipped.")), "{}", h.stdout);
+        assert!(h.stdout.contains(&format!("but lint failed; {skipped} skipped.")), "{}", h.stdout);
         h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     }
     // --warn lint still runs the full pipeline
@@ -147,12 +147,12 @@ fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint,coverage"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(h.stderr.contains("warning[permissive-monitor]: ") && !h.stderr.contains("error["), "{}", h.stderr);
     assert!(
-        h.stderr.contains("Lint: 1 finding(s) reported as warnings (--warn lint); checking anyway."),
+        h.stderr.contains("\nLint findings reported as warnings (--warn lint); checking anyway."),
         "{}",
         h.stderr
     );
     assert!(h.stdout.contains("Checking "), "{}", h.stdout);
-    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 1 lint finding, "), "{}", h.stdout);
+    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: lint findings, coverage gaps."), "{}", h.stdout);
     // `all` warns on every check; JSON counts what was only warned about
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all"]), 0, "{}{}", h.stdout, h.stderr);
@@ -311,7 +311,7 @@ fn unobserved_handler_fails_check_and_the_fix_passes() {
     assert!(h.stderr.contains("add the event to the monitor's `observes` list, or remove the handler"), "{}", h.stderr);
     assert!(h.stderr.contains("`// snappea-lint: allow unobserved-handler -- reason`"), "{}", h.stderr);
     // the test case still runs, and the finding follows it
-    assert!(h.stdout.contains("Checking ") && h.stdout.contains("but lint failed (1 finding)"), "{}", h.stdout);
+    assert!(h.stdout.contains("Checking ") && h.stdout.contains("but lint failed; coverage"), "{}", h.stdout);
     // upstream's warning text is not repeated next to the finding
     assert!(!h.stdout.contains("[Warning:]") && !h.stderr.contains("[Warning:]"), "{}{}", h.stdout, h.stderr);
 
@@ -320,7 +320,7 @@ fn unobserved_handler_fails_check_and_the_fix_passes() {
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["exit_code"], 2);
     // the findings themselves, not the report printed on stderr again
-    assert!(result["error"].as_str().unwrap().starts_with("Lint failed: 1 finding(s)."), "{}", h.stdout);
+    assert!(result["error"].as_str().unwrap().starts_with("Lint failed. Each finding's help"), "{}", h.stdout);
     assert_eq!(result["findings"][0]["rule"], "unobserved-handler", "{}", h.stdout);
     assert_eq!(result["findings"][0]["severity"], "error");
     assert_eq!(result["findings"][0]["line"], 6);
@@ -447,16 +447,14 @@ test tcShared [main=Main]: assert Oracle in { Main, Worker };
 "#;
 
 #[test]
-fn shared_spec_helpers_are_advisory_in_lint_and_check_even_when_lint_is_denied() {
+fn shared_spec_helpers_are_advisory_reported_and_failing_only_with_strict() {
     let mut h = MemHost::new("/w");
     h.add_file("shared.p", SHARED_HELPER);
+    // an advisory rule is not reported by default, in lint or in check, even when lint is denied
     assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["findings"][0]["rule"], "shared-spec-helper");
-    assert_eq!(result["findings"][0]["severity"], "advisory");
-    assert_eq!(result["findings"][0]["file"], "shared.p");
-    assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
-    assert!(!h.stderr.contains("Lint failed"), "{}", h.stderr);
+    assert_eq!(result["findings"], serde_json::json!([]));
+    assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
     assert_eq!(
         run(&mut h, &["check", "shared.p", "--deny", "lint", "--no-mutation", "--json"]),
         0,
@@ -464,16 +462,44 @@ fn shared_spec_helpers_are_advisory_in_lint_and_check_even_when_lint_is_denied()
         h.stdout,
         h.stderr
     );
+    assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert!(result["warnings"].get("lint").is_none(), "{result}");
+    assert_eq!(result["test_cases"][0]["result"], "ok");
+    // `--strict` reports it, and it fails lint
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--strict", "--json"]), 2, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["findings"][0]["rule"], "shared-spec-helper");
+    assert_eq!(result["findings"][0]["severity"], "advisory");
+    assert_eq!(result["findings"][0]["file"], "shared.p");
+    assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
+    assert!(h.stderr.contains("\nLint failed. "), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "shared.p", "--strict", "--no-mutation", "--json"]), 2, "{}{}", h.stdout, h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["summary"]["status"], "lint_failed");
+    assert_eq!(result["lint"]["errors"], 1);
+    assert_eq!(result["test_cases"][0]["result"], "ok");
+    // `--strict --warn lint` reports it without failing
+    assert_eq!(
+        run(&mut h, &["check", "shared.p", "--strict", "--warn", "lint", "--no-mutation", "--json"]),
+        0,
+        "{}{}",
+        h.stdout,
+        h.stderr
+    );
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["warnings"]["lint"], 1);
-    assert_eq!(result["test_cases"][0]["result"], "ok");
 
     h.add_file(
         "shared.p",
         &SHARED_HELPER
             .replace("assert p.actual == Compute(p.input);", "assert p.actual == Compute(p.input); assert true;"),
     );
+    // beside a blocking finding, the advisory one is still shown only with `--strict`
     assert_eq!(run(&mut h, &["check", "shared.p", "--no-mutation"]), 2);
+    assert!(h.stderr.contains("error[tautological-assert]"), "{}", h.stderr);
+    assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "shared.p", "--no-mutation", "--strict"]), 2);
     assert!(h.stderr.contains("error[tautological-assert]"), "{}", h.stderr);
     assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
 }
@@ -486,14 +512,14 @@ fn shared_helper_advisories_follow_transitive_calls_and_scoped_suppressions() {
         "fun Compute(x: int): int { return Leaf(x); }\nfun Leaf(x: int): int { return x + 1; }",
     );
     h.add_file("shared.p", &src);
-    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--strict", "--json"]), 2, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["findings"].as_array().unwrap().len(), 2);
     let src = src
         .replace("fun Compute", "// snappea-lint: allow shared-spec-helper -- reviewed adapter\nfun Compute")
         .replace("fun Leaf", "// snappea-lint: allow shared-spec-helper -- reviewed utility\nfun Leaf");
     h.add_file("shared.p", &src);
-    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["findings"], serde_json::json!([]));
 }
@@ -509,12 +535,12 @@ fn helper_sharing_between_unrelated_tests_or_only_drivers_is_not_reported() {
         test tcOther [main=OtherMain]: assert OtherOracle in { OtherMain, OtherWorker };
     "#;
     h.add_file("shared.p", &src);
-    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["findings"], serde_json::json!([]));
     // PTst and explicit driver annotations must not turn environment helpers into design oracles.
     h.add_file("shared.p", &SHARED_HELPER.replace("machine Worker", "// snappea: driver\nmachine Worker"));
-    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "shared.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["findings"], serde_json::json!([]));
 }
@@ -531,7 +557,7 @@ fn shared_helper_warning_follows_check_test_selection() {
     "#;
     h.add_file("shared.p", &src);
     assert_eq!(
-        run(&mut h, &["check", "tcIndependent", "shared.p", "--no-mutation", "--json"]),
+        run(&mut h, &["check", "tcIndependent", "shared.p", "--strict", "--no-mutation", "--json"]),
         0,
         "{}{}",
         h.stdout,
@@ -540,6 +566,9 @@ fn shared_helper_warning_follows_check_test_selection() {
     assert!(!h.stderr.contains("shared-spec-helper"), "{}", h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert!(result["warnings"].get("lint").is_none(), "{result}");
+    // the test case that shares the helper does report it
+    assert_eq!(run(&mut h, &["check", "tcShared", "shared.p", "--strict", "--no-mutation", "--json"]), 2);
+    assert!(h.stderr.contains("warning[shared-spec-helper]"), "{}", h.stderr);
 }
 
 fn payload_findings(body: &str, prefix: &str) -> Vec<serde_json::Value> {
@@ -557,15 +586,12 @@ fn payload_findings(body: &str, prefix: &str) -> Vec<serde_json::Value> {
     "#
         ),
     );
-    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    // an advisory rule: reported, and failing, only with `--strict`
+    let code = run(&mut h, &["check", "lint", "payload.p", "--strict", "--json"]);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    result["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|f| f["rule"] == "unused-design-payload-field")
-        .cloned()
-        .collect()
+    let all = result["findings"].as_array().unwrap();
+    assert_eq!(code, if all.is_empty() { 0 } else { 2 }, "{}{}", h.stdout, h.stderr);
+    all.iter().filter(|f| f["rule"] == "unused-design-payload-field").cloned().collect()
 }
 
 #[test]
@@ -611,7 +637,7 @@ fn design_payload_advisory_reads_nested_receive_captures() {
 }
 
 #[test]
-fn design_payload_advisories_do_not_fail_checks_and_skip_goto_plumbing() {
+fn design_payload_advisories_fail_checks_only_with_strict_and_skip_goto_plumbing() {
     let mut h = MemHost::new("/w");
     let source = r#"
         event Reply: (id: int, value: int);
@@ -630,11 +656,21 @@ fn design_payload_advisories_do_not_fail_checks_and_skip_goto_plumbing() {
         h.stdout,
         h.stderr
     );
+    // not reported by default
+    assert!(!h.stderr.contains("unused-design-payload-field"), "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert!(result["warnings"].get("lint").is_none(), "{result}");
+    // `--strict` reports it and fails lint; `--warn lint` keeps it a warning
+    assert_eq!(run(&mut h, &["check", "payload.p", "--strict", "--no-mutation", "--json"]), 2);
+    assert!(h.stderr.contains("warning[unused-design-payload-field]"), "{}", h.stderr);
+    let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(result["summary"]["status"], "lint_failed");
+    assert_eq!(run(&mut h, &["check", "payload.p", "--strict", "--warn", "lint", "--no-mutation", "--json"]), 0);
     assert!(h.stderr.contains("warning[unused-design-payload-field]"), "{}", h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["warnings"]["lint"], 1);
     h.add_file("payload.p", &source.replace("on Reply do Handle;", "on Reply goto S with Handle;"));
-    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "payload.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(!h.stderr.contains("unused-design-payload-field"), "{}", h.stderr);
 }
 
@@ -656,15 +692,26 @@ test together [main=Main]: assert RequestKnown, ValueValid in { Main, Sensor };
 fn complementary_specs_share_payload_checks_without_blocking_deny_lint() {
     let mut h = MemHost::new("/w");
     h.add_file("model.p", COMPLEMENTARY_PAYLOAD_SPECS);
+    // a field a companion spec reads is no blocking finding, and the advisory one is not shown
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(h.stdout, "Lint passed.\n");
+    assert!(h.stderr.is_empty(), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "--deny", "lint", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stderr.contains("payload-field"), "{}", h.stderr);
+    // `--strict` reports the advisory findings, and fails on them
+    assert_eq!(run(&mut h, &["check", "lint", "model.p", "--strict"]), 2, "{}{}", h.stdout, h.stderr);
     assert!(h.stderr.contains("warning[payload-field-checked-by-other-spec]"), "{}", h.stderr);
     assert!(!h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "--strict", "--no-mutation"]), 2, "{}{}", h.stdout, h.stderr);
+    assert!(h.stdout.contains("but lint failed; coverage"), "{}", h.stdout);
     h.env.insert("SNAPPEA_FORMAT".into(), "json".into());
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p", "--strict"]), 2);
     let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(json["findings"].as_array().unwrap().len(), 2, "{json}");
     assert!(json["findings"].as_array().unwrap().iter().all(|f| f["severity"] == "advisory"), "{json}");
-    assert_eq!(run(&mut h, &["check", "model.p", "--deny", "lint", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0);
+    let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(json["findings"], serde_json::json!([]));
 }
 
 #[test]
@@ -701,7 +748,7 @@ fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
 }
 
 #[test]
-fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
+fn unused_and_misplaced_suppressions_say_where_to_go_with_strict() {
     let model = "event eReq: (id: int, amount: int, client: machine);\n\
         event eResp: (id: int);\n\
         spec Safety observes eReq, eResp {\n\
@@ -716,8 +763,13 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
         test tc [main=Main]: assert Safety in { Main, Server };\n";
     let mut h = MemHost::new("/w");
     h.add_file("model.p", model);
+    // the misplaced suppression does not hide the finding; that it matches nothing is an
+    // advisory finding, reported only with `--strict`
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
-    // the misplaced suppression does not hide the finding, and says where it must go
+    assert!(h.stderr.contains("error[unused-payload-field]: spec 'Safety'"), "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p", "--strict"]), 2);
+    // with it, the suppression says where it must go
     assert!(
         h.stderr.contains("error[unused-payload-field]: spec 'Safety' never reads payload field 'p.amount'"),
         "{}",
@@ -742,7 +794,10 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
     );
     h.add_file("model.p", &fixed);
     assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 0, "{}", h.stderr);
-    assert!(!h.stderr.contains("unused-suppression"), "{}", h.stderr);
+    // (`--strict` still fails, on another advisory finding: the server does not read the amount either)
+    assert_eq!(run(&mut h, &["check", "lint", "model.p", "--strict"]), 2, "{}", h.stderr);
+    assert!(h.stderr.contains("warning[unused-design-payload-field]: design machine 'Server'"), "{}", h.stderr);
+    assert!(!h.stderr.contains("unused-suppression") && !h.stderr.contains("error["), "{}", h.stderr);
 
     // a block comment is not read, and says so
     h.add_file(
@@ -752,7 +807,7 @@ fn unused_and_misplaced_suppressions_are_warnings_that_say_where_to_go() {
             "/* snappea-lint: allow unused-payload-field -- amounts */",
         ),
     );
-    assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2);
+    assert_eq!(run(&mut h, &["check", "lint", "model.p", "--strict"]), 2);
     assert!(h.stderr.contains("warning[unused-suppression]: this block comment is not read"), "{}", h.stderr);
 }
 
@@ -773,7 +828,7 @@ fn check_with_selected_tests_notes_the_findings_it_skipped() {
     assert_eq!(run(&mut h, &["check", "model.p", "tcGood", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(
         h.stderr.contains(
-            "note: 1 lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them"
+            "note: lint findings only in tests not selected were skipped; run `snappea check lint` to see them"
         ),
         "{}",
         h.stderr
@@ -811,6 +866,6 @@ fn design_receivers_may_ignore_reply_addresses() {
          machine Main { start state S { entry { new Coordinator(); } } }\n\
          test tc [main=Main]: { Main, Coordinator, Participant };\n",
     );
-    assert_eq!(run(&mut h, &["check", "lint", "votes.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(run(&mut h, &["check", "lint", "votes.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     assert!(!h.stdout.contains("unused-design-payload-field"), "{}", h.stdout);
 }

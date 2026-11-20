@@ -12,8 +12,17 @@ use snappea_lint::{Finding, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
 /// Print all unsuppressed findings and return the blocking count. Does not execute models or write artifacts.
 pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usize, Exit> {
     let sm = sources.source_map();
-    let findings = findings(host, &sm, prog)?;
-    Ok(report(host, &sm, &findings))
+    let findings = shown(findings(host, &sm, prog)?, false);
+    Ok(report(host, &sm, &findings, false))
+}
+
+/// The findings a run reports: all of them with `strict`, else only the blocking ones.
+/// Advisory findings rarely change a model, so they are off unless asked for.
+pub fn shown(mut findings: Vec<Finding>, strict: bool) -> Vec<Finding> {
+    if !strict {
+        findings.retain(|f| !snappea_lint::is_advisory(f.rule));
+    }
+    findings
 }
 
 /// The unsuppressed findings of the source rules and of the rules on the type-checked
@@ -186,7 +195,7 @@ fn reported_at(rule: &str) -> &'static str {
 /// (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print as warnings
 /// and the check goes on. Returns how many findings there were.
 pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
-    gate_selected(host, sources, prog, gate, &prog.test_cases(), &[]).map_err(|e| {
+    gate_selected(host, sources, prog, gate, false, &prog.test_cases(), &[]).map_err(|e| {
         e.print(host, &sources.source_map());
         e.exit
     })
@@ -205,8 +214,9 @@ pub struct LintFailed {
     pub summary: String,
     /// The number of blocking findings.
     pub count: usize,
-    /// The findings to print, blocking and advisory.
+    /// The findings to print.
     pending: Vec<Finding>,
+    strict: bool,
     /// Blocking findings only in tests that were not selected.
     skipped: usize,
 }
@@ -215,7 +225,7 @@ impl LintFailed {
     /// Prints the findings with their source and fix, and the summary line, to stderr.
     pub fn print(&self, host: &mut dyn Host, sm: &SourceMap) {
         if self.findings.is_some() {
-            report(host, sm, &self.pending);
+            report(host, sm, &self.pending, self.strict);
             skipped_note(host, self.skipped);
         }
     }
@@ -225,10 +235,7 @@ fn skipped_note(host: &mut dyn Host, skipped: usize) {
     if skipped > 0 {
         host.write(
             Stream::Err,
-            &format!(
-                "note: {} lint finding(s) only in tests not selected were skipped; run `snappea check lint` to see them\n",
-                skipped
-            ),
+            "note: lint findings only in tests not selected were skipped; run `snappea check lint` to see them\n",
             None,
         );
     }
@@ -243,6 +250,7 @@ pub fn gate_selected(
     sources: &Sources,
     prog: &Program,
     gate: Gate,
+    strict: bool,
     tests: &[TestCase],
     intents: &[TestIntent],
 ) -> Result<usize, Box<LintFailed>> {
@@ -253,6 +261,7 @@ pub fn gate_selected(
         summary: String::new(),
         count: 0,
         pending: Vec::new(),
+        strict,
         skipped: 0,
     };
     let all = prog.test_cases();
@@ -275,8 +284,9 @@ pub fn gate_selected(
         findings.extend(unused_suppressions(&sm, &findings, &used));
         sort(&mut findings);
     }
+    let findings = shown(findings, strict);
     if gate == Gate::Deny {
-        let count = findings.iter().filter(|f| !snappea_lint::is_advisory(f.rule)).count();
+        let count = findings.len();
         if count > 0 {
             return Err(Box::new(LintFailed {
                 exit: Exit(2),
@@ -284,10 +294,10 @@ pub fn gate_selected(
                 summary: summary(count),
                 count,
                 pending: findings,
+                strict,
                 skipped,
             }));
         }
-        report(host, &sm, &findings);
     } else {
         for f in &findings {
             let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f)));
@@ -297,7 +307,7 @@ pub fn gate_selected(
     }
     skipped_note(host, skipped);
     if gate == Gate::Warn && !findings.is_empty() {
-        host.write(Stream::Err, &format!("Lint: {} finding(s) reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n", findings.len()), None);
+        host.write(Stream::Err, "Lint findings reported as warnings (--warn lint); checking anyway. Fix or suppress them before relying on the result.\n", None);
     }
     Ok(findings.len())
 }
@@ -314,7 +324,7 @@ pub fn intent<'a>(prog: &Program, test: &TestCase, intents: &'a [TestIntent]) ->
 /// ([`snappea_lint::OBSERVATION_RULES`]).
 pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> Result<usize, Exit> {
     let findings = snappea_lint::lint_observation(sm).map_err(|e| syntax_error(host, sm, e))?;
-    Ok(report(host, sm, &findings))
+    Ok(report(host, sm, &findings, false))
 }
 
 fn syntax_error(host: &mut dyn Host, sm: &SourceMap, e: ParseError) -> Exit {
@@ -391,12 +401,9 @@ fn render_with_help(sm: &SourceMap, f: &Finding, help: &str) -> String {
     }
 }
 
-/// The line that ends a list of `n` findings.
-pub fn summary(n: usize) -> String {
-    format!(
-        "Lint failed: {} finding(s). Each finding's help says how to fix it, or how to suppress an intended one; `snappea check lint --list-rules` describes the rules.",
-        n
-    )
+/// The line that ends a list of findings.
+pub fn summary(_n: usize) -> String {
+    "Lint failed. Each finding's help says how to fix it, or how to suppress an intended one; `snappea check lint --list-rules` describes the rules.".to_string()
 }
 
 /// Findings as JSON: rule, severity, message, help, and source location of each.
@@ -412,8 +419,9 @@ pub fn findings_json(sm: &SourceMap, findings: &[Finding]) -> Value {
 }
 
 /// Prints findings with their source and fix; returns only the blocking finding count.
-pub fn report(host: &mut dyn Host, sm: &SourceMap, findings: &[Finding]) -> usize {
-    let errors = findings.iter().filter(|f| !snappea_lint::is_advisory(f.rule)).count();
+/// With `strict`, advisory findings count too.
+pub fn report(host: &mut dyn Host, sm: &SourceMap, findings: &[Finding], strict: bool) -> usize {
+    let errors = findings.iter().filter(|f| strict || !snappea_lint::is_advisory(f.rule)).count();
     // A fix printed once is enough: long reports get cut by `head` and `tail`.
     let mut shown: Vec<String> = Vec::new();
     for f in findings {

@@ -130,9 +130,27 @@ pub struct Mutant {
     /// The change is in, or is, an `if` or `while` on a nondeterministic choice: often
     /// fault injection in a machine that stands in for the environment.
     pub under_choice: bool,
+    /// The removed statement is a `send` or an `announce`.
+    pub emits: bool,
+    /// For a removed `send` or `announce` of a named event: the event, and the specs of
+    /// the test cases that observe it. They are the specs that could require it.
+    pub emitted: Option<(String, Vec<String>)>,
 }
 
 impl Mutant {
+    /// Whether the change is one other machines or specs can see: a removed `send` or
+    /// `announce`, an emptied body, a removed `if`, `while` or `foreach`, or a condition
+    /// replaced by a constant. A check fails when no test case detects one of these.
+    /// Other changes (a swapped operator, a removed assignment, a queue policy) run and
+    /// fail only with `--strict`.
+    pub fn blocking(&self) -> bool {
+        match self.change {
+            Change::EmptyBody | Change::Force(_) => true,
+            Change::Remove => self.coarse || self.emits,
+            _ => false,
+        }
+    }
+
     /// Stable across test selections and coverage filtering in the same compiled model.
     pub(crate) fn cache_key(&self) -> String {
         match self.fun {
@@ -257,11 +275,16 @@ pub(crate) fn mutants_with_observers(
     tests: &[TestCase],
 ) -> Vec<Mutant> {
     let mut observed = vec![false; prog.events.len()];
+    let mut observers: Vec<Vec<String>> = vec![Vec::new(); prog.events.len()];
     for tc in tests {
         let (module, _) = prog.test_case_module(tc);
         for (monitor, _) in crate::checker::runtime::monitor_map_with_scenarios(prog, module) {
             for event in &prog.machine(monitor).observes {
                 observed[event.idx()] = true;
+                let name = &prog.machine(monitor).name;
+                if !observers[event.idx()].contains(name) {
+                    observers[event.idx()].push(name.clone());
+                }
             }
         }
     }
@@ -321,6 +344,8 @@ pub(crate) fn mutants_with_observers(
                     unobserved_announcement: None,
                     equivalent: None,
                     under_choice: false,
+                    emits: false,
+                    emitted: None,
                 });
             }
         }
@@ -420,6 +445,20 @@ pub(crate) fn mutants_with_observers(
                     }
                 }
             }
+            let emits = matches!(
+                &target,
+                Target::Stmt(s, Change::Remove) if matches!(s.kind, StmtKind::Send { .. } | StmtKind::Announce { .. })
+            );
+            let emitted = match &target {
+                Target::Stmt(s, Change::Remove) => match &s.kind {
+                    StmtKind::Send { event, .. } | StmtKind::Announce { event, .. } => match event.kind {
+                        ExprKind::EventRef(id) => Some((prog.event(id).name.clone(), observers[id.idx()].clone())),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            };
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
                 return;
@@ -443,6 +482,8 @@ pub(crate) fn mutants_with_observers(
                 unobserved_announcement,
                 equivalent,
                 under_choice: choices.iter().any(|c| c.file == at.file && c.start <= at.start && at.end <= c.end),
+                emits,
+                emitted,
             });
         });
     }
@@ -572,6 +613,8 @@ pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Ve
                         unobserved_announcement: None,
                         equivalent: None,
                         under_choice: false,
+                        emits: false,
+                        emitted: None,
                     });
                 }
             }

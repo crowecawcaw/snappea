@@ -238,13 +238,22 @@ the check or is reported as a warning:
 
 | Check | Default | Silence one in the source |
 |---|---|---|
-| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules warn | `// snappea-lint: allow <rule> -- reason` |
+| `lint` | blocking rules fail (exit 2, or 1 with a bug; coverage and mutation are skipped); advisory rules are off | `// snappea-lint: allow <rule> -- reason` |
 | `coverage` | fails (exit 1) | `// snappea-lint: allow coverage -- reason` |
-| `mutation` | warns (fails in `check mutation`) | `// snappea-lint: allow mutation[:<kind>] -- reason` |
+| `mutation` | fails (exit 1) on an undetected mutant a spec or another machine could see; other mutants are not run | `// snappea-lint: allow mutation[:<kind>] -- reason` |
 
 Advisory lints such as `shared-spec-helper` report a risk that needs review, not a
-proven defect. They remain warnings even with `--deny lint`; rule-list JSON identifies
+proven defect, so they are not reported by default. Rule-list JSON identifies
 them with `"severity": "advisory"`. See [linting](linting.md) for each rule's limits.
+
+`--strict` turns on what is off by default and fails on it: advisory lint rules, and
+the mutants that change only a value (a swapped operator, a removed assignment, a
+flipped boolean, a dropped clause, a queue policy). Use it for a model that guards a
+critical design. While iterating, the default findings are the ones that most often
+mark a rule with no spec.
+
+The console prints no counts of mutants or lint findings: one finding is a gap, and a
+total invites working the number down. JSON keeps the counts.
 
 The source comment is the way to accept an intended finding: it names one rule, covers
 one declaration or statement, and carries its reason into code review. To change what
@@ -254,7 +263,8 @@ names every check; a single check overrides `all`):
 ```sh
 snappea check --warn lint        # run coverage and mutation testing before addressing lints
 snappea check --warn coverage    # explore while the test suite is still being built
-snappea check --deny mutation    # CI: also fail on undetected mutants
+snappea check --warn mutation    # list undetected mutants without failing
+snappea check --strict           # also run low-priority mutants and advisory lints
 ```
 
 A warned finding is still printed, labelled `warning`, and the final line says
@@ -367,15 +377,15 @@ The output is the text above. With `--json` (or `--format json`, or
 command, coverage and driver limits (`driver`); then the coverage of all test cases
 with every uncovered entry, and the mutation testing results under `mutation`. The
 top-level `summary` says first what happened: `status` is `tests_failed`,
-`coverage_failed`, `mutation_failed` (undetected mutants, with `--deny mutation`),
-`mutation_incomplete` (mutants not tested, with `--deny mutation`), `search_incomplete`
+`coverage_failed`, `mutation_failed` (undetected mutants),
+`mutation_incomplete` (mutants not tested, with `--strict` or in `check mutation`), `search_incomplete`
 or `passed`, with counts for each outcome. `summary.uncovered` lists up to five required
 sites that never ran (`uncovered_more` counts the rest). `mutants_undetected` counts
-mutants no test case caught. `mutants_not_tested` and `mutants_under_searched` count
+the mutants no test case caught that fail the check. `mutants_not_tested` and `mutants_under_searched` count
 mutants the time limit left without a first turn or without their full budget,
 `mutants_unreached` mutants of code no passing test case ran (counted as untested only in `check mutation`: `snappea check` reports that code as coverage gaps),
 and `mutants_failed_to_run` mutants the checker could not run; they change `status` only
-under `--deny mutation` (and in `check mutation`), where an untested mutant is not a
+under `--strict` (and in `check mutation`), where an untested mutant is not a
 pass. `skipped`
 lists checks a pass did not include (`--no-mutation`, `--warn coverage`), and `note`
 says in a sentence what a pass did not cover and what to run next.
@@ -728,15 +738,31 @@ one small change. A mutant that every test case still passes marks code whose ef
 spec or assertion depends on:
 
 ```
-$ snappea check tcAtomicReserve
+$ snappea check
 ...
-Mutation testing: 19 of 39 mutants detected (1.8s)
-Not detected by any test case (every test case still passes with the change):
-  PSrc/Inventory.p:24  Inventory.Init entry: removed `stock = units;`
-  PSrc/Inventory.p:32  Inventory.Serving, on eReserveReq: `req.units <= stock` → `req.units < stock`
-  PSrc/Inventory.p:35  Inventory.Serving, on eReserveReq: `false` → `true`
-  PSrc/Inventory.p:49  Inventory.Serving, on eReleaseReq: removed the whole `if (req.order in reservations)` (and 4 more undetected inside it)
-  ...
+Mutation testing (1.8s)
+error[undetected-mutant]: PSrc/Inventory.p:35: Inventory.Serving, on eReserveReq: the test cases still pass with this change: removed `send req.client, eReserveResp, ...`
+  help: 'OrdersAnswered' observes eReserveResp but passes without it here: make a spec expect eReserveResp at this point (after the event that leads to it), or add one that does
+error[undetected-mutant]: PSrc/Inventory.p:49: Inventory.Serving, on eReleaseReq: the test cases still pass with this change: removed the whole `if (req.order in reservations)` (and more undetected inside it; -v lists them)
+  help: no test case notices this code removed: add a spec or assertion on its effect
+  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`
+No bugs found in 2.1s, but mutation testing failed: ...
+```
+
+By default only the mutants a spec or another machine could see are run: a removed
+`send` or `announce`, an emptied body, a removed `if`, `while` or `foreach`, and an `if`
+condition replaced by a constant. Each undetected one fails the check, and its help
+names what would detect it; for a removed `send` or `announce` it names the specs that
+observe the event. `--strict` also runs the value-level mutants in the table below.
+Mutation testing is skipped when only some test cases are selected, since a test case
+left out may be the one that detects a mutant; `snappea check mutation TEST` runs it
+on a selection.
+
+With `--strict` the list also shows changes such as:
+
+```
+error[undetected-mutant]: PSrc/Inventory.p:24: Inventory.Init entry: the test cases still pass with this change: removed `stock = units;`
+error[undetected-mutant]: PSrc/Inventory.p:32: Inventory.Serving, on eReserveReq: the test cases still pass with this change: `req.units <= stock` → `req.units < stock`
 ```
 
 Here the specs catch overselling and an order that never gets an answer, but nothing
@@ -812,9 +838,8 @@ mutant's later turns on that test case run fair schedules, which check hot monit
 temperature, so a mutant that loops without progress is found in a short turn. JSON gives it as `schedules_per_mutant`. `snappea check
 mutation` then keeps giving undetected mutants turns, up to 1000 schedules per test
 case, until its time limit: a deeper search for a CI gate, where `snappea check` stops
-at the budget. When every undetected mutant's search was incomplete, the console says
-so with a hint to run `snappea check mutation` before adding assertions or
-suppressions, and JSON has `deeper_search_may_detect: true`.
+at the budget. When every undetected mutant's search was incomplete, JSON has
+`deeper_search_may_detect: true`.
 
 Removing a whole `if`, `while`, `foreach` or body is a *coarse* mutant: the other
 mutants inside it change part of what it removes. A mutant inside one gets its first
@@ -822,12 +847,10 @@ turns with the others, but the rest of its budget only after every mutant outsid
 undetected coarse mutant had its own. When no test case detects the coarse mutant, no
 test case notices that code removed at all, which is the gap to close first, so the
 undetected mutants inside it are listed with it: the console shows
-`removed the whole body (3 statements) (and 2 more undetected inside it; -v lists them)`,
+`removed the whole body (3 statements) (and more undetected inside it; -v lists them)`,
 `-v` lists them under it, and JSON lists them under the coarse mutant's
-`undetected_inside`, each with its `file` and `line`. The console lists at most five
-undetected mutants and leaves out those that only re-assign the value already there;
-`-v` and JSON list all of them. On a check that passed they are a note, not a warning:
-act on one when the contract requires the behavior it changes. Given the time, every mutant
+`undetected_inside`, each with its `file` and `line`. A mutant that only re-assigns the
+value already there fails the check only with `--strict`. Given the time, every mutant
 gets its full budget; when the time limit stops the run, what it cut first is the
 confirmation of mutants inside a gap already found. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
@@ -881,8 +904,8 @@ check depends on: see the unchecked-state lint)` and JSON names the variable as
 `unchecked_variable`. Only changes inside a plain assignment, append or map write whose
 values involve no call, `new`, choice or operation that can fail are skipped.
 
-Some mutants no test case can detect, as the code shows. They are not run: the console
-counts them as `equivalent (not run)`, and JSON lists them under `mutation.equivalent`
+Some mutants no test case can detect, as the code shows. They are not run, and JSON
+lists them under `mutation.equivalent`
 with a `reason`:
 
 - removing an `if` with an empty branch (or no `else`) whose condition is a bare `$` or

@@ -172,13 +172,16 @@ pub struct Gates {
     pub lint: Gate,
     /// Required coverage not reached (default: deny).
     pub coverage: Gate,
-    /// Mutants no test case detects (default: warn; deny in `snappea check mutation`).
+    /// Undetected mutants whose change a spec or another machine could see (default: deny).
     pub mutation: Gate,
+    /// Also run the other mutants and report advisory lint findings, and fail on them
+    /// (`--strict`; default: off, so they are neither run nor shown).
+    pub strict: bool,
 }
 
 impl Default for Gates {
     fn default() -> Gates {
-        Gates { lint: Gate::Deny, coverage: Gate::Deny, mutation: Gate::Warn }
+        Gates { lint: Gate::Deny, coverage: Gate::Deny, mutation: Gate::Deny, strict: false }
     }
 }
 
@@ -192,7 +195,7 @@ impl Gates {
             "lint" => self.lint = gate,
             "coverage" => self.coverage = gate,
             "mutation" => self.mutation = gate,
-            "all" => *self = Gates { lint: gate, coverage: gate, mutation: gate },
+            "all" => *self = Gates { lint: gate, coverage: gate, mutation: gate, strict: self.strict },
             _ => return Err(format!("unknown check '{}': use lint, coverage, mutation or all", name)),
         }
         Ok(())

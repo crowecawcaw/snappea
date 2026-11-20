@@ -6,12 +6,30 @@ questions:
   - How do I catch a lock or request that is stuck forever?
   - How do I test timeouts and eventual convergence?
   - What must an independent safety spec check?
+  - How do I tell which design rule a spec enforces, and which rules have no spec?
 ---
 
 # Specs: liveness and independent safety checks
 
 A check proves only what specs assert, within the bounds. Bound every fault
 (`snappea guide faults`); nothing progresses if every attempt can be lost.
+
+## One rule per spec, named after the rule
+
+- List the design's rules first. Write one spec per rule and name it as the rule:
+  `ChargedOnce`, `RetriedPushGetsOriginalAnswer`, `EveryAttemptAnswered`. Avoid
+  `Safety` or `Contract`: a spec that holds five rules hides which one a design breaks.
+- The name is the link between the design and the model. A failure reports it, and an
+  undetected mutant names the specs that observe the event it removed:
+
+  ```text
+  error[undetected-mutant]: Server.p:32: Server.Replay: the test cases still pass with this change: removed `announce Replayed, ...`
+    help: 'NoLostUpdates' observes Replayed but passes without it here: make a spec expect Replayed at this point ...
+  ```
+
+  Here no rule says a retried push must be answered. Add the spec for that rule.
+- A rule with no spec is invisible to the check. Compare the rule list with the spec
+  names before relying on a pass.
 
 ## Liveness: a hot spec for every "must eventually"
 

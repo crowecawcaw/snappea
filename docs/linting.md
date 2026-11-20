@@ -53,15 +53,15 @@ Java through `snappea observe`) enforce the spec rule `unobserved-handler` too, 
 the same suppression comments; the other rules concern model tests.
 
 Some rules identify a risk rather than a demonstrated modeling mistake. These are
-**advisory**: they print `warning[rule-id]` and do not block `check lint` or `check`,
-even with `--deny lint`. `--warn lint` continues to downgrade the blocking rules.
+**advisory**: they are off by default. `--strict` reports them and they fail
+`check lint` and `check` like any other rule. `--warn lint` downgrades every rule.
 `--list-rules` JSON includes each rule's `severity` (`error` or `advisory`). `check lint`
 JSON lists every finding in `findings`, with its `rule`, `severity`, `message`, `help`
 and source location; when lint fails, `error` holds the one-line summary, not the
 human-readable report again (that is on stderr). When lint fails `check`, its JSON has
 the same list under `lint.findings`, `error` and `summary.message` hold the summary,
 `summary.lint_failed` is `true`, and `coverage` and `mutation` are
-`{"skipped": "lint failed"}`. `check` counts advisories under `warnings.lint`.
+`{"skipped": "lint failed"}`. With `--strict --warn lint`, `check` counts advisories under `warnings.lint`.
 Scoped suppressions apply to both kinds.
 
 Linting identifies common weak checks. A clean result does not establish that the
@@ -217,10 +217,10 @@ send owner, eClientDone, id;
 
 Safety and progress specs can check different fields of the same event. `check` and
 `check lint` combine meaningful reads across the spec monitors selected **within
-each test**, rather than forcing every handler to read every field. A local omission
-still produces the advisory `payload-field-checked-by-other-spec` when a companion
-checks it in every selected test that uses that monitor. This remains nonblocking
-with `--deny lint`; no suppression is needed just to divide responsibilities.
+each test**, rather than forcing every handler to read every field. With `--strict`, a local omission
+produces the advisory `payload-field-checked-by-other-spec` when a companion
+checks it in every selected test that uses that monitor. Without `--strict` it is not
+reported; no suppression is needed just to divide responsibilities.
 
 A field with no reader in any one of those test configurations remains a blocking
 `unused-payload-field`, naming the affected tests. Selecting a companion in another
@@ -522,8 +522,8 @@ be where the rule reports, which is not always where the cause is:
 | `unchecked-state` | the field or its machine |
 | `unplanned-driver-stage` | the statement that starts the later stage, or the driver machine |
 
-A lint suppression that matches no finding produces the advisory `unused-suppression`
-(a warning; it does not fail lint). When another finding of the same rule exists, the
+With `--strict`, a lint suppression that matches no finding produces the advisory
+`unused-suppression`. When another finding of the same rule exists, the
 help names its location, so a suppression in the wrong place can be moved; otherwise
 remove the suppression. `check` with test names does not report unused suppressions,
 since findings of the other tests are skipped.
@@ -613,4 +613,4 @@ Only top-level named fields are checked, and not those holding machine reference
 (a vote's sender, a reply address), as for `unused-payload-field`. Unreachable handlers and intentional
 abstractions can still generate advisories. Suppress a reviewed abstraction with
 `// snappea-lint: allow unused-design-payload-field -- reason` on its handler or
-machine. Advisories never fail the lint gate, including with `--deny lint`.
+machine. Advisories are reported only with `--strict`, where they fail the lint gate.
