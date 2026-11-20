@@ -1080,8 +1080,9 @@ suppressed. A misspelled kind fails linting, so it cannot silently allow nothing
 
 ## Driver limits
 
-A test can only find bugs in what its driver makes happen. A passing test case lists
-the limits its driver kept in every schedule it explored:
+A test can only find bugs in what its driver makes happen. With `-v`, a passing test
+case lists the limits its driver kept in every schedule it explored (`--json` always
+has them):
 
 ```
 ok    tcTwoClients (all 226 schedules, 4 workers, 0.01s)

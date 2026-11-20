@@ -139,7 +139,8 @@ Mutation testing:
       --no-mutation         Skip mutation testing
 
 Driver limits:
-      --no-driver-facts     Do not list the limits each test's driver kept
+      --no-driver-facts     Do not work out the limits each test's driver kept
+                            (-v prints them; --json lists them)
 
 Inputs:
       --ignore-foreign-files
@@ -156,7 +157,8 @@ Output:
                             Write every statement, branch and event handler no test
                             case ran to FILE
       --list-suppressions   List suppressed mutants with reasons and stale suppressions.
-  -v, --verbose             Show progress and statistics, and log every schedule.
+  -v, --verbose             Show progress, statistics and driver limits, and log every
+                            schedule.
                             Uses one worker.
       --progress <WHEN>     auto, off or json. auto (default) shows a status line
                             when stderr is a terminal and a line every 30s in CI
@@ -187,9 +189,9 @@ removed assignments and the like. To accept a mutant, put
 `// snappea-lint: allow mutation[:<kind>] -- reason` before the statement
 (see docs/checking-models.md).
 
-Each passing test case also lists the limits its driver kept in every schedule: the
-machines it created, the events it sent the model, in what order, and the values it
-used. They show what the check never tried, e.g. `no Client sends eAcquire after
+With -v, each passing test case also lists the limits its driver kept in every
+schedule: the machines it created, the events it sent the model, in what order, and
+the values it used. They show what the check never tried, e.g. `no Client sends eAcquire after
 eRelease`; if the real environment can do that, extend the driver. The driver is the
 test's main machine, machines declared under PTst/, and machines marked with a
 `// snappea: driver` comment. Driver limits never change the exit status.
@@ -1372,7 +1374,8 @@ fn run_check(
             }
         }
         if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
-            if !only && lint_failed.is_none() {
+            // on request: the limits are long, and JSON always has them
+            if !only && lint_failed.is_none() && cfg.verbose {
                 for l in driver_lines(d, &case, !driver_hint_shown) {
                     con.inner.out_line(&l);
                 }

@@ -8,6 +8,7 @@ questions:
 # Development
 
 The commands to build, test and lint are in [AGENTS.md](../AGENTS.md).
+[Evals](evals.md) lists the agent evals, what each showed and where its setup is.
 
 ## Crates
 

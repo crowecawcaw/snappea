@@ -93,3 +93,8 @@ count, for example after an out-of-bridge command that read host files.
 - Runs vary a lot; compare several runs per arm.
 - The answer key is in the repository. The solver is told to use only the bridge;
   check `audit.json`.
+
+## Results
+
+Run output stays in `runs/`, which is not committed. Short results belong in
+[evals](../../docs/evals.md#design-review).

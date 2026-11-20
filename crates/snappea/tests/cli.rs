@@ -1414,7 +1414,10 @@ fn lock_model(client: &str) -> String {
 fn driver_limits_show_what_the_driver_never_did() {
     let mut h = host();
     h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
+    // off by default: the limits are long
     assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text"]), 0, "{}", h.stderr);
+    assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text", "-v"]), 0, "{}", h.stderr);
     assert!(
         h.stdout.contains(
             "      Driver limits (held in all "
@@ -1443,7 +1446,10 @@ fn driver_limits_show_what_the_driver_never_did() {
     assert!(v["test_cases"][0].get("driver").is_none());
 
     h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
-    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text"]), 0);
+    assert_eq!(
+        snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text", "-v"]),
+        0
+    );
     assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);
 }
 
