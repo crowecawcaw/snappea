@@ -782,6 +782,18 @@ choice, so that only relabels the branches. Only code a passing test case ran
 is mutated (coverage lists the rest), and an `if` is forced only to the outcome a test
 case did not take: forcing a condition that was always true changes nothing.
 
+For untimed tests, mutation checking starts with up to four seeded random schedules
+per eligible function mutation. Each worker runs the original model first, then compiles
+the changed function and resumes from a checkpoint taken before that function was
+entered. A seed that failed on the original model is discarded. A seed that never
+reached the function needs no mutant run. These checkpoints live in memory for the
+first pass. JSON reports its elapsed time as `first_pass_seconds`, executed mutant schedules
+as `first_pass_schedules`, and
+mutants caught in this pass as `first_pass_detections`.
+
+Survivors proceed to adaptive search with their usual schedule budgets. Queue-policy
+mutations, timed models, and tests whose original exhaustive search finished within
+ten schedules start directly with adaptive search.
 Each mutant runs only the test cases that ran the changed code, in turns, smallest
 first: the test cases whose unchanged search was complete in the fewest schedules, then
 the rest. First every mutant gets a turn of 10 schedules on each of its test cases:
@@ -821,6 +833,24 @@ because no test case reached the failing schedule within its schedules;
 schedules, so no test case can detect it as written. Some mutants cannot be detected by
 any test: `x < n` and `x <= n` behave the same if `x` never equals `n`.
 
+Forcing an `if` into an empty branch and removing that `if` produce the same mutant
+program. Both source changes remain visible. When both request the same search, the
+runner can use the completed turn for either.
+
+Completed turns are shared in memory for the duration of the check. JSON reports
+the number reused as `reused_turns`.
+
+During an untimed mutation turn, the checker can take up to three in-memory snapshots
+at scheduling boundaries in the first execution. When depth-first search chooses a
+different continuation, the checker restores the deepest snapshot whose preceding
+machine and data choices all match. Each snapshot belongs to the same mutant, test
+case and turn. The scheduler still charges the shared decisions to its work budget.
+
+A reached `announce` of a constant event is reported as an undetected mutation with
+zero schedules if no monitor in the selected suite observes the event and the payload
+only reads values or constructs tuples. Attached scenarios count as observers.
+JSON identifies the event in `unobserved_announcement`.
+
 Some changes do nothing in most states, so a mutant runs only the test cases where it
 would change a value. While the test cases check the unchanged model, they record, for
 each such mutant, whether its change would have changed a value: for `<`, `<=`, `>` and
@@ -830,7 +860,9 @@ the one already there (unless computing the value or where it goes has an effect
 `new`, a choice, or a call to a foreign function or to a function that sends, raises,
 announces, changes state, creates a machine, writes a field or makes a choice; removing
 that removes the effect, so the mutant always runs); for a removed `+=` or `-=` on a set or map, whether the element
-was ever missing or present. A mutant whose change never would is not run: it is
+was ever missing or present. Dropping a pure clause from a condition uses the existing
+condition probes when available. A conjunct must evaluate to false or a disjunct to
+true for dropping it to change the outcome. A mutant whose change never would is not run: it is
 undetected, with 0 schedules, and the console says why, for example
 `` `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never
 equal) ``. In JSON it has `changes_a_value: false`. Like coverage, this covers the

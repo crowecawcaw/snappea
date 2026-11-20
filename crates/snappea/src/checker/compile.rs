@@ -104,9 +104,16 @@ pub fn compile_program_with_probes(prog: &Program) -> Code {
 
 /// Compiles without the specialized and fused instructions, which must behave exactly
 /// like the plain ones (see [`Op`]).
-#[cfg(test)]
 pub(crate) fn compile_program_plain(prog: &Program) -> Code {
     compile_program_with(prog, false, false)
+}
+
+/// The random first pass never requests a state hash. The base program's
+/// unchecked-value masks would have to be recomputed for a state-hashing strategy.
+pub(super) fn compile_random_variant(prog: &Program, root: FunId, base: &Code) -> Code {
+    let mut code = base.clone();
+    code.funs[root.idx()] = Some(Rc::new(compile_fun(prog, root, false, &[], None)));
+    code
 }
 
 fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {

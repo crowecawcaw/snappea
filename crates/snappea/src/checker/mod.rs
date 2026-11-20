@@ -27,6 +27,7 @@ pub mod interp;
 pub mod javafmt;
 pub mod jsonlog;
 pub mod mutation;
+pub(crate) mod mutation_screen;
 pub mod observe;
 pub mod observe_inputs;
 pub mod observe_json;

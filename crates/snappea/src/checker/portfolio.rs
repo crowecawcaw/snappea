@@ -15,6 +15,8 @@ struct Arm {
     runs: usize,
     frontiers: FxHashSet<(u32, u32, u32, usize)>,
 }
+const INITIAL_OBSERVATIONS: usize = 32;
+
 pub(crate) struct Portfolio {
     arms: Vec<Arm>,
     active: usize,
@@ -75,23 +77,53 @@ impl Portfolio {
     /// A stable dependency signal: several senders can race at one receiver.
     /// Inspect metadata already provided to the scheduler; no program-state hashes.
     pub(crate) fn observe_operations(&mut self, ops: &[OpInfo]) {
+        self.observe_prefix_operation(ops, None);
+    }
+
+    /// Record the fan-in of an initial scheduling point if its prefix can be
+    /// restored. Subsequent DFS schedules may sample a different set of points.
+    pub(crate) fn observe_prefix_operation(&mut self, ops: &[OpInfo], record: Option<&mut Vec<usize>>) {
         self.contention |= ops.iter().filter(|o| o.enabled).count() > 1;
         self.observations += 1;
-        if self.fan_in >= 8 || (self.observations > 32 && !self.observations.is_multiple_of(16)) {
+        let sample = self.sample_fan_in();
+        if !sample && record.is_none() {
             return;
         }
-        let mut receivers = [(0u64, 0usize); 64];
-        let mut count = 0;
-        for receiver in ops.iter().take(256).filter_map(|o| o.receiver) {
-            if let Some((_, n)) = receivers[..count].iter_mut().find(|(id, _)| *id == receiver) {
-                *n += 1;
-                self.fan_in = self.fan_in.max(*n);
-            } else if count < receivers.len() {
-                receivers[count] = (receiver, 1);
-                count += 1;
+        let mut fan_in = 0;
+        if self.fan_in < 8 {
+            let mut receivers = [(0u64, 0usize); 64];
+            let mut count = 0;
+            for receiver in ops.iter().take(256).filter_map(|o| o.receiver) {
+                if let Some((_, n)) = receivers[..count].iter_mut().find(|(id, _)| *id == receiver) {
+                    *n += 1;
+                    fan_in = fan_in.max(*n);
+                } else if count < receivers.len() {
+                    receivers[count] = (receiver, 1);
+                    count += 1;
+                }
+            }
+        }
+        if sample {
+            self.fan_in = self.fan_in.max(fan_in);
+        }
+        if let Some(summary) = record {
+            summary.push(fan_in);
+        }
+    }
+
+    fn sample_fan_in(&self) -> bool {
+        self.fan_in < 8 && (self.observations <= INITIAL_OBSERVATIONS || self.observations.is_multiple_of(16))
+    }
+
+    pub(crate) fn repeat_initial_observations(&mut self, summary: &[usize]) {
+        for &fan_in in summary {
+            self.observations += 1;
+            if self.sample_fan_in() {
+                self.fan_in = self.fan_in.max(fan_in);
             }
         }
     }
+
     pub(crate) fn probe_budget(&self) -> usize {
         // A receiver with n senders can see n! orders. Bound the pilot allocation
         // rather than assuming that a slowly closing DFS frontier is cheap.

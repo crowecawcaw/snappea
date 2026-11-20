@@ -1280,6 +1280,9 @@ impl<'p> Runtime<'p> {
                         let nargs = *nargs as usize;
                         if let Some(callee) = self.code.get(*fun) {
                             exec.frames[frame_idx].pc = pc;
+                            if let Some(touched) = self.touched.get_mut(fun.idx()) {
+                                *touched = true;
+                            }
                             exec.push_frame(callee.clone(), *fun, nargs);
                             continue 'frames;
                         }
