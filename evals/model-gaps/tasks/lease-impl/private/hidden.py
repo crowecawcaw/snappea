@@ -144,9 +144,9 @@ def h10_write_reply_lost_past_expiry(c, d):
 
 
 def h11_duplicate_replies(c, d):
-    """Every reply from a service arrives twice, the copy 6..14 ticks later."""
+    """Every reply from a service arrives twice, the copy 2..16 ticks later."""
     s = mk(c, d, "h11_duplicate_replies", 21,
-           until(FAULTS_END, dup(lambda e: e.src in ("lock", "storage"), 6, 14)))
+           until(FAULTS_END, dup(lambda e: e.src in ("lock", "storage"), 2, 16)))
     s.add_client(1, writes=3)
     s.add_client(2, writes=2, max_attempts=3, at=1)
     s.add_client(3, writes=1, max_attempts=2, at=2)
@@ -229,12 +229,25 @@ def h18_storage_restarts_duplicate_writes(c, d):
     return s.run()
 
 
+def h19_late_copy_of_busy_reply(c, d):
+    """Every reply from the lock service arrives again 11..13 ticks later, about when
+    the next attempt is in flight."""
+    s = mk(c, d, "h19_late_copy_of_busy_reply", 29,
+           until(FAULTS_END, dup(lambda e: e.src == "lock", 11, 13)))
+    s.add_client(1, behavior="Pauses", pause=20)
+    s.add_client(2, max_attempts=2, at=4)
+    s.add_client(3, max_attempts=2, at=5)
+    s.add_client(4, max_attempts=2, at=6)
+    return s.run()
+
+
 SCENARIOS = [h01_contend, h02_pause_past_expiry, h03_holder_crashes, h04_duplicate_everything,
              h05_lossy, h06_lossy_four, h07_lock_restarts_holder_dead,
              h08_lock_restarts_between_leases, h09_storage_restarts_before_late_write,
              h10_write_reply_lost_past_expiry, h11_duplicate_replies, h12_successor_pauses,
              h13_release_lost, h14_late_duplicate_requests, h15_restarts_and_loss,
-             h16_lock_down_at_expiry, h17_reordered, h18_storage_restarts_duplicate_writes]
+             h16_lock_down_at_expiry, h17_reordered, h18_storage_restarts_duplicate_writes,
+             h19_late_copy_of_busy_reply]
 
 if __name__ == "__main__":
     # run one scenario: hidden.py <name> <log_dir> <result_file>
