@@ -372,7 +372,15 @@ impl Report {
         let location = |m: &Mutant| format!("{}:{}", m.file, m.line);
         let undetected = self.undetected_indexed();
         if !undetected.is_empty() {
-            out.push("Not detected by any test case (every test case still passes with the change):".into());
+            // Without -v, leave out mutants that only re-assign the value already there and
+            // keep the list short: they are rarely a gap in the specs.
+            let noise = |i: &usize| !inner && matches!(self.verdicts[*i], Verdict::Undetected { unchanged: true, .. });
+            let hidden = undetected.iter().filter(|(i, _)| noise(i)).count();
+            let kept: Vec<_> = undetected.iter().filter(|(i, _)| !noise(i)).cloned().collect();
+            let total = undetected.len();
+            let undetected = kept;
+            let shown = if inner { shown } else { shown.min(5) };
+            out.push("Not detected by any test case (informational; each marks code whose effect no spec or assertion checks):".into());
             let list = &undetected[..undetected.len().min(shown)];
             let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
             for (i, (m, ..)) in list {
@@ -410,8 +418,13 @@ impl Report {
                     }
                 }
             }
-            if undetected.len() > list.len() {
-                out.push(format!("  ... {} more (--json lists all)", undetected.len() - list.len()));
+            if total > list.len() {
+                let reassign = if hidden > 0 {
+                    format!(", {} of which only re-assign a value already there", hidden)
+                } else {
+                    String::new()
+                };
+                out.push(format!("  ... {} more{} (-v or --json lists all)", total - list.len(), reassign));
             }
             // a coarse mutant counts when what it removes holds such code
             let fault_like = undetected

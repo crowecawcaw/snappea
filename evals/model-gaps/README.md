@@ -4,7 +4,8 @@ personas: [contributor]
 questions:
   - How do I run the model-gaps eval for one agent and one arm?
   - How is a run graded without an LLM judge?
-  - Which task separates snappea from the plain `p` command line, and why?
+  - Which tasks separate snappea from the plain `p` command line, and why?
+  - Which snappea output changes were tried, and what did they do?
   - How do I add a task that has headroom?
 ---
 
@@ -29,6 +30,17 @@ tests. A bug counts as found when one of the solver's tests passes on the fixed 
 and fails on the design with only that bug. A test that fails on the fixed design is a
 false alarm.
 
+**Guard** (`--mode guard`). The solver gets the correct design and must strengthen
+`PSpec/` and `PTst/`. The grade is how many hidden design mistakes (the task's seeded
+bugs, one at a time) its tests catch. The solver cannot find them by reading, because
+they are not there. Any task with seeded bugs can run in this mode.
+
+**Harden** (`--mode harden`). The solver gets a design with every seeded bug and fixes
+`PSrc/`. Hidden reference tests judge the result.
+
+**Impl** (`--mode impl`). The task brings its own `/work` and grader: the solver writes
+application code and can check its event logs against the model with `observe`.
+
 ## Tasks
 
 Each task is one of `examples/samples/use-cases`, reshaped.
@@ -39,6 +51,11 @@ Each task is one of `examples/samples/use-cases`, reshaped.
 | `consumer-group` | review, build | 2 machines | 6 | 3 |
 | `seat-hold` | review | 2 machines | 4 | 3 |
 | `leader-election` | build | 1 machine, crash and restart | 12 | none |
+| `online-migration` | build, guard | 4 machines, dual write and cutover | 9 | 6 |
+| `offline-sync` | build, guard | server and client, retries and late replies; public spec incomplete | 11 | 6 |
+| `circuit-breaker` | build | 1 machine; no specs or drivers given | 5 | 6 |
+| `token-refresh` | harden, guard | 2 machines, lock and rotation | 11 | 5 |
+| `lease-impl` | impl | Python lease lock checked with `observe` | 19 scenarios | 9 variants |
 
 ## Run it
 
@@ -58,8 +75,13 @@ python3 trajectory.py le-snappea-01          # when the design stopped improving
 ```
 
 `start --binary PATH` pins a binary, so you can rebuild while runs are in progress or
-compare two snappea builds. `--label` names the condition in the report. A solver gets
-60 commands, 40 minutes and 180 seconds per command. Runs land in `runs/`, which is
+compare two snappea builds. `--label` names the condition in the report.
+`--check-flags="--no-mutation"` adds flags to every `check` the solver runs.
+`./start.sh PREFIX TASK MODE N [LABEL BINARY [CHECK_FLAGS]]` starts N runs per arm, or
+N runs of one variant. `python3 modelscore.py PREFIX` scores the specs and tests of any
+finished run against the task's hidden mistakes, whatever its mode. A solver gets
+40 commands, 20 minutes and 120 seconds per command (the first leader-election runs
+had 60, 40 and 180). Runs land in `runs/`, which is
 not committed; `runs/<id>/snapshots/` holds the model after each command that changed
 it. Put a file named `EXCLUDE` in a run directory to keep it out of the report.
 
@@ -98,6 +120,58 @@ undetected mutants, and none of that changed the hidden score. So the eval shows
 things: one snappea finding closes a real gap, and most of a snappea run is spent
 after the design has stopped improving.
 
+### Guard, `offline-sync`: the arms differ
+
+Three runs per condition; each run can catch 6 hidden mistakes.
+
+| Condition | Mistakes caught | Per run | Minutes per run |
+| --- | --- | --- | --- |
+| `compat` (`p`) | 9/18 | 3, 2, 4 | 9.8 |
+| `snappea` | 14/18 | 5, 4, 5 | 7.0 |
+| `snappea`, focus build | 14/18 | 5, 5, 4 | 4.7 |
+| `snappea`, lean (`--no-mutation --no-driver-facts`) | 12/18 | 4, 4, 4 | 5.0 |
+
+No run raised a false alarm. The public spec leaves out the rules for replays,
+conflicts and push bases. On the given model snappea's lint blocks with
+`unchecked-event` on `Replayed` and `Conflicted` and `unused-payload-field` on five
+fields, which names what the specs do not look at. Compat solvers wrote specs for the
+rules they thought of and missed `first-base` and `delete-retried` more often. Most of
+the gap survives without mutation testing (lean), so lint carries it; mutation testing
+adds about one mistake in three runs.
+
+One mistake, a replay answered with no `Replayed` announcement, was caught by one run
+in twelve. Snappea listed it as the single undetected mutant in every run that ran
+mutation testing, and solvers wrote it off as unobservable.
+
+### Output variants
+
+| Variant | What changes | `leader-election` build | `offline-sync` guard |
+| --- | --- | --- | --- |
+| base | nothing | 6/6 runs pass, 10.0 min | 14/18, 7.0 min |
+| lean | no mutation testing, no driver limits | 3/4 runs pass, 5.5 min | 12/18, 5.0 min |
+| focus | undetected mutants are a note, not a warning; at most five listed; re-assignments of the same value hidden | 3/3 runs pass, 5.5 min | 14/18, 4.7 min |
+
+Focus keeps the scores of base at the cost of lean, so it is now the default
+behavior. Lean loses a little on both tasks.
+
+### Tasks where the arms tie
+
+| Task and mode | Grade | `snappea` | `compat` |
+| --- | --- | --- | --- |
+| `online-migration` build | hidden tests | 27/27, 3.7 min | 27/27, 4.4 min |
+| `offline-sync` build | hidden tests | 22/22, 3.9 min | 22/22, 2.8 min |
+| `circuit-breaker` build | hidden tests | 10/10, 11.6 min | 10/10, 3.5 min |
+| `token-refresh` harden | hidden tests | 22/22, 2.3 min | 22/22, 1.7 min |
+| `lease-impl` impl | hidden scenarios | 38/38, 2.6 min | 38/38, 2.7 min |
+| `online-migration` guard | hidden mistakes | 12/12 | 12/12 |
+| `token-refresh` guard | hidden mistakes | 10/10 | 10/10 |
+
+Given a DESIGN.md that states every rule, Haiku writes a correct design, or finds
+every seeded bug by reading, with either tool. In `lease-impl` half the solvers never
+ran the checker on their logs and still passed. On `circuit-breaker` snappea cost three
+times the minutes for the same score: with no specs given, lint and coverage kept the
+solver working on a model whose design was already right.
+
 ### Build and review on the smaller tasks: no difference
 
 On `job-queue` and `consumer-group` build, both arms passed every hidden test (one run
@@ -110,7 +184,7 @@ arms, whatever the tool does.
 
 ## What makes a task discriminate
 
-The one task with headroom has these properties. Keep them when adding tasks.
+The two tasks with headroom share these properties. Keep them when adding tasks.
 
 - **The gap is an omission, not a wrong line.** The solver must notice something that
   is missing: a spec nobody selected, a scenario no driver produces. Reading the code
@@ -121,7 +195,12 @@ The one task with headroom has these properties. Keep them when adding tasks.
   restart, superseded work, stale messages.
 - **Hidden tests cover what the starter does not.**
 
-Seeded-bug review on small designs has none of these.
+- **The grade measures the model, not only the design.** Guard mode on a task whose
+  public spec is incomplete separated the arms; build mode on the same task did not.
+
+Seeded-bug review on small designs has none of these. Neither does a task whose
+DESIGN.md spells out every rule and whose starter specs already check them: the solver
+gets the design right by reading, and its own tests then cover the rest.
 
 ## What the transcripts say about snappea's output
 
@@ -136,9 +215,7 @@ Seeded-bug review on small designs has none of these.
 - Undetected-mutant lists were long and mostly resets that assign the value already
   there. Solvers read them, changed little, and reported the count. The longest run
   (21 minutes, design final at minute 3.3) spent seven of its 22 commands on mutants.
-  This is the clearest low-value output. Worth testing with `--binary` and `--label`:
-  hide "never changes a value" mutants by default, and stop presenting undetected
-  mutants as a warning once lint and coverage pass.
+  This is the clearest low-value output. The focus variant above addresses it.
 - The hidden tests cannot credit a better test suite, only a better design. Work after
   the design is final may still have value the eval does not measure.
 - A lint failure skips coverage and mutation testing, so a solver learns about gaps
@@ -146,8 +223,10 @@ Seeded-bug review on small designs has none of these.
 
 ## Limits
 
-- Six runs per arm on one task. The effect comes from one spec and two lint rules; a second task with a
-  different omission is needed before generalizing.
+- Three to six runs per condition. Two tasks separate the arms, both through lint
+  rules that block the check; seven task and mode pairs do not.
+- A stronger solver model would likely close the gaps that remain; a weaker one might
+  open gaps on the tied tasks. Only Haiku was tested.
 - The compat arm is snappea's engine behind upstream's command line, not upstream P.
 - The solver image has no `python3`; solvers that reach for it lose a command.
 - Hidden tests run for 10 seconds each with a fixed seed. A flaw that needs a deeper

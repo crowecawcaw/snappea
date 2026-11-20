@@ -75,7 +75,7 @@ skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints
 `check mutation` only runs mutation testing. See their --help.
 
 Blocking lint findings and required coverage gaps fail the check; undetected mutants are
-warnings. Silence an intended finding in the source with a
+listed for information. Silence an intended finding in the source with a
 `// snappea-lint: allow <rule> -- reason` comment. `--warn` and `--deny` change what
 fails for one run.
 
@@ -173,7 +173,8 @@ so on) for further failures. Scenario monitors also write scenario_coverage.json
 When every test case passes, mutation testing follows: each mutant changes the model
 slightly (a removed statement, a forced `if`, a swapped operator). A mutant no test
 case detects marks code whose effect no spec or assertion checks. Undetected mutants
-are listed as warnings; `--deny mutation` makes them fail the check. To accept one, put
+are listed for information, at most five, leaving out those that only re-assign a value
+already there (`-v` lists all); `--deny mutation` makes them fail the check. To accept one, put
 `// snappea-lint: allow mutation[:<kind>] -- reason` before the statement
 (see docs/checking-models.md).
 
@@ -1697,11 +1698,15 @@ fn run_check(
     {
         warnings.insert("mutation_suppressions".into(), json!(advisories.len()));
     }
-    let with_warnings = if failed > 0 || warnings.is_empty() {
+    // Undetected mutants stay in the JSON warnings; the console reports them in a note, since
+    // a check that passed with them needs no further work unless the contract says so.
+    let console_warnings = warnings.iter().filter(|(k, _)| k.as_str() != "mutation").count();
+    let with_warnings = if failed > 0 || console_warnings == 0 {
         String::new()
     } else {
         let parts: Vec<String> = warnings
             .iter()
+            .filter(|(k, _)| k.as_str() != "mutation")
             .map(|(k, v)| {
                 let n = v.as_u64().unwrap_or(0) as usize;
                 match k.as_str() {
@@ -1972,8 +1977,8 @@ fn check_summary(
         ));
     } else if failed == 0 && mutants_undetected > 0 {
         notes.push(format!(
-            "{} mutant{} not detected: the model ran the changed code but no assertion failed. \
-             Add assertions or scenarios that tell them apart, or suppress equivalent ones with a reason.",
+            "{} mutant{} not detected (informational): the check passed. Act on one only if the contract \
+             requires the behavior it changes; then add the assertion or scenario that tells them apart.",
             mutants_undetected,
             plural(mutants_undetected)
         ));

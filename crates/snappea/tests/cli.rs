@@ -1058,7 +1058,11 @@ fn check_reports_mutants_that_never_change_a_value() {
     assert_eq!(swap["changes_a_value"], false);
     assert_eq!(swap["schedules"], 0);
     assert_eq!(swap["test_cases"], serde_json::json!(["tcTick"]));
+    // the console leaves such a mutant out of the list and counts it; `-v` lists it
     snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text"]);
+    assert!(!h.stdout.contains("tick.p:12  Ticker.Big"), "{}", h.stdout);
+    assert!(h.stdout.contains("only re-assign a value already there (-v or --json lists all)"), "{}", h.stdout);
+    snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text", "-v"]);
     assert!(
         h.stdout.contains(
             "tick.p:12  Ticker.Big: `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never equal)\n"
@@ -1110,7 +1114,9 @@ fn check_reports_mutants_no_test_case_detects() {
         "{}",
         h.stdout
     );
-    assert!(h.stdout.contains(", with warnings: 3 undetected mutants. Output: "), "{}", h.stdout);
+    // undetected mutants are a note, not a warning on a check that passed
+    assert!(!h.stdout.contains("with warnings"), "{}", h.stdout);
+    assert!(h.stdout.contains("3 mutants not detected (informational): the check passed."), "{}", h.stdout);
     // `-v` lists the ones inside it, and JSON names their file
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 0);
     assert!(

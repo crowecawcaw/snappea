@@ -824,7 +824,10 @@ test case notices that code removed at all, which is the gap to close first, so 
 undetected mutants inside it are listed with it: the console shows
 `removed the whole body (3 statements) (and 2 more undetected inside it; -v lists them)`,
 `-v` lists them under it, and JSON lists them under the coarse mutant's
-`undetected_inside`, each with its `file` and `line`. Given the time, every mutant
+`undetected_inside`, each with its `file` and `line`. The console lists at most five
+undetected mutants and leaves out those that only re-assign the value already there;
+`-v` and JSON list all of them. On a check that passed they are a note, not a warning:
+act on one when the contract requires the behavior it changes. Given the time, every mutant
 gets its full budget; when the time limit stops the run, what it cut first is the
 confirmation of mutants inside a gap already found. The
 seed is fixed, so a mutant gets the same verdict on every run and machine. A mutant can survive
