@@ -1208,6 +1208,8 @@ fn run_check(
         }
     }
     let mut passed = Vec::new();
+    // The driver-limits hint is the same for every test case; say it once per run.
+    let mut driver_hint_shown = false;
     let check_start = con.inner.now();
     let (base_seed, base_max_bugs) = (cfg.seed, cfg.max_bugs);
     let mut seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>> = Default::default();
@@ -1352,9 +1354,10 @@ fn run_check(
         }
         if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
             if !only && lint_failed.is_none() {
-                for l in driver_lines(d, &case) {
+                for l in driver_lines(d, &case, !driver_hint_shown) {
                     con.inner.out_line(&l);
                 }
+                driver_hint_shown |= !d.facts.is_empty();
             }
             result["driver"] = json!({
                 "machines": d.machines,
@@ -2067,7 +2070,7 @@ fn check_summary(
 const SHOWN_DRIVER_FACTS: usize = 5;
 
 /// The console lines for what a test case's driver did in every schedule.
-fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome) -> Vec<String> {
+fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome, hint: bool) -> Vec<String> {
     if d.facts.is_empty() {
         return Vec::new();
     }
@@ -2084,7 +2087,9 @@ fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome) -> Vec<Strin
         let n = d.facts.len() - SHOWN_DRIVER_FACTS;
         out.push(format!("        ... and {} more (--json lists all)", n));
     }
-    out.push("      hint: if the real environment can do more, extend the driver to try it".into());
+    if hint {
+        out.push("      hint: if the real environment can do more, extend the driver to try it".into());
+    }
     out
 }
 
