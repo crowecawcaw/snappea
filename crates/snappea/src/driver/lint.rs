@@ -380,10 +380,14 @@ fn join(specific: Option<&str>, general: &str) -> String {
 
 /// A finding with its source and fix, ending in a newline.
 pub fn render(sm: &SourceMap, f: &Finding) -> String {
+    render_with_help(sm, f, &help(f))
+}
+
+fn render_with_help(sm: &SourceMap, f: &Finding, help: &str) -> String {
     if snappea_lint::is_advisory(f.rule) {
-        render_with_level(sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f)))
+        render_with_level(sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(help))
     } else {
-        render_coded(sm, Some(f.rule), Some(f.span), &f.message, Some(&help(f)))
+        render_coded(sm, Some(f.rule), Some(f.span), &f.message, Some(help))
     }
 }
 
@@ -410,9 +414,19 @@ pub fn findings_json(sm: &SourceMap, findings: &[Finding]) -> Value {
 /// Prints findings with their source and fix; returns only the blocking finding count.
 pub fn report(host: &mut dyn Host, sm: &SourceMap, findings: &[Finding]) -> usize {
     let errors = findings.iter().filter(|f| !snappea_lint::is_advisory(f.rule)).count();
+    // A fix printed once is enough: long reports get cut by `head` and `tail`.
+    let mut shown: Vec<String> = Vec::new();
     for f in findings {
         let color = if snappea_lint::is_advisory(f.rule) { Color::Yellow } else { Color::Red };
-        host.write(Stream::Err, &render(sm, f), Some(color));
+        let full = help(f);
+        let text = if shown.contains(&full) {
+            render_with_help(sm, f, &format!("same fix as the first `{}` finding above", f.rule))
+        } else {
+            let text = render_with_help(sm, f, &full);
+            shown.push(full);
+            text
+        };
+        host.write(Stream::Err, &text, Some(color));
         host.write(Stream::Err, "\n", None);
     }
     if errors > 0 {

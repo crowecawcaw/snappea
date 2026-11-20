@@ -1,0 +1,66 @@
+# Design bugs written into private/PSrc for the solver. Each `old` text occurs once.
+
+[[bug]]
+id = "duplicate-join"
+title = "A retried join from a current member lists it twice and starts a generation"
+needs = "the same join delivered twice"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+      // A retried join from a current member changes nothing: every generation's
+      // assignment was already sent to every member, so its assignment is on its way.
+      if (j.id in order) { return; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "no-rejoin"
+title = "A consumer whose commit is rejected moves on instead of rejoining, so a zombie on its last partition stays out of the group"
+needs = "a running member's session expires while it commits its last partition; progress spec"
+[[bug.edit]]
+file = "Consumer.p"
+old = '''
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      if (r.gen != gen) { return; }
+      if (!r.ok) {
+        Rejoin();
+'''
+new = '''
+    on CommitResponse do (r: (member: int, gen: int, partition: int, offset: int, ok: bool)) {
+      if (r.gen != gen) { return; }
+      if (!r.ok) {
+        // Another member owns this partition now: on to the next one.
+        goto Working;
+'''
+[[bug.edit]]
+file = "Consumer.p"
+old = '''
+// A rejected commit or offset fetch means the consumer was fenced: it rejoins the group.
+'''
+new = '''
+// A rejected offset fetch means the consumer was fenced: it rejoins the group. A
+// rejected commit means the partition moved: the consumer goes on to its next one.
+'''
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+    // Fetching the committed offset is fenced like a commit, so a consumer that was
+    // expelled while it had nothing left to commit still finds out and rejoins.
+'''
+new = '''
+    // Fetching the committed offset is fenced like a commit.
+'''
+
+[[bug]]
+id = "empty-group"
+title = "Rebalancing an empty group divides by zero members"
+needs = "the only member leaves or expires"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+    while (p < partitions && sizeof(order) > 0) {
+'''
+new = '''
+    while (p < partitions) {
+'''

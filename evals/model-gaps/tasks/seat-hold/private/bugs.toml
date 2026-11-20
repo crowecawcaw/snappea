@@ -1,0 +1,68 @@
+# Design bugs written into private/PSrc for the solver. Each `old` text occurs once.
+
+[[bug]]
+id = "confirm-after-expiry"
+title = "Confirm sells the seat to a hold that expired, also while a later hold has it"
+needs = "a spec that tracks which hold has the seat, not only the seat"
+[[bug.edit]]
+file = "SeatStore.p"
+old = '''
+      if (r.seat in held && held[r.seat] == r.hold) {
+        held -= (r.seat);
+        sold += (r.seat);
+'''
+new = '''
+      if (!(r.seat in sold)) {
+        held -= (r.seat);
+        sold += (r.seat);
+'''
+[[bug.edit]]
+file = "SeatStore.p"
+old = '''
+// The fixed design: confirm succeeds only while this hold still holds the seat.
+'''
+new = '''
+// The store: one row per seat.
+'''
+
+[[bug]]
+id = "stale-expire"
+title = "Expiry frees a seat by seat alone, so a cancelled hold's late timer frees a later hold"
+needs = "a customer that cancels, and a spec that tracks which hold has the seat"
+[[bug.edit]]
+file = "SeatStore.p"
+old = '''
+      // The timer of a hold that was cancelled fires late, possibly while a later
+      // hold has the seat: compare the hold id, not just the seat.
+      if (e.seat in held && held[e.seat] == e.hold) {
+'''
+new = '''
+      // The timer of a hold that was sold fires late: the seat is no longer held.
+      if (e.seat in held) {
+'''
+
+[[bug]]
+id = "no-refund"
+title = "A customer whose confirmation is refused is not refunded"
+needs = "a progress spec: every charge ends in a sale or a refund"
+[[bug.edit]]
+file = "Customer.p"
+old = '''
+      if (!r.ok) {
+        send payments, Refund, (hold = hold,);
+        goto Done, LostHold;
+      }
+'''
+new = '''
+      if (!r.ok) {
+        goto Done, LostHold;
+      }
+'''
+[[bug.edit]]
+file = "Customer.p"
+old = '''
+// The checkout flow each customer runs: hold, pay, confirm, refund if confirmation is
+// refused. Some customers'''
+new = '''
+// The checkout flow each customer runs: hold, pay, confirm; the payment service refunds
+// a charge that bought nothing. Some customers'''
