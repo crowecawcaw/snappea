@@ -54,6 +54,7 @@ python3 harness.py start --mode build --task leader-election --arm snappea \
 python3 harness.py finish le-snappea-01
 python3 harness.py grade le-snappea-01
 python3 report.py le-
+python3 trajectory.py le-snappea-01          # when the design stopped improving
 ```
 
 `start --binary PATH` pins a binary, so you can rebuild while runs are in progress or
@@ -68,7 +69,12 @@ Solvers were Haiku subagents. Counts are small; read them as a pilot.
 
 ### Build, `leader-election`: the arms differ
 
-RESULTS_LE
+| Arm | Runs | Runs passing all 12 hidden tests | Hidden tests passed | Commands per run | Minutes per run |
+| --- | --- | --- | --- | --- | --- |
+| `snappea` | 6 | 6 | 72/72 | 14 | 10.0 |
+| `compat` (`p`) | 6 | 2 | 56/72 | 16 | 4.9 |
+
+Fisher's exact test on runs passing everything gives p = 0.03, one-sided.
 
 Every failing compat run failed the same four hidden tests, the ones that crash a node
 and require it to win a fresh term (`LeaderAfterRestart`). The public driver's one test
@@ -81,7 +87,16 @@ Every snappea solver hit the lint error `unselected-spec` ("spec 'LeaderAfterRes
 is selected by no model test") on its first clean run, and four of six also hit
 `announce-and-send` on `Restarted`. Both block the check, so the solver
 wrote the recovery test and fixed the design. Coverage gaps then led to tests for a
-client probe and a durable start. The cost was about three more minutes per run.
+client probe and a durable start.
+
+`trajectory.py` grades the design after each command. In four snappea runs the first
+design that compiled scored 8 of 12, the same as the failing compat runs, and the next
+edit, made in answer to the lint errors, scored 12. The other two scored 12 at first
+write. Every snappea design was final by minute 4.4. The runs then went on for 1.5 to
+17.5 more minutes (median 4.4) adding tests, closing coverage gaps and reading
+undetected mutants, and none of that changed the hidden score. So the eval shows both
+things: one snappea finding closes a real gap, and most of a snappea run is spent
+after the design has stopped improving.
 
 ### Build and review on the smaller tasks: no difference
 
@@ -119,15 +134,19 @@ Seeded-bug review on small designs has none of these.
   for a lint rule is now printed once per report, and the driver-limits hint once per
   run.
 - Undetected-mutant lists were long and mostly resets that assign the value already
-  there. Solvers read them, changed little, and reported the count. This is the
-  clearest low-value output; hiding "never changes a value" mutants by default is
-  worth testing with `--binary` and `--label`.
+  there. Solvers read them, changed little, and reported the count. The longest run
+  (21 minutes, design final at minute 3.3) spent seven of its 22 commands on mutants.
+  This is the clearest low-value output. Worth testing with `--binary` and `--label`:
+  hide "never changes a value" mutants by default, and stop presenting undetected
+  mutants as a warning once lint and coverage pass.
+- The hidden tests cannot credit a better test suite, only a better design. Work after
+  the design is final may still have value the eval does not measure.
 - A lint failure skips coverage and mutation testing, so a solver learns about gaps
   one round later than it could.
 
 ## Limits
 
-- Six runs per arm on one task. The effect comes from one spec; a second task with a
+- Six runs per arm on one task. The effect comes from one spec and two lint rules; a second task with a
   different omission is needed before generalizing.
 - The compat arm is snappea's engine behind upstream's command line, not upstream P.
 - The solver image has no `python3`; solvers that reach for it lose a command.
