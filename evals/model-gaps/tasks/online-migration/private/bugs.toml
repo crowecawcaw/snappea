@@ -1,0 +1,93 @@
+# Build mode only. These are the mistakes a plausible first design makes: each one is
+# invisible to the starter driver, which migrates a quiet table and starts the writer
+# and the reader afterwards. Each `old` text occurs once.
+modes = ["build"]
+
+[[bug]]
+id = "blind-copy"
+title = "The backfill copy is an unconditional put, so a copy read before a write lands after it"
+needs = "a writer that updates a key between the backfill's read and its copy"
+[[bug.edit]]
+file = "Stores.p"
+old = '''
+      // The backfill read this row a while ago; a writer may have been here since.
+      if (Newer(w.key, w.row)) {
+        Put(w.key, w.row);
+      }
+'''
+new = '''
+      Put(w.key, w.row);
+'''
+
+[[bug]]
+id = "blind-dual-write"
+title = "A writer's put to new is unconditional, so two writers' rows land in arrival order, not version order"
+needs = "two writers on one key whose writes reach new in the other order than old committed them"
+[[bug.edit]]
+file = "Stores.p"
+old = '''
+      // Two writers' rows can arrive in the other order than old committed them.
+      if (Newer(w.key, w.row)) {
+        Put(w.key, w.row);
+      }
+'''
+new = '''
+      Put(w.key, w.row);
+'''
+
+[[bug]]
+id = "hard-delete"
+title = "A delete removes the row from new, so a copy of the pre-delete row finds nothing newer and brings it back"
+needs = "a delete between the backfill's read and its copy"
+[[bug.edit]]
+file = "Stores.p"
+old = '''
+    // A deleted row is stored too: its version must outlive the delete.
+    rows[key] = row;
+'''
+new = '''
+    if (!row.deleted) {
+      rows[key] = row;
+    } else if (key in rows) {
+      rows -= (key);
+    }
+'''
+
+[[bug]]
+id = "cutover-mid-write"
+title = "The router flips reads without waiting for writes in flight: one is in old but not yet in new"
+needs = "a write between its old and new store writes when the cutover is requested"
+[[bug.edit]]
+file = "Migration.p"
+old = '''
+    // A write that reached old but not new yet would be missing from new.
+    if (writes > 0) { return false; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "cutover-mid-read"
+title = "The router flips reads without waiting for reads in flight: one routed to old is served after the flip"
+needs = "a read routed to old and not yet served when the cutover is requested"
+[[bug.edit]]
+file = "Migration.p"
+old = '''
+    // A read routed to old must be served, and seen, before reads come from new.
+    if (reads > 0) { return false; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "drain-drops-requests"
+title = "While the router waits for the drain it has no handler for a new write slot or read request"
+needs = "a read or write that starts while the router waits for a write or read in flight"
+[[bug.edit]]
+file = "Migration.p"
+old = '''
+    // Requests that arrive during the drain are served after the flip.
+    defer BeginWrite, Route;
+'''
+new = '''
+'''

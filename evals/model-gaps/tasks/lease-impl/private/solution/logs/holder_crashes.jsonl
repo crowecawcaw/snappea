@@ -1,0 +1,12 @@
+{"key": "holder_crashes", "timestamp": 0, "event": "ClientsPlanned", "payload": 2}
+{"key": "holder_crashes", "timestamp": 0, "event": "ClientStarted", "payload": {"id": 1, "behavior": "Crashes", "writes": 1, "maxAttempts": 1}}
+{"key": "holder_crashes", "timestamp": 3, "event": "Granted", "payload": {"id": 1, "token": 1}}
+{"key": "holder_crashes", "timestamp": 3, "event": "ClientDone", "payload": {"id": 1, "outcome": "Crashed"}}
+{"key": "holder_crashes", "timestamp": 5, "event": "ClientStarted", "payload": {"id": 2, "behavior": "Normal", "writes": 1, "maxAttempts": 6}}
+{"key": "holder_crashes", "timestamp": 8, "event": "Busy", "payload": 2}
+{"key": "holder_crashes", "timestamp": 23, "event": "Busy", "payload": 2}
+{"key": "holder_crashes", "timestamp": 33, "event": "Expired", "payload": 1}
+{"key": "holder_crashes", "timestamp": 36, "event": "Granted", "payload": {"id": 2, "token": 2}}
+{"key": "holder_crashes", "timestamp": 40, "event": "WriteAccepted", "payload": {"id": 2, "token": 2}}
+{"key": "holder_crashes", "timestamp": 43, "event": "Released", "payload": 2}
+{"key": "holder_crashes", "timestamp": 46, "event": "ClientDone", "payload": {"id": 2, "outcome": "Wrote"}}

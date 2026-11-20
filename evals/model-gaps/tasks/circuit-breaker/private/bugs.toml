@@ -1,0 +1,83 @@
+# Build mode only: these are the mistakes a plausible first design makes. Each is
+# applied to private/PSrc on its own; the starter test passes on all of them and the
+# hidden reference catches each. Each `old` text occurs once.
+modes = ["build"]
+
+[[bug]]
+id = "half-open-admits-all"
+title = "Half-open lets every caller through instead of one trial"
+needs = "two callers reaching the half-open window together"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+      if (mode == Open || trialInFlight) {
+'''
+new = '''
+      if (mode == Open) {
+'''
+
+[[bug]]
+id = "late-result-counts"
+title = "A result is judged by the breaker's state when it arrives, not when its call was sent"
+needs = "a slow failure that lands after the breaker opened and went half-open or closed again"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+      late = sentIn[r.call] != period;
+'''
+new = '''
+      late = mode == Open;
+'''
+
+[[bug]]
+id = "late-result-dropped"
+title = "A late result is ignored entirely, so its caller is never answered"
+needs = "a result that arrives after the breaker changed state; progress spec on callers"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+      // Every call is answered, late or not.
+'''
+new = '''
+      if (late) { return; }
+'''
+
+[[bug]]
+id = "stale-cooldown"
+title = "Any Cooldown that arrives while open starts a half-open window, whatever its period"
+needs = "a duplicate cooldown firing delivered in the next open period"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+      if (t.period == period) {
+'''
+new = '''
+      if (mode == Open) {
+'''
+
+[[bug]]
+id = "count-carried-over"
+title = "The failure count is not reset when the breaker changes state"
+needs = "a second closed period that fails K times"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+    // A new period counts from zero.
+    failures = 0;
+'''
+new = '''
+'''
+
+[[bug]]
+id = "trial-flag-stuck"
+title = "The trial-in-flight flag is cleared only when the trial succeeds"
+needs = "a failed trial, then a second half-open window"
+[[bug.edit]]
+file = "Breaker.p"
+old = '''
+          trialInFlight = false;
+          if (r.ok) { Change(Closed); } else { Change(Open); }
+'''
+new = '''
+          if (r.ok) { trialInFlight = false; Change(Closed); } else { Change(Open); }
+'''

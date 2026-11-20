@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "testCase": "tcPausedHolderWritesLate",
+  "scenarios": [
+    {
+      "name": "LateWriteFenced",
+      "satisfied": true,
+      "satisfyingSchedules": 2073,
+      "distinctSatisfyingTimelines": 12,
+      "maxStatesVisited": 4,
+      "monitorStates": 4,
+      "satisfyingExecution": {
+        "observedEvents": 4,
+        "events": [
+          "LockService(4): Expired with payload (1) -\u003E LateWriteFenced in WaitExpiry (scenario handler/state at PTst/Tests.p:85)",
+          "Storage(2): WriteAccepted with payload (\u003Cid:2, token:2, \u003E) -\u003E LateWriteFenced in WaitSuccessorWrite (scenario handler/state at PTst/Tests.p:88)",
+          "Storage(2): WriteAccepted with payload (\u003Cid:2, token:2, \u003E) -\u003E LateWriteFenced in WaitLateWrite (scenario handler/state at PTst/Tests.p:90)",
+          "Storage(2): WriteRejected with payload (\u003Cid:1, token:1, \u003E) -\u003E LateWriteFenced in WaitLateWrite (scenario handler/state at PTst/Tests.p:91)"
+        ],
+        "acceptingState": "Covered",
+        "truncated": false
+      }
+    }
+  ]
+}

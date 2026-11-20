@@ -1,0 +1,90 @@
+modes = ["build"]
+
+# Plausible mistakes of a first design. None is in the design the solver gets (build
+# mode starts from the skeleton); the reference must catch each, the starter none.
+# Each `old` text occurs once, also after the other bugs are written in.
+
+[[bug]]
+id = "self-conflict"
+title = "The server checks the base before the request id, so a resend of an applied update conflicts with itself"
+needs = "a lost or late reply to an accepted update; the resend carries the old base"
+[[bug.edit]]
+file = "NoteServer.p"
+old = '''
+      if (u.req in applied) { Replay(u); return; }
+      if (u.base != note.version) { Refuse(u); return; }
+'''
+new = '''
+      if (u.base != note.version) { Refuse(u); return; }
+      if (u.req in applied) { Replay(u); return; }
+'''
+
+[[bug]]
+id = "replay-current-version"
+title = "A replayed request is answered with the current version, not the version it became"
+needs = "a lost or late reply, and another client's update accepted before the resend"
+[[bug.edit]]
+file = "NoteServer.p"
+old = '''
+    send u.client, UpdateOk, (req = u.req, version = applied[u.req]);
+'''
+new = '''
+    send u.client, UpdateOk, (req = u.req, version = note.version);
+'''
+
+[[bug]]
+id = "silent-replay"
+title = "The server answers a replay without announcing Replayed"
+needs = "a lost or late reply to an accepted update"
+[[bug.edit]]
+file = "NoteServer.p"
+old = '''
+    announce Replayed, (client = u.clientId, req = u.req, base = u.base, version = applied[u.req]);
+'''
+new = '''
+'''
+
+[[bug]]
+id = "stale-conflict"
+title = "The client takes every conflict as fresh, so a late conflict makes it push again on a version it already used"
+needs = "a late conflict reply that arrives after the merged retry was sent"
+[[bug.edit]]
+file = "SyncClient.p"
+old = '''
+      // A late reply to an earlier attempt: this attempt already uses its version.
+      if (r.server.version <= base) { return; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "delete-retried"
+title = "A conflicting delete is retried on the server's version, deleting content its user never saw"
+needs = "a delete and an edit of the same base, the edit accepted first"
+[[bug.edit]]
+file = "SyncClient.p"
+old = '''
+        // The note changed after the user last saw it: drop the delete, keep the copy.
+        note = r.server;
+        goto Idle, false;
+'''
+new = '''
+        // Delete what is there now.
+        base = r.server.version;
+        Push();
+        return;
+'''
+
+[[bug]]
+id = "first-base"
+title = "The first push does not carry the version the user edited, so it always conflicts first"
+needs = "any sync; the spec must check the base of the first push"
+[[bug.edit]]
+file = "SyncClient.p"
+old = '''
+      // The user's offline change, on top of the local copy.
+      base = note.version;
+'''
+new = '''
+      // The user's offline change, on top of the local copy.
+'''

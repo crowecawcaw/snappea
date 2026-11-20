@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "testCase": "tcHolderCrashes",
+  "scenarios": [
+    {
+      "name": "LateWriteFenced",
+      "satisfied": false,
+      "satisfyingSchedules": 0,
+      "distinctSatisfyingTimelines": 0,
+      "maxStatesVisited": 3,
+      "monitorStates": 4
+    }
+  ]
+}
