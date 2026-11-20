@@ -290,6 +290,28 @@ impl ExhaustiveStrategy {
         }
     }
 
+    /// The DFS backtrack retained all ancestors before its changed decision. Checking
+    /// the actual choices also rejects a checkpoint from an earlier, different branch.
+    pub(crate) fn resume_initial_prefix(&mut self, steps: &[super::strategy::ScheduleStep], limit: usize) -> bool {
+        use super::strategy::ScheduleStep;
+        if self.pos != 0 || self.split.is_some() || steps.len() >= self.path.len() {
+            return false;
+        }
+        for (step, choice) in steps.iter().zip(&self.path) {
+            let value = match (step, choice.kind) {
+                (ScheduleStep::Operation(id), Kind::Operation) => *id,
+                (ScheduleStep::Bool(b), Kind::Bool) => u64::from(*b),
+                (ScheduleStep::Int(i), Kind::Int) => *i as u64,
+                _ => return false,
+            };
+            if choice.options[choice.taken] != value || self.retained.saturating_add(choice.options.len()) > limit {
+                return false;
+            }
+        }
+        self.pos = steps.len();
+        true
+    }
+
     /// Records the graph of states where a liveness monitor is not cold, up to `limit`
     /// states and transitions, for the fair-cycle analysis that decides liveness once the
     /// search is over (see [`crate::checker::fairness`]).

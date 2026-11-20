@@ -174,7 +174,7 @@ struct InboxEntry {
 
 /// Per-schedule state of the coverage loggers.
 #[derive(Debug, Clone, Default)]
-struct CoverageRun {
+pub(super) struct CoverageRun {
     /// Last two state entries, partitioned by actor kind and instance. Reset per run.
     state_history: FxHashMap<(bool, usize), (Option<StateId>, StateId)>,
     monitor_previous: FxHashMap<usize, StateId>,
@@ -201,6 +201,13 @@ pub struct Coverage {
 }
 
 impl Coverage {
+    pub(super) fn schedule_state(&self) -> &CoverageRun {
+        &self.run
+    }
+    pub(super) fn restore_schedule(&mut self, run: &CoverageRun) {
+        self.run.clone_from(run);
+    }
+
     fn state_enter(&mut self, monitor: bool, instance: usize, state: StateId) {
         let previous = self.run.state_history.insert((monitor, instance), (None, state));
         if let Some((before, last)) = previous {

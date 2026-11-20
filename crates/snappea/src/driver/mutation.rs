@@ -32,6 +32,7 @@
 //! that breaks the model this badly is not the gap mutation testing looks for, and
 //! running it to the end is what makes mutation testing slow.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -42,6 +43,7 @@ use serde_json::{json, Value};
 use crate::checker::code_coverage::Hits;
 use crate::checker::engine::{Checker, CheckerOptions, Output};
 use crate::checker::mutation::{self, Mutant};
+use crate::checker::mutation_screen::MutationScreen;
 use crate::checker::strategy::StrategyKind;
 use crate::driver::check::{engine_options, CheckConfig};
 use crate::driver::progress::{Phase, Tracker};
@@ -191,6 +193,10 @@ pub struct Report {
     /// Undetected mutants got up to [`SCHEDULES`] on each test case (`check mutation`), not
     /// only the learned budget.
     pub deepened: bool,
+    pub reused_turns: usize,
+    pub first_pass_seconds: f64,
+    pub first_pass_schedules: usize,
+    pub first_pass_detections: usize,
     /// Mutants of code no passing test case ran, so none could detect them: not run.
     /// Suppressed and equivalent mutants, queue-policy mutants and code under an
     /// `allow coverage` suppression are left out.
@@ -322,6 +328,9 @@ impl Report {
             skipped,
             self.seconds
         )];
+        if self.reused_turns > 0 {
+            out.push(format!("Reused {} search turns with identical inputs.", self.reused_turns));
+        }
         for advisory in self.suppression_advisories.iter().take(shown) {
             out.push(format!(
                 "warning[{}]: {}:{}: {}",
@@ -367,7 +376,9 @@ impl Report {
             let list = &undetected[..undetected.len().min(shown)];
             let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
             for (i, (m, ..)) in list {
-                let why = if let Some(v) = &m.unchecked {
+                let why = if let Some(event) = &m.unobserved_announcement {
+                    format!(" (no selected monitor observes {event})")
+                } else if let Some(v) = &m.unchecked {
                     format!(" (only writes '{}', which no check depends on: see the unchecked-state lint)", v)
                 } else if let Verdict::Undetected { unchanged: true, .. } = self.verdicts[*i] {
                     format!(" (never changes a value in the test cases: {})", m.unchanged)
@@ -591,8 +602,9 @@ impl Report {
                 "test_cases": tests,
                 "schedules": schedules,
                 "search_complete": complete,
-                "changes_a_value": !unchanged || m.unchecked.is_some(),
+                "changes_a_value": !unchanged || m.unchecked.is_some() || m.unobserved_announcement.is_some(),
                 "unchecked_variable": m.unchecked,
+                "unobserved_announcement": m.unobserved_announcement,
                 "undetected_inside": self.mutants.iter().zip(&self.verdicts)
                     .filter_map(|(m, v)| match v {
                         Verdict::Subsumed { by, schedules, search_complete, unchanged, .. } if by == i => Some(json!({
@@ -602,8 +614,9 @@ impl Report {
                             "change": m.description,
                             "schedules": schedules,
                             "search_complete": search_complete,
-                            "changes_a_value": !unchanged || m.unchecked.is_some(),
+                            "changes_a_value": !unchanged || m.unchecked.is_some() || m.unobserved_announcement.is_some(),
                             "unchecked_variable": m.unchecked,
+                            "unobserved_announcement": m.unobserved_announcement,
                         })),
                         _ => None,
                     })
@@ -676,6 +689,10 @@ impl Report {
             "time_limit_reached": self.time_limit_reached,
             "schedules_per_mutant": self.budget,
             "deeper_search_may_detect": self.deeper_search_may_detect(),
+            "reused_turns": self.reused_turns,
+            "first_pass_seconds": (self.first_pass_seconds * 1000.0).round() / 1000.0,
+            "first_pass_schedules": self.first_pass_schedules,
+            "first_pass_detections": self.first_pass_detections,
             "seconds": (self.seconds * 1000.0).round() / 1000.0,
         })
     }
@@ -703,10 +720,10 @@ pub fn run(
     let start = host.now();
     let deadline = start + time_limit;
     let tests: Vec<TestCase> = passed.iter().map(|(tc, _)| tc.clone()).collect();
-    let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
+    let base = Checker::with_code_coverage(prog);
     let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
-    let mut all_mutants = mutation::mutants(prog, &funs, &probes);
+    let mut all_mutants = mutation::mutants_with_observers(prog, &funs, &base.code.probes, &tests);
     all_mutants.extend(mutation::queue_mutants(prog, &tests, drivers));
     let stale_suppressions = suppressed
         .iter()
@@ -776,7 +793,9 @@ pub fn run(
         while let Some(q) = p.filter(|q| independent(&states[*q])) {
             p = parents[q];
         }
-        if let Some(p) = p.filter(|_| !states[i].suppressed && states[i].equivalent.is_none()) {
+        if let Some(p) = p.filter(|_| {
+            !states[i].suppressed && states[i].equivalent.is_none() && mutants[i].unobserved_announcement.is_none()
+        }) {
             states[i].blocked = true;
             children[p].push(i);
             parent[i] = Some(p);
@@ -795,6 +814,7 @@ pub fn run(
         iterations: TURN,
         json_trace: false,
         xml_trace: false,
+        inspection_trace: false,
         activity_coverage: false,
         verbose: false,
         full_exploration: false,
@@ -802,17 +822,27 @@ pub fn run(
         max_bugs: 1,
         ..engine_options(cfg, cfg.seed.unwrap_or(0))
     };
-    // for the test cases a mutant runs: how often their schedules run to the step bound
-    // without a change, and the step bound for their mutants (see [`step_cap`])
+    // Only retain searches that another source mutation can actually reuse.
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    let keys: Vec<_> = mutants.iter().map(Mutant::cache_key).collect();
+    for key in &keys {
+        if !seen.insert(key) {
+            duplicates.insert(key);
+        }
+    }
+    let shared: Vec<_> = keys.iter().map(|key| duplicates.contains(key).then_some(key.as_str())).collect();
+    let cache = std::sync::Mutex::new(BTreeMap::new());
+    let hits = std::sync::atomic::AtomicUsize::new(0);
+    // Baseline bound-hit rate and step limits for each test case.
     let mut baseline = vec![1.0; passed.len()];
     let mut test_opts = vec![opts.clone(); passed.len()];
     // schedules of each test case's complete search without a change, if it completed
     let mut size: Vec<Option<usize>> = vec![None; passed.len()];
-    let base = Checker::new(prog);
     for t in 0..passed.len() {
         if states.iter().any(|s| !s.suppressed && s.equivalent.is_none() && s.covering.contains(&t)) {
             let mut out = Watch::new(Box::new(Deadline { host: &*host, deadline }), 1.0);
-            let Ok(res) = base.check(&passed[t].0, &opts, &mut out) else { continue };
+            let Ok(res) = base.check_mutation(&passed[t].0, &opts, &mut out) else { continue };
             if res.cancelled || out.schedules == 0 {
                 continue;
             }
@@ -836,7 +866,7 @@ pub fn run(
                 (!r.cancelled && r.report.num_bugs == 0 && r.exhaustive.as_ref().is_some_and(|x| x.complete()))
                     .then(|| r.report.explored_fair_schedules + r.report.explored_unfair_schedules)
             };
-            let Ok(r) = base.check(&passed[t].0, &capped, &mut out) else { continue };
+            let Ok(r) = base.check_mutation(&passed[t].0, &capped, &mut out) else { continue };
             if r.cancelled || r.report.num_bugs > 0 {
                 continue;
             }
@@ -846,7 +876,7 @@ pub fn run(
             if size[t].is_none() {
                 let mut out = Deadline { host: &*host, deadline: deadline.min(host.now() + time_limit / 20.0) };
                 let exact = CheckerOptions { iterations: EXACT, ..test_opts[t].clone() };
-                size[t] = base.check(&passed[t].0, &exact, &mut out).ok().and_then(|r| complete(&r));
+                size[t] = base.check_mutation(&passed[t].0, &exact, &mut out).ok().and_then(|r| complete(&r));
             }
         }
     }
@@ -865,7 +895,18 @@ pub fn run(
         t.tick(host, |_| {});
     }
     let covering: Vec<Vec<usize>> = states.iter().map(|s| s.covering.clone()).collect();
-    let job = Mutants {
+    let first_pass_schedules = std::sync::atomic::AtomicUsize::new(0);
+    let mut first_pass_detections = 0;
+    let mut first_pass_seconds = 0.0;
+    // If the original exhaustive search fits in a short turn, go straight to it.
+    let screen_tests: Vec<_> = size.iter().map(|n| n.is_none_or(|n| n > FIRST_TURN)).collect();
+    let mut job = Mutants {
+        screen_tests: &screen_tests,
+        screen: !opts.timed && opts.latency.is_none() && matches!(crate::checker::time::declares_time(prog), Ok(false)),
+        first_pass_schedules: &first_pass_schedules,
+        hits: &hits,
+        cache: &cache,
+        shared: &shared,
         prog,
         mutants: &mutants,
         covering: &covering,
@@ -880,16 +921,34 @@ pub fn run(
     // from how many schedules the detected mutants needed, first for the mutants not
     // waiting for a coarse one, then for all; then (`deepen`) up to the most
     let mut standard = 0;
-    for phase in 0..3 + usize::from(deepen) {
-        if phase == 2 {
+    let can_screen = job.screen && screen_tests.contains(&true);
+    #[derive(Clone, Copy, PartialEq)]
+    enum SearchPhase {
+        Screen,
+        FirstTurns,
+        LearnedBudget,
+        ReleaseChildren,
+        Deepen,
+    }
+    use SearchPhase::*;
+    for phase in [Screen, FirstTurns, LearnedBudget, ReleaseChildren, Deepen] {
+        if phase == Deepen && !deepen {
+            break;
+        }
+        job.screen = phase == Screen;
+        if job.screen && !can_screen {
+            continue;
+        }
+        if phase == ReleaseChildren {
             for s in &mut states {
                 s.blocked = false;
             }
         }
-        if phase == 1 {
+        if phase == LearnedBudget {
             standard = learned_budget(&states, &mutants);
         }
-        let max_schedules = if phase == 3 { SCHEDULES } else { standard };
+        let max_schedules = if phase == Deepen { SCHEDULES } else { standard };
+        let phase_start = host.now();
         let stopped = match threads {
             Some(threads) if workers > 1 => job.run_threads(
                 host,
@@ -904,12 +963,16 @@ pub fn run(
             ),
             _ => job.run_rounds(host, deadline, max_schedules, &order, &mut states, &mut progress, &mut detected),
         };
+        if job.screen {
+            first_pass_seconds = host.now() - phase_start;
+            first_pass_detections = detected;
+        }
         if stopped {
             // deepening is optional: the limit matters only to a mutant still short of the budget
-            if phase == 0 {
+            if matches!(phase, Screen | FirstTurns) {
                 standard = learned_budget(&states, &mutants);
             }
-            time_limit_reached = phase < 3 || states.iter().any(|s| s.next_turn(standard).is_some());
+            time_limit_reached = phase != Deepen || states.iter().any(|s| s.next_turn(standard).is_some());
             break;
         }
     }
@@ -939,6 +1002,10 @@ pub fn run(
         time_limit_reached,
         budget: standard,
         deepened: deepen,
+        reused_turns: hits.load(Ordering::Relaxed),
+        first_pass_schedules: first_pass_schedules.load(Ordering::Relaxed),
+        first_pass_detections,
+        first_pass_seconds,
         unreached,
     };
     if let Some(t) = progress.as_mut() {
@@ -1047,6 +1114,8 @@ fn report_detected(host: &mut dyn Host, progress: &mut Option<Tracker>, detected
 /// Where a mutant is in its rounds.
 #[derive(Debug, Default)]
 struct State {
+    /// Covering tests visited by the preliminary random screen.
+    screened: usize,
     suppressed: bool,
     /// Why no test case can detect it (see [`Mutant::equivalent`]): it does not run.
     equivalent: Option<String>,
@@ -1228,7 +1297,7 @@ impl State {
                 unchanged: true,
             };
         }
-        if self.turns == 0 {
+        if self.turns == 0 && self.schedules == 0 {
             return Verdict::NotTested;
         }
         let search_complete = self.complete.iter().all(|c| *c);
@@ -1249,8 +1318,16 @@ impl State {
     }
 }
 
+type SharedTurns<'a> = std::sync::Mutex<BTreeMap<(&'a str, usize, u32, usize, bool), TurnResult>>;
+
 #[derive(Clone, Copy)]
 struct Mutants<'a> {
+    screen_tests: &'a [bool],
+    screen: bool,
+    first_pass_schedules: &'a std::sync::atomic::AtomicUsize,
+    cache: &'a SharedTurns<'a>,
+    shared: &'a [Option<&'a str>],
+    hits: &'a std::sync::atomic::AtomicUsize,
     prog: &'a Program,
     mutants: &'a [Mutant],
     /// The test cases that ran each mutant's code (see [`State::covering`]).
@@ -1265,6 +1342,41 @@ struct Mutants<'a> {
 }
 
 impl Mutants<'_> {
+    fn next(&self, i: usize, state: &State, budget: usize) -> Option<Turn> {
+        if !self.screen {
+            return state.next_turn(budget);
+        }
+        if state.detected.is_some()
+            || state.suppressed
+            || state.equivalent.is_some()
+            || self.mutants[i].fun.is_none()
+            || state.screened >= state.covering.len()
+        {
+            return None;
+        }
+        let test = (state.screened..state.covering.len()).find(|&p| self.screen_tests[state.covering[p]])?;
+        Some(Turn { test, visit: 0, schedules: 0, fair: false })
+    }
+
+    fn record(&self, state: &mut State, turn: Turn, result: TurnResult) {
+        if !self.screen {
+            state.record(turn, result);
+            return;
+        }
+        state.screened = turn.test + 1;
+        state.schedules += result.schedules;
+        let t = state.covering[turn.test];
+        if result.schedules > 0 && !state.ran.contains(&t) {
+            state.ran.push(t);
+        }
+        if result.bug {
+            state.detected = Some(t);
+            if !state.exact[turn.test] {
+                state.needed = Some(result.schedules);
+            }
+        }
+    }
+
     /// Takes the turns of every mutant in rounds on this thread, in `order` each round,
     /// until each is done (see [`State::next_turn`]) or `deadline`, recording them in
     /// `states`; returns whether the deadline stopped it. Counts the mutants detected in
@@ -1280,17 +1392,22 @@ impl Mutants<'_> {
         progress: &mut Option<Tracker>,
         detected: &mut usize,
     ) -> bool {
+        let mut screen = None;
         loop {
-            let round: Vec<(usize, Turn)> =
-                order.iter().filter_map(|&i| states[i].next_turn(budget).map(|t| (i, t))).collect();
+            let mut round: Vec<(usize, Turn)> =
+                order.iter().filter_map(|&i| self.next(i, &states[i], budget).map(|t| (i, t))).collect();
+            if self.screen {
+                // A worker keeps one test's baseline checkpoints at a time.
+                round.sort_by_key(|(i, turn)| self.covering[*i][turn.test]);
+            }
             if round.is_empty() {
                 return false;
             }
             for (i, turn) in round {
                 let mut out = Deadline { host: &*host, deadline };
-                let Some(r) = self.turn(i, &turn, &mut out) else { return true };
+                let Some(r) = self.turn(i, &turn, &mut screen, &mut out) else { return true };
                 *detected += usize::from(r.bug || r.step_bound);
-                states[i].record(turn, r);
+                self.record(&mut states[i], turn, r);
                 // they take their turns from the next round
                 self.release(i, states);
                 report_detected(host, progress, *detected);
@@ -1314,14 +1431,42 @@ impl Mutants<'_> {
     }
 
     /// Takes `turn` for mutant `i`; `None` when `out` was cancelled first.
-    fn turn(&self, i: usize, turn: &Turn, out: &mut dyn Output) -> Option<TurnResult> {
+    fn turn(
+        &self,
+        i: usize,
+        turn: &Turn,
+        screen: &mut Option<(Program, MutationScreen)>,
+        out: &mut dyn Output,
+    ) -> Option<TurnResult> {
         if out.cancelled() {
             return None;
         }
-        let prog = mutation::apply(self.prog, &self.mutants[i]);
-        let checker = Checker::new(&prog);
         let t = self.covering[i][turn.test];
+        let turn_key = self.shared[i].map(|key| (key, t, turn.visit, turn.schedules, turn.fair));
+        if let Some(result) = turn_key.and_then(|key| self.cache.lock().unwrap().get(&key).cloned()) {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            return Some(result);
+        }
         let tc = &self.passed[t].0;
+        if self.screen {
+            let root = self.mutants[i].fun.expect("only function mutations are screened");
+            let (worker, screen) = screen.get_or_insert_with(|| (self.prog.clone(), MutationScreen::new(self.prog)));
+            let (ran, bug) = mutation::with_mutant(self.prog, worker, &self.mutants[i], |variant| {
+                let out = std::cell::RefCell::new(&mut *out);
+                screen.check(self.prog, variant, root, t, tc, &self.opts[t], &|| out.borrow_mut().cancelled())
+            });
+            self.first_pass_schedules.fetch_add(ran, Ordering::Relaxed);
+            if out.cancelled() {
+                return None;
+            }
+            let result = TurnResult { bug, schedules: ran, ..Default::default() };
+            if let Some(key) = turn_key {
+                self.cache.lock().unwrap().insert(key, result.clone());
+            }
+            return Some(result);
+        }
+        let prog = mutation::apply(self.prog, &self.mutants[i]);
+        let checker = Checker::with_code_coverage(&prog);
         // each visit to a test case explores other schedules
         let seed = self.opts[t].seed.wrapping_add(turn.visit.wrapping_mul(7919));
         let mut opts = CheckerOptions { seed, iterations: turn.schedules, ..self.opts[t].clone() };
@@ -1329,7 +1474,7 @@ impl Mutants<'_> {
             opts.strategy = StrategyKind::Feedback;
         }
         let mut watch = Watch::new(Box::new(Forward(out)), self.baseline[t]);
-        let res = match checker.check(tc, &opts, &mut watch) {
+        let res = match checker.check_mutation(tc, &opts, &mut watch) {
             Ok(res) => res,
             // not a detection: the change was never tested
             Err(e) => return Some(TurnResult { error: Some(e), ..TurnResult::default() }),
@@ -1338,14 +1483,18 @@ impl Mutants<'_> {
         if res.report.num_bugs == 0 && res.cancelled && !step_bound {
             return None;
         }
-        Some(TurnResult {
+        let result = TurnResult {
             error: None,
             bug: res.report.num_bugs > 0,
             step_bound,
             schedules: res.report.explored_fair_schedules + res.report.explored_unfair_schedules,
             complete: res.exhaustive.as_ref().is_some_and(|x| x.complete()),
             live_cycles: res.exhaustive.as_ref().is_some_and(|x| x.live_cycles_unchecked()),
-        })
+        };
+        if let Some(key) = turn_key.filter(|_| !res.cancelled || step_bound) {
+            self.cache.lock().unwrap().insert(key, result.clone());
+        }
+        Some(result)
     }
 
     /// Takes the turns of every mutant on `workers` threads, until each is done (see
@@ -1379,11 +1528,16 @@ impl Mutants<'_> {
             closed: bool,
         }
         let entry = |i: usize, s: &State, t: Turn| {
-            std::cmp::Reverse((s.turns, rank[i], i, t.test, t.visit, t.schedules, t.fair))
+            let priority = if self.screen { self.covering[i][t.test] } else { s.turns };
+            std::cmp::Reverse((priority, rank[i], i, t.test, t.visit, t.schedules, t.fair))
         };
+        // A parent can release a child whose first turn is already queued or running.
+        // Reserve each mutant until the coordinator has recorded its result.
+        let mut scheduled = vec![false; states.len()];
         let mut waiting = std::collections::BinaryHeap::new();
         for &i in order {
-            if let Some(t) = states[i].next_turn(budget) {
+            if let Some(t) = self.next(i, &states[i], budget) {
+                scheduled[i] = true;
                 waiting.push(entry(i, &states[i], t));
             }
         }
@@ -1395,6 +1549,7 @@ impl Mutants<'_> {
             .map(|_| {
                 let (tx, queue, cancelled) = (tx.clone(), &queue, &cancelled);
                 Box::new(move || {
+                    let mut screen = None;
                     let mut out = Flag(cancelled);
                     loop {
                         let next = {
@@ -1413,7 +1568,7 @@ impl Mutants<'_> {
                             }
                         };
                         let Some((i, turn)) = next else { break };
-                        match self.turn(i, &turn, &mut out) {
+                        match self.turn(i, &turn, &mut screen, &mut out) {
                             Some(r) => {
                                 let _ = tx.send((i, turn, r));
                             }
@@ -1429,11 +1584,16 @@ impl Mutants<'_> {
             match rx.recv_timeout(Duration::from_millis(20)) {
                 Ok((i, turn, r)) => {
                     *detected += usize::from(r.bug || r.step_bound);
-                    states[i].record(turn, r);
+                    self.record(&mut states[i], turn, r);
                     let mut q = queue.0.lock().unwrap();
                     q.running -= 1;
+                    scheduled[i] = false;
                     for j in std::iter::once(i).chain(self.release(i, states)) {
-                        if let Some(t) = states[j].next_turn(budget) {
+                        if scheduled[j] {
+                            continue;
+                        }
+                        if let Some(t) = self.next(j, &states[j], budget) {
+                            scheduled[j] = true;
                             q.waiting.push(entry(j, &states[j], t));
                             queue.1.notify_one();
                         }

@@ -16,6 +16,7 @@ fn mutation_verdicts_do_not_depend_on_the_lint_gate() {
         snappea(&mut h, &args);
         let mut m = json(&h)["mutation"].clone();
         m["seconds"] = Value::Null;
+        m["first_pass_seconds"] = Value::Null;
         results.push(m);
     }
     assert_eq!(results[0], results[1]);
@@ -146,6 +147,33 @@ machine Main {
 }
 test tc [main=Main]: assert Answered in { Server, Main };
 ";
+
+#[test]
+fn cold_first_pass_finds_witnesses_and_leaves_survivors_for_adaptive_search() {
+    let mut host = MemHost::new("/w");
+    let choice = "if ($) { send s, eCrash; }";
+    // Enough distinct crash counts for the baseline to exceed a short exhaustive turn.
+    host.add_file("model.p", &OPTIONAL_CRASH.replace(choice, &choice.repeat(4)));
+    for timed in [false, true] {
+        let mut args = vec!["check", "mutation", "model.p", "--seed", "1", "--json"];
+        if timed {
+            args.push("--timed");
+        }
+        snappea(&mut host, &args);
+        let report = json(&host);
+        let m = &report["mutation"];
+        let detections = m["first_pass_detections"].as_u64().unwrap();
+        let schedules = m["first_pass_schedules"].as_u64().unwrap();
+        if timed {
+            assert_eq!((detections, schedules), (0, 0));
+        } else {
+            assert!(detections > 0 && schedules >= detections, "{m}");
+            assert!(detections <= m["detected"].as_u64().unwrap());
+        }
+        assert!(!m["likely_equivalent"].as_array().unwrap().is_empty(), "{m}");
+        assert_eq!(m["time_limit_reached"], false);
+    }
+}
 
 /// `source` with `comment` on its own line before 1-based `line`, indented like it.
 fn insert_before(source: &str, line: usize, comment: &str) -> String {
@@ -367,4 +395,48 @@ fn a_suppression_that_matches_nothing_says_so_and_suggests_the_nested_form() {
     assert_eq!(snappea(&mut h, &["--format", "text", "check", "mutation", "m.p"]), 0, "{}", h.stdout);
     assert!(!h.stdout.contains("matches no mutant"), "{}", h.stdout);
     assert!(h.stdout.contains("2 suppressed"), "{}", h.stdout);
+}
+
+#[test]
+fn unobserved_announcement_is_a_gap_only_for_a_safe_payload_and_selected_suite() {
+    let mut host = MemHost::new("/w");
+    host.add_file(
+        "a.p",
+        r#"
+event observed: int;
+event effectful: int;
+event unsafeIndex: int;
+machine Server {
+    var calls: int;
+    var xs: seq[int];
+    fun Count(): int { calls = calls + 1; return calls; }
+    start state S { entry {
+        xs += (0, 7);
+        announce observed, 7;
+        announce effectful, Count();
+        announce unsafeIndex, xs[0];
+        assert calls == 1;
+    } }
+}
+machine Main { start state S { entry { new Server(); } } }
+spec Watch observes observed { start state S { on observed do (n: int) { assert n == 7; } } }
+test plain [main=Main]: { Main, Server };
+test watched [main=Main]: assert Watch in { Main, Server };
+"#,
+    );
+    for (selected, expected) in [("plain", true), ("watched", false)] {
+        snappea(&mut host, &["check", "mutation", "a.p", selected, "--warn", "all", "--json"]);
+        let report = json(&host);
+        let gaps = report["mutation"]["undetected"].as_array().unwrap_or_else(|| panic!("{report} {}", host.stderr));
+        let flagged: Vec<_> = gaps
+            .iter()
+            .flat_map(|g| std::iter::once(g).chain(g["undetected_inside"].as_array().into_iter().flatten()))
+            .filter(|g| g["unobserved_announcement"].is_string())
+            .collect();
+        assert_eq!(flagged.len(), usize::from(expected), "{report}");
+        if expected {
+            assert_eq!(flagged[0]["unobserved_announcement"], "observed");
+            assert_eq!(flagged[0]["schedules"], 0);
+        }
+    }
 }

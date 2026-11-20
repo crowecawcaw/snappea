@@ -142,6 +142,13 @@ pub struct SchedulerStats {
 }
 
 pub trait Strategy {
+    /// Retain scheduler observations needed to resume the first schedule.
+    fn track_initial_prefix(&mut self) {}
+    /// Resume an initial DFS prefix captured on the first schedule of this search.
+    fn resume_initial_prefix(&mut self, _steps: &[ScheduleStep]) -> bool {
+        false
+    }
+
     fn scheduler_stats(&self) -> Vec<SchedulerStats> {
         Vec::new()
     }
@@ -283,6 +290,10 @@ pub struct RandomStrategy {
 }
 
 impl RandomStrategy {
+    pub(super) fn from_checkpoint(max_steps: usize, rng: SharedRandom, steps: usize) -> Self {
+        Self { max_steps, rng, steps }
+    }
+
     pub fn new(max_steps: usize, rng: SharedRandom) -> Self {
         RandomStrategy { max_steps, steps: 0, rng }
     }

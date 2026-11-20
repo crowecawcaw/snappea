@@ -122,6 +122,8 @@ pub struct Mutant {
     /// The variable the changed statement only writes, when no check depends on it (see
     /// [`crate::checker::checked`]): no test case can notice the change, so it is not run.
     pub unchecked: Option<String>,
+    /// Removing a pure announcement of this event cannot affect any selected monitor.
+    pub unobserved_announcement: Option<String>,
     /// Why no test case can detect the change, found from the code (see
     /// [`crate::checker::equivalent`]): it is not run.
     pub equivalent: Option<String>,
@@ -131,6 +133,14 @@ pub struct Mutant {
 }
 
 impl Mutant {
+    /// Stable across test selections and coverage filtering in the same compiled model.
+    pub(crate) fn cache_key(&self) -> String {
+        match self.fun {
+            Some(fun) => format!("f{}/{}", fun.0, self.site),
+            None => format!("{:?}/{:?}", self.queue, self.change),
+        }
+    }
+
     /// Whether a passing run exercised the statement or examined this queue policy.
     pub fn reached(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
         self.probe.is_some_and(|p| hits.ran(p)) || self.queue.is_some_and(|(s, e)| hits.queue_policy(s, e))
@@ -139,6 +149,7 @@ impl Mutant {
     /// Whether the change would have changed a value in a run with code coverage `hits`.
     pub fn changed(&self, hits: &crate::checker::code_coverage::Hits) -> bool {
         self.unchecked.is_none()
+            && self.unobserved_announcement.is_none()
             && self.reached(hits)
             && (self.changes.is_empty() || self.changes.iter().any(|p| hits.ran(*p)))
     }
@@ -236,9 +247,35 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec
 /// coverage probes of the program's code
 /// ([`compile_program_with_probes`](crate::checker::compile::compile_program_with_probes)).
 pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
+    mutants_with_observers(prog, funs, probes, &prog.test_cases())
+}
+
+pub(crate) fn mutants_with_observers(
+    prog: &Program,
+    funs: &[bool],
+    probes: &[Probe],
+    tests: &[TestCase],
+) -> Vec<Mutant> {
+    let mut observed = vec![false; prog.events.len()];
+    for tc in tests {
+        let (module, _) = prog.test_case_module(tc);
+        for (monitor, _) in crate::checker::runtime::monitor_map_with_scenarios(prog, module) {
+            for event in &prog.machine(monitor).observes {
+                observed[event.idx()] = true;
+            }
+        }
+    }
     let probe_of: FxHashMap<(ProbeKind, FunId, Span), u32> =
         probes.iter().enumerate().rev().map(|(id, p)| ((p.kind, p.fun, p.span), id as u32)).collect();
     let mut changes_at: FxHashMap<(FunId, Span), Vec<u32>> = FxHashMap::default();
+    let mut clause_probes: FxHashMap<(ProbeKind, FunId, Span), Vec<u32>> = FxHashMap::default();
+    for (id, p) in probes
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| matches!(p.kind, ProbeKind::ConditionTrue | ProbeKind::ConditionFalse))
+    {
+        clause_probes.entry((p.kind, p.fun, p.span)).or_default().push(id as u32);
+    }
     for (id, p) in probes.iter().enumerate().filter(|(_, p)| p.kind == ProbeKind::Changes) {
         changes_at.entry((p.fun, p.span)).or_default().push(id as u32);
     }
@@ -281,6 +318,7 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                     changes: Vec::new(),
                     unchanged: "",
                     unchecked: None,
+                    unobserved_announcement: None,
                     equivalent: None,
                     under_choice: false,
                 });
@@ -301,8 +339,28 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             }
         });
         let mut site = 0u32;
+        let mut remove_if = None;
         walk(prog, &mut body, &mut |stmt, target| {
-            let this = site;
+            let mut this = site;
+            match &target {
+                Target::Stmt(s, Change::Remove) if matches!(s.kind, StmtKind::If { .. }) => {
+                    remove_if = Some((s.span, site));
+                }
+                Target::Stmt(s, Change::Force(value)) => {
+                    if let StmtKind::If { then_branch, else_branch, .. } = &s.kind {
+                        let branch = if *value { then_branch } else { else_branch };
+                        if empty_statement(branch) {
+                            // Forcing the empty arm also discards the condition. Use the
+                            // identical remove-if program, keeping this mutant's own
+                            // coverage requirement, suppression and report identity.
+                            if let Some((_, removal)) = remove_if.filter(|(at, _)| *at == s.span) {
+                                this = removal;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
             site += 1;
             let (kind, span) = match target {
                 Target::Stmt(_, Change::Force(true)) => (ProbeKind::Else, stmt),
@@ -311,6 +369,16 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
             };
             let Some(&probe) = probe_of.get(&(kind, fun, span)) else { return };
             let coarse = matches!(&target, Target::Stmt(s, Change::Remove) if compound(s));
+            let unobserved_announcement = match &target {
+                Target::Stmt(s, Change::Remove)
+                    if f.owner.is_some_and(|m| prog.machine(m).kind == MachineKind::Impl) =>
+                {
+                    simple_announcement(s)
+                        .filter(|id| !observed[id.idx()] && !prog.event(*id).is_null())
+                        .map(|id| prog.event(id).name.clone())
+                }
+                _ => None,
+            };
             let watched = match &target {
                 // removing what the statement computes besides the value (a call that
                 // sends, a `new`, a choice) changes more than the value
@@ -342,7 +410,16 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 Target::Expr(e, Change::Operator(BinOp::Add | BinOp::Sub)) => counters.get(&e.span).cloned(),
                 _ => None,
             };
-            let changes = watched.and_then(|at| changes_at.get(&(fun, at))).cloned().unwrap_or_default();
+            let mut changes = watched.and_then(|at| changes_at.get(&(fun, at))).cloned().unwrap_or_default();
+            let mut unchanged = unchanged;
+            if let Target::Expr(e, change) = &target {
+                if let Some((at, kind, why)) = dropped_clause_probe(e, *change) {
+                    if let Some(ids) = clause_probes.get(&(kind, fun, at)) {
+                        changes.clone_from(ids);
+                        unchanged = why;
+                    }
+                }
+            }
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
                 return;
@@ -363,12 +440,69 @@ pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
                 changes,
                 unchanged,
                 unchecked: unchecked.get(&stmt).cloned(),
+                unobserved_announcement,
                 equivalent,
                 under_choice: choices.iter().any(|c| c.file == at.file && c.start <= at.start && at.end <= c.end),
             });
         });
     }
     out
+}
+
+fn simple_announcement(stmt: &Stmt) -> Option<EventId> {
+    let StmtKind::Announce { event, payload } = &stmt.kind else { return None };
+    let ExprKind::EventRef(id) = event.kind else { return None };
+    payload.as_ref().is_none_or(simple_payload).then_some(id)
+}
+
+// Keep this a positive list: a payload can make a choice, fault, call code or create a machine.
+fn simple_payload(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Var(_)
+        | ExprKind::IntLit(_)
+        | ExprKind::FloatLit(_)
+        | ExprKind::BoolLit(_)
+        | ExprKind::This
+        | ExprKind::NullLit
+        | ExprKind::EnumElem(..)
+        | ExprKind::EventRef(_) => true,
+        ExprKind::Tuple(es) | ExprKind::NamedTuple(es) => es.iter().all(simple_payload),
+        ExprKind::TupleAccess { base, .. } | ExprKind::NamedTupleAccess { base, .. } => simple_payload(base),
+        _ => false,
+    }
+}
+
+/// A dropped conjunct can matter when it is false; a dropped disjunct when it is
+/// true. Short circuiting is significant: if the *left* clause had that value,
+/// dropping it could evaluate a previously skipped right operand.
+fn dropped_clause_probe(e: &Expr, change: Change) -> Option<(Span, ProbeKind, &'static str)> {
+    let ExprKind::Binary { lhs, rhs, .. } = &e.kind else { return None };
+    let (left, mut value, why) = match change {
+        Change::DropConjunct { left } => (left, false, "the dropped conjunct never evaluated to false"),
+        Change::DropDisjunct { left } => (left, true, "the dropped disjunct never evaluated to true"),
+        _ => return None,
+    };
+    let mut clause = if left { lhs.as_ref() } else { rhs.as_ref() };
+    // Even an always-true conjunct might send an event or consume a choice.
+    let mut effect = false;
+    visit_expr(clause, &mut |e| {
+        effect |= matches!(
+            e.kind,
+            ExprKind::FunCall { .. }
+                | ExprKind::Ctor { .. }
+                | ExprKind::Choose(_)
+                | ExprKind::Nondet
+                | ExprKind::FairNondet
+        )
+    });
+    if effect {
+        return None;
+    }
+    while let ExprKind::Unary { op: UnOp::Not, operand } = &clause.kind {
+        clause = operand;
+        value = !value;
+    }
+    Some((clause.span, if value { ProbeKind::ConditionTrue } else { ProbeKind::ConditionFalse }, why))
 }
 
 /// Queue-policy mutations in selected design machines, one per declared event.
@@ -435,6 +569,7 @@ pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Ve
                         changes: Vec::new(),
                         unchanged: "",
                         unchecked: None,
+                        unobserved_announcement: None,
                         equivalent: None,
                         under_choice: false,
                     });
@@ -545,6 +680,25 @@ impl Effects<'_> {
 /// `prog` with mutant `m` applied.
 pub fn apply(prog: &Program, m: &Mutant) -> Program {
     let mut out = prog.clone();
+    apply_into(prog, &mut out, m);
+    out
+}
+
+/// Runs one turn on a worker's private program. Every mutant edits exactly one
+/// function body or handler list. Restore that part before the next turn.
+pub(crate) fn with_mutant<T>(prog: &Program, worker: &mut Program, m: &Mutant, run: impl FnOnce(&Program) -> T) -> T {
+    apply_into(prog, worker, m);
+    let result = run(worker);
+    if let Some((state, _)) = m.queue {
+        worker.states[state.idx()].handlers.clone_from(&prog.states[state.idx()].handlers);
+    } else {
+        let i = m.fun.expect("function mutant").idx();
+        worker.funs[i].body.clone_from(&prog.funs[i].body);
+    }
+    result
+}
+
+fn apply_into(prog: &Program, out: &mut Program, m: &Mutant) {
     if let Some((state, event)) = m.queue {
         let handlers = &mut out.states[state.idx()].handlers;
         let i = handlers.iter().position(|h| h.event == event).expect("queue mutant's event exists");
@@ -555,7 +709,7 @@ pub fn apply(prog: &Program, m: &Mutant) -> Program {
             Change::DeferToIgnore => handlers[i].action = HandlerAction::Ignore,
             _ => unreachable!("not a queue-policy mutant"),
         }
-        return out;
+        return;
     }
     let fun = m.fun.expect("function mutant has a function");
     let mut body = out.funs[fun.idx()].body.take().expect("a mutant changes a function with a body");
@@ -566,7 +720,7 @@ pub fn apply(prog: &Program, m: &Mutant) -> Program {
             }
         }
         out.funs[fun.idx()].body = Some(body);
-        return out;
+        return;
     }
     let mut site = 0u32;
     walk(prog, &mut body, &mut |_, target| {
@@ -576,7 +730,6 @@ pub fn apply(prog: &Program, m: &Mutant) -> Program {
         site += 1;
     });
     out.funs[fun.idx()].body = Some(body);
-    out
 }
 
 /// A place a mutant can change, and the change.
@@ -689,6 +842,14 @@ fn walk_stmt(prog: &Program, s: &mut Stmt, visit: &mut dyn FnMut(Span, Target<'_
         StmtKind::Ctor { payload, .. } | StmtKind::Goto { payload, .. } => payload.iter_mut().for_each(|e| exprs!(e)),
         // receive cases are functions of their own
         StmtKind::Receive { .. } | StmtKind::Break | StmtKind::Continue | StmtKind::Nop => {}
+    }
+}
+
+fn empty_statement(s: &Stmt) -> bool {
+    match &s.kind {
+        StmtKind::Nop => true,
+        StmtKind::Block(b) => b.stmts.iter().all(empty_statement),
+        _ => false,
     }
 }
 
@@ -1059,6 +1220,39 @@ mod tests {
     }
 
     #[test]
+    fn dropped_clause_probes_follow_short_circuit_evaluation() {
+        use crate::checker::code_coverage::Hits;
+        use crate::checker::engine::{Checker, CheckerOptions};
+        for (condition, input, left, right) in [
+            ("n < 3 && !(n == 0)", 1, false, false),
+            ("n < 3 && !(n == 0)", 0, false, true),
+            ("n < 3 && !(n == 0)", 3, true, false),
+            ("n < 3 || !(n == 0)", 1, true, false),
+            ("n < 3 || !(n == 0)", 3, false, true),
+        ] {
+            let mut sm = SourceMap::new();
+            sm.add(
+                "model.p",
+                MODEL
+                    .replace("n < 3 && !(n == 0)", condition)
+                    .replace("send s, eReq, 1", &format!("send s, eReq, {input}")),
+            );
+            let prog = crate::sema::compile(&sm, &Default::default()).unwrap().program;
+            let checker = Checker::with_code_coverage(&prog);
+            let tests = prog.test_cases();
+            let opts = CheckerOptions { iterations: 1, activity_coverage: true, ..Default::default() };
+            let info = checker.check(&tests[0], &opts, &mut Vec::new()).unwrap().coverage.unwrap();
+            let hits = Hits::from_info(&prog, &checker.coverage_tables(), &info);
+            let changes: Vec<_> = mutants(&prog, &mutable_funs(&prog, &tests, &[]), &checker.code.probes)
+                .into_iter()
+                .filter(|m| matches!(m.change, Change::DropConjunct { .. } | Change::DropDisjunct { .. }))
+                .map(|m| m.changed(&hits))
+                .collect();
+            assert_eq!(changes, [left, right], "{condition} with n={input}");
+        }
+    }
+
+    #[test]
     fn each_dropped_boolean_clause_is_detected_by_the_truth_table() {
         use crate::checker::engine::{Checker, CheckerOptions};
         use crate::checker::strategy::StrategyKind;
@@ -1096,6 +1290,39 @@ mod tests {
                     result.report.bug_reports
                 );
             }
+        }
+    }
+
+    #[test]
+    fn forcing_an_empty_arm_and_removing_the_if_share_one_program() {
+        let prog = program();
+        let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+        let ms = mutants(&prog, &mutable_funs(&prog, &prog.test_cases(), &[]), &probes);
+        let get = |change| ms.iter().find(|m| m.line == 7 && m.change == change).unwrap();
+        let removed = get(Change::Remove);
+        let forced = get(Change::Force(false));
+        assert_eq!(removed.cache_key(), forced.cache_key());
+        assert_ne!(removed.cache_key(), get(Change::Force(true)).cache_key());
+        assert_eq!(format!("{:?}", apply(&prog, removed).funs), format!("{:?}", apply(&prog, forced).funs));
+    }
+
+    #[test]
+    fn worker_restores_bodies_and_queue_policies_between_turns() {
+        let mut sources = crate::syntax::SourceMap::new();
+        sources.add("model.p", MODEL.replacen("on eReq do", "defer eSeen; on eReq do", 1));
+        let prog = crate::sema::compile(&sources, &Default::default()).unwrap().program;
+        let tests = prog.test_cases();
+        let funs = mutable_funs(&prog, &tests, &[]);
+        let probes = crate::checker::compile::compile_program_with_probes(&prog).probes;
+        let mut candidates = queue_mutants(&prog, &tests, &[]);
+        assert!(!candidates.is_empty());
+        candidates.extend(mutants(&prog, &funs, &probes));
+        let snapshot = |p: &Program| format!("{:?}{:?}", p.states, p.funs);
+        let original = snapshot(&prog);
+        let mut worker = prog.clone();
+        for m in &candidates {
+            assert_eq!(with_mutant(&prog, &mut worker, m, snapshot), snapshot(&apply(&prog, m)));
+            assert_eq!(snapshot(&worker), original);
         }
     }
 

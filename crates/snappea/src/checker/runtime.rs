@@ -106,7 +106,7 @@ impl Transition {
 }
 
 /// The event inbox of a machine (`EventQueue`).
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Inbox {
     pub queue: VecDeque<Event>,
     pub raised: Option<Event>,
@@ -224,7 +224,7 @@ pub struct Exec {
     pub iters: Vec<ActiveIter>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Machine {
     pub id: u64,
     pub name: Rc<str>,
@@ -253,7 +253,7 @@ pub struct Machine {
     pub vt: VectorTime,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Monitor {
     pub decl: MachineId,
     pub fields: Vec<Value>,
@@ -467,7 +467,32 @@ pub struct Buffers {
     machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
 }
 
+pub(super) const MAX_PREFIX: usize = 512;
+
+/// One untimed schedule boundary, private to a single mutation turn and checker.
+pub(super) struct Prefix {
+    pub(super) touched: Vec<bool>,
+    pub(super) random: Option<super::random::RandomValueGenerator>,
+    pub(super) steps: Vec<ScheduleStep>,
+    machines: Vec<Machine>,
+    monitors: Vec<Monitor>,
+    ops: Vec<Operation>,
+    globals: Vec<Value>,
+    scenarios: Vec<ScenarioProgress>,
+    timeline: Timeline,
+    coverage: Option<super::coverage::CoverageRun>,
+    current: u64,
+    next_op_id: u64,
+    handler_starts: u64,
+    fair_choices: Vec<FairChoice>,
+    peak_step_work: u64,
+    peak_inbox: usize,
+}
+
 pub struct Runtime<'p> {
+    pub(super) touched: Vec<bool>,
+    pub(super) fork_depths: &'static [usize],
+    pub(super) checkpoint_rng: Option<super::strategy::SharedRandom>,
     pub(crate) prog: &'p Program,
     pub(crate) code: &'p Code,
     pub(crate) module: &'p ModuleInfo,
@@ -591,6 +616,9 @@ impl<'p> Runtime<'p> {
             }
         }
         Runtime {
+            touched: vec![],
+            fork_depths: &[16, 64, 256],
+            checkpoint_rng: None,
             prog,
             code,
             module,
@@ -1473,6 +1501,10 @@ impl<'p> Runtime<'p> {
 
     /// Runs one schedule of the test whose main machine is `main`.
     pub fn run_test(&mut self, main: MachineId, test_name: &str) {
+        self.run_test_saving(main, test_name, None);
+    }
+
+    pub(super) fn run_test_saving(&mut self, main: MachineId, test_name: &str, save: Option<&mut Vec<Prefix>>) {
         self.log(|_| format!("<TestLog> Running test '{}'.", test_name));
         let task = self.new_op("Task(0)".into(), None);
         self.current = task;
@@ -1505,15 +1537,71 @@ impl<'p> Runtime<'p> {
             self.start_handler(midx);
             self.op_mut(task).status = OpStatus::Completed;
             self.schedule_next(SchedKind::Stop)?;
-            self.run_loop()
+            self.run_loop(save)
         })();
         let _ = r;
     }
 
-    fn run_loop(&mut self) -> Result<(), Stop> {
+    pub(super) fn resume_prefix(&mut self, prefix: &Prefix) -> bool {
+        if !self.strategy.resume_initial_prefix(&prefix.steps) {
+            return false;
+        }
+        self.continue_prefix(prefix);
+        true
+    }
+
+    pub(super) fn continue_prefix(&mut self, prefix: &Prefix) {
+        self.machines.clone_from(&prefix.machines);
+        self.monitors.clone_from(&prefix.monitors);
+        self.ops.clone_from(&prefix.ops);
+        self.globals.clone_from(&prefix.globals);
+        self.scenarios.clone_from(&prefix.scenarios);
+        self.timeline.clone_from(&prefix.timeline);
+        if let (Some(c), Some(run)) = (&mut self.coverage, &prefix.coverage) {
+            c.restore_schedule(run);
+        }
+        self.trace.steps.clone_from(&prefix.steps);
+        self.scheduled_steps = prefix.steps.len();
+        self.current = prefix.current;
+        self.next_op_id = prefix.next_op_id;
+        self.handler_starts = prefix.handler_starts;
+        self.fair_choices.clone_from(&prefix.fair_choices);
+        self.peak_step_work = prefix.peak_step_work;
+        self.peak_inbox = prefix.peak_inbox;
+        let _ = self.run_loop(None);
+    }
+
+    fn run_loop(&mut self, mut save: Option<&mut Vec<Prefix>>) -> Result<(), Stop> {
         loop {
             if self.stopped {
                 return Err(Stop);
+            }
+            // At this boundary no interpreter frame is on the Rust stack. The last
+            // scheduling decision reset step_work and the cancellation checkpoint.
+            if let Some(saved) = &mut save {
+                let depth = self.trace.steps.len();
+                let depths = self.fork_depths;
+                let target = depths.get(saved.len()).copied().unwrap_or(usize::MAX);
+                if depth >= target && depth <= MAX_PREFIX && self.machines.len() <= 32 {
+                    saved.push(Prefix {
+                        touched: self.touched.clone(),
+                        random: self.checkpoint_rng.as_ref().map(|r| r.borrow().clone()),
+                        steps: self.trace.steps.clone(),
+                        machines: self.machines.clone(),
+                        monitors: self.monitors.clone(),
+                        ops: self.ops.clone(),
+                        globals: self.globals.clone(),
+                        scenarios: self.scenarios.clone(),
+                        timeline: self.timeline.clone(),
+                        coverage: self.coverage.as_ref().map(|c| c.schedule_state().clone()),
+                        current: self.current,
+                        next_op_id: self.next_op_id,
+                        handler_starts: self.handler_starts,
+                        fair_choices: self.fair_choices.clone(),
+                        peak_step_work: self.peak_step_work,
+                        peak_inbox: self.peak_inbox,
+                    });
+                }
             }
             let cur = self.current;
             let Some(m) = self.ops[self.op_index(cur)].machine else {
@@ -2300,6 +2388,9 @@ impl<'p> Runtime<'p> {
     /// A new action that runs `f` with argument `arg` (ignored when `f` takes none). Reuses
     /// the buffers of a finished action, so starting an action does not allocate.
     pub fn new_exec(&mut self, f: FunId, arg: Value) -> Box<Exec> {
+        if let Some(touched) = self.touched.get_mut(f.idx()) {
+            *touched = true;
+        }
         let mut exec = self.spare_execs.pop().unwrap_or_default();
         exec.action = self.code.action_names[f.idx()].clone();
         if let Some(code) = self.code.get(f) {
