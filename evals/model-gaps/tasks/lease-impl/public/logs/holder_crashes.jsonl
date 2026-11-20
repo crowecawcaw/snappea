@@ -1,3 +1,0 @@
-{"key": "holder_crashes", "timestamp": 0, "event": "ClientsPlanned", "payload": 2}
-{"key": "holder_crashes", "timestamp": 0, "event": "ClientStarted", "payload": {"id": 1, "behavior": "Crashes", "writes": 1, "maxAttempts": 1}}
-{"key": "holder_crashes", "timestamp": 5, "event": "ClientStarted", "payload": {"id": 2, "behavior": "Normal", "writes": 1, "maxAttempts": 6}}

@@ -1,2 +1,0 @@
-{"key": "one_client", "timestamp": 0, "event": "ClientsPlanned", "payload": 1}
-{"key": "one_client", "timestamp": 0, "event": "ClientStarted", "payload": {"id": 1, "behavior": "Normal", "writes": 2, "maxAttempts": 1}}

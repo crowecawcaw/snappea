@@ -1,7 +1,0 @@
-{"key": "one_client", "timestamp": 0, "event": "ClientsPlanned", "payload": 1}
-{"key": "one_client", "timestamp": 0, "event": "ClientStarted", "payload": {"id": 1, "behavior": "Normal", "writes": 2, "maxAttempts": 1}}
-{"key": "one_client", "timestamp": 3, "event": "Granted", "payload": {"id": 1, "token": 1}}
-{"key": "one_client", "timestamp": 9, "event": "WriteAccepted", "payload": {"id": 1, "token": 1}}
-{"key": "one_client", "timestamp": 14, "event": "WriteAccepted", "payload": {"id": 1, "token": 1}}
-{"key": "one_client", "timestamp": 19, "event": "Released", "payload": 1}
-{"key": "one_client", "timestamp": 22, "event": "ClientDone", "payload": {"id": 1, "outcome": "Wrote"}}
