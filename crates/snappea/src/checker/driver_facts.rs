@@ -141,7 +141,27 @@ pub struct DriverFacts {
     inputs: FxHashMap<u64, (MachineId, Vec<EventId>)>,
 }
 
+/// What a [`DriverFacts`] recorded in the schedule that is running: what
+/// [`DriverFacts::end_schedule`] folds into the facts.
+#[derive(Debug, Clone)]
+pub struct ScheduleFacts {
+    created: Vec<u32>,
+    inputs: FxHashMap<u64, (MachineId, Vec<EventId>)>,
+}
+
 impl DriverFacts {
+    /// What the running schedule recorded so far, to resume it from here later.
+    pub(crate) fn schedule_state(&self) -> ScheduleFacts {
+        ScheduleFacts { created: self.created.clone(), inputs: self.inputs.clone() }
+    }
+
+    /// Continues a schedule from where [`DriverFacts::schedule_state`] was taken. The
+    /// payload values it had recorded by then are already in the facts.
+    pub(crate) fn restore_schedule(&mut self, state: &ScheduleFacts) {
+        self.created.clone_from(&state.created);
+        self.inputs.clone_from(&state.inputs);
+    }
+
     /// A recorder for a test case whose drivers are `driver` (see [`driver_machines`])
     /// and its main machine.
     pub fn new(mut driver: Vec<bool>, main: MachineId) -> DriverFacts {

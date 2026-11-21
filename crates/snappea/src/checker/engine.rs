@@ -42,6 +42,10 @@ pub struct CheckerOptions {
     /// Preserve prefixes at increasing event counts in native feedback and auto's
     /// feedback phase. Enabled by default; ignored by upstream compatibility mode.
     pub feedback_frontier_guidance: bool,
+    /// Let a schedule of an exhaustive search resume at a runtime state saved along the
+    /// path it shares with the previous one, instead of replaying that path. It explores
+    /// the same schedules either way; turn it off to compare. Enabled by default.
+    pub resume_prefixes: bool,
     /// Keep exploring after the first bug (`--explore`).
     pub full_exploration: bool,
     /// Distinct failures to collect before the search stops (`snappea check --max-bugs`);
@@ -144,6 +148,7 @@ impl Default for CheckerOptions {
             snappea_reports: false,
             scenarios_ignore_unhandled: true,
             branching: false,
+            resume_prefixes: true,
             verbose_trace_schedules: 0,
         }
     }
@@ -496,7 +501,7 @@ pub struct ScheduleSample {
 /// What a checking run produced.
 #[derive(Debug, Clone, Default)]
 pub struct CheckResult {
-    /// Schedules resumed at a shared mutation-search checkpoint.
+    /// Schedules of the exhaustive search resumed at a saved prefix.
     pub restored_prefixes: usize,
     pub report: TestReport,
     pub schedule_samples: Vec<ScheduleSample>,
@@ -1043,7 +1048,7 @@ impl<'p> Checker<'p> {
         index: usize,
         out: &mut dyn Output,
     ) -> Result<Exploration, String> {
-        self.explore_inner(tc, opts, pool, index, out, false)
+        self.explore_inner(tc, opts, pool, index, out)
     }
 
     fn explore_inner(
@@ -1053,7 +1058,6 @@ impl<'p> Checker<'p> {
         pool: &WorkerPool,
         index: usize,
         out: &mut dyn Output,
-        mutation: bool,
     ) -> Result<Exploration, String> {
         let out = RefCell::new(out);
         let interrupted = || out.borrow_mut().cancelled() || pool.stopped();
@@ -1127,18 +1131,18 @@ impl<'p> Checker<'p> {
         let mut branching = (opts.branching && !is_replay).then(crate::checker::branching::Branching::default);
         // memory each schedule leaves for the next (see `Buffers`)
         let mut buffers = crate::checker::runtime::Buffers::default();
-        let checkpoint = mutation
-            && opts.strategy == StrategyKind::Auto
+        // Schedules of an exhaustive search resume at saved prefixes when a prefix holds
+        // everything the rest of the schedule reads: not clocks, foreign state or logs.
+        let checkpoint = opts.resume_prefixes
+            && matches!(opts.strategy, StrategyKind::Auto | StrategyKind::Dfs | StrategyKind::RandomDfs)
             && time.is_none()
             && self.foreign.is_none()
             && !config.logging
-            && !opts.inspection_trace
-            && !opts.branching
-            && opts.driver_machines.is_none();
+            && !opts.inspection_trace;
         if checkpoint {
             strategy.track_initial_prefix();
         }
-        let mut prefixes = Vec::new();
+        let mut prefixes: Vec<crate::checker::runtime::Prefix> = Vec::new();
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -1159,6 +1163,20 @@ impl<'p> Checker<'p> {
             if !is_replay && should_print(schedule) {
                 out.borrow_mut().line(&format!("..... Schedule #{}", schedule));
             }
+            // The first schedules, then every 64th: the averages hold at little cost. A
+            // counted schedule runs from the start, since its counts cover all of it.
+            let counts_branching = branching.is_some() && i.is_multiple_of(if i < 64 { 8 } else { 64 });
+            // the prefixes of the path this schedule replays, if it is one of the search
+            let replayed = if checkpoint { strategy.replayed_decisions() } else { None };
+            match replayed {
+                Some(limit) => {
+                    while prefixes.last().is_some_and(|p| p.depth() > limit) {
+                        prefixes.pop();
+                    }
+                }
+                None if !strategy.exhausting() => prefixes.clear(),
+                None => {}
+            }
             let bug_found;
             {
                 let setup = Setup {
@@ -1178,18 +1196,17 @@ impl<'p> Checker<'p> {
                         }
                     }),
                     driver_facts: driver_facts.take(),
-                    // every 8th schedule: the averages hold, at an eighth of the cost
-                    branching: branching.take_if(|_| i.is_multiple_of(8)),
+                    branching: branching.take_if(|_| counts_branching),
                     buffers: std::mem::take(&mut buffers),
                     ..Setup::default()
                 };
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
                 let previous_coverage = rt.coverage.as_ref().map_or(0, |c| c.feature_count());
-                if prefixes.iter().rev().any(|p| rt.resume_prefix(p)) {
+                rt.save_interval = SAVE_INTERVAL;
+                if replayed.is_some() && !counts_branching && rt.resume_last_prefix(&mut prefixes) {
                     result.restored_prefixes += 1;
                 } else {
-                    let save = (checkpoint && i == 0).then_some(&mut prefixes);
-                    rt.run_test_saving(main, &tc.name, save);
+                    rt.run_test_saving(main, &tc.name, replayed.map(|_| &mut prefixes));
                 }
                 if rt.bug.is_none() {
                     rt.check_hot_monitors_at_termination();
@@ -1467,7 +1484,7 @@ impl<'p> Checker<'p> {
         opts: &CheckerOptions,
         out: &mut dyn Output,
     ) -> Result<CheckResult, String> {
-        let part = self.explore_inner(tc, opts, &WorkerPool::new(1), 0, out, true)?;
+        let part = self.explore_inner(tc, opts, &WorkerPool::new(1), 0, out)?;
         Ok(self.finish_run(tc, opts, vec![part], false))
     }
 
@@ -1683,6 +1700,10 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
     merged
 }
 
+/// Decisions between the prefixes an exhaustive search saves along its path: a schedule
+/// replays fewer than this many before it reaches the choice it changes.
+const SAVE_INTERVAL: usize = 4;
+
 #[cfg(test)]
 mod mutation_prefix_tests {
     use super::*;
@@ -1724,8 +1745,10 @@ mod mutation_prefix_tests {
             let mut restored = 0;
             for seed in 0..4 {
                 let opts = CheckerOptions { seed, iterations: 100, strategy: StrategyKind::Auto, ..Default::default() };
-                let original = checker.check(tc, &opts, &mut Vec::new()).unwrap();
-                let resumed = checker.check_mutation(tc, &opts, &mut Vec::new()).unwrap();
+                let replayed = CheckerOptions { resume_prefixes: false, ..opts.clone() };
+                let original = checker.check(tc, &replayed, &mut Vec::new()).unwrap();
+                assert_eq!(original.restored_prefixes, 0);
+                let resumed = checker.check(tc, &opts, &mut Vec::new()).unwrap();
                 assert_eq!(resumed.report.bug_reports, original.report.bug_reports);
                 assert_eq!(resumed.schedule_trace, original.schedule_trace);
                 assert_eq!(resumed.report.explored_unfair_schedules, original.report.explored_unfair_schedules);

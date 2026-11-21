@@ -469,6 +469,9 @@ pub struct Buffers {
 
 pub(super) const MAX_PREFIX: usize = 512;
 
+/// Finished actions kept for reuse between schedules (see [`Buffers`]).
+const MAX_SPARE_EXECS: usize = 64;
+
 /// One untimed schedule boundary, private to a single mutation turn and checker.
 pub(super) struct Prefix {
     pub(super) touched: Vec<bool>,
@@ -487,11 +490,22 @@ pub(super) struct Prefix {
     fair_choices: Vec<FairChoice>,
     peak_step_work: u64,
     peak_inbox: usize,
+    /// What the driver did in this schedule so far, when recorded.
+    driver: Option<crate::checker::driver_facts::ScheduleFacts>,
+}
+
+impl Prefix {
+    /// The decisions made before this boundary.
+    pub(super) fn depth(&self) -> usize {
+        self.steps.len()
+    }
 }
 
 pub struct Runtime<'p> {
     pub(super) touched: Vec<bool>,
     pub(super) fork_depths: &'static [usize],
+    /// Save a prefix every this many decisions instead of at `fork_depths`; 0 to use those.
+    pub(super) save_interval: usize,
     pub(super) checkpoint_rng: Option<super::strategy::SharedRandom>,
     pub(crate) prog: &'p Program,
     pub(crate) code: &'p Code,
@@ -618,6 +632,7 @@ impl<'p> Runtime<'p> {
         Runtime {
             touched: vec![],
             fork_depths: &[16, 64, 256],
+            save_interval: 0,
             checkpoint_rng: None,
             prog,
             code,
@@ -679,6 +694,9 @@ impl<'p> Runtime<'p> {
                 self.spare_execs.push(exec);
             }
         }
+        // a schedule resumed at a saved prefix starts with copies of that prefix's actions,
+        // so every such schedule adds to the spares: keep what a schedule can use
+        self.spare_execs.truncate(MAX_SPARE_EXECS);
         for exec in &mut self.spare_execs {
             exec.frames.clear();
             exec.values.clear();
@@ -1542,15 +1560,25 @@ impl<'p> Runtime<'p> {
         let _ = r;
     }
 
-    pub(super) fn resume_prefix(&mut self, prefix: &Prefix) -> bool {
+    /// Resumes at the last of `saved`, the prefixes of the path the strategy is about to
+    /// replay, and saves the boundaries the schedule passes after it. `false`, having done
+    /// nothing, when there is none or the strategy cannot resume there.
+    pub(super) fn resume_last_prefix(&mut self, saved: &mut Vec<Prefix>) -> bool {
+        let Some(prefix) = saved.last() else { return false };
         if !self.strategy.resume_initial_prefix(&prefix.steps) {
             return false;
         }
-        self.continue_prefix(prefix);
+        self.restore_prefix(prefix);
+        let _ = self.run_loop(Some(saved));
         true
     }
 
     pub(super) fn continue_prefix(&mut self, prefix: &Prefix) {
+        self.restore_prefix(prefix);
+        let _ = self.run_loop(None);
+    }
+
+    fn restore_prefix(&mut self, prefix: &Prefix) {
         self.machines.clone_from(&prefix.machines);
         self.monitors.clone_from(&prefix.monitors);
         self.ops.clone_from(&prefix.ops);
@@ -1568,7 +1596,9 @@ impl<'p> Runtime<'p> {
         self.fair_choices.clone_from(&prefix.fair_choices);
         self.peak_step_work = prefix.peak_step_work;
         self.peak_inbox = prefix.peak_inbox;
-        let _ = self.run_loop(None);
+        if let (Some(d), Some(facts)) = (&mut self.driver_facts, &prefix.driver) {
+            d.restore_schedule(facts);
+        }
     }
 
     fn run_loop(&mut self, mut save: Option<&mut Vec<Prefix>>) -> Result<(), Stop> {
@@ -1580,8 +1610,10 @@ impl<'p> Runtime<'p> {
             // scheduling decision reset step_work and the cancellation checkpoint.
             if let Some(saved) = &mut save {
                 let depth = self.trace.steps.len();
-                let depths = self.fork_depths;
-                let target = depths.get(saved.len()).copied().unwrap_or(usize::MAX);
+                let target = match self.save_interval {
+                    0 => self.fork_depths.get(saved.len()).copied().unwrap_or(usize::MAX),
+                    interval => saved.last().map_or(interval, |p| p.depth() + interval),
+                };
                 if depth >= target && depth <= MAX_PREFIX && self.machines.len() <= 32 {
                     saved.push(Prefix {
                         touched: self.touched.clone(),
@@ -1600,6 +1632,7 @@ impl<'p> Runtime<'p> {
                         fair_choices: self.fair_choices.clone(),
                         peak_step_work: self.peak_step_work,
                         peak_inbox: self.peak_inbox,
+                        driver: self.driver_facts.as_ref().map(|d| d.schedule_state()),
                     });
                 }
             }

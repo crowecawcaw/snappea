@@ -294,7 +294,7 @@ impl ExhaustiveStrategy {
     /// the actual choices also rejects a checkpoint from an earlier, different branch.
     pub(crate) fn resume_initial_prefix(&mut self, steps: &[super::strategy::ScheduleStep], limit: usize) -> bool {
         use super::strategy::ScheduleStep;
-        if self.pos != 0 || self.split.is_some() || steps.len() >= self.path.len() {
+        if self.pos != 0 || steps.len() >= self.path.len() {
             return false;
         }
         for (step, choice) in steps.iter().zip(&self.path) {
@@ -448,6 +448,15 @@ impl Strategy for ExhaustiveStrategy {
             |v| ops.iter().any(|o| o.enabled && o.id == v),
             || ops.iter().filter(|o| o.enabled).map(|o| o.id).collect(),
         ))
+    }
+
+    fn resume_initial_prefix(&mut self, steps: &[super::strategy::ScheduleStep]) -> bool {
+        ExhaustiveStrategy::resume_initial_prefix(self, steps, usize::MAX)
+    }
+
+    fn replayed_decisions(&self) -> Option<usize> {
+        // everything before the choice the last backtrack changed
+        (self.pos == 0).then(|| self.path.len().saturating_sub(1))
     }
 
     fn next_bool(&mut self, _max: i32) -> bool {

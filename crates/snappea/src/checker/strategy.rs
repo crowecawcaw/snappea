@@ -142,11 +142,18 @@ pub struct SchedulerStats {
 }
 
 pub trait Strategy {
-    /// Retain scheduler observations needed to resume the first schedule.
+    /// Retain scheduler observations needed to resume a schedule at a saved prefix.
     fn track_initial_prefix(&mut self) {}
-    /// Resume an initial DFS prefix captured on the first schedule of this search.
+    /// Resume the next schedule after `steps`, a prefix of the decisions it replays.
     fn resume_initial_prefix(&mut self, _steps: &[ScheduleStep]) -> bool {
         false
+    }
+    /// How many decisions the next schedule replays from the previous one, when it is one
+    /// of an exhaustive search: a runtime state saved after at most that many can stand in
+    /// for replaying them (see [`Strategy::resume_initial_prefix`]). States saved after
+    /// more belong to branches the search has left.
+    fn replayed_decisions(&self) -> Option<usize> {
+        None
     }
 
     fn scheduler_stats(&self) -> Vec<SchedulerStats> {
