@@ -201,7 +201,9 @@ A passing test case that did not cover every schedule says why, with
 - `exhaustive_search_unfinished`: the exhaustive search was still running when time
   ran out (`untried_alternatives` counts those left on its current path). The hint
   suggests a longer `--timeout`. How much longer cannot be projected reliably: the
-  state cache makes later branches much cheaper than earlier ones.
+  state cache makes later branches much cheaper than earlier ones. The search hands
+  off to sampling at 1,000,000 states per worker, so the hint never suggests more time
+  than reaching that takes, and near it says that more time is unlikely to help.
 - `sampled`: auto handed off to sampling, or a sampling strategy was selected.
 - `timed_model_sampled`: as above, for a timed model.
 - `memory_limit`: the process neared its memory limit, so the search stopped

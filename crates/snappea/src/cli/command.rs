@@ -2161,10 +2161,21 @@ fn memory_hint(m: check::MemoryStop) -> String {
     )
 }
 
-/// A `--timeout` worth trying for a search still running after `elapsed` seconds.
-fn longer_timeout(elapsed: f64) -> &'static str {
+/// A `--timeout` worth trying for a search still running after `elapsed` seconds: five
+/// times as long, but no longer than `useful`, the time after which more cannot help.
+fn longer_timeout(elapsed: f64, useful: Option<f64>) -> &'static str {
     const STEPS: [(f64, &str); 5] = [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m"), (600.0, "10m")];
-    STEPS.iter().find(|(secs, _)| *secs >= 5.0 * elapsed).map_or("30m", |(_, s)| s)
+    let target = (5.0 * elapsed).min(useful.unwrap_or(f64::INFINITY));
+    STEPS.iter().find(|(secs, _)| *secs >= target).map_or("30m", |(_, s)| s)
+}
+
+/// The states at which a test case's exhaustive search hands off to sampling, over all
+/// its workers, and the seconds until then at the rate it found states so far. A time
+/// limit past that cannot finish the search.
+fn state_limit(case: &check::CaseOutcome) -> Option<(usize, f64)> {
+    let (states, _) = case.exhaustive_states.filter(|(states, _)| *states > 0)?;
+    let limit = crate::checker::EXHAUSTIVE_STATE_LIMIT * case.workers.max(1);
+    Some((limit, case.elapsed * limit as f64 / states as f64))
 }
 
 /// Whether a search's schedules mostly reach states it already explored: at least
@@ -2448,11 +2459,23 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
             .map(|(points, machines)| branching_text(*points, machines));
         match incomplete_reason(case) {
             Some("exhaustive_search_unfinished") => {
-                host.out_line(&format!(
-                    "      hint: the exhaustive search was still running ({} alternatives left on its current path); more time may finish it, e.g. --timeout {}",
-                    case.exhaustive_unfinished.unwrap_or(0),
-                    longer_timeout(case.elapsed)
-                ));
+                let states = case.exhaustive_states.map_or(0, |(states, _)| states);
+                match state_limit(case) {
+                    // two thirds of the way there: five times the time cannot finish it
+                    Some((limit, secs)) if secs <= 1.5 * case.elapsed => {
+                        host.out_line(&format!(
+                            "      note: the exhaustive search found {} states and stops at {}: more time is unlikely to finish it",
+                            states, limit
+                        ));
+                        host.out_line("      hint: to cover every schedule, shrink the test: fewer machines, messages, faults or choices (see `snappea guide modeling`)");
+                    }
+                    limit => host.out_line(&format!(
+                        "      hint: the exhaustive search was still running ({} states so far{}); more time may finish it, e.g. --timeout {}",
+                        states,
+                        limit.map(|(limit, _)| format!(", it stops at {}", limit)).unwrap_or_default(),
+                        longer_timeout(case.elapsed, limit.map(|(_, secs)| secs))
+                    )),
+                }
                 if let Some(states) = mostly_revisits(case) {
                     host.out_line(&format!(
                         "      note: {} schedules reached only {} distinct states: most run independent steps in other orders to the same states",
@@ -2798,6 +2821,14 @@ fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_longer_timeout_never_passes_the_time_that_can_still_help() {
+        assert_eq!(longer_timeout(2.0, None), "30s");
+        assert_eq!(longer_timeout(30.0, None), "5m");
+        assert_eq!(longer_timeout(30.0, Some(50.0)), "1m");
+        assert_eq!(longer_timeout(8.0, Some(20.0)), "30s");
+    }
 
     #[test]
     fn globs() {
