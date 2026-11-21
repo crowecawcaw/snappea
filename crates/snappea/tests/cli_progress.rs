@@ -130,7 +130,18 @@ fn mutation_testing_reports_its_progress() {
     let mut h = host(false);
     snappea(
         &mut h,
-        &["check", "tcFlips", "--json", "--progress", "json", "--timeout", "1s", "--mutation-timeout", "2s"],
+        &[
+            "check",
+            "mutation",
+            "tcFlips",
+            "--json",
+            "--progress",
+            "json",
+            "--timeout",
+            "1s",
+            "--mutation-timeout",
+            "2s",
+        ],
     );
     let result: Value = serde_json::from_str(&h.stdout).unwrap();
     let mutation: Vec<Value> = json_lines(&h.stderr).into_iter().filter(|l| l["phase"] == "mutation").collect();

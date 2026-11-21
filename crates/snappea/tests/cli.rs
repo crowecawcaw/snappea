@@ -98,7 +98,16 @@ fn check_finds_a_bug_that_replays() {
     assert_eq!(snappea(&mut h, &["check", "coins.p", "tcCoins"]), 0, "{}", h.stdout);
     assert!(names(&h, OUT).is_empty());
     assert!(h.stdout.contains("\nok    tcCoins (all "), "{}", h.stdout);
-    assert!(h.stdout.ends_with("\n🫛 The test case passed in 0.00s. Output: PCheckerOutput/\n"), "{}", h.stdout);
+    // one of two test cases was selected, so mutation testing is skipped, and the summary says so
+    assert!(
+        h.stdout.ends_with(
+            "\n🫛 The test case passed in 0.00s. Output: PCheckerOutput/\n\
+             Not checked: mutation testing (only some test cases were selected). \
+             Run without these options before relying on the result.\n"
+        ),
+        "{}",
+        h.stdout
+    );
 }
 
 #[test]
@@ -675,7 +684,10 @@ fn check_reports_what_never_ran() {
     let mut h = host();
     h.add_file("ping.p", PING);
     assert_eq!(
-        snappea(&mut h, &["check", "ping.p", "--warn", "coverage", "--json-report", "result.json"]),
+        snappea(
+            &mut h,
+            &["check", "ping.p", "--warn", "coverage", "--warn", "mutation", "--json-report", "result.json"]
+        ),
         0,
         "{}",
         h.stdout
@@ -739,7 +751,7 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
 
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--warn", "coverage", "--format", "text"]), 0);
     assert!(h.stdout.contains("Warning: required coverage was not reached"), "{}", h.stdout);
-    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: 2 coverage gaps."), "{}", h.stdout);
+    assert!(h.stdout.contains("passed in ") && h.stdout.contains(", with warnings: coverage gaps."), "{}", h.stdout);
 
     h.add_file(
         "coverage.p",
@@ -1046,7 +1058,12 @@ fn check_reports_mutants_that_never_change_a_value() {
          }\n\
          test tcTick [main=Driver]: assert Up in { Ticker, Driver };\n",
     );
+    // a swapped operator is a mutant only `--strict` runs: without it, it is not reported at all
     snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let kinds: Vec<_> = v["mutation"]["undetected"].as_array().unwrap().iter().map(|u| u["mutation"].clone()).collect();
+    assert_eq!(kinds, [serde_json::json!("empty-body")], "{}", v["mutation"]);
+    assert_eq!(snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--strict", "--json"]), 1);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let swap = v["mutation"]["undetected"]
         .as_array()
@@ -1058,10 +1075,15 @@ fn check_reports_mutants_that_never_change_a_value() {
     assert_eq!(swap["changes_a_value"], false);
     assert_eq!(swap["schedules"], 0);
     assert_eq!(swap["test_cases"], serde_json::json!(["tcTick"]));
+    // the console leaves such a mutant out without `--strict`; with it, the mutant fails the
+    // check like every undetected one, and its help says why no test case could detect it
     snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--format", "text"]);
+    assert!(!h.stdout.contains("tick.p:12"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "tick.p", "--warn", "coverage", "--strict", "--format", "text"]), 1);
     assert!(
         h.stdout.contains(
-            "tick.p:12  Ticker.Big: `c > 5` → `c >= 5` (never changes a value in the test cases: the operands are never equal)\n"
+            "error[undetected-mutant]: tick.p:12: Ticker.Big: the test cases still pass with this change: `c > 5` → `c >= 5`\n  \
+             help: it never changes a value in the test cases: the operands are never equal\n"
         ),
         "{}",
         h.stdout
@@ -1075,9 +1097,10 @@ fn check_reports_mutants_no_test_case_detects() {
     // `-` makes the total negative, which the spec detects; removing either statement of
     // the handler, or the whole body, leaves the spec nothing to fail on. The body is
     // listed, with the undetected mutants inside it. The spec and driver are not mutated.
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
-    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    let m = &v["mutation"];
+    // The swapped operator and the removed assignment run only with `--strict`.
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--strict", "--json"]), 1, "{}{}", h.stdout, h.stderr);
+    let strict: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let m = &strict["mutation"];
     assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(4), Some(1)), "{}", m);
     let lines = |list: &serde_json::Value| -> Vec<(u64, String)> {
         list.as_array()
@@ -1096,52 +1119,85 @@ fn check_reports_mutants_no_test_case_detects() {
     assert_eq!(m["undetected"][0]["schedules"], 5);
     assert_eq!(m["suppressed"], 0);
     assert_eq!(m["time_limit_reached"], false);
+    // without `--strict` only the body and the `announce` are mutants; the undetected body fails the check
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 1, "{}{}", h.stdout, h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["summary"]["status"], "mutation_failed");
+    let m = &v["mutation"];
+    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(2), Some(0)), "{}", m);
+    assert_eq!(lines(&m["undetected"]), [(6, "removed the whole body (2 statements)".to_string())]);
+    assert_eq!(lines(&m["undetected"][0]["undetected_inside"]), [(8, "removed `announce eTotal, total;`".to_string())]);
     // the same verdicts every run
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0);
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 1);
     let again: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(again["mutation"]["undetected"], m["undetected"]);
-    // the console lists them after the coverage
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 0);
-    assert!(h.stdout.contains("Mutation testing: 1 of 4 mutants detected"), "{}", h.stdout);
+    // the console lists them after the coverage, one error with its help each, and no counts
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text"]), 1);
+    assert!(h.stdout.contains("\nMutation testing (0.0s)\n"), "{}", h.stdout);
+    assert!(!h.stdout.contains("mutants detected") && !h.stdout.contains("not detected"), "{}", h.stdout);
     assert!(
         h.stdout.contains(
-            "  counter.p:6  Counter.S, on eAdd: removed the whole body (2 statements) (and 2 more undetected inside it; -v lists them)\n"
+            "\nerror[undetected-mutant]: counter.p:6: Counter.S, on eAdd: the test cases still pass with this change: \
+             removed the whole body (2 statements) (and more undetected inside it; -v lists them)\n  \
+             help: no test case notices what this code does: add a spec or assertion on its effect\n"
         ),
         "{}",
         h.stdout
     );
-    assert!(h.stdout.contains(", with warnings: 3 undetected mutants. Output: "), "{}", h.stdout);
-    // `-v` lists the ones inside it, and JSON names their file
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 0);
+    // the summary says the check failed on them, and why
     assert!(
         h.stdout.contains(
-            "(and 2 more undetected inside it:)\n      counter.p:7  removed `total = total + n;`\n      counter.p:8  removed `announce eTotal, total;`\n"
+            "\nNo bugs found in 0.00s, but mutation testing failed: the test cases pass with each change listed as \
+             error[undetected-mutant] above. For each, add what its help names, or suppress it with a reason. \
+             Output: PCheckerOutput/\n"
+        ),
+        "{}",
+        h.stdout
+    );
+    assert!(!h.stdout.contains("with warnings") && !h.stdout.contains("informational"), "{}", h.stdout);
+    // `-v` lists the ones inside it, and JSON names their file
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 1);
+    assert!(
+        h.stdout.contains("(and more undetected inside it:)\n  help: no test case notices what this code does: add a spec or assertion on its effect\n      counter.p:8  removed `announce eTotal, total;`\n"),
+        "{}",
+        h.stdout
+    );
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--strict", "--format", "text", "-v"]), 1);
+    assert!(
+        h.stdout.contains(
+            "\n      counter.p:7  removed `total = total + n;`\n      counter.p:8  removed `announce eTotal, total;`\n"
         ),
         "{}",
         h.stdout
     );
     assert_eq!(m["undetected"][0]["undetected_inside"][0]["file"], "counter.p");
-    // `--deny mutation` makes them fail `check`, and `--warn mutation` lets `check mutation` pass
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--deny", "mutation", "--format", "text"]), 1);
-    assert!(h.stdout.contains("\n3 mutants not detected in "), "{}", h.stdout);
+    // `--warn mutation` reports them without failing, in `check` and in `check mutation`
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--warn", "mutation", "--format", "text"]), 0);
+    assert!(h.stdout.contains("error[undetected-mutant]: counter.p:6: "), "{}", h.stdout);
+    assert!(
+        h.stdout.contains("\n🫛 The test case passed in 0.00s, with warnings: undetected mutants. Output: "),
+        "{}",
+        h.stdout
+    );
     assert_eq!(snappea(&mut h, &["check", "mutation", "counter.p", "--warn", "mutation", "--json"]), 0);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(v["warnings"]["mutation"], 3);
+    assert_eq!(v["warnings"]["mutation"], 1);
     // a suppression comment excludes the mutants of the next statement, of one kind or all
     let suppressed = COUNTER.replace(
         "announce eTotal",
         "// snappea-lint: allow mutation:remove-statement -- the spec reads every total\nannounce eTotal",
     );
     h.add_file("counter.p", &suppressed);
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 1, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!((v["mutation"]["mutants"].as_u64(), v["mutation"]["suppressed"].as_u64()), (Some(3), Some(1)));
+    assert_eq!((v["mutation"]["mutants"].as_u64(), v["mutation"]["suppressed"].as_u64()), (Some(1), Some(1)));
     assert_eq!(v["mutation"]["undetected"].as_array().unwrap().len(), 1);
+    assert_eq!(v["mutation"]["undetected"][0]["undetected_inside"], serde_json::json!([]));
     h.add_file("counter.p", &suppressed.replace("mutation:remove-statement", "mutation"));
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 1, "{}", h.stdout);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["suppressed"], 1);
-    // one comment can name several kinds
+    // one comment can name several kinds (both of these run only with `--strict`)
     h.add_file(
         "counter.p",
         &COUNTER.replace(
@@ -1149,7 +1205,7 @@ fn check_reports_mutants_no_test_case_detects() {
             "// snappea-lint: allow mutation:remove-statement,swap-operator -- both kinds\ntotal = total + n;",
         ),
     );
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    assert_eq!(snappea(&mut h, &["check", "counter.p", "--strict", "--json"]), 1, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(v["mutation"]["suppressed"], 2, "{}", v["mutation"]);
     // a misspelled kind fails linting rather than suppressing nothing
@@ -1164,7 +1220,13 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(only.get("coverage").is_none(), "{}", only);
     assert_eq!(snappea(&mut h, &["--format", "text", "check", "mutation", "counter.p"]), 1);
     assert!(!h.stdout.contains("Coverage"), "{}", h.stdout);
-    assert!(h.stdout.contains("\n3 mutants not detected in "), "{}", h.stdout);
+    assert!(
+        h.stdout.contains(
+            "\nMutation testing failed in 0.00s: the test cases pass with each change listed as error[undetected-mutant] above."
+        ),
+        "{}",
+        h.stdout
+    );
     h.add_file("counter.p", &suppressed.replace("mutation:remove-statement", "mutation"));
     assert_eq!(snappea(&mut h, &["check", "mutation", "counter.p", "--json"]), 1);
     h.add_file("counter.p", COUNTER);
@@ -1217,27 +1279,41 @@ fn mutants_no_test_case_can_detect_are_skipped_or_reported_as_likely_equivalent(
     let mut h = host();
     h.add_file("crash.p", OPTIONAL_CRASH);
     // counting the epoch down is not run; emptying the handler of the optional crash
-    // runs, survives, and does not fail `--deny mutation`
-    assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 0, "{}{}", h.stdout, h.stderr);
+    // runs, survives, and does not fail the check. Both change only a value, so they are
+    // mutants only with `--strict`, which fails on every undetected mutant.
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--strict", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let m = &v["mutation"];
     assert_eq!(m["undetected"], serde_json::json!([]), "{}", m);
     assert_eq!(m["equivalent"][0]["change"], "`epoch + 1` → `epoch - 1`", "{}", m);
     assert_eq!(m["likely_equivalent"][0]["change"], "removed `epoch = epoch + 1;`", "{}", m);
     assert!(m["likely_equivalent"][0]["reason"].as_str().unwrap().starts_with("fault model: every send of 'eCrash'"));
-    assert_eq!(snappea(&mut h, &["check", "crash.p", "--format", "text"]), 0);
-    assert!(h.stdout.contains("1 equivalent (not run)"), "{}", h.stdout);
+    // the console no longer counts the equivalent mutant (JSON lists it); it lists the likely
+    // equivalent one, which is not an error
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--strict", "--format", "text"]), 0);
     assert!(
-        h.stdout
-            .contains("Likely equivalent, not counted as undetected (a heuristic: review each one):\n  crash.p:10  "),
+        h.stdout.contains(
+            "Likely equivalent, so they do not fail the check (a heuristic: review each one):\n  crash.p:10  "
+        ),
         "{}",
         h.stdout
     );
-    // a crash in every run is not optional: the empty handler is a gap
-    h.add_file("crash.p", &OPTIONAL_CRASH.replace("if ($) { send s, eCrash; }", "send s, eCrash;"));
-    assert_eq!(snappea(&mut h, &["check", "crash.p", "--deny", "mutation", "--json"]), 1, "{}", h.stdout);
+    assert!(!h.stdout.contains("error[undetected-mutant]"), "{}", h.stdout);
+    // without `--strict` neither is a mutant
+    assert_eq!(snappea(&mut h, &["check", "crash.p", "--json"]), 0, "{}{}", h.stdout, h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["mutation"]["equivalent"], serde_json::json!([]), "{}", v["mutation"]);
+    assert_eq!(v["mutation"]["likely_equivalent"], serde_json::json!([]), "{}", v["mutation"]);
+    // a crash in every run is not optional: the empty handler is a gap (`--warn coverage`,
+    // so that the mutant is what fails the check)
+    h.add_file("crash.p", &OPTIONAL_CRASH.replace("if ($) { send s, eCrash; }", "send s, eCrash;"));
+    let strict = ["check", "crash.p", "--warn", "coverage", "--strict", "--json"];
+    assert_eq!(snappea(&mut h, &strict), 1, "{}", h.stdout);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["summary"]["status"], "mutation_failed");
     assert_eq!(v["mutation"]["undetected"][0]["change"], "removed `epoch = epoch + 1;`", "{}", v["mutation"]);
+    // a removed assignment does not run without `--strict`
+    assert_eq!(snappea(&mut h, &strict[..4]), 0, "{}", h.stdout);
 }
 
 /// A worker that counts to 3 by sending itself a step; the spec checks the final count
@@ -1266,20 +1342,25 @@ fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bou
     h.add_file("loop.p", LOOP);
     // forcing `count < 3` to true or making the count go down keeps every schedule
     // running to the step bound, while the worker always finishes without a change
-    assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--json"]), 0, "{}", h.stderr);
+    // (the forced condition runs by default; counting down only with `--strict`)
+    let args = ["check", "mutation", "loop.p", "--warn", "mutation", "--json", "--strict"];
+    assert_eq!(snappea(&mut h, &args), 0, "{}", h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let m = &v["mutation"];
     assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(10), Some(4)), "{}", m);
     assert_eq!(m["detected_by_step_bound"], 2, "{}", m);
     let listed: Vec<_> = m["undetected"].as_array().unwrap().iter().map(|u| u["mutation"].clone()).collect();
     assert!(!listed.contains(&serde_json::json!("condition-true")), "{}", m);
+    assert_eq!(snappea(&mut h, &args[..6]), 0, "{}", h.stderr);
+    let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    let m = &v["mutation"];
+    assert_eq!((m["mutants"].as_u64(), m["detected"].as_u64()), (Some(7), Some(2)), "{}", m);
+    assert_eq!(m["detected_by_step_bound"], 1, "{}", m);
+    // the console has no counts, so it no longer says how many the step bound detected (JSON
+    // does); a mutant detected that way is not listed as undetected
     assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--format", "text"]), 0);
-    assert!(
-        h.stdout
-            .contains("2 of them because nearly every schedule ran to the step bound: the change made the model loop"),
-        "{}",
-        h.stdout
-    );
+    assert!(h.stdout.contains("error[undetected-mutant]: loop.p:6: Worker.S entry: "), "{}", h.stdout);
+    assert!(!h.stdout.contains("count < 3"), "{}", h.stdout);
 }
 
 /// A lock server whose release frees the lock even when it hands it to a waiting client;
@@ -1333,7 +1414,10 @@ fn lock_model(client: &str) -> String {
 fn driver_limits_show_what_the_driver_never_did() {
     let mut h = host();
     h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
+    // off by default: the limits are long
     assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text"]), 0, "{}", h.stderr);
+    assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text", "-v"]), 0, "{}", h.stderr);
     assert!(
         h.stdout.contains(
             "      Driver limits (held in all "
@@ -1362,7 +1446,10 @@ fn driver_limits_show_what_the_driver_never_did() {
     assert!(v["test_cases"][0].get("driver").is_none());
 
     h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
-    assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text"]), 0);
+    assert_eq!(
+        snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text", "-v"]),
+        0
+    );
     assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);
 }
 
@@ -1375,8 +1462,10 @@ fn machines_under_ptst_are_drivers_and_are_not_mutated() {
     let test = model.find("// snappea-lint: allow no-progress-spec").unwrap();
     h.add_file("PSrc/Lock.p", &format!("{}{}", &model[..split], &model[test..]));
     h.add_file("PTst/Driver.p", &model[split..test]);
-    assert_eq!(snappea(&mut h, &["check", "--json"]), 0, "{}", h.stderr);
+    // the model has undetected mutants, which fail the check; none is in the driver
+    assert_eq!(snappea(&mut h, &["check", "--json"]), 1, "{}", h.stderr);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(v["summary"]["status"], "mutation_failed", "{}", v["summary"]);
     assert_eq!(v["test_cases"][0]["driver"]["machines"], serde_json::json!(["Client", "TestDriver"]));
     assert_eq!(v["test_cases"][0]["driver"]["facts"][0]["id"], "Client.sequence");
     let mutants = v["mutation"]["undetected"].as_array().unwrap();
@@ -1453,7 +1542,8 @@ fn lint_reports_state_events_and_progress_no_check_depends_on() {
 fn mutants_that_only_write_unchecked_state_are_not_run() {
     let mut h = host();
     h.add_file("serve.p", WEAK);
-    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--json"]);
+    // a removed write is a mutant only with `--strict`
+    snappea(&mut h, &["check", "serve.p", "--warn", "lint", "--warn", "coverage", "--strict", "--json"]);
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     // reported inside the whole handler body's removal, which nothing detects either
     let log = v["mutation"]["undetected"]
@@ -1639,6 +1729,8 @@ fn mutation_suppressions_do_not_capture_nested_statements_without_opt_in() {
                     "counter.p",
                     "--warn",
                     "mutation",
+                    // the statement inside the `if` is an assignment: a mutant only with `--strict`
+                    "--strict",
                     "--list-suppressions",
                     "--json-report",
                     "result.json"
@@ -1676,7 +1768,7 @@ fn duplicate_announce_and_send_fails_lint_after_checking() {
     assert!(h.stderr.contains("specs observe sends too"), "{}", h.stderr);
     // the test case still runs; coverage is skipped
     assert!(h.stdout.contains("Checking"), "{}", h.stdout);
-    assert!(h.stdout.contains("but lint failed (1 finding)") && !h.stdout.contains("Coverage"), "{}", h.stdout);
+    assert!(h.stdout.contains("but lint failed; coverage") && !h.stdout.contains("Coverage"), "{}", h.stdout);
     h.add_file("duplicate.p", &source.replace("announce eDone, 42; ", ""));
     assert_eq!(snappea(&mut h, &["check", "duplicate.p", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
 }
@@ -1775,7 +1867,8 @@ fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
         test tcMain [main=Main]: { Main, Node };
     "#,
     );
-    let args = ["check", "mutation", "transition.p", "--warn", "lint", "--deny", "mutation"];
+    // a removed `goto` is a mutant only with `--strict`, and so is the advisory on its suppression
+    let args = ["check", "mutation", "transition.p", "--warn", "lint", "--deny", "mutation", "--strict"];
     assert_eq!(snappea(&mut h, &[&args[..], &["--json"]].concat()), 0, "{}{}", h.stdout, h.stderr);
     let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let advisory = &json["mutation"]["suppression_advisories"][0];
@@ -1785,7 +1878,10 @@ fn suppressed_transition_differences_are_advisory_even_with_deny_mutation() {
     assert_eq!(snappea(&mut h, &[&args[..], &["--format", "text"]].concat()), 0, "{}{}", h.stdout, h.stderr);
     assert!(h.stdout.contains("warning[suppressed-state-transition]"), "{}", h.stdout);
     assert!(h.stdout.contains("eTimeout: call Timeout versus ignore"), "{}", h.stdout);
-    assert!(h.stdout.contains("1 mutation suppression advisory"), "{}", h.stdout);
+    assert!(h.stdout.contains(", with warnings: mutation suppression advisories"), "{}", h.stdout);
+    assert_eq!(snappea(&mut h, &[&args[..7], &["--json"]].concat()), 0, "{}{}", h.stdout, h.stderr);
+    let json: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
+    assert_eq!(json["mutation"]["suppression_advisories"], serde_json::json!([]));
 }
 
 #[test]

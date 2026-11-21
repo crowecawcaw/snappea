@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [contributor]
+questions:
+  - How do I run the certified-bundles eval for one agent and one arm?
+  - How do I check that the grader rejects known-wrong implementations?
+  - How do I compare two checker builds on this task?
+---
+
 # Certified bundle design eval
 
 A runnable Python implementation benchmark comparing agents with and without
@@ -154,31 +163,19 @@ python tools/run_sonnet.py --run-id sonnet-p-01 --arm p --model claude-sonnet-4-
 and container grading with scripted responses and no live API call. Its outputs
 are local smoke artifacts, excluded from agent comparisons.
 
-## Compare checker output with one extra sentence
+## Prompts and comparing two checker builds
 
-Prompt version 3 shares “Design and implement the service in Python.” The P arm
-adds “First, model it with P/Snappea and check what could go wrong.” Tool paths
-are supplied separately; there is no extra testing advice for either arm.
+`tools/prompts.py` holds the prompts. Both arms start with "Read TASK.md and
+contract.py." The Python arm continues "Write a design. Then implement it in Python.
+Add Python tests." The P arm continues "First write and check a P/Snappea model of the
+design. Only start the Python implementation after the model passes. Use pysnappea to
+check events from the Python implementation during tests." Tool paths follow; neither
+arm gets other testing advice. Each run records the prompt version (7 now) in its
+metadata; do not pool runs of different versions.
 
-The completed output-comparison pilot used version 3. The next completed cohort used version 5:
-“Write a design and a P/Snappea model. Check and refine the model until you're happy
-with it, then implement it in Python.” The control says “Write a design. Then
-implement it in Python.” The P prompt adds “Use pysnappea in Python tests.” and
-the control adds “Add Python tests.” Shared deliverables appear after the task
-instruction, so the prompt no longer leads with writing the Python file. Version
-4 was not evaluated. Version 5 added Python tests and a shared pytest image, with
-pysnappea available only to the P arm; keep this cohort separate from version 3.
-Version 6 selected this wording: “First write and check a P/Snappea model of the
-design. Only start the Python implementation after the model passes. Use pysnappea
-in Python tests.” It was selected after a small single-prompt wording screen;
-two runs per wording do not establish a reliable general ranking.
-Version 7 changes only its final sentence to “Use pysnappea to check events from
-the Python implementation during tests.” The library and its docstrings were
-held unchanged for that prompt experiment.
-
-To compare old and new output, use three independent cohorts: Python-only, P
+To compare old and new checker output, use three independent cohorts: Python-only, P
 with the baseline binary, and P with the modified binary. Keep both P cohorts'
-docs/examples identical. Provision each with explicit binary/source overrides:
+docs and examples identical. Provision each with explicit binary and source overrides:
 
 ```sh
 SNAPPEA_EVAL_BINARY=/absolute/path/to/baseline/snappea SNAPPEA_EVAL_SOURCE=/absolute/path/to/shared-source python tools/collaboration_run.py start --run-id pilot-base-01 --arm p
@@ -186,13 +183,11 @@ SNAPPEA_EVAL_BINARY=/absolute/path/to/modified/snappea SNAPPEA_EVAL_SOURCE=/abso
 python tools/collaboration_run.py start --run-id pilot-python-01 --arm python
 ```
 
-Use fresh Luna high agents with generated delegations as above. Binary hashes
-and docs Git revision are recorded in each P run's metadata. Freeze/grade before
-inspecting hidden results. Summarize each cohort separately with `--prefix`;
-inspect first model exploration versus first implementation write and whether
-coverage feedback causes scenario changes. Handler coverage and distinct abstract
-timelines measure the P model's exploration, not Python correctness or requirement
-coverage. Preserve negative results and keep wide-input probes separate.
+Binary hashes and the docs Git revision are recorded in each P run's metadata. Freeze
+and grade before inspecting hidden results. Summarize each cohort separately with
+`--prefix`. Handler coverage and distinct abstract timelines measure the P model's
+exploration, not Python correctness or requirement coverage. Keep negative results,
+and keep wide-input probes separate.
 
 ## Screen single-prompt wording
 
@@ -209,3 +204,8 @@ actually passes before the first implementation write. Distinguish a passing
 synthetic event trace from a P test case exploring schedules, and both from tests
 that check actual service behavior. Use a few independent runs per wording for a
 screen; do not claim a reliable ranking from two samples per variant.
+
+## Results
+
+Run output stays in `runs/` and `results/`, which are not committed. Short results
+belong in [evals](../../docs/evals.md#certified-bundles).

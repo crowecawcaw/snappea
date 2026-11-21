@@ -1,3 +1,12 @@
+---
+diataxis: how-to
+personas: [contributor]
+questions:
+  - How do I run the minimal-prompt eval on a CLI, guide or prompt change?
+  - How are an agent's implementation and tests scored?
+  - How do I check that the hidden tests catch every named defect?
+---
+
 # Minimal-prompt eval
 
 Measures whether an agent given a short prompt ("use P to model the design before
@@ -81,3 +90,8 @@ and the grade.
 - Use several runs per task and condition; single runs vary a lot.
 - Solvers sometimes run a first command on the host by mistake. Check transcripts, and
   put an `EXCLUDE` file (saying why) in runs that should not count.
+
+## Results
+
+Run output stays in `runs/`, which is not committed. Short results belong in
+[evals](../../docs/evals.md#minimal-prompt).

@@ -1,0 +1,119 @@
+modes = ["build"]
+
+# Mistakes a team could make while changing the design later. None is in the design
+# the solver gets: build mode starts from the skeleton, guard mode from the correct
+# design. The reference must catch each, the starter none.
+# Each `old` text occurs once, also after the other bugs are written in.
+
+[[bug]]
+id = "stale-answer"
+title = "The coordinator counts a read answer without checking its operation number, so a late answer to an earlier operation fills the read quorum"
+needs = "a read answer delayed past the end of its operation, into the same coordinator's next one, and a replica that missed a write"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+      // An answer to an earlier operation, arriving late.
+      if (r.op != op) { return; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "duplicate-ack"
+title = "The coordinator counts acks, not replicas, so one replica acking a resend completes the write quorum"
+needs = "a timeout during the write phase while the writes to the other replicas are lost or slow"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+  var acked: set[int];
+'''
+new = '''
+  var acked: seq[int];
+'''
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+      acked = default(set[int]);
+'''
+new = '''
+      acked = default(seq[int]);
+'''
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+      acked += (a.replica);
+'''
+new = '''
+      acked += (sizeof(acked), a.replica);
+'''
+
+[[bug]]
+id = "no-write-back"
+title = "A get returns what it read without writing it back, so a later get can return an older value"
+needs = "a put that has reached one replica only, and two gets with different read quorums; or a spec that a returned version is on a write quorum"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+      if (isPut) {
+        // Above everything the quorum holds and everything this coordinator wrote.
+'''
+new = '''
+      if (!isPut) {
+        Finish();
+        goto Idle;
+      } else {
+        // Above everything the quorum holds and everything this coordinator wrote.
+'''
+
+[[bug]]
+id = "version-reused-after-crash"
+title = "A put takes its counter from the read quorum only, so after a crash abandoned a put the next put can reuse its version for another value"
+needs = "a coordinator crash during a put that reached fewer than two replicas, then a put by the same coordinator"
+[[bug.edit]]
+file = "Coordinator.p"
+old = '''
+        if (best.version.counter > used) { used = best.version.counter; }
+        used = used + 1;
+'''
+new = '''
+        used = best.version.counter + 1;
+'''
+
+[[bug]]
+id = "silent-reject"
+title = "A replica acks only the writes it stores, so a write-back or resend of what it already holds is never acked"
+needs = "a get of a value its read quorum already holds, and a spec that every operation returns"
+[[bug.edit]]
+file = "Replica.p"
+old = '''
+      // commit point: the conditional write
+      announce Stored, (replica = id, write = w.write, holds = held);
+      // Always ack: the coordinator waits for it also when nothing changed.
+      send w.client, ReplicaWriteResp, (replica = id, op = w.op);
+'''
+new = '''
+      // commit point: the conditional write
+      announce Stored, (replica = id, write = w.write, holds = held);
+'''
+[[bug.edit]]
+file = "Replica.p"
+old = '''
+        held = w.write;
+'''
+new = '''
+        held = w.write;
+        send w.client, ReplicaWriteResp, (replica = id, op = w.op);
+'''
+
+[[bug]]
+id = "no-tie-break"
+title = "Versions are compared by counter only, so two concurrent puts with the same counter leave replicas holding different values"
+needs = "two coordinators whose puts overlap, and a check of what each replica holds"
+[[bug.edit]]
+file = "Replica.p"
+old = '''
+  return a.writer > b.writer;
+'''
+new = '''
+  return false;
+'''

@@ -75,3 +75,8 @@ Known blind spot: dsync's K1 (maintenance purges a live lock on one peer's word)
 needs a purge threshold shorter than a hold. The task bounds holds at `HOLD_MAX`, so
 a sensible threshold hides it; `test_partially_reached_holder_is_not_purged` catches
 only short thresholds.
+
+## Results
+
+Run output stays in `runs/`, which is not committed. Short results belong in
+[evals](../../docs/evals.md#design-build).

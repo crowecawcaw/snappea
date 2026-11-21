@@ -381,7 +381,8 @@ fn different_assertions_with_identical_messages_are_reported_across_seeds() {
     ];
     let code = snappea::cli::run(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &mut host);
     assert_eq!(code, 0, "{} {}", host.stdout, host.stderr);
-    assert!(host.stdout.contains("1 expected-bug test with differing failures"), "{}", host.stdout);
+    // named among the warnings, without a count
+    assert!(host.stdout.contains(", with warnings: expected-bug tests with differing failures, "), "{}", host.stdout);
     assert!(!host.stdout.contains("undetected mutant"), "{}", host.stdout);
 }
 

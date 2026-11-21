@@ -1,0 +1,128 @@
+# Design bugs written into private/PSrc for the solver. Each `old` text occurs once.
+modes = ["harden"]
+
+[[bug]]
+id = "release-before-mark"
+title = "A tab that gives up releases the lock before the lost marker is in storage, so the next tab reads the old session and presents the rotated token"
+needs = "a lost response while another tab waits for the lock; the waiting tab's read lands before the marker's write"
+[[bug.edit]]
+file = "Tab.p"
+old = '''
+    announce SessionLost, (tab = id,);
+    send storage, Save, (client = this, session = (token = token, lost = true));
+    goto Losing;
+'''
+new = '''
+    announce SessionLost, (tab = id,);
+    send locks, Release;
+    send storage, Save, (client = this, session = (token = token, lost = true));
+    goto Losing;
+'''
+[[bug.edit]]
+file = "Tab.p"
+old = '''
+    on Saved do {
+      send locks, Release;
+      goto Finished;
+    }
+'''
+new = '''
+    on Saved do {
+      goto Finished;
+    }
+'''
+
+[[bug]]
+id = "stale-read"
+title = "A tab refreshes with what it read before it took the lock, so two tabs present the same refresh token"
+needs = "two tabs whose tokens expire together, with the property that only theft revokes the family"
+[[bug.edit]]
+file = "Tab.p"
+old = '''
+    on Granted do {
+      send storage, Load, this;
+    }
+    on Loaded do (s: Session) {
+      if (s.lost) {
+        send locks, Release;
+        announce SessionLost, (tab = id,);
+        goto Finished;
+      }
+      if (s.token != token) {
+        Obtain(s.token);
+        send locks, Release;
+        goto Checking;
+      }
+      send network, SendRefresh, (tab = this, refresh = token);
+      goto Refreshing;
+    }
+'''
+new = '''
+    on Granted do {
+      send network, SendRefresh, (tab = this, refresh = token);
+      goto Refreshing;
+    }
+'''
+
+[[bug]]
+id = "stale-timer"
+title = "A tab takes any timeout during a refresh as that refresh's timeout, so an earlier request's timer ends a healthy session"
+needs = "a timer that fires after its response arrived, while the tab's next refresh is in flight"
+[[bug.edit]]
+file = "Tab.p"
+old = '''
+      if (t.refresh == token) { GiveUp(); }
+'''
+new = '''
+      GiveUp();
+'''
+
+[[bug]]
+id = "current-after-revoke"
+title = "The server checks for the current token before it checks for revocation, so a revoked family keeps rotating"
+needs = "an attacker's reuse, then a legitimate refresh with the current token, with the property that nothing is accepted after revocation"
+[[bug.edit]]
+file = "AuthServer.p"
+old = '''
+      if (revoked) {
+        Refuse(r.client, r.tab);
+        return;
+      }
+      if (r.refresh == current) {
+        current = current + 1;
+        announce Rotated, (from = r.refresh, next = current);
+        send r.client, RefreshResp, (tab = r.tab, ok = true, token = current);
+        return;
+      }
+'''
+new = '''
+      if (r.refresh == current) {
+        current = current + 1;
+        announce Rotated, (from = r.refresh, next = current);
+        send r.client, RefreshResp, (tab = r.tab, ok = true, token = current);
+        return;
+      }
+      if (revoked) {
+        Refuse(r.client, r.tab);
+        return;
+      }
+'''
+
+[[bug]]
+id = "reuse-window"
+title = "Reuse detection only recognizes the token rotated out last; an older stolen token is refused without revoking the family"
+needs = "an attacker presenting the login token after two rotations, with the property that every refused reuse revokes"
+[[bug.edit]]
+file = "AuthServer.p"
+old = '''
+      revoked = true;
+      announce FamilyRevoked, (refresh = r.refresh,);
+      Refuse(r.client, r.tab);
+'''
+new = '''
+      if (r.refresh == current - 1) {
+        revoked = true;
+        announce FamilyRevoked, (refresh = r.refresh,);
+      }
+      Refuse(r.client, r.tab);
+'''

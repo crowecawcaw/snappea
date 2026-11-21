@@ -201,6 +201,8 @@ pub struct Report {
     /// Suppressed and equivalent mutants, queue-policy mutants and code under an
     /// `allow coverage` suppression are left out.
     pub unreached: Vec<Mutant>,
+    /// `--strict`: every kind of mutant ran, and every undetected one fails the check.
+    pub strict: bool,
 }
 
 /// An undetected mutant: the test cases it ran, its schedules, whether their searches
@@ -309,25 +311,50 @@ impl Report {
         out
     }
 
-    /// The console lines: the counts, then the first `shown` undetected mutants; with
-    /// `inner`, each followed by the undetected mutants inside it.
+    /// The undetected mutants that fail a check, by file and line: those that changed a
+    /// value in some test case and that a spec or another machine could see (see
+    /// [`Mutant::blocking`]); with [`Report::strict`], every undetected mutant.
+    pub fn failing(&self) -> Vec<usize> {
+        self.undetected_indexed()
+            .into_iter()
+            .filter(|(_, (m, _, _, _, unchanged))| {
+                self.strict
+                    || (m.blocking() && !unchanged && m.unchecked.is_none() && m.unobserved_announcement.is_none())
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// What kind of check would detect undetected mutant `m`, naming the specs that
+    /// observe the event when it removes a `send` or `announce`.
+    fn next_step(m: &Mutant) -> String {
+        let quoted = |specs: &[String]| specs.iter().map(|s| format!("'{s}'")).collect::<Vec<_>>().join(", ");
+        match &m.emitted {
+            Some((event, specs)) if !specs.is_empty() => format!(
+                "{} observe{} {event} but passes without it here: make a spec expect {event} at this point (after the event that leads to it), or add one that does",
+                quoted(specs),
+                if specs.len() == 1 { "s" } else { "" },
+            ),
+            Some((event, _)) => format!(
+                "no spec observes {event}, and no test case fails when it is not sent: add a spec that observes it and requires it here, or an assertion on what the receiver does with it"
+            ),
+            None if m.emits => "no test case fails when this is not sent: add a spec or assertion that needs it".into(),
+            None if m.change == mutation::Change::EmptyBody => {
+                "no test case notices what this code does: add a spec or assertion on its effect".into()
+            }
+            None if matches!(m.change, mutation::Change::Force(_)) => {
+                "no test case fails when this condition is ignored: add a scenario where it decides the outcome, and a spec that checks the outcome".into()
+            }
+            None if m.coarse => "no test case notices this code removed: add a spec or assertion on its effect".into(),
+            None => "no test case tells the two apart: add an assertion or scenario that does".into(),
+        }
+    }
+
+    /// The console lines: the undetected mutants that fail the check (at most `shown`),
+    /// each with what would detect it; with `inner`, each followed by the undetected
+    /// mutants inside it. No counts: one undetected mutant is a gap, the total says nothing.
     pub fn lines(&self, shown: usize, inner: bool) -> Vec<String> {
-        let tested = self.tested();
-        let mut skipped = String::new();
-        if self.suppressed() > 0 {
-            skipped.push_str(&format!(", {} suppressed", self.suppressed()));
-        }
-        if self.equivalent() > 0 {
-            skipped.push_str(&format!(", {} equivalent (not run)", self.equivalent()));
-        }
-        let mut out = vec![format!(
-            "Mutation testing: {} of {} mutant{} detected{} ({:.1}s)",
-            self.detected(),
-            tested,
-            plural(tested),
-            skipped,
-            self.seconds
-        )];
+        let mut out = vec![format!("Mutation testing ({:.1}s)", self.seconds)];
         if self.reused_turns > 0 {
             out.push(format!("Reused {} search turns with identical inputs.", self.reused_turns));
         }
@@ -362,43 +389,42 @@ impl Report {
                 self.stale_suppressions.len() - shown
             ));
         }
-        let bound = self.step_bound();
-        if bound > 0 {
-            out.push(format!(
-                "{} of them because nearly every schedule ran to the step bound: the change made the model loop without finishing.",
-                bound
-            ));
-        }
         let location = |m: &Mutant| format!("{}:{}", m.file, m.line);
-        let undetected = self.undetected_indexed();
+        let failing = self.failing();
+        let undetected: Vec<_> = self.undetected_indexed().into_iter().filter(|(i, _)| failing.contains(i)).collect();
         if !undetected.is_empty() {
-            out.push("Not detected by any test case (every test case still passes with the change):".into());
             let list = &undetected[..undetected.len().min(shown)];
-            let width = list.iter().map(|(_, (m, ..))| location(m).len()).max().unwrap_or(0);
             for (i, (m, ..)) in list {
-                let why = if let Some(event) = &m.unobserved_announcement {
-                    format!(" (no selected monitor observes {event})")
-                } else if let Some(v) = &m.unchecked {
-                    format!(" (only writes '{}', which no check depends on: see the unchecked-state lint)", v)
-                } else if let Verdict::Undetected { unchanged: true, .. } = self.verdicts[*i] {
-                    format!(" (never changes a value in the test cases: {})", m.unchanged)
-                } else {
-                    String::new()
-                };
                 let inside = match self.inside(*i) {
-                    0 => String::new(),
-                    n if inner => format!(" (and {} more undetected inside it:)", n),
-                    n => format!(" (and {} more undetected inside it; -v lists them)", n),
+                    0 => "",
+                    _ if inner => " (and more undetected inside it:)",
+                    _ => " (and more undetected inside it; -v lists them)",
                 };
+                // one self-contained line per mutant, shaped like a lint error: output is often
+                // filtered to its `error` lines
                 out.push(format!(
-                    "  {:width$}  {}: {}{}{}",
+                    "error[undetected-mutant]: {}: {}: the test cases still pass with this change: {}{}",
                     location(m),
                     m.context,
                     m.description,
-                    inside,
-                    why,
-                    width = width
+                    inside
                 ));
+                let why = if let Some(event) = &m.unobserved_announcement {
+                    format!("no selected spec observes {event}")
+                } else if let Some(v) = &m.unchecked {
+                    format!("it only writes '{}', which no check depends on: see the unchecked-state lint", v)
+                } else if let Verdict::Undetected { unchanged: true, .. } = self.verdicts[*i] {
+                    format!("it never changes a value in the test cases: {}", m.unchanged)
+                } else {
+                    Self::next_step(m)
+                };
+                out.push(format!("  help: {}", why));
+                if m.announces && m.unobserved_announcement.is_none() {
+                    out.push(
+                        "  help: an `announce` is only for specs: if no rule needs this one, delete it rather than suppress it"
+                            .into(),
+                    );
+                }
                 if inner {
                     for (c, _) in self
                         .mutants
@@ -411,7 +437,13 @@ impl Report {
                 }
             }
             if undetected.len() > list.len() {
-                out.push(format!("  ... {} more (--json lists all)", undetected.len() - list.len()));
+                out.push("  ... and more: fix these first, or see --json for all".into());
+            }
+            if list.iter().any(|(_, (m, ..))| !m.announces) {
+                out.push(
+                    "  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`"
+                        .into(),
+                );
             }
             // a coarse mutant counts when what it removes holds such code
             let fault_like = undetected
@@ -426,17 +458,7 @@ impl Report {
                 })
                 .count();
             if fault_like > 0 {
-                out.push(format!(
-                    "hint: {} of these change{} code under a `$` or `choose()` condition, which looks like fault injection. If the machine stands in for the environment (a network, a remote service, a timer), mark it `// snappea: driver` so it is not mutated.",
-                    fault_like,
-                    if fault_like == 1 { "s" } else { "" }
-                ));
-            }
-            if self.deeper_search_may_detect() {
-                out.push(format!(
-                    "hint: none of these searches was complete. `snappea check mutation` gives each mutant up to {} schedules per test case: run it before adding assertions or suppressions.",
-                    SCHEDULES
-                ));
+                out.push("hint: some of these change code under a `$` or `choose()` condition, which looks like fault injection. If the machine stands in for the environment (a network, a remote service, a timer), mark it `// snappea: driver` so it is not mutated.".into());
             }
         }
         let likely: Vec<(&Mutant, &String, &String)> = self
@@ -449,7 +471,7 @@ impl Report {
             })
             .collect();
         if !likely.is_empty() {
-            out.push("Likely equivalent, not counted as undetected (a heuristic: review each one):".into());
+            out.push("Likely equivalent, so they do not fail the check (a heuristic: review each one):".into());
             for (m, why, accept) in likely.iter().take(shown) {
                 out.push(format!("  {}  {}: {} ({})", location(m), m.context, m.description, why));
                 out.push(format!("      if you agree, {}", accept));
@@ -470,9 +492,7 @@ impl Report {
             .collect();
         if !short.is_empty() {
             out.push(format!(
-                "Not fully tested: the time limit stopped {} mutant{} before {} schedules per test case, before any test case failed (not counted as undetected):",
-                short.len(),
-                plural(short.len()),
+                "Not fully tested: the time limit stopped these mutants before {} schedules per test case, before any test case failed (they do not fail the check):",
                 self.budget
             ));
             for (m, schedules) in short.iter().take(shown) {
@@ -716,6 +736,7 @@ pub fn run(
     drivers: &[bool],
     time_limit: f64,
     deepen: bool,
+    strict: bool,
 ) -> Report {
     let start = host.now();
     let deadline = start + time_limit;
@@ -747,6 +768,10 @@ pub fn run(
     let inside = |outer: crate::syntax::Span, inner: crate::syntax::Span| {
         outer.file == inner.file && outer.start <= inner.start && inner.end <= outer.end
     };
+    // without --strict only the mutants that can fail the check run
+    if !strict {
+        all_mutants.retain(Mutant::blocking);
+    }
     // mutants of code no passing test case ran: no test case can detect them
     let (mutants, unreached): (Vec<Mutant>, Vec<Mutant>) =
         all_mutants.into_iter().partition(|m| passed.iter().any(|(_, h)| m.reached(h)));
@@ -1007,6 +1032,7 @@ pub fn run(
         first_pass_detections,
         first_pass_seconds,
         unreached,
+        strict,
     };
     if let Some(t) = progress.as_mut() {
         let (detected, tested) = (report.detected(), report.tested());

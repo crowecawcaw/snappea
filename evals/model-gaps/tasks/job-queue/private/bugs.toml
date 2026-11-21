@@ -1,0 +1,73 @@
+# Design bugs written into private/PSrc for the solver. Each `old` text occurs once.
+
+[[bug]]
+id = "stale-ack"
+title = "An ack is accepted by job id, so a slow worker's stale receipt completes the redelivered job"
+needs = "a delivery that outlives its visibility timeout, then the first worker's ack"
+[[bug.edit]]
+file = "Queue.p"
+old = '''
+      // The receipt, not the job id, proves the caller holds the current delivery.
+      if (a.job in inFlight && inFlight[a.job].receipt == a.receipt) {
+        inFlight -= (a.job);
+        remaining = remaining - 1;
+'''
+new = '''
+      if (a.job in inFlight) {
+        inFlight -= (a.job);
+        remaining = remaining - 1;
+'''
+
+[[bug]]
+id = "stale-timeout"
+title = "A timeout re-shows the job without checking its receipt, so a duplicate timer hides the current delivery"
+needs = "a timer that fires twice, the second time after the redelivery"
+[[bug.edit]]
+file = "Queue.p"
+old = '''
+      // A timer for a delivery that was acked, or superseded, changes nothing.
+      if (t.job in inFlight && inFlight[t.job].receipt == t.receipt) {
+'''
+new = '''
+      // A timer for a job that was acked changes nothing.
+      if (t.job in inFlight) {
+'''
+
+[[bug]]
+id = "lost-wakeup"
+title = "A job made visible by a timeout is not handed to a waiting receive"
+needs = "a worker crashes holding the job while the other long-polls; progress spec"
+[[bug.edit]]
+file = "Queue.p"
+old = '''
+        announce VisibilityExpired, (job = t.job, receipt = t.receipt);
+        if (sizeof(waiting) > 0) {
+          Deliver(waiting[0]);
+          waiting -= (0);
+        }
+'''
+new = '''
+        announce VisibilityExpired, (job = t.job, receipt = t.receipt);
+'''
+
+[[bug]]
+id = "early-release"
+title = "Waiting workers are told there are no more jobs when none is visible, while one is still in flight"
+needs = "more workers than jobs: one waits while two jobs are in flight"
+[[bug.edit]]
+file = "Queue.p"
+old = '''
+        if (remaining == 0) { ReleaseWaiting(); }
+'''
+new = '''
+        if (sizeof(visible) == 0) { ReleaseWaiting(); }
+'''
+[[bug.edit]]
+file = "Queue.p"
+old = '''
+  // Every job is complete, which is final: no job will be delivered again, so the
+  // released workers can stay in `waiting`.
+'''
+new = '''
+  // Nothing is left to hand out: let the waiting workers stop.
+'''

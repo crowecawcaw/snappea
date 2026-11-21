@@ -1,0 +1,110 @@
+modes = ["build", "guard"]
+
+# Mistakes a team could make while changing the design later. None is in the design a
+# solver gets (build starts from the skeleton, guard from the correct design); the
+# reference must catch each, the starter none.
+# Each `old` text occurs once, also after the other bugs are written in.
+
+[[bug]]
+id = "drain-before-ack"
+title = "The autoscaler tells the instance to drain when it asks the load balancer to deregister, without waiting for the ack"
+needs = "a spec that checks an instance starts draining only after it was deregistered"
+[[bug.edit]]
+file = "Autoscaler.p"
+old = '''
+      send lb, Deregister, (inst = target, from = this);
+      goto Deregistering;
+'''
+new = '''
+      send lb, Deregister, (inst = target, from = this);
+      // Save a round trip: the instance can start finishing up meanwhile.
+      send instances[target], Drain, this;
+      goto Draining;
+'''
+
+[[bug]]
+id = "stale-drained"
+title = "The autoscaler takes any Drained as the answer for the instance it is removing"
+needs = "two removals, the step timer firing while the first drains, a request in flight on the second instance"
+[[bug.edit]]
+file = "Autoscaler.p"
+old = '''
+      if (d.inst != target) { return; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "refusal-order"
+title = "The autoscaler checks for the last instance before it checks that the instance is in service"
+needs = "a scale-in request for an instance already removed, when one instance is left; a spec that checks the reason"
+[[bug.edit]]
+file = "Autoscaler.p"
+old = '''
+      if (!(s.inst in live)) {
+        announce ScaleInRefused, (inst = s.inst, reason = NotInService);
+        return;
+      }
+      if (sizeof(live) <= 1) {
+        // Removing the last instance would leave requests nowhere to go.
+        announce ScaleInRefused, (inst = s.inst, reason = LastInstance);
+        return;
+      }
+'''
+new = '''
+      if (sizeof(live) <= 1) {
+        // Removing the last instance would leave requests nowhere to go.
+        announce ScaleInRefused, (inst = s.inst, reason = LastInstance);
+        return;
+      }
+      if (!(s.inst in live)) {
+        announce ScaleInRefused, (inst = s.inst, reason = NotInService);
+        return;
+      }
+'''
+
+[[bug]]
+id = "late-work-accepted"
+title = "A draining instance takes a request that was routed to it before it was deregistered"
+needs = "a request routed just before the deregistration that arrives after the drain started"
+[[bug.edit]]
+file = "Instance.p"
+old = '''
+    // Routed before the load balancer deregistered this instance, arriving late.
+    on Work do (w: WorkRequest) { Refuse(w); }
+'''
+new = '''
+    // Routed before the load balancer deregistered this instance: still ours to serve.
+    on Work do (w: WorkRequest) { Accept(w); }
+'''
+
+[[bug]]
+id = "drained-not-reported"
+title = "A draining instance does not report when its last request finishes; it reports only when asked"
+needs = "a request in flight when the drain starts, and progress checked for scale-ins"
+[[bug.edit]]
+file = "Instance.p"
+old = '''
+      Complete(r);
+      // The last one in flight may just have finished.
+      ReportIfDrained();
+'''
+new = '''
+      Complete(r);
+'''
+
+[[bug]]
+id = "repeat-drain-reports"
+title = "A draining instance answers a repeated Drain with Drained although requests are in flight"
+needs = "the step timer firing while the instance drains with a request in flight"
+[[bug.edit]]
+file = "Instance.p"
+old = '''
+      autoscaler = again;
+      ReportIfDrained();
+'''
+new = '''
+      autoscaler = again;
+      // Already draining: just answer again.
+      send autoscaler, Drained, (inst = id,);
+'''
