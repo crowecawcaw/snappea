@@ -48,7 +48,8 @@
 use rustc_hash::FxHashMap;
 
 use crate::checker::fairness::{LiveFacts, LiveGraph};
-use crate::checker::strategy::{OpInfo, SharedRandom, Strategy};
+use crate::checker::runtime::SchedKind;
+use crate::checker::strategy::{Footprint, OpInfo, SharedRandom, Strategy};
 
 /// A permanent handoff from exhaustive search to sampling in auto mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +73,11 @@ pub struct SearchStats {
     pub distinct_states: usize,
     /// Schedules cut short at an already explored state.
     pub pruned_schedules: usize,
+    /// Alternatives the local-step reduction never tried: each would have led, a step
+    /// or more later, to a state the search reaches anyway.
+    pub skipped_alternatives: usize,
+    /// Choice points at which the search had more than one alternative to try.
+    pub branching_choices: usize,
     /// Prunes that return to a state on the current execution path, rather than
     /// joining another explored path. Zero after completing a search on one worker
     /// establishes acyclicity (workers can hide a cycle from each other, see [`Split`]).
@@ -120,6 +126,25 @@ struct Choice {
     taken: usize,
     /// Product of the alternative counts up to and including this choice (saturating).
     product: u64,
+    /// Enabled operations that are not alternatives: the step of an alternative was
+    /// local, so running the others first reaches nothing more (see [`LocalSteps`]).
+    withheld: Vec<u64>,
+    /// A run of the alternative being explored showed its step is not local.
+    visible: bool,
+    /// The local-step reduction applies to this choice.
+    reducible: bool,
+}
+
+/// The reduction of [`ExhaustiveStrategy::with_local_steps`].
+#[derive(Default)]
+struct LocalSteps {
+    /// Position in the path of the operation choice whose step is running.
+    running: Option<usize>,
+    /// The running step has not reached its next scheduling point yet.
+    in_flight: bool,
+    /// The enabled operations whose next step may be local: those not about to send or
+    /// create.
+    candidates: Vec<u64>,
 }
 
 /// A schedule that returned to a state on its own path: the lasso's cycle.
@@ -262,6 +287,8 @@ pub struct ExhaustiveStrategy {
     path_states: rustc_hash::FxHashSet<u64>,
     /// The state the last [`Strategy::observe_state`] pruned as a cycle on the path.
     cycle: Option<u64>,
+    /// The local-step reduction, when on.
+    local: Option<LocalSteps>,
     /// The record of the state graph for the fair-cycle analysis, if kept.
     graph: Option<LiveGraph>,
     /// What the runtime said about the state the next [`Strategy::observe_state`] observes.
@@ -283,6 +310,7 @@ impl ExhaustiveStrategy {
             state_path: Vec::new(),
             path_states: rustc_hash::FxHashSet::default(),
             cycle: None,
+            local: None,
             graph: None,
             pending: None,
             stats: SearchStats::default(),
@@ -309,7 +337,33 @@ impl ExhaustiveStrategy {
             }
         }
         self.pos = steps.len();
+        if let Some(local) = &mut self.local {
+            // the prefix ends inside the step of its last operation choice
+            local.running = self.path[..self.pos].iter().rposition(|c| c.kind == Kind::Operation);
+            local.in_flight = true;
+        }
         true
+    }
+
+    /// Does not interleave other operations before a local step (a partial-order
+    /// reduction with a one-operation persistent set). A step is local when it changes
+    /// only its own machine: it sends nothing, runs no monitor, creates or halts nothing,
+    /// and finds the events it looks for in its inbox ([`Footprint::is_local`]). No step
+    /// of another machine can change what it does or be changed by it, and it stays
+    /// enabled until it runs, so every schedule that runs others first reaches the same
+    /// states as one that runs it first.
+    ///
+    /// At a new scheduling point the search runs one operation that is not about to send
+    /// or create and keeps the others back. If the step was local it never tries them
+    /// there; if not, they become alternatives again. When a later alternative's step is
+    /// local, the alternatives after it are dropped the same way.
+    ///
+    /// Monitors see the same events in the same order, so assertions, deadlocks and
+    /// liveness verdicts are unchanged: local steps are invisible to monitors, and a run
+    /// of local steps always ends, since each consumes an event and none sends one.
+    pub fn with_local_steps(mut self) -> Self {
+        self.local = Some(LocalSteps::default());
+        self
     }
 
     /// Records the graph of states where a liveness monitor is not cold, up to `limit`
@@ -352,9 +406,11 @@ impl ExhaustiveStrategy {
                 continue;
             }
             ran.push(c.options[c.taken]);
+            // the operations enabled there, alternatives or not
+            let enabled = |o: &u64| c.options.contains(o) || c.withheld.contains(o);
             match &mut always {
-                None => always = Some(c.options.clone()),
-                Some(a) => a.retain(|o| c.options.contains(o)),
+                None => always = Some(c.options.iter().chain(&c.withheld).copied().collect()),
+                Some(a) => a.retain(enabled),
             }
         }
         let fair = always.is_some_and(|a| a.iter().all(|o| ran.contains(o)));
@@ -423,10 +479,23 @@ impl ExhaustiveStrategy {
                 options.swap(i, j);
             }
         }
+        // Try an operation whose step may be local first, and keep the others back until
+        // the step shows whether it was (see `note_step`). Not in the part of the tree
+        // every worker of a split search walks: a worker cuts the prefixes of the others
+        // short, so it does not see all of a step there, and all must split alike.
+        let reducible = kind == Kind::Operation && self.local.is_some() && !shared;
+        let mut withheld = Vec::new();
+        if let (true, Some(local)) = (reducible, &self.local) {
+            if let Some(first) = options.iter().position(|o| local.candidates.contains(o)) {
+                options.swap(0, first);
+                withheld = options.split_off(1);
+            }
+        }
         let v = options[0];
         let product = self.path.last().map_or(1, |c| c.product).saturating_mul(options.len() as u64);
         self.retained += options.len();
-        self.path.push(Choice { kind, options, taken: 0, product });
+        self.stats.branching_choices += usize::from(options.len() > 1);
+        self.path.push(Choice { kind, options, taken: 0, product, withheld, visible: false, reducible });
         if let Some(split) = self.split.as_mut().filter(|s| s.prefix_end.is_none()) {
             if product >= split.target() {
                 split.prefix_end = Some(self.pos);
@@ -439,9 +508,40 @@ impl ExhaustiveStrategy {
 }
 
 impl Strategy for ExhaustiveStrategy {
+    fn wants_footprints(&self) -> bool {
+        self.local.is_some()
+    }
+
+    fn note_step(&mut self, step: Footprint, _ops: &[OpInfo]) {
+        let Some(local) = &mut self.local else { return };
+        let running = local.running.filter(|_| local.in_flight);
+        local.in_flight = false;
+        let Some(c) = running.and_then(|p| self.path.get_mut(p)) else { return };
+        if !step.is_local() {
+            c.visible = true;
+            self.retained += c.withheld.len();
+            self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
+            c.options.append(&mut c.withheld);
+        } else if c.reducible && !c.visible {
+            // every run of the step so far was local: nothing else needs to go first
+            self.retained -= c.options.len() - (c.taken + 1);
+            let later = c.options.split_off(c.taken + 1);
+            c.withheld.extend(later);
+        }
+    }
+
     fn next_operation(&mut self, _current: u64, ops: &[OpInfo]) -> Option<u64> {
         if !ops.iter().any(|o| o.enabled) {
             return None;
+        }
+        if let Some(local) = &mut self.local {
+            local.running = Some(self.pos);
+            local.in_flight = true;
+            local.candidates.clear();
+            if self.pos >= self.path.len() && ops.iter().filter(|o| o.enabled).nth(1).is_some() {
+                let may_be_local = |o: &&OpInfo| o.enabled && !matches!(o.kind, SchedKind::Send | SchedKind::Create);
+                local.candidates.extend(ops.iter().filter(may_be_local).map(|o| o.id));
+            }
         }
         Some(self.decide(
             Kind::Operation,
@@ -469,6 +569,18 @@ impl Strategy for ExhaustiveStrategy {
     }
 
     fn prepare_next_iteration(&mut self) -> bool {
+        if let Some(local) = &mut self.local {
+            // a step that did not reach its next scheduling point (a bug, a bound) is not
+            // known to be local
+            let running = local.running.take().filter(|_| local.in_flight);
+            local.in_flight = false;
+            if let Some(c) = running.and_then(|p| self.path.get_mut(p)) {
+                c.visible = true;
+                self.retained += c.withheld.len();
+                self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
+                c.options.append(&mut c.withheld);
+            }
+        }
         self.stats.max_depth = self.stats.max_depth.max(self.pos);
         self.pos = 0;
         self.cycle = None;
@@ -477,6 +589,7 @@ impl Strategy for ExhaustiveStrategy {
         while let Some(c) = self.path.last_mut() {
             if c.taken + 1 < c.options.len() {
                 c.taken += 1;
+                c.visible = false;
                 let changed = self.path.len() - 1;
                 if let Some(split) = &mut self.split {
                     match split.prefix_end {
@@ -497,6 +610,7 @@ impl Strategy for ExhaustiveStrategy {
             }
             let c = self.path.pop().unwrap();
             self.retained -= c.options.len();
+            self.stats.skipped_alternatives += c.withheld.len();
         }
         self.stats.finished = true;
         false
@@ -628,6 +742,8 @@ impl SearchStats {
         self.auto_handoffs.sort_by_key(|h| h.worker);
         self.distinct_states += other.distinct_states;
         self.pruned_schedules += other.pruned_schedules;
+        self.skipped_alternatives += other.skipped_alternatives;
+        self.branching_choices += other.branching_choices;
         self.cycle_prunes += other.cycle_prunes;
         self.live_cycle_prunes += other.live_cycle_prunes;
         // the analysis runs on the combined record (see `Checker::finish`)

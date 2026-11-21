@@ -506,6 +506,8 @@ pub struct Runtime<'p> {
     pub(super) fork_depths: &'static [usize],
     /// Save a prefix every this many decisions instead of at `fork_depths`; 0 to use those.
     pub(super) save_interval: usize,
+    /// What the running step did beyond its machine's own state (see [`Footprint`]).
+    pub(crate) footprint: crate::checker::strategy::Footprint,
     pub(super) checkpoint_rng: Option<super::strategy::SharedRandom>,
     pub(crate) prog: &'p Program,
     pub(crate) code: &'p Code,
@@ -633,6 +635,7 @@ impl<'p> Runtime<'p> {
             touched: vec![],
             fork_depths: &[16, 64, 256],
             save_interval: 0,
+            footprint: Default::default(),
             checkpoint_rng: None,
             prog,
             code,
@@ -1302,6 +1305,9 @@ impl<'p> Runtime<'p> {
         if self.time.as_ref().is_some_and(|t| t.opts.timed) {
             self.filter_timed(infos);
         }
+        if self.strategy.wants_footprints() {
+            self.strategy.note_step(self.footprint, infos);
+        }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
             let live = self.liveness_pending();
@@ -1332,6 +1338,7 @@ impl<'p> Runtime<'p> {
                 self.scheduled_steps = self.strategy.scheduled_steps();
                 self.trace.steps.push(ScheduleStep::Operation(next));
                 self.current = next;
+                self.footprint = Default::default();
                 Ok(())
             }
             // the strategy cannot go on (a replay diverged): neither a deadlock nor the end
@@ -1599,6 +1606,7 @@ impl<'p> Runtime<'p> {
         if let (Some(d), Some(facts)) = (&mut self.driver_facts, &prefix.driver) {
             d.restore_schedule(facts);
         }
+        self.footprint = Default::default();
     }
 
     fn run_loop(&mut self, mut save: Option<&mut Vec<Prefix>>) -> Result<(), Stop> {
@@ -1702,6 +1710,8 @@ impl<'p> Runtime<'p> {
         clock: crate::checker::time::Time,
     ) -> (usize, u64) {
         self.cov_declare(decl, false);
+        // machine ids follow creation order
+        self.footprint.lifecycle = true;
         if let Some(d) = self.driver_facts.as_mut() {
             d.record_create(decl);
         }
@@ -1880,6 +1890,7 @@ impl<'p> Runtime<'p> {
 
     /// `EventQueue.Enqueue`.
     pub fn enqueue(&mut self, t: usize, e: Event) -> EnqueueStatus {
+        self.footprint.sent = true;
         if self.machines[t].status == MachineStatus::Halted || self.machines[t].inbox.closed {
             return EnqueueStatus::Dropped;
         }
@@ -1966,6 +1977,12 @@ impl<'p> Runtime<'p> {
 
     /// `EventQueue.TryDequeueEvent`.
     fn try_dequeue(&mut self, m: usize, check_only: bool) -> Option<Event> {
+        let found = self.try_dequeue_inner(m, check_only);
+        self.footprint.inbox_miss |= found.is_none();
+        found
+    }
+
+    fn try_dequeue_inner(&mut self, m: usize, check_only: bool) -> Option<Event> {
         let mut i = 0;
         while i < self.machines[m].inbox.queue.len() {
             let id = self.machines[m].inbox.queue[i].id;
@@ -2232,6 +2249,7 @@ impl<'p> Runtime<'p> {
                             }
                             self.xlog("ExceptionHandled", &attrs, Some(&unhandled_text));
                             self.machines[m].status = MachineStatus::Halting;
+                            self.footprint.lifecycle = true;
                             self.machines[m].stage = Stage::Halt;
                             continue;
                         }
@@ -2366,6 +2384,7 @@ impl<'p> Runtime<'p> {
                 }
                 Stage::Halt => {
                     self.machines[m].status = MachineStatus::Halted;
+                    self.footprint.lifecycle = true;
                     self.machines[m].inbox.closed = true;
                     let n = self.machines[m].inbox.queue.len();
                     let name = self.machines[m].name.clone();
@@ -2866,6 +2885,7 @@ impl<'p> Runtime<'p> {
     /// `Monitor.MonitorEvent`. With no sender, the monitor reads the event stamp
     /// as its clock (used for recorded observations).
     pub fn monitor_event(&mut self, mon: usize, e: Event, sender_idx: Option<usize>) -> Result<(), Stop> {
+        self.footprint.monitor = true;
         // Reporting only: this history is never read by the scheduler or state hash.
         let decl = self.monitors[mon].decl;
         if let Some(i) = self.scenarios.iter().position(|s| s.decl == decl && !s.satisfied && s.witness.is_some()) {

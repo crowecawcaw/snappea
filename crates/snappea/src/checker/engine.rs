@@ -46,6 +46,11 @@ pub struct CheckerOptions {
     /// path it shares with the previous one, instead of replaying that path. It explores
     /// the same schedules either way; turn it off to compare. Enabled by default.
     pub resume_prefixes: bool,
+    /// Let auto's exhaustive search skip the schedules that run other machines before a
+    /// step that changes only its own machine. It reaches the same verdicts through fewer
+    /// states; turn it off to compare. Enabled by default; not used with clocks or
+    /// foreign functions.
+    pub partial_order: bool,
     /// Keep exploring after the first bug (`--explore`).
     pub full_exploration: bool,
     /// Distinct failures to collect before the search stops (`snappea check --max-bugs`);
@@ -149,6 +154,7 @@ impl Default for CheckerOptions {
             scenarios_ignore_unhandled: true,
             branching: false,
             resume_prefixes: true,
+            partial_order: true,
             verbose_trace_schedules: 0,
         }
     }
@@ -550,6 +556,7 @@ fn build_strategy(
     has_hot: bool,
     exhaustive: bool,
     split: Option<crate::checker::exhaustive::Split>,
+    local_steps: bool,
 ) -> Result<Box<dyn Strategy>, String> {
     use crate::checker::feedback::{
         ControlledRandom, FeedbackGuidedStrategy, PctScheduler, PosScheduler, RandomScheduler, Scheduler, Source,
@@ -568,8 +575,8 @@ fn build_strategy(
     let controlled =
         || Source::Controlled(ControlledRandom::new(opts.seed).with_legacy_mutations(opts.upstream_feedback));
     Ok(match opts.strategy {
-        StrategyKind::Auto => Box::new(
-            crate::checker::auto::AutoStrategy::new(
+        StrategyKind::Auto => {
+            let auto = crate::checker::auto::AutoStrategy::new(
                 opts.seed,
                 opts.max_unfair_steps,
                 opts.max_fair_steps,
@@ -577,8 +584,9 @@ fn build_strategy(
                 exhaustive,
                 split,
             )
-            .with_frontier_guidance(opts.feedback_frontier_guidance && !opts.upstream_feedback),
-        ),
+            .with_frontier_guidance(opts.feedback_frontier_guidance && !opts.upstream_feedback);
+            Box::new(if local_steps { auto.with_local_steps() } else { auto })
+        }
         StrategyKind::Random => Box::new(RandomStrategy::new(opts.max_fair_steps, rng.clone())),
         StrategyKind::Pct => Box::new(PctStrategy::new(opts.max_unfair_steps, opts.strategy_bound, rng.clone())),
         StrategyKind::FairPct => Box::new(ComboStrategy::new(
@@ -1013,7 +1021,7 @@ impl<'p> Checker<'p> {
         };
         let assignment = prog.test_case_assignment(tc);
         // reports a replay without a schedule before anything else
-        build_strategy(opts, &Rc::new(RefCell::new(RandomValueGenerator::new(opts.seed))), false, false, None)?;
+        build_strategy(opts, &Rc::new(RefCell::new(RandomValueGenerator::new(opts.seed))), false, false, None, false)?;
         let is_replay = opts.strategy == StrategyKind::Replay;
         // a replay takes its time settings from the schedule file
         let time = match opts.replay.as_ref().filter(|_| is_replay).and_then(|t| t.time.as_ref().map(|h| (h, t))) {
@@ -1076,7 +1084,9 @@ impl<'p> Checker<'p> {
             .then(|| crate::checker::exhaustive::Split::new(pool.count, index, run_seed, pool.shared.clone()));
         // auto mode skips exhaustive search when it could not prove anything; with time
         // tracking the state hash covers the clocks (see `statehash`)
-        let mut strategy = build_strategy(opts, &rng, has_hot, searchable, split)?;
+        // a step's footprint does not record clocks or foreign state
+        let local_steps = opts.partial_order && time.is_none() && self.foreign.is_none();
+        let mut strategy = build_strategy(opts, &rng, has_hot, searchable, split, local_steps)?;
         let is_replay = opts.strategy == StrategyKind::Replay;
 
         let mut result = CheckResult { strategy_description: strategy.description(), ..Default::default() };

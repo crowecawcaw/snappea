@@ -2018,6 +2018,7 @@ impl<'p> Runtime<'p> {
             self.xlog("WaitEvent", &[("id", &name), ("event", &evs.join(", ")), ("state", &state)], None);
         }
         self.machines[m].inbox.waiting = Some(Rc::from(wait));
+        self.footprint.inbox_miss = true;
         let id = self.machines[m].id;
         self.op_mut(id).status = OpStatus::BlockedOnReceive;
         exec.pending = Some(Pending::ReceiveWait { cases });

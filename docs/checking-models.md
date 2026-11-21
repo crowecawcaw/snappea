@@ -167,6 +167,16 @@ million states and transitions) is dropped, the search finishes for safety, and 
 continues with fair feedback search, which checks hot monitors' temperature
 (`state exploration finished, but liveness remains unverified: ...`).
 
+Exhaustive search does not try every order around a **local step**: a step that changes
+only its own machine. Such a step sends nothing, runs no spec, creates or halts no
+machine, and finds the event it looks for in its inbox, for example the part of a
+handler before its first `send` of an event no spec observes. No other machine can
+change what the step does or be changed by it, so running others first reaches the same
+states; the search runs it at once and skips those orders. Specs see the same events in
+the same order, so assertions, deadlocks and liveness verdicts are the same, through
+fewer states: about half the schedules on the sample designs. It is off with time
+tracking and foreign functions, whose effects a step does not record.
+
 The state cache leaves out fields, locals and event payloads that no assertion,
 condition, send or spec depends on (the values the `unchecked-state` lint reports): such
 a value cannot change what happens next, so a write-only counter neither keeps the
