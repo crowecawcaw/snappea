@@ -664,7 +664,13 @@ fn date_time(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+    // `ISO_INSTANT` pads the year to four digits after its sign, and signs years past 9999
+    let year = match y {
+        ..0 => format!("-{:04}", y.unsigned_abs()),
+        10_000.. => format!("+{y}"),
+        _ => format!("{y:04}"),
+    };
+    format!("{}-{:02}-{:02}T{:02}:{:02}:{:02}", year, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 /// An instant with `DateTimeFormatter`'s `appendInstant(9)`: always nine fraction digits.
@@ -689,6 +695,17 @@ pub fn instant_to_string(secs: i64, nanos: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instants_print_like_java() {
+        assert_eq!(instant_to_string(0, 0), "1970-01-01T00:00:00Z");
+        assert_eq!(instant_to_string(1, 500_000_000), "1970-01-01T00:00:01.500Z");
+        // years outside 0000..=9999, as `Instant.toString()` prints them
+        assert_eq!(instant_to_string(-62_167_219_201, 0), "-0001-12-31T23:59:59Z");
+        assert_eq!(instant_to_string(-62_167_219_200, 0), "0000-01-01T00:00:00Z");
+        assert_eq!(instant_to_string(253_402_300_800, 0), "+10000-01-01T00:00:00Z");
+        assert_eq!(instant_nanos9(-62_198_755_200, 1), "-0001-01-01T00:00:00.000000001Z");
+    }
 
     #[test]
     fn floats_print_like_java() {

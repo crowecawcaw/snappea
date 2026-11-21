@@ -40,6 +40,7 @@ the checker) and `cli` (the binaries and the checker); the default is `cli` and 
 Tests are in `crates/snappea/tests`, named after the module they cover.
 
 `crates/snappea-wasm` (not published) is the WebAssembly module and JavaScript wrapper.
+`crates/snappea-fuzz` (not published) holds the [fuzz harnesses and property tests](fuzzing.md).
 
 The checker modules use no file system, process or threading APIs, so they build for
 `wasm32-unknown-unknown` unchanged. `snappea::driver` reaches all of these through a `Host`;
@@ -87,6 +88,10 @@ Upstream's test suites are vendored in `tests/upstream`.
   94 with full normalized console/file comparisons and two with exit codes only, in
   `crates/snappea/tests/compat_observe_upstream.rs`. The 192-run figures describe the
   separate manual comparison, not CI. See the [upstream parity page](https://snappea.dev/docs/parity.html).
+
+* Robustness: fuzz targets for the parser, type checker, checker and `snappea observe`,
+  and property tests for log timestamps and event checking, in `crates/snappea-fuzz`.
+  See [Fuzzing and property tests](fuzzing.md).
 
 ## Benchmarks
 

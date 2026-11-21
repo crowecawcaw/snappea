@@ -1,0 +1,17 @@
+[package]
+name = "snappea-fuzz"
+version.workspace = true
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Fuzz harnesses for snappea, shared by the cargo-fuzz targets in fuzz/ and the crash regression tests"
+
+[dependencies]
+snappea = { workspace = true, features = ["cli", "test"] }
+snappea-lint = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.11"
+serde_json = { workspace = true }

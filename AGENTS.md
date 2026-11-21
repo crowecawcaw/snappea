@@ -6,6 +6,7 @@ cargo test --workspace
 cargo fmt --all
 cargo clippy --workspace --all-targets
 cargo build -p snappea --no-default-features --features emit   # production use: no checker
+cargo +nightly fuzz run check fuzz/corpus/check -- -dict=fuzz/p.dict   # see docs/fuzzing.md
 ```
 
 ## Goal

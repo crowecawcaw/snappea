@@ -5,6 +5,7 @@ members = [
     "crates/snappea-syntax",
     "crates/snappea-lint",
     "crates/snappea-wasm",
+    "crates/snappea-fuzz",
 ]
 
 [workspace.package]

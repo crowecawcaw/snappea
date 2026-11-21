@@ -57,7 +57,7 @@ impl<'a> Errors<'a> {
     }
 
     pub fn duplicate_declaration(&self, span: Span, dup: &str, existing: &str, existing_span: Span) -> Diagnostic {
-        let help = if span.file == existing_span.file {
+        let help = if span.file == existing_span.file || existing_span.is_dummy() {
             "rename one of the two declarations".to_string()
         } else {
             format!(

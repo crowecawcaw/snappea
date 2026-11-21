@@ -1,0 +1,139 @@
+# Fuzzes the parser, type checker, checker and `snappea observe` (fuzz/, docs/fuzzing.md).
+#
+# - Pull requests: 30 seconds per target, starting from the corpus the nightly run saved.
+# - Nightly: 5 minutes per target, only when main changed since the last nightly run that
+#   finished. Each target's corpus is minimized and cached for the next run.
+#
+# A crash fails the job and uploads the input as the `fuzz-<target>-crash` artifact.
+# Reproduce it with `cargo +nightly fuzz run <target> <file>`, then save it to
+# fuzz/regressions/<target>/ so `cargo test` keeps it fixed.
+
+name: Fuzz
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "fuzz/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/fuzz-corpus.sh"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds per target"
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # Nightly runs skip a commit an earlier nightly run already fuzzed to the end.
+  changes:
+    name: changed since last nightly
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: done
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v6
+        with:
+          path: .fuzz-done
+          key: fuzz-done-${{ github.sha }}
+          lookup-only: true
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          FUZZED: ${{ steps.done.outputs.cache-hit }}
+        run: |
+          if [ "$EVENT" = schedule ] && [ "$FUZZED" = true ]; then
+            echo "main has not changed since the last nightly run; skipping"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [parse, compile, check, observe]
+    env:
+      TARGET: ${{ matrix.target }}
+      SECONDS_PER_TARGET: ${{ github.event_name == 'pull_request' && '30' || inputs.seconds || '300' }}
+      # The prebuilt cargo-fuzz is a musl binary and would default to its own target,
+      # which the address sanitizer does not support.
+      TRIPLE: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz -> target
+          key: fuzz
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: Restore corpus
+        uses: actions/cache/restore@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Add seed inputs
+        run: scripts/fuzz-corpus.sh
+      - name: Build
+        run: cargo +nightly fuzz build --target "$TRIPLE" "$TARGET"
+      - name: Fuzz
+        run: |
+          cargo +nightly fuzz run --target "$TRIPLE" "$TARGET" "fuzz/corpus/$TARGET" -- \
+            -dict=fuzz/p.dict -max_total_time="$SECONDS_PER_TARGET" \
+            -timeout=10 -rss_limit_mb=2048 -max_len=16384 -print_final_stats=1
+      - name: Minimize corpus
+        if: github.event_name != 'pull_request'
+        run: cargo +nightly fuzz cmin --target "$TRIPLE" "$TARGET" "fuzz/corpus/$TARGET" -- -dict=fuzz/p.dict -timeout=10 -rss_limit_mb=2048
+      # Keep what this run learned, even when it found a crash.
+      - name: Save corpus
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/cache/save@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: fuzz-${{ matrix.target }}-crash
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+
+  # Marks this commit fuzzed, so the next nightly run skips it unless main changes.
+  done:
+    name: mark fuzzed
+    needs: fuzz
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - run: date -u > .fuzz-done
+      - uses: actions/cache/save@v6
+        with:
+          path: .fuzz-done
+          key: fuzz-done-${{ github.sha }}

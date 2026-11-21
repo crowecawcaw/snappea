@@ -19,8 +19,11 @@ pub fn parse_int_literal(text: &str) -> Option<i64> {
 impl<'a> Analyzer<'a> {
     fn check_conflict(&self, scope: ScopeId, name: &str, span: Span, namespaces: &[Namespace]) -> Result<(), Fatal> {
         if let Some(existing) = self.scopes.get(scope).conflict(name, namespaces) {
-            let ename = self.prog.decl_name(existing);
-            let espan = self.prog.decl_span(existing);
+            // named modules are not in the program yet
+            let (ename, espan) = match existing {
+                DeclRef::Module(i) => (self.module_src[i as usize].0.clone(), self.module_src[i as usize].2),
+                _ => (self.prog.decl_name(existing), self.prog.decl_span(existing)),
+            };
             return Err(self.e.duplicate_declaration(span, name, &ename, espan));
         }
         Ok(())
