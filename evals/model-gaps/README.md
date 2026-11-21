@@ -34,6 +34,12 @@ false alarm.
 bugs, one at a time) its tests catch. The solver cannot find them by reading, because
 they are not there. Any task with seeded bugs can run in this mode.
 
+**Own** (`--mode own`). Build and guard in one task: the solver writes the design from
+empty machines and is told to leave specs and tests that protect it. Two grades: the
+hidden reference tests its design passes, and the hidden design mistakes its specs and
+tests catch on the reference design. Any task with a skeleton and seeded bugs can run
+in this mode.
+
 **Harden** (`--mode harden`). The solver gets a design with every seeded bug and fixes
 `PSrc/`. Hidden reference tests judge the result.
 

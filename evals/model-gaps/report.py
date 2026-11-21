@@ -35,7 +35,10 @@ if build:
         print(f"{task} {label}: runs={n} passed={sum(len(g['passed']) for g in gs)}/{sum(g['tests'] for g in gs)} "
               f"all-pass runs={sum(not g['failed'] and g['tests'] > 0 for g in gs)}/{n} "
               f"commands/run={sum(g['process']['commands'] for g in gs) / n:.0f} "
-              f"minutes/run={sum(g['process']['minutes'] for g in gs) / n:.1f}")
+              f"minutes/run={sum(g['process']['minutes'] for g in gs) / n:.1f}"
+              + (f" mistakes caught={sum(len(g['guard']['found']) for g in gs)}/{sum(g['guard'].get('bugs', 0) for g in gs)}"
+                 f" ({' '.join(str(len(g['guard']['found'])) for g in gs)})"
+                 f" false alarms={sum(len(g['guard']['false_alarms']) for g in gs)}" if all("guard" in g for g in gs) else ""))
     print()
 if not rows:
     sys.exit(0)

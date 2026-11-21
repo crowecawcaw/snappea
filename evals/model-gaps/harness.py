@@ -163,7 +163,47 @@ machine names or what a machine takes when created. Add or change anything in
 Also write `/work/NOTES.md`: each problem you found, how you found it, and the fix.
 """
 
-MODES = ("review", "build", "harden", "impl", "guard")
+OWN_TASK = """# Design this component in P, and leave a model that protects it
+
+`/work/DESIGN.md` describes a component and the contract it must keep. `/work/model`
+is the start of a P model of it:
+
+- `PSrc/`: the design. The events and the machines' names are fixed; the machines are
+  empty. Write them.
+- `PSpec/`: specs for the contract. They may be incomplete.
+- `PTst/`: an environment and first test cases. They may be incomplete.
+
+Do two things. {tool_line}
+
+1. Write the design in `PSrc/` so that the contract holds under everything DESIGN.md
+   says can happen.
+2. The team will keep changing the design after you. Make the specs and test cases
+   strong enough that a change to `PSrc/` that breaks the contract, under the
+   conditions DESIGN.md says can happen, makes a test case fail.
+
+Your work is judged twice:
+
+- Your `PSrc/` is run, with the given `PSpec/`, against hidden test cases that cover
+  the conditions in DESIGN.md.
+- Your `PSpec/` and `PTst/` are run against a correct design of the team's, and
+  against hidden versions of it that each carry one realistic design mistake. You
+  score one point for each mistake that some test case catches. A test case that
+  fails on the correct design is discarded and counts against you.
+
+Rules:
+
+- Do not change event declarations, machine names or what a machine takes when
+  created. The team's designs use the same ones.
+- Keep the given specs; add new specs in new files in `PSpec/`. Add whatever you need
+  to `PTst/`.
+- Specs and tests may rely only on the events and on what DESIGN.md promises, not on
+  how your own `PSrc/` happens to work.
+
+Also write `/work/NOTES.md`: the design decisions you made and why, and which mistakes
+your specs and tests catch.
+"""
+
+MODES = ("review", "build", "harden", "impl", "guard", "own")
 
 
 def task_dir(task: str) -> Path:
@@ -371,7 +411,9 @@ def cmd_start(a):
     bin_path = Path(a.binary).resolve() if a.binary else ROOT / "target/release" / ARMS[a.arm]["bin"]
     if not bin_path.exists():
         sys.exit(f"build {bin_path} first: cargo build --release -p snappea --bins")
-    if a.mode not in task_modes(a.task) and not (a.mode == "guard" and load_task(a.task).get("bug")):
+    if a.mode == "own" and not ((task_dir(a.task) / "skeleton").exists() and load_task(a.task).get("bug")):
+        sys.exit(f"task {a.task} needs a skeleton and seeded mistakes for own mode")
+    if a.mode not in (*task_modes(a.task), "own") and not (a.mode == "guard" and load_task(a.task).get("bug")):
         sys.exit(f"task {a.task} has modes {task_modes(a.task)}")
     work = run / "work"
     public = task_dir(a.task) / "public"
@@ -381,13 +423,13 @@ def cmd_start(a):
         text = (work / "TASK.md").read_text()
     else:
         write_model(work / "model", a.task, bug_ids(a.task) if a.mode in ("review", "harden") else [], public)
-        if a.mode == "build":
+        if a.mode in ("build", "own"):
             shutil.rmtree(work / "model" / "PSrc")
             shutil.copytree(task_dir(a.task) / "skeleton", work / "model" / "PSrc")
         shutil.copy(public / "DESIGN.md", work / "DESIGN.md")
         # A task may word its own assignment, e.g. when its specs are incomplete on purpose.
         own = public / "TASK.md"
-        text = GUARD_TASK if a.mode == "guard" else own.read_text() if own.exists() else {
+        text = GUARD_TASK if a.mode == "guard" else OWN_TASK if a.mode == "own" else own.read_text() if own.exists() else {
             "review": TASK, "build": BUILD_TASK, "harden": HARDEN_TASK}[a.mode]
     (work / "TASK.md").write_text(text.replace("{tool_line}", ARMS[a.arm]["tool_line"]))
     workdir = "/work" if a.mode == "impl" else "/work/model"
@@ -533,14 +575,18 @@ def cmd_grade(a):
     for run_id in a.run_ids:
         run = RUNS / run_id
         meta = json.loads((run / "meta.json").read_text())
-        if meta.get("mode") in ("build", "harden", "impl"):
+        if meta.get("mode") in ("build", "harden", "impl", "own"):
             if meta["mode"] == "impl":
                 grade = grade_impl(meta["task"], run / "submission")
             else:
                 grade = grade_design(meta["task"], run / "submission" / "model" / "PSrc")
             grade["process"] = process_stats(run)
+            if meta["mode"] == "own":
+                # The second judgment: the mistakes the specs and tests left behind catch.
+                grade["guard"] = grade_tests(meta["task"], run / "submission" / "model")
             (run / "grade.json").write_text(json.dumps(grade, indent=2))
-            print(run_id, json.dumps({k: grade[k] for k in ("status", "passed", "failed")})[:1500])
+            print(run_id, json.dumps({k: grade[k] for k in ("status", "passed", "failed")})[:1500],
+                  json.dumps({k: grade["guard"][k] for k in ("found", "false_alarms")}) if "guard" in grade else "")
             continue
         grade = grade_tests(meta["task"], run / "submission" / "model")
         grade["found_at_call"] = {b: first_seen(run, tests) for b, tests in grade.get("found_by", {}).items()}
@@ -562,6 +608,7 @@ def main():
                    help="review: write tests that catch the bugs in a given design. build: write the design from a "
                         "skeleton. harden: fix a given design. impl: the task's own files and grader. "
                         "guard: strengthen specs and tests of a correct design; hidden design mistakes judge it. "
+                        "own: build and guard in one task, judged by hidden tests and by hidden mistakes. "
                         "Hidden tests judge build, harden and impl")
     p.add_argument("--check-flags", default="", metavar="FLAGS",
                    help="flags a wrapper adds to every `check`, e.g. '--no-mutation', to try other defaults")
