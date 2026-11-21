@@ -1,0 +1,365 @@
+{
+ "suite_version": 1,
+ "cases": [
+  {
+   "name": "cache-invalidation/tcBugNaiveCache",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/cache-invalidation/CacheInvalidation.pproj",
+   "test": "tcBugNaiveCache",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "cache holds stale value 0 at quiescence; database has 1"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "config-rollout/tcBugLastArrival",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/config-rollout/ConfigRollout.pproj",
+   "test": "tcBugLastArrival",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "applied version 2 after version 3"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "consumer-group-rebalance/tcBugNoGenerationCheck",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/consumer-group-rebalance/ConsumerGroupRebalance.pproj",
+   "test": "tcBugNoGenerationCheck",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "commit from generation"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "leader-election/tcBugVoteNotPersisted",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/leader-election/LeaderElection.pproj",
+   "test": "tcBugVoteNotPersisted",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "node 3 voted twice in term 1"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "online-migration/tcBugBlindBackfill",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/online-migration/OnlineMigration.pproj",
+   "test": "tcBugBlindBackfill",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "new store moved key 1 back from version 2 to 1"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "stale-replica-read/tcBugMonotonicReads",
+   "family": "sample-bug",
+   "project": "examples/samples/flawed/stale-replica-read/StaleReplicaRead.pproj",
+   "test": "tcBugMonotonicReads",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "monotonic reads violated: session 2 read value 0 after it had already read value 11"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "lease-without-fencing/tcBugStaleLeaderWrite",
+   "family": "sample-bug",
+   "project": "examples/samples/flawed/lease-without-fencing/LeaseWithoutFencing.pproj",
+   "test": "tcBugStaleLeaderWrite",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "under lease 1 after a write under lease 2"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "quorum-kv/tcBugReadOne",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcBugReadOne",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "reader 1 returned the initial value after write 1 completed"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "worker-drain/tcBugTerminateEarly",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/worker-drain/WorkerDrain.pproj",
+   "test": "tcBugTerminateEarly",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "instance 0 terminated with request"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "transactional-outbox/tcBugDualWrite",
+   "family": "sample-bug",
+   "project": "examples/samples/use-cases/transactional-outbox/TransactionalOutbox.pproj",
+   "test": "tcBugDualWrite",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "CommittedOrdersDelivered detected liveness bug in hot state 'Undelivered'"
+    }
+   ],
+   "budget": 25000,
+   "description": "Expected-bug test of a sample design."
+  },
+  {
+   "name": "aba-cas/tcFixedAbaInterleaving",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/aba-cas/AbaCas.pproj",
+   "test": "tcFixedAbaInterleaving",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "lost-update/tcFixedThreeDeposits",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/lost-update/LostUpdate.pproj",
+   "test": "tcFixedThreeDeposits",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "leader-election/tcTwoCandidates",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/leader-election/LeaderElection.pproj",
+   "test": "tcTwoCandidates",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "leader-election/tcSplitVote",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/leader-election/LeaderElection.pproj",
+   "test": "tcSplitVote",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "in-flight-duplicate/tcFixedMixedKeys",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/in-flight-duplicate/InFlightDuplicate.pproj",
+   "test": "tcFixedMixedKeys",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "dual-write-crash/tcFixedRelayCrash",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/dual-write-crash/DualWriteCrash.pproj",
+   "test": "tcFixedRelayCrash",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "elevator/tcTwoPassengers",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/elevator/Elevator.pproj",
+   "test": "tcTwoPassengers",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "minority-quorum/tcFixedPartition",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/minority-quorum/MinorityQuorum.pproj",
+   "test": "tcFixedPartition",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "quorum-kv/tcOneReplicaDown",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcOneReplicaDown",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "lease-lock-fencing/tcTwoClientsContend",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/lease-lock-fencing/LeaseLockFencing.pproj",
+   "test": "tcTwoClientsContend",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "seat-hold/tcCancelRacesRehold",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/seat-hold/SeatHold.pproj",
+   "test": "tcCancelRacesRehold",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "token-refresh/tcBothTabsExpire",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/token-refresh/TokenRefresh.pproj",
+   "test": "tcBothTabsExpire",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "idempotent-payments/tcIndependentKeys",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/idempotent-payments/IdempotentPayments.pproj",
+   "test": "tcIndependentKeys",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "circuit-breaker/tcDuplicateCooldown",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/circuit-breaker/CircuitBreaker.pproj",
+   "test": "tcDuplicateCooldown",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "job-queue/tcWorkerCrash",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/job-queue/JobQueue.pproj",
+   "test": "tcWorkerCrash",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "consumer-group-rebalance/tcJoinRebalance",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/consumer-group-rebalance/ConsumerGroupRebalance.pproj",
+   "test": "tcJoinRebalance",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "offline-sync/tcSlowReply",
+   "family": "sample-safe",
+   "project": "examples/samples/use-cases/offline-sync/OfflineSync.pproj",
+   "test": "tcSlowReply",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "stale-replica-read/tcFixedMonotonicReads",
+   "family": "sample-safe",
+   "project": "examples/samples/flawed/stale-replica-read/StaleReplicaRead.pproj",
+   "test": "tcFixedMonotonicReads",
+   "expected": [],
+   "budget": 1000000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test: settled when exhaustive search finishes."
+  },
+  {
+   "name": "quorum-kv/tcTwoWriters",
+   "family": "sample-stretch",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcTwoWriters",
+   "expected": [],
+   "budget": 50000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test that auto does not finish within 50,000 schedules at suite version 1."
+  },
+  {
+   "name": "job-queue/tcMoreWorkersThanJobs",
+   "family": "sample-stretch",
+   "project": "examples/samples/use-cases/job-queue/JobQueue.pproj",
+   "test": "tcMoreWorkersThanJobs",
+   "expected": [],
+   "budget": 50000,
+   "expect_exhausted": true,
+   "seeds": 1,
+   "description": "Safe sample test that auto does not finish within 50,000 schedules at suite version 1."
+  }
+ ]
+}

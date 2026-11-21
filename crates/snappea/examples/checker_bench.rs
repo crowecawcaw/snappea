@@ -7,6 +7,9 @@ use snappea::checker::{
 use std::{collections::BTreeMap, time::Instant};
 struct Discoveries {
     expected: Vec<(String, String)>,
+    /// Match anywhere in the failure text and skip failures outside the catalog: for
+    /// project cases, whose catalog is the test's declared `expect-bug` text.
+    lenient: bool,
     first: BTreeMap<String, usize>,
     tested: usize,
     start: Instant,
@@ -24,13 +27,18 @@ impl Output for Discoveries {
                 .expected
                 .iter()
                 .filter(|(_, pattern)| {
-                    if bug.starts_with("Assertion Failed: ") {
+                    if self.lenient {
+                        bug.contains(pattern)
+                    } else if bug.starts_with("Assertion Failed: ") {
                         bug.ends_with(pattern)
                     } else {
                         bug.contains(pattern)
                     }
                 })
                 .collect();
+            if self.lenient && matches.is_empty() {
+                return;
+            }
             assert_eq!(matches.len(), 1, "failure absent or ambiguous in independent oracle: {bug}");
             self.first.entry(matches[0].0.clone()).or_insert(n);
         }
@@ -47,11 +55,30 @@ fn main() {
     for case in run["cases"].as_array().unwrap() {
         let budget = case["budget"].as_u64().map_or(budget, |n| n as usize);
         let mut sm = snappea::syntax::SourceMap::new();
-        sm.add(format!("{}.p", case["name"].as_str().unwrap()), case["source"].as_str().unwrap());
+        // a project case lists its files; the others are one source
+        match case["sources"].as_array() {
+            Some(files) => {
+                for f in files {
+                    sm.add(f[0].as_str().unwrap().to_string(), f[1].as_str().unwrap());
+                }
+            }
+            None => {
+                sm.add(format!("{}.p", case["name"].as_str().unwrap()), case["source"].as_str().unwrap());
+            }
+        }
         let compiled =
             snappea::sema::compile(&sm, &Default::default()).unwrap_or_else(|e| panic!("{}: {e:?}", case["name"]));
-        let tc = compiled.program.test_cases().remove(0);
+        let mut tests = compiled.program.test_cases();
+        let tc = match case["test"].as_str() {
+            Some(name) => tests.into_iter().find(|t| t.name == name).unwrap_or_else(|| panic!("no test case {name}")),
+            None => tests.remove(0),
+        };
         let checker = Checker::with_code_coverage(&compiled.program);
+        // what a run costs before its search starts, for the instruction counts
+        if run["setup_only"].as_bool() == Some(true) {
+            continue;
+        }
+        let lenient = case["sources"].is_array();
         for label in run["strategies"].as_array().unwrap() {
             let label = label.as_str().unwrap();
             let (strategy, depth) = if let Some(depth) = label.strip_prefix("pct-") {
@@ -78,6 +105,7 @@ fn main() {
                     .collect::<Vec<_>>();
                 let mut out = Discoveries {
                     expected,
+                    lenient,
                     first: Default::default(),
                     tested: 0,
                     start: Instant::now(),

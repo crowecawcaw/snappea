@@ -47,6 +47,41 @@ dirty status, seeds, limits, first discovery of each site and scheduler allocati
 are recorded. `--binary` measures a frozen executable without rebuilding.
 Interrupted runs leave a journal rather than masquerading as complete results.
 
+## Instructions to settle every case
+
+`scripts/bench-instructions.py` measures what a verdict costs: the p90, across seeds,
+of the CPU instructions `auto` executes until a case is settled. A bug case is settled
+when every declared site has failed; a safe case when exhaustive search has finished.
+Use it to judge a change to the search itself (pruning, reductions, replay), where
+schedule counts mislead because schedules differ in length.
+
+```sh
+python3 scripts/bench-instructions.py --out benchmark-results/instructions.json
+python3 scripts/bench-instructions.py --filter leader-election --out /tmp/one.json
+python3 scripts/bench-instructions.py --native --out /tmp/settled.json   # no counts, seconds
+```
+
+Counts come from valgrind's cachegrind, one process per case and seed, so they repeat
+to within a fraction of a percent and need no hardware counters. Each count leaves out
+what the same process executes to parse and compile the case. An unsettled run is
+infinite in the p90, as for schedules. The last line gives the geometric mean of the
+settled cases' p90 and the number of unsettled cases: compare both, since a change can
+lower the mean by losing a case.
+
+It runs the cases above with a 25,000-schedule limit, except `safe-background`, which
+has nothing to settle, and the cases of [samples.json](samples.json), test cases of
+the designs in `examples/samples/`:
+
+- **sample-bug**: an expected-bug test, settled when its declared failure is found.
+- **sample-safe**: a test of a fixed design. One seed: its exhaustive search costs
+  the same on every seed to within 0.1%.
+- **sample-stretch**: safe tests `auto` does not finish within 50,000 schedules. They
+  count as unsettled until a change lets the search finish.
+
+A full run takes about 15 minutes on four cores; `--jobs` sets the processes. It is not
+part of CI. At `fe2fef4` (Rust 1.97.0, valgrind 3.22) the geometric mean was
+114,595,984 instructions over 51 settled cases, with both stretch cases unsettled.
+
 ## CI
 
 The `auto finds all benchmark bugs` job runs both splits, ten seeds each, with a
