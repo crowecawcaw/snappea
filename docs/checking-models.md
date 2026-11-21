@@ -64,8 +64,10 @@ The portfolio continues sampling alongside a converging DFS search rather than
 letting state-cache pruning monopolize the entire run. In full exploration, once
 a concurrent execution fails, finding different failures becomes the priority:
 three portfolio schedules run between DFS schedules, while DFS remains active.
-Without a failure, the continuing allocation is one portfolio schedule per three
-DFS schedules. Tiny finite searches finish before this interleaving starts.
+Without a failure, sampling gets about a quarter of the work: a DFS schedule resumes
+at a state saved along its path and so executes few choices, while a sample runs a
+whole schedule, so samples become rarer than one in four schedules. Tiny finite
+searches finish before this interleaving starts.
 
 Automatic guided arms also retain prefixes at short-circuit condition edges,
 before unrelated suffix choices can destroy useful progress. These bounded
