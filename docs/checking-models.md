@@ -66,7 +66,8 @@ a concurrent execution fails, finding different failures becomes the priority:
 three portfolio schedules run between DFS schedules, while DFS remains active.
 Without a failure, sampling gets about a quarter of the work: a DFS schedule resumes
 at a state saved along its path and so executes few choices, while a sample runs a
-whole schedule, so samples become rarer than one in four schedules. Tiny finite
+whole schedule, so samples become rarer than one in four schedules, but never rarer
+than one in nine. Tiny finite
 searches finish before this interleaving starts.
 
 Automatic guided arms also retain prefixes at short-circuit condition edges,
