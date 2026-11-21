@@ -56,6 +56,7 @@ Each task is one of `examples/samples/use-cases`, reshaped.
 | `token-refresh` | harden, guard | 2 machines, lock and rotation | 11 | 5 |
 | `worker-drain` | build, guard | 3 machines, step timer, repeated and late answers; public spec incomplete | 12 | 6 |
 | `idempotent-payments` | build, guard | key table and API server; processor timeouts, crash recovery; public spec incomplete | 12 | 6 |
+| `quorum-kv` | build, guard | replica and coordinator; retries, late answers, coordinator crash; public spec incomplete | 12 | 6 |
 | `lease-impl` | impl | Python lease lock checked with `observe` | 19 scenarios | 9 variants |
 
 ## Run it
