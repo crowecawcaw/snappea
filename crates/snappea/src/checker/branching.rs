@@ -3,8 +3,10 @@
 //! small model change usually traces back to one machine here, such as a forwarder
 //! that adds a hop to every message or a fault injector with a large budget.
 //!
-//! Counts cover every eighth schedule run, including the prefixes an exhaustive search
-//! replays, so they describe an average schedule rather than the size of the search tree.
+//! Counts cover a sample of the schedules run (every eighth of the first 64, then every
+//! 64th), each from its start, including the prefix an exhaustive search shares with the
+//! schedule before. So they describe an average schedule rather than the size of the
+//! search tree.
 
 use super::value::Value;
 use crate::sema::{MachineId, Program, VarId};

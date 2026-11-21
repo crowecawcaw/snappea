@@ -77,17 +77,18 @@ impl Portfolio {
     /// A stable dependency signal: several senders can race at one receiver.
     /// Inspect metadata already provided to the scheduler; no program-state hashes.
     pub(crate) fn observe_operations(&mut self, ops: &[OpInfo]) {
-        self.observe_prefix_operation(ops, None);
+        self.observe_prefix_operation(ops, false);
     }
 
-    /// Record the fan-in of an initial scheduling point if its prefix can be
-    /// restored. Subsequent DFS schedules may sample a different set of points.
-    pub(crate) fn observe_prefix_operation(&mut self, ops: &[OpInfo], record: Option<&mut Vec<usize>>) {
+    /// Observes a scheduling point of the exhaustive search. Returns its fan-in, which is
+    /// only computed when sampled or when `record`: a schedule resumed after this point
+    /// repeats the observation with it ([`Portfolio::repeat_initial_observations`]).
+    pub(crate) fn observe_prefix_operation(&mut self, ops: &[OpInfo], record: bool) -> usize {
         self.contention |= ops.iter().filter(|o| o.enabled).count() > 1;
         self.observations += 1;
         let sample = self.sample_fan_in();
-        if !sample && record.is_none() {
-            return;
+        if !sample && !record {
+            return 0;
         }
         let mut fan_in = 0;
         if self.fan_in < 8 {
@@ -106,9 +107,7 @@ impl Portfolio {
         if sample {
             self.fan_in = self.fan_in.max(fan_in);
         }
-        if let Some(summary) = record {
-            summary.push(fan_in);
-        }
+        fan_in
     }
 
     fn sample_fan_in(&self) -> bool {

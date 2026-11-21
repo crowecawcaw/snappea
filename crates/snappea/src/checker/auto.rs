@@ -21,7 +21,11 @@ const MAX_ALTERNATIVES: usize = 1_000_000;
 pub(crate) struct AutoStrategy {
     dfs: Option<ExhaustiveStrategy>,
     portfolio: Portfolio,
-    initial_observations: Option<Vec<usize>>,
+    /// The fan-in the portfolio saw at each operation choice of the exhaustive search's
+    /// current path, when schedules can resume at saved prefixes: resuming repeats them.
+    path_observations: Option<Vec<usize>>,
+    /// Operation choices made in the current exhaustive schedule.
+    operations: usize,
     probing: bool,
     contention: bool,
     probe_remaining: usize,
@@ -75,7 +79,8 @@ impl AutoStrategy {
                 }
             }),
             portfolio: Portfolio::new(seed, unfair_steps, fair_steps),
-            initial_observations: None,
+            path_observations: None,
+            operations: 0,
             probing: false,
             contention: false,
             probe_remaining: 0,
@@ -161,16 +166,17 @@ impl AutoStrategy {
 }
 impl Strategy for AutoStrategy {
     fn track_initial_prefix(&mut self) {
-        self.initial_observations = Some(Vec::new());
+        self.path_observations = Some(Vec::new());
     }
     fn resume_initial_prefix(&mut self, steps: &[super::strategy::ScheduleStep]) -> bool {
         use super::strategy::ScheduleStep;
         let work = steps.len() as u64;
-        if self.probing || self.interrupted || self.split.is_some() || self.work + work > self.work_deadline {
+        // replaying the prefix would cross the work limit inside it: replay, to stop there
+        if self.probing || self.interrupted || self.work + work > self.work_deadline {
             return false;
         }
         let operations = steps.iter().filter(|s| matches!(s, ScheduleStep::Operation(_))).count();
-        let Some(observations) = self.initial_observations.as_ref().and_then(|v| v.get(..operations)) else {
+        let Some(observations) = self.path_observations.as_ref().and_then(|v| v.get(..operations)) else {
             return false;
         };
         let Some(dfs) = self.dfs.as_mut() else { return false };
@@ -179,8 +185,15 @@ impl Strategy for AutoStrategy {
         }
         self.work += work;
         self.window_work += work;
+        self.operations = operations;
         self.portfolio.repeat_initial_observations(observations);
         true
+    }
+    fn replayed_decisions(&self) -> Option<usize> {
+        if self.probing || self.interrupted {
+            return None;
+        }
+        self.dfs.as_ref().and_then(|dfs| dfs.replayed_decisions())
     }
 
     fn scheduler_stats(&self) -> Vec<SchedulerStats> {
@@ -189,11 +202,15 @@ impl Strategy for AutoStrategy {
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
         self.contention |= ops.iter().filter(|o| o.enabled).count() > 1;
         if self.dfs.is_some() && !self.probing {
-            let record = self
-                .initial_observations
-                .as_mut()
-                .filter(|v| self.schedules == 0 && v.len() < super::runtime::MAX_PREFIX);
-            self.portfolio.observe_prefix_operation(ops, record);
+            // the path's observations up to a prefix that can be saved
+            let index = self.operations;
+            self.operations += 1;
+            let record = self.path_observations.as_mut().filter(|_| index < super::runtime::MAX_PREFIX);
+            let fan_in = self.portfolio.observe_prefix_operation(ops, record.is_some());
+            if let Some(path) = record {
+                path.truncate(index);
+                path.push(fan_in);
+            }
         }
         if !self.choice(ops.iter().filter(|o| o.enabled).count()) {
             return None;
@@ -211,6 +228,7 @@ impl Strategy for AutoStrategy {
     }
     fn prepare_next_iteration(&mut self) -> bool {
         self.schedules += 1;
+        self.operations = 0;
         if self.dfs.is_none() {
             return self.portfolio.prepare_next_iteration();
         }

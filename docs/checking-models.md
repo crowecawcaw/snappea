@@ -222,8 +222,8 @@ for completed tests too. Per-test JSON `collection_sizes` lists all nonempty fie
 with declaration `file`/`line`, `machine`, `field`, observed `min`/`max` element counts,
 and `observations` (one field on one instance at one sampled point).
 
-This evidence samples one in 32 scheduling points of the existing every-eighth-schedule
-branching sample, plus that schedule's final snapshot. Ranges combine instances,
+This evidence samples one in 32 scheduling points of the schedules the branching
+counts sample, plus each such schedule's final snapshot. Ranges combine instances,
 schedules and workers, including bounded/pruned prefixes; they can miss peaks.
 Only lengths are retained, never elements or cached states. Nested collections and
 locals are not profiled. A large range does not prove a collection grows forever,
