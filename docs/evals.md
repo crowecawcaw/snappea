@@ -113,6 +113,40 @@ alarm. Three of the four misses are the wrong base on a first push, an assignmen
 `circuit-breaker` the solvers chose timeouts of 20 to 50 seconds per test and passed
 `--no-mutation` in 12 of 22 checks; one run ended with the coverage gate unmet.
 
+New tasks, 2026-11-21, binaries built from `0b4ee35`, six runs per arm in two batches
+of three (`offline-sync` build: three runs per arm). "Model left behind" takes a
+build run's own specs and tests and counts the task's hidden mistakes they catch
+(`modelscore.py`); the build prompt does not ask for this.
+
+| Task and mode | Grade | `snappea` | `compat` (`p`) |
+| --- | --- | --- | --- |
+| `worker-drain` build | mistakes caught by the model left behind | 35/36 (17, 18) | 30/36 (14, 16) |
+| `idempotent-payments` build | mistakes caught by the model left behind | 31/36 (15, 16) | 24/36 (10, 14) |
+| `quorum-kv` guard | hidden mistakes caught | 35/36 (18, 17) | 31/36 (15, 16) |
+| `offline-sync` build | mistakes caught by the model left behind | 10/18 | 1/18 |
+| `worker-drain` build | hidden tests | 72/72, 5.3 min | 72/72, 2.2 min |
+| `idempotent-payments` build | hidden tests | 70/72, 5.1 min | 72/72, 2.7 min |
+| `quorum-kv` build | hidden tests | 36/36, 4.0 min | 36/36, 1.8 min |
+| `quorum-kv` build | mistakes caught by the model left behind | 11/18 | 9/18 |
+| `worker-drain` guard | hidden mistakes caught | 18/18 | 18/18 |
+| `idempotent-payments` guard | hidden mistakes caught | 18/18 | 17/18 |
+
+With the two pairs in the first table, five tasks have a grade where `snappea` is
+ahead: `leader-election` build, `offline-sync` guard and build, `worker-drain` build,
+`idempotent-payments` build and `quorum-kv` guard. The three new ones lead by four to
+seven mistakes in 36, in the same direction in both batches; treat them as a
+direction, not a size. No run raised a false alarm.
+
+- Hidden tests on a build still tie: Haiku writes a correct design from DESIGN.md
+  with either command line. The difference is in what the run leaves to protect that
+  design. `snappea` runs added specs and scenarios for undetected mutants and
+  unselected specs; `p` runs added scenarios and kept the given specs.
+- `snappea` build runs took about twice as long.
+- Two `snappea` runs of `idempotent-payments` build failed the same hidden test, a
+  late processor reply, and no `p` run did.
+- In guard mode a suppression has to sit in `PSrc/`, which the solver may not change,
+  so equivalent mutants stayed as errors at the end of several `snappea` runs.
+
 **Setup.** [`evals/model-gaps/`](../evals/model-gaps/README.md).
 
 ## design-review
