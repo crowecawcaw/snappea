@@ -97,6 +97,22 @@ What the transcripts showed:
 - Long lists of undetected mutants, mostly resets of a value already there, took up
   to a third of a run's commands and changed little.
 
+Latest build, 2026-11-21, built from `8d74fc4` (mutation testing after a lint
+failure, update-only blocks left to `--strict`, driver limits behind `-v`):
+
+| Task and mode | Grade | Result |
+| --- | --- | --- |
+| `offline-sync` guard | hidden mistakes caught | 32/36 in 6 runs, 4.0 min |
+| `leader-election` build | runs passing all 12 hidden tests | 3/3, 5.9 min |
+| `circuit-breaker` build | runs passing all 5 hidden tests | 3/3, 9.9 min |
+
+All six `offline-sync` runs saw the undetected `Replayed` announcement and added a
+spec that catches the silent replay (6/6, against 2/6 before). No run raised a false
+alarm. Three of the four misses are the wrong base on a first push, an assignment that only
+`--strict` mutates. In
+`circuit-breaker` the solvers chose timeouts of 20 to 50 seconds per test and passed
+`--no-mutation` in 12 of 22 checks; one run ended with the coverage gate unmet.
+
 **Setup.** [`evals/model-gaps/`](../evals/model-gaps/README.md).
 
 ## design-review
