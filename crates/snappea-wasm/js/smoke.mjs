@@ -31,7 +31,7 @@ const busy = p.run(["check", "busy.p", "--timed", "--timeout", "1s", "--json-rep
 }, { seed: 1 });
 const busyReport = JSON.parse(busy.files["/work/busy.json"]);
 if (busy.exitCode !== 0 || busyReport.summary.status !== "search_incomplete"
-    || busyReport.summary.incomplete !== 1 || !busy.stdout.includes("Search incomplete")
+    || busyReport.summary.incomplete !== 1 || !busy.stdout.includes("not proved")
     || performance.now() - started > 5000) {
   throw new Error(`expected bounded incomplete search: ${busy.stdout}${busy.stderr}`);
 }

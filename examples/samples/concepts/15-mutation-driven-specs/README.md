@@ -129,9 +129,9 @@ inside this `if` remain subject to mutation testing.
 ## Driver limits
 
 ```text
-ok    tcTwoWithdrawals (all 1977 schedules, 2 workers, 0.12s)
+ok    tcTwoWithdrawals (proved, 0.12s)
       Coverage: 3/3 states, 33/33 statements, 8/8 branches, 5/5 event handlers, 8/8 condition outcomes
-      Driver limits (held in all 1977 schedules):
+      Driver limits (held in every schedule):
         each Client sends Withdraw exactly once
         creates 1 Account and 2 Client, never more
         Withdraw is only sent with id = 1 or 2

@@ -184,10 +184,10 @@ a value cannot change what happens next, so a write-only counter neither keeps t
 search from finishing nor hides a cycle.
 
 By default the selected test cases **share 10 seconds**: each gets the time left divided
-by the test cases left. A test case stops early, marked `stopped: coverage stopped
-growing` (`coverage_stopped_growing` in JSON), once no schedule in the second half of
-its schedules reached new coverage, after at least 200 schedules and a quarter of its
-share; the time it leaves goes to the test cases after it. This keeps a check of a large
+by the test cases left. A test case stops early (`coverage_stopped_growing` in JSON)
+once its search settled: no schedule in the second half of its schedules reached new
+coverage, after at least 200 schedules and a quarter of its share. The time it leaves
+goes to the test cases after it. This keeps a check of a large
 model fast enough to run after every change, but explores less: the Raft tutorial's
 known bug is found in about 6 of 10 such runs, and every time with `--timeout 10s`.
 `--timeout` gives each test case its own fixed limit instead, with no early stop; set
@@ -195,15 +195,31 @@ it before trusting a pass on a large model. A test case whose exhaustive search 
 still running never stops early for coverage: finishing the search proves more than
 sampling finds.
 
+Each passing test case's line gives a verdict (`verdict` in JSON):
+
+| Text | JSON | Meaning | What to do |
+|---|---|---|---|
+| `proved` | `proved` | Every schedule was checked. | Nothing. |
+| `no bug found, search settled` | `settled` | Not every schedule, but the second half of the search reached no new coverage. | Nothing. For a proof, shrink the test. |
+| `no bug found, still finding new behavior` | `finding_new_behavior` | New coverage was still turning up when the search stopped. | Run longer once, with the `--timeout` the hint gives. |
+| `no bug found` | `unjudged` | The search stopped with nothing to judge by: memory ran out, or coverage was not tracked. | Follow the hint, if any. |
+
+A settled search is evidence, not proof: it sampled a model too large to check in
+full, and stopped finding anything new. Its note names the machines that are ready at
+the most scheduling points; reduce those first to shrink the test. The hint for a
+search that is still finding new behavior suggests at most `--timeout 1m`. One that
+has not settled after longer is too large to, and the hint says to shrink or split
+the test instead. The summary counts the test cases not proved, settled or not.
+Schedule and worker counts are in JSON, and in the text with `-v`.
+
 A passing test case that did not cover every schedule says why, with
 `incomplete_reason` in JSON:
 
 - `exhaustive_search_unfinished`: the exhaustive search was still running when time
-  ran out (`untried_alternatives` counts those left on its current path). The hint
-  suggests a longer `--timeout`. How much longer cannot be projected reliably: the
-  state cache makes later branches much cheaper than earlier ones. The search hands
-  off to sampling at 1,000,000 states per worker, so the hint never suggests more time
-  than reaching that takes, and near it says that more time is unlikely to help.
+  ran out (`untried_alternatives` counts those left on its current path). How much
+  more time would finish it cannot be projected reliably: the state cache makes later
+  branches much cheaper than earlier ones, and the search hands off to sampling at
+  1,000,000 states per worker.
 - `sampled`: auto handed off to sampling, or a sampling strategy was selected.
 - `timed_model_sampled`: as above, for a timed model.
 - `memory_limit`: the process neared its memory limit, so the search stopped
@@ -212,18 +228,17 @@ A passing test case that did not cover every schedule says why, with
   machine's memory. The hint suggests shrinking the test's bounds (fewer machines,
   retries or faults) or splitting the model into smaller test cases.
 
-When auto abandons exhaustive search, text and `auto_handoffs` in JSON report the
-reason and point of the handoff for each worker: its completed schedules (including
+When auto abandons exhaustive search, `auto_handoffs` in JSON (and the text with
+`-v`) report the reason and point of the handoff for each worker: its completed schedules (including
 interleaved samples) and exhaustive choices. Reasons distinguish resource limits,
 a large frontier that is not converging, a depth bound, non-repeatable execution,
 and unverified liveness. Giving a parked search more time runs more samples; it
 does not resume exhaustive search. Temporary sampling probes are not handoffs.
 
-For these, the output shows where schedules branch, averaged per schedule: the
-scheduling points with a choice, the machines ready to run at them, and the
-`$`/`choose` choices each machine made (`branching` in JSON; `-v` prints it for every
-test case). It also notes when most schedules reach the same few states
-(`distinct_states` in JSON). Reduce the top machines first; see `snappea guide
+JSON shows where schedules branch, averaged per schedule: the scheduling points with
+a choice, the machines ready to run at them, and the `$`/`choose` choices each machine
+made (`branching`; `-v` prints it in the text). With `-v` the text also notes when
+most schedules reach the same few states (`distinct_states` in JSON). Reduce the top machines first; see `snappea guide
 modeling`. A timeout or early stop means the search is
 incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
@@ -231,9 +246,8 @@ coverage was not reached within the run budget. Exit status is 0 when no bug or
 required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
 result distinguishes exhaustive completion from an incomplete search.
 
-For incomplete tests, text also lists the five largest observed top-level collection
-fields (maps, sets and sequences), including spec/scenario fields. `-v` prints these
-for completed tests too. Per-test JSON `collection_sizes` lists all nonempty fields
+With `-v`, text also lists the five largest observed top-level collection fields
+(maps, sets and sequences), including spec/scenario fields. Per-test JSON `collection_sizes` lists all nonempty fields
 with declaration `file`/`line`, `machine`, `field`, observed `min`/`max` element counts,
 and `observations` (one field on one instance at one sampled point).
 
@@ -366,7 +380,7 @@ error: got type: string, expected: int
 ```
 $ snappea check
 Checking Inventory: 2 test cases
-ok    tcAtomicReserve (1000 schedules, 4 workers, 0.07s)
+ok    tcAtomicReserve (no bug found, search settled, 0.07s)
       Coverage: 41/49 statements, 6/10 branches, 6/9 event handlers
 FAIL  tcCheckThenReserve (bug found after 4 schedules; 13881 searched, 4 workers, 1.01s)
       Assertion Failed: PSpec/inventory.p:27:7 reservation exceeds available stock
@@ -1100,9 +1114,9 @@ case lists the limits its driver kept in every schedule it explored (`--json` al
 has them):
 
 ```
-ok    tcTwoClients (all 226 schedules, 4 workers, 0.01s)
+ok    tcTwoClients (proved, 0.01s)
       Coverage: 19/19 statements, 4/4 branches, 5/5 event handlers, 4/4 condition outcomes
-      Driver limits (held in all 226 schedules):
+      Driver limits (held in every schedule):
         each Client sends eAcquire, then eRelease, once each
         creates 1 LockServer and 2 Client, never more
       hint: if the real environment can do more, extend the driver to try it
@@ -1146,7 +1160,7 @@ few states beyond one run (at most 3 distinct states per step of the longest
 schedule), gets a note:
 
 ```
-ok    tcServe (all 5 schedules, 0.00s)
+ok    tcServe (proved, 0.00s)
       note: every schedule reaches nearly the same states, so this test checks little more than one run would
       hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice
 ```

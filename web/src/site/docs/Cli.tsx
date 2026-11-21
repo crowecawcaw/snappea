@@ -151,7 +151,7 @@ snappea check tcCheckThenReserve
         </p>
         <Code lang="text">{`
 Checking Inventory: 1 test case
-ok    tcAtomicReserve (all 20277 schedules, 0.58s)
+ok    tcAtomicReserve (proved, 0.58s)
 The test case passed in 0.58s, peak memory 6 MB. Output: PCheckerOutput/
 
 Checking Inventory: 1 test case

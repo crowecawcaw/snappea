@@ -94,9 +94,9 @@ The coverage gate counts what **any selected test case** ran. Together the two
 passing tests cover everything:
 
 ```text
-ok    tcTwoCallers (all 95 schedules, 2 workers, 0.03s)
+ok    tcTwoCallers (proved, 0.03s)
       Coverage: 4/4 states, 32/37 statements, 4/6 branches, 7/10 event handlers, 6/8 condition outcomes
-ok    tcOneMoreThanLimit (all 25 schedules, 2 workers, 0.01s)
+ok    tcOneMoreThanLimit (proved, 0.01s)
       Coverage: 4/4 states, 36/37 statements, 5/6 branches, 9/10 event handlers, 7/8 condition outcomes
 Coverage of all test cases: 4/4 states, 38/38 statements, 6/6 branches, 10/10 event handlers, 8/8 condition outcomes
 Outside the selected tests (excluded from coverage totals):
