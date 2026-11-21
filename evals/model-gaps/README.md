@@ -54,6 +54,8 @@ Each task is one of `examples/samples/use-cases`, reshaped.
 | `offline-sync` | build, guard | server and client, retries and late replies; public spec incomplete | 11 | 6 |
 | `circuit-breaker` | build | 1 machine; no specs or drivers given | 5 | 6 |
 | `token-refresh` | harden, guard | 2 machines, lock and rotation | 11 | 5 |
+| `worker-drain` | build, guard | 3 machines, step timer, repeated and late answers; public spec incomplete | 12 | 6 |
+| `idempotent-payments` | build, guard | key table and API server; processor timeouts, crash recovery; public spec incomplete | 12 | 6 |
 | `lease-impl` | impl | Python lease lock checked with `observe` | 19 scenarios | 9 variants |
 
 ## Run it

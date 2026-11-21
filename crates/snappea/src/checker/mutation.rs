@@ -139,6 +139,8 @@ pub struct Mutant {
     /// For a removed `send` or `announce` of a named event: the event, and the specs of
     /// the test cases that observe it. They are the specs that could require it.
     pub emitted: Option<(String, Vec<String>)>,
+    /// The mutant removes an `announce`, which only specs can see.
+    pub announces: bool,
 }
 
 impl Mutant {
@@ -351,6 +353,7 @@ pub(crate) fn mutants_with_observers(
                     under_choice: false,
                     emits: false,
                     emitted: None,
+                    announces: false,
                 });
             }
         }
@@ -464,6 +467,8 @@ pub(crate) fn mutants_with_observers(
                 },
                 _ => None,
             };
+            let announces =
+                matches!(&target, Target::Stmt(s, Change::Remove) if matches!(s.kind, StmtKind::Announce { .. }));
             let (change, at, description) = describe(sm, &target);
             if at.is_dummy() {
                 return;
@@ -490,6 +495,7 @@ pub(crate) fn mutants_with_observers(
                 under_choice: choices.iter().any(|c| c.file == at.file && c.start <= at.start && at.end <= c.end),
                 emits,
                 emitted,
+                announces,
             });
         });
     }
@@ -622,6 +628,7 @@ pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Ve
                         under_choice: false,
                         emits: false,
                         emitted: None,
+                        announces: false,
                     });
                 }
             }

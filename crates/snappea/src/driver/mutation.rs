@@ -419,6 +419,12 @@ impl Report {
                     Self::next_step(m)
                 };
                 out.push(format!("  help: {}", why));
+                if m.announces && m.unobserved_announcement.is_none() {
+                    out.push(
+                        "  help: an `announce` is only for specs: if no rule needs this one, delete it rather than suppress it"
+                            .into(),
+                    );
+                }
                 if inner {
                     for (c, _) in self
                         .mutants
@@ -433,10 +439,12 @@ impl Report {
             if undetected.len() > list.len() {
                 out.push("  ... and more: fix these first, or see --json for all".into());
             }
-            out.push(
-                "  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`"
-                    .into(),
-            );
+            if list.iter().any(|(_, (m, ..))| !m.announces) {
+                out.push(
+                    "  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`"
+                        .into(),
+                );
+            }
             // a coarse mutant counts when what it removes holds such code
             let fault_like = undetected
                 .iter()

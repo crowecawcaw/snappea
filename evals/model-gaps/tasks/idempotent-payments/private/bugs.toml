@@ -1,0 +1,117 @@
+modes = ["build"]
+
+# Mistakes a team could make while changing the design later. None is in the design the
+# solver gets; the reference must catch each, the starter none.
+# Each `old` text occurs once.
+
+[[bug]]
+id = "saved-result-before-amount"
+title = "The key table returns a finished key's result before it compares the amount, so a key reused with another amount gets the first payment's result"
+needs = "a key that is done, then the same key with another amount; the spec must compare the answered request's amount with the charge"
+[[bug.edit]]
+file = "KeyStore.p"
+old = '''
+      // The key belongs to a payment of another amount, whatever state it is in.
+      if (records[c.key].amount != c.amount) {
+        send c.api, ClaimResponse, (key = c.key, status = Mismatch, result = Declined);
+        return;
+      }
+      if (records[c.key].done) {
+        send c.api, ClaimResponse, (key = c.key, status = Finished, result = records[c.key].result);
+        return;
+      }
+'''
+new = '''
+      if (records[c.key].done) {
+        send c.api, ClaimResponse, (key = c.key, status = Finished, result = records[c.key].result);
+        return;
+      }
+      // The key is being charged for a payment of another amount.
+      if (records[c.key].amount != c.amount) {
+        send c.api, ClaimResponse, (key = c.key, status = Mismatch, result = Declined);
+        return;
+      }
+'''
+
+[[bug]]
+id = "timeout-charges-again"
+title = "On a processor timeout the server sends Process again instead of asking what happened"
+needs = "a lost or late processor reply"
+[[bug.edit]]
+file = "PaymentApi.p"
+old = '''
+      // The outcome is unknown: ask, never charge again.
+      send processor, Lookup, (api = this, key = cur.key);
+'''
+new = '''
+      // No reply: try again.
+      send processor, Process, (api = this, key = cur.key, amount = cur.amount);
+'''
+
+[[bug]]
+id = "late-reply-taken"
+title = "The server takes any ProcessResponse as the answer to the key it is charging, so a late reply for an earlier key decides the next one"
+needs = "a late processor reply, then another key on the same server whose charge has a different result"
+[[bug.edit]]
+file = "PaymentApi.p"
+old = '''
+      // A late reply for an earlier key says nothing about this one.
+      if (p.key != cur.key) { return; }
+'''
+new = '''
+'''
+
+[[bug]]
+id = "recovery-releases-unasked"
+title = "A restarted server releases the keys the crashed process left in progress without asking the processor, so a charged key is charged again"
+needs = "a crash after the Process left, then a retry of the key"
+[[bug.edit]]
+file = "PaymentApi.p"
+old = '''
+        // The crashed process may have charged it: ask before deciding.
+        send processor, Lookup, (api = this, key = key);
+      }
+      pending = sizeof(owned);
+'''
+new = '''
+        // Nobody is handling it any more: free it for the retry.
+        send store, Release, (key = key,);
+      }
+      pending = 0;
+'''
+
+[[bug]]
+id = "recovery-keeps-uncharged"
+title = "A restarted server records the charged keys but leaves the uncharged ones in progress, so every retry is told to retry forever"
+needs = "a crash before the Process left, a retry, and a progress spec"
+[[bug.edit]]
+file = "PaymentApi.p"
+old = '''
+      } else {
+        send store, Release, (key = l.key,);
+      }
+      pending = pending - 1;
+'''
+new = '''
+      }
+      pending = pending - 1;
+'''
+
+[[bug]]
+id = "decline-not-recorded"
+title = "A declined charge releases the key instead of recording the result, so a retry charges the card again"
+needs = "a declined payment retried with the same key"
+[[bug.edit]]
+file = "PaymentApi.p"
+old = '''
+    // Declined is a result like any other: it is recorded and stays.
+    send store, Complete, (key = cur.key, result = result);
+'''
+new = '''
+    // A declined key is given back, so the user can try again once the card works.
+    if (result == Declined) {
+      send store, Release, (key = cur.key,);
+    } else {
+      send store, Complete, (key = cur.key, result = result);
+    }
+'''
