@@ -89,10 +89,11 @@ change it names:
 | resume at saved prefixes (#205) | 89,091,530 | 51 | 2 |
 | sampling by work (#206) | 78,620,720 | 51 | 2 |
 | local-step reduction (#208) | 63,432,677 | 51 | 2 |
-| 1,000,000 cached states | 72,435,209 | 52 | 1 |
+| 1,000,000 cached states (#209) | 72,435,209 | 52 | 1 |
+| word-at-a-time state hash | 69,484,056 | 52 | 1 |
 
-The last row's mean covers one more case, a 63 G instruction search that did not
-settle before; over the 51 cases of the rows above it is unchanged.
+From #209 on the mean covers one more case, a 63 G instruction search that did not
+settle before; over the 51 cases of the rows above it, #209 changed nothing.
 
 ## CI
 
