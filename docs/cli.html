@@ -25,7 +25,7 @@ cd snappea/examples/model
 snappea tests
 snappea check tcAtomicReserve
 snappea check tcCheckThenReserve</code></pre></figure><p><code>tests</code> lists the two test cases. The safe design passes every possible ordering, and the other fails within a few schedules, with exit status 1:</p><figure class="code lang-text"><pre><code>Checking Inventory: 1 test case
-ok    tcAtomicReserve (all 20277 schedules, 0.58s)
+ok    tcAtomicReserve (proved, 0.58s)
 The test case passed in 0.58s, peak memory 6 MB. Output: PCheckerOutput/
 
 Checking Inventory: 1 test case
