@@ -17,7 +17,7 @@
 //! collisions), which is what the exhaustive search relies on to skip repeated states;
 //! the Q-learning strategy uses the same hash to recognise states it has seen before.
 //!
-//! Hashes are computed with FNV-1a, so they do not depend on the process or the platform:
+//! Hashes are computed by [`StableHasher`], so they do not depend on the process or the platform:
 //! a seed reproduces the same search everywhere. Strings, options and slices are fed in
 //! through std's `Hash` impls, whose byte layout std does not promise to keep, so a Rust
 //! upgrade could in principle change hashes (and so which states a search visits first).
@@ -28,12 +28,25 @@ use crate::checker::compile::Unhashed;
 use crate::checker::runtime::{Event, Exec, Machine, Monitor, Pending, Runtime, Stage, Transition};
 use crate::checker::value::Value;
 
-/// 64-bit FNV-1a.
+/// A 64-bit hash that mixes a word per step (a folded 128-bit multiply, as in wyhash).
+/// The state hash is most of what an exhaustive search does besides running the model,
+/// and a byte-at-a-time hash made eight multiplications of every integer.
 pub struct StableHasher(u64);
+
+/// Odd constants from the fractional digits of pi.
+const SEED: u64 = 0x243f_6a88_85a3_08d3;
+const MULTIPLIER: u64 = 0x1319_8a2e_0370_7345;
 
 impl StableHasher {
     pub fn new() -> StableHasher {
-        StableHasher(0xcbf2_9ce4_8422_2325)
+        StableHasher(SEED)
+    }
+
+    #[inline]
+    fn mix(&mut self, word: u64) {
+        let product = u128::from(self.0 ^ word) * u128::from(MULTIPLIER);
+        // add a constant so that a zero product does not absorb what follows
+        self.0 = ((product as u64) ^ ((product >> 64) as u64)).wrapping_add(SEED);
     }
 }
 
@@ -45,26 +58,39 @@ impl Default for StableHasher {
 
 impl Hasher for StableHasher {
     fn write(&mut self, bytes: &[u8]) {
-        for b in bytes {
-            self.0 ^= *b as u64;
-            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        // little-endian words, then the length, which tells a short last word from zeros
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            self.mix(u64::from_le_bytes(chunk.try_into().unwrap()));
         }
+        let rest = chunks.remainder();
+        if !rest.is_empty() {
+            let mut word = [0u8; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            self.mix(u64::from_le_bytes(word));
+        }
+        self.mix(bytes.len() as u64);
     }
-    // fixed-width integers hash in little endian on every platform
-    fn write_u64(&mut self, v: u64) {
-        self.write(&v.to_le_bytes());
+    // fixed-width integers hash the same on every platform
+    fn write_u8(&mut self, v: u8) {
+        self.mix(u64::from(v));
     }
     fn write_u32(&mut self, v: u32) {
-        self.write(&v.to_le_bytes());
+        self.mix(u64::from(v));
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.mix(v);
     }
     fn write_usize(&mut self, v: usize) {
-        self.write_u64(v as u64);
+        self.mix(v as u64);
     }
     fn write_i64(&mut self, v: i64) {
-        self.write_u64(v as u64);
+        self.mix(v as u64);
     }
     fn finish(&self) -> u64 {
-        self.0
+        // a last round, so that the final word reaches every bit
+        let product = u128::from(self.0) * u128::from(MULTIPLIER);
+        (product as u64) ^ ((product >> 64) as u64)
     }
 }
 
@@ -393,11 +419,31 @@ pub fn value(v: &Value, h: &mut StableHasher) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn fnv_is_stable() {
+    fn bytes(b: &[u8]) -> u64 {
         let mut h = StableHasher::new();
-        h.write(b"a");
-        assert_eq!(h.finish(), 0xaf63_dc4c_8601_ec8c);
+        h.write(b);
+        h.finish()
+    }
+
+    #[test]
+    fn hash_is_stable_and_tells_lengths_and_order_apart() {
+        // the same on every platform and in every process
+        assert_eq!(bytes(b"a"), 11826877661529059419);
+        // a short last word is not the same as one padded with zeros
+        assert_ne!(bytes(b"a"), bytes(b"a\0"));
+        assert_ne!(bytes(b"12345678"), bytes(b"12345678\0"));
+        assert_ne!(bytes(b""), bytes(b"\0"));
+        let words = |a: u64, b: u64| {
+            let mut h = StableHasher::new();
+            h.write_u64(a);
+            h.write_u64(b);
+            h.finish()
+        };
+        assert_ne!(words(1, 2), words(2, 1));
+        assert_ne!(words(0, 0), words(0, 1));
+        // small changes spread: no two of the first 4,096 integers share their low 32 bits
+        let low: std::collections::HashSet<u32> = (0..4096).map(|i| words(i, 0) as u32).collect();
+        assert_eq!(low.len(), 4096);
     }
 
     #[test]
