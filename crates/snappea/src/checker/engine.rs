@@ -1153,6 +1153,7 @@ impl<'p> Checker<'p> {
             strategy.track_initial_prefix();
         }
         let mut prefixes: Vec<crate::checker::runtime::Prefix> = Vec::new();
+        let mut spare_prefixes: Vec<crate::checker::runtime::Prefix> = Vec::new();
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -1181,10 +1182,14 @@ impl<'p> Checker<'p> {
             match replayed {
                 Some(limit) => {
                     while prefixes.last().is_some_and(|p| p.depth() > limit) {
-                        prefixes.pop();
+                        // its memory serves the prefixes this schedule saves
+                        spare_prefixes.extend(prefixes.pop().filter(|_| spare_prefixes.len() < 64));
                     }
                 }
-                None if !strategy.exhausting() => prefixes.clear(),
+                None if !strategy.exhausting() => {
+                    prefixes.clear();
+                    spare_prefixes.clear();
+                }
                 None => {}
             }
             let bug_found;
@@ -1213,6 +1218,7 @@ impl<'p> Checker<'p> {
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
                 let previous_coverage = rt.coverage.as_ref().map_or(0, |c| c.feature_count());
                 rt.save_interval = SAVE_INTERVAL;
+                rt.spare_prefixes = std::mem::take(&mut spare_prefixes);
                 if replayed.is_some() && !counts_branching && rt.resume_last_prefix(&mut prefixes) {
                     result.restored_prefixes += 1;
                 } else {
@@ -1420,6 +1426,7 @@ impl<'p> Checker<'p> {
                     d.end_schedule(stopped, rt.bound_hit_at.is_some());
                     driver_facts = Some(d);
                 }
+                spare_prefixes = std::mem::take(&mut rt.spare_prefixes);
                 buffers = rt.take_buffers();
             }
             // a bug that ends the run ends it, deadline or not

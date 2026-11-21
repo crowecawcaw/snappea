@@ -106,7 +106,7 @@ impl Transition {
 }
 
 /// The event inbox of a machine (`EventQueue`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Inbox {
     pub queue: VecDeque<Event>,
     pub raised: Option<Event>,
@@ -114,6 +114,30 @@ pub struct Inbox {
     pub handler_running: bool,
     /// Event types a pending `receive` waits for.
     pub waiting: Option<Rc<[EventId]>>,
+}
+
+// `clone_from` keeps the queue's memory: an exhaustive search copies machines into and
+// out of saved prefixes for every schedule (see `Prefix`).
+impl Clone for Inbox {
+    fn clone(&self) -> Self {
+        let Inbox { queue, raised, closed, handler_running, waiting } = self;
+        Inbox {
+            queue: queue.clone(),
+            raised: raised.clone(),
+            closed: *closed,
+            handler_running: *handler_running,
+            waiting: waiting.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Inbox { queue, raised, closed, handler_running, waiting } = source;
+        self.queue.clone_from(queue);
+        self.raised.clone_from(raised);
+        self.closed = *closed;
+        self.handler_running = *handler_running;
+        self.waiting.clone_from(waiting);
+    }
 }
 
 pub enum EnqueueStatus {
@@ -213,7 +237,7 @@ pub struct ActiveIter {
 }
 
 /// The interpreter state of one running action.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Exec {
     pub frames: Vec<Frame>,
     /// Locals and operand stacks of all frames, outermost first.
@@ -224,7 +248,29 @@ pub struct Exec {
     pub iters: Vec<ActiveIter>,
 }
 
-#[derive(Debug, Clone)]
+impl Clone for Exec {
+    fn clone(&self) -> Self {
+        let Exec { frames, values, pending, action, iters } = self;
+        Exec {
+            frames: frames.clone(),
+            values: values.clone(),
+            pending: pending.clone(),
+            action: action.clone(),
+            iters: iters.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Exec { frames, values, pending, action, iters } = source;
+        self.frames.clone_from(frames);
+        self.values.clone_from(values);
+        self.pending.clone_from(pending);
+        self.action.clone_from(action);
+        self.iters.clone_from(iters);
+    }
+}
+
+#[derive(Debug)]
 pub struct Machine {
     pub id: u64,
     pub name: Rc<str>,
@@ -251,6 +297,96 @@ pub struct Machine {
     pub clock: crate::checker::time::Time,
     /// Vector clock (only advanced for the causal timeline representations).
     pub vt: VectorTime,
+}
+
+impl Clone for Machine {
+    fn clone(&self) -> Self {
+        let Machine {
+            id,
+            name,
+            decl,
+            iface,
+            fields,
+            state,
+            status,
+            inbox,
+            pending_transition,
+            goto_payload,
+            goto_target,
+            popped_from,
+            stage,
+            exec,
+            received,
+            this,
+            clock,
+            vt,
+        } = self;
+        Machine {
+            id: *id,
+            name: name.clone(),
+            decl: *decl,
+            iface: *iface,
+            fields: fields.clone(),
+            state: *state,
+            status: *status,
+            inbox: inbox.clone(),
+            pending_transition: pending_transition.clone(),
+            goto_payload: goto_payload.clone(),
+            goto_target: *goto_target,
+            popped_from: *popped_from,
+            stage: stage.clone(),
+            exec: exec.clone(),
+            received: received.clone(),
+            this: this.clone(),
+            clock: clock.clone(),
+            vt: vt.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Machine {
+            id,
+            name,
+            decl,
+            iface,
+            fields,
+            state,
+            status,
+            inbox,
+            pending_transition,
+            goto_payload,
+            goto_target,
+            popped_from,
+            stage,
+            exec,
+            received,
+            this,
+            clock,
+            vt,
+        } = source;
+        self.id = *id;
+        self.name.clone_from(name);
+        self.decl = *decl;
+        self.iface = *iface;
+        self.fields.clone_from(fields);
+        self.state = *state;
+        self.status = *status;
+        self.inbox.clone_from(inbox);
+        self.pending_transition.clone_from(pending_transition);
+        self.goto_payload.clone_from(goto_payload);
+        self.goto_target = *goto_target;
+        self.popped_from = *popped_from;
+        self.stage.clone_from(stage);
+        // keep the action's buffers when both have one
+        match (&mut self.exec, exec) {
+            (Some(mine), Some(theirs)) => mine.clone_from(theirs),
+            (mine, theirs) => *mine = theirs.clone(),
+        }
+        self.received.clone_from(received);
+        self.this.clone_from(this);
+        self.clock.clone_from(clock);
+        self.vt.clone_from(vt);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -473,6 +609,7 @@ pub(super) const MAX_PREFIX: usize = 512;
 const MAX_SPARE_EXECS: usize = 64;
 
 /// One untimed schedule boundary, private to a single mutation turn and checker.
+#[derive(Default)]
 pub(super) struct Prefix {
     pub(super) touched: Vec<bool>,
     pub(super) random: Option<super::random::RandomValueGenerator>,
@@ -495,6 +632,30 @@ pub(super) struct Prefix {
 }
 
 impl Prefix {
+    /// Copies the boundary `rt` is at into this prefix, reusing its memory.
+    fn capture(&mut self, rt: &Runtime) {
+        self.touched.clone_from(&rt.touched);
+        self.random = rt.checkpoint_rng.as_ref().map(|r| r.borrow().clone());
+        self.steps.clone_from(&rt.trace.steps);
+        self.machines.clone_from(&rt.machines);
+        self.monitors.clone_from(&rt.monitors);
+        self.ops.clone_from(&rt.ops);
+        self.globals.clone_from(&rt.globals);
+        self.scenarios.clone_from(&rt.scenarios);
+        self.timeline.clone_from(&rt.timeline);
+        match (&mut self.coverage, rt.coverage.as_ref().map(|c| c.schedule_state())) {
+            (Some(mine), Some(run)) => mine.clone_from(run),
+            (mine, run) => *mine = run.cloned(),
+        }
+        self.current = rt.current;
+        self.next_op_id = rt.next_op_id;
+        self.handler_starts = rt.handler_starts;
+        self.fair_choices.clone_from(&rt.fair_choices);
+        self.peak_step_work = rt.peak_step_work;
+        self.peak_inbox = rt.peak_inbox;
+        self.driver = rt.driver_facts.as_ref().map(|d| d.schedule_state());
+    }
+
     /// The decisions made before this boundary.
     pub(super) fn depth(&self) -> usize {
         self.steps.len()
@@ -508,6 +669,11 @@ pub struct Runtime<'p> {
     pub(super) save_interval: usize,
     /// What the running step did beyond its machine's own state (see [`Footprint`]).
     pub(crate) footprint: crate::checker::strategy::Footprint,
+    /// Prefixes the search no longer needs, whose memory the next saved ones reuse.
+    pub(super) spare_prefixes: Vec<Prefix>,
+    /// The machines of the run before this one: a schedule that resumes at a prefix
+    /// copies the prefix's machines over them, reusing their memory.
+    stale_machines: Vec<Machine>,
     pub(super) checkpoint_rng: Option<super::strategy::SharedRandom>,
     pub(crate) prog: &'p Program,
     pub(crate) code: &'p Code,
@@ -636,13 +802,15 @@ impl<'p> Runtime<'p> {
             fork_depths: &[16, 64, 256],
             save_interval: 0,
             footprint: Default::default(),
+            spare_prefixes: Vec::new(),
+            stale_machines: machines,
             checkpoint_rng: None,
             prog,
             code,
             module,
             config,
             globals,
-            machines,
+            machines: Vec::new(),
             monitors,
             ops,
             current: 0,
@@ -692,13 +860,8 @@ impl<'p> Runtime<'p> {
     /// Call it once the run's results have been read: it clears the machines, the
     /// schedule trace and the timeline.
     pub fn take_buffers(&mut self) -> Buffers {
-        for m in &mut self.machines {
-            if let Some(exec) = m.exec.take() {
-                self.spare_execs.push(exec);
-            }
-        }
-        // a schedule resumed at a saved prefix starts with copies of that prefix's actions,
-        // so every such schedule adds to the spares: keep what a schedule can use
+        // The machines stay as they are: the next run copies a saved prefix over them, or
+        // clears them and takes their actions as spares (see `Runtime::stale_machines`).
         self.spare_execs.truncate(MAX_SPARE_EXECS);
         for exec in &mut self.spare_execs {
             exec.frames.clear();
@@ -706,7 +869,6 @@ impl<'p> Runtime<'p> {
             exec.iters.clear();
             exec.pending = None;
         }
-        self.machines.clear();
         self.monitors.clear();
         self.ops.clear();
         self.trace.steps.clear();
@@ -1530,6 +1692,16 @@ impl<'p> Runtime<'p> {
     }
 
     pub(super) fn run_test_saving(&mut self, main: MachineId, test_name: &str, save: Option<&mut Vec<Prefix>>) {
+        // start from no machines, with the memory and the actions of the last run's
+        let mut stale = std::mem::take(&mut self.stale_machines);
+        for mut m in stale.drain(..) {
+            if let Some(exec) = m.exec.take().filter(|_| self.spare_execs.len() < MAX_SPARE_EXECS) {
+                self.recycle_exec(exec);
+            }
+        }
+        if self.machines.is_empty() {
+            self.machines = stale;
+        }
         self.log(|_| format!("<TestLog> Running test '{}'.", test_name));
         let task = self.new_op("Task(0)".into(), None);
         self.current = task;
@@ -1586,6 +1758,10 @@ impl<'p> Runtime<'p> {
     }
 
     fn restore_prefix(&mut self, prefix: &Prefix) {
+        // over the last run's machines, which mostly are the same ones a step or two on
+        if self.machines.is_empty() {
+            std::mem::swap(&mut self.machines, &mut self.stale_machines);
+        }
         self.machines.clone_from(&prefix.machines);
         self.monitors.clone_from(&prefix.monitors);
         self.ops.clone_from(&prefix.ops);
@@ -1623,25 +1799,10 @@ impl<'p> Runtime<'p> {
                     interval => saved.last().map_or(interval, |p| p.depth() + interval),
                 };
                 if depth >= target && depth <= MAX_PREFIX && self.machines.len() <= 32 {
-                    saved.push(Prefix {
-                        touched: self.touched.clone(),
-                        random: self.checkpoint_rng.as_ref().map(|r| r.borrow().clone()),
-                        steps: self.trace.steps.clone(),
-                        machines: self.machines.clone(),
-                        monitors: self.monitors.clone(),
-                        ops: self.ops.clone(),
-                        globals: self.globals.clone(),
-                        scenarios: self.scenarios.clone(),
-                        timeline: self.timeline.clone(),
-                        coverage: self.coverage.as_ref().map(|c| c.schedule_state().clone()),
-                        current: self.current,
-                        next_op_id: self.next_op_id,
-                        handler_starts: self.handler_starts,
-                        fair_choices: self.fair_choices.clone(),
-                        peak_step_work: self.peak_step_work,
-                        peak_inbox: self.peak_inbox,
-                        driver: self.driver_facts.as_ref().map(|d| d.schedule_state()),
-                    });
+                    // a prefix the search discarded keeps its memory for this one
+                    let mut prefix = self.spare_prefixes.pop().unwrap_or_default();
+                    prefix.capture(self);
+                    saved.push(prefix);
                 }
             }
             let cur = self.current;

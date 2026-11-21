@@ -16,6 +16,10 @@ const WINDOW: u64 = 1_024;
 /// state it restores and hashes, whatever it then executes. At 8, two benchmark cases
 /// that need the samples no longer found every bug within 25,000 schedules.
 const RESUME_COST: u64 = 16;
+/// Exhaustive schedules between interleaved samples, at most. Without it, a guide model
+/// with timers reached its last coverage point after 20,000 schedules or not within 5
+/// seconds, instead of about 2,400; at 8 the benchmark's safe cases run 1% more schedules.
+const SAMPLE_FLOOR: usize = 8;
 const MAX_WORK: u64 = 16_384;
 const SMALL_FRONTIER: usize = 256;
 const LOOKAHEAD_WORK: u64 = 4 * WINDOW;
@@ -380,7 +384,13 @@ impl Strategy for AutoStrategy {
             // samples find the other failures sooner: one per three schedules.
             self.since_probe += 1;
             self.executed += RESUME_COST;
-            let due = if self.saw_bug { self.since_probe >= 3 } else { self.executed >= 3 * self.sample_cost };
+            // A model whose samples are long (a timer or a retry that goes on to the step
+            // bound) would hardly be sampled by work alone, and samples reach its late
+            // stages far sooner than the search does: at least one in `SAMPLE_FLOOR`.
+            let due = match self.saw_bug {
+                true => self.since_probe >= 3,
+                false => self.executed >= 3 * self.sample_cost || self.since_probe >= SAMPLE_FLOOR,
+            };
             if due {
                 self.since_probe = 0;
                 self.executed = 0;

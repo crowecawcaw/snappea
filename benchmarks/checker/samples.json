@@ -149,7 +149,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -160,7 +159,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -171,7 +169,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -182,7 +179,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -193,7 +189,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -204,7 +199,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -215,7 +209,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -226,7 +219,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -237,7 +229,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -248,7 +239,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -259,7 +249,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -270,7 +259,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -281,7 +269,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -292,7 +279,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -303,7 +289,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -314,7 +299,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -325,7 +309,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -336,7 +319,6 @@
    "expected": [],
    "budget": 1000000,
    "expect_exhausted": true,
-   "seeds": 1,
    "description": "Safe sample test: settled when exhaustive search finishes."
   },
   {
@@ -347,7 +329,7 @@
    "expected": [],
    "budget": 50000,
    "expect_exhausted": true,
-   "seeds": 1,
+   "seeds": 3,
    "description": "Safe sample test that auto does not finish within 50,000 schedules at suite version 1."
   },
   {
@@ -358,7 +340,7 @@
    "expected": [],
    "budget": 600000,
    "expect_exhausted": true,
-   "seeds": 1,
+   "seeds": 3,
    "description": "Safe sample test with about 410,000 schedules: settled since auto caches up to 1,000,000 states."
   }
  ]
