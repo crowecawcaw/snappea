@@ -1,0 +1,5 @@
+{"event":"eOpen","key":1,"timestamp":12,"payload":{"id":"x"}}
+{"event":"eClose","key":"1","timestamp":"not a time","payload":{"id":1,"status":"MAYBE","ok":"yes"}}
+{"event":"eUpdate","key":"1","timestamp":"2026-13-40T25:61:61Z","payload":{"id":1e400,"prices":{"x":"NaN"},"note":[]}}
+{"event":
+[]

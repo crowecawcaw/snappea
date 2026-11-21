@@ -1,0 +1,5 @@
+{"event":"eUpdate","key":"2","timestamp":"2026-01-01T00:00:00Z","payload":{"id":2,"prices":{},"note":{"any":[1,"two",3.0]}}}
+{"event":"eOpen","key":"2","timestamp":"2026-01-01T00:00:01.5+02:00","payload":{"id":2,"owner":"é\u0000","items":[],"tags":[]}}
+{"event":"eOpen","key":"2","timestamp":"2026-01-01T00:00:02Z","payload":{"id":2,"owner":"b","items":[{"name":"y","qty":-9223372036854775808}],"tags":["a","a"]}}
+{"event":"eClose","key":"2","timestamp":"2026-01-01T00:00:03Z","payload":{"id":2,"status":"FAILED","ok":true}}
+{"event":"eMissing","key":"3","timestamp":"1969-12-31T23:59:59.999999999Z","payload":null}

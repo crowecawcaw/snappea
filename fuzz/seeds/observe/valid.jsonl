@@ -1,0 +1,3 @@
+{"event":"eOpen","key":"1","timestamp":"2026-01-01T00:00:00.000000001Z","payload":{"id":1,"owner":"a","items":[{"name":"x","qty":2}],"tags":["t"]}}
+{"event":"eUpdate","key":"1","timestamp":"2026-01-01T00:00:01Z","payload":{"id":1,"prices":{"x":1.5},"note":null}}
+{"event":"eClose","key":"1","timestamp":"2026-01-01T00:00:02Z","payload":{"id":1,"status":"OK","ok":true}}
