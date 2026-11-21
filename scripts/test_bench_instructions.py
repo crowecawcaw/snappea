@@ -32,10 +32,19 @@ class InstructionMetricsTests(unittest.TestCase):
         self.assertIsNone(result['p90'])
         self.assertEqual(result['settled'], 8)
 
-    def test_aggregate_counts_censored_cases_apart(self):
-        total = bench.aggregate([dict(p90=100), dict(p90=10000), dict(p90=None)])
-        self.assertTrue(math.isclose(total['geomean_p90'], 1000))
-        self.assertEqual((total['total_p90'], total['censored'], total['cases']), (10100, 1, 3))
+    def test_cases_are_compared_one_by_one(self):
+        before = [dict(case='small', p90=100), dict(case='large', p90=10**9), dict(case='hard', p90=None), dict(case='lost', p90=5)]
+        after = [dict(case='small', p90=300), dict(case='large', p90=5 * 10**8), dict(case='hard', p90=7), dict(case='lost', p90=None),
+                 dict(case='new', p90=1)]
+        rows = bench.compare(before, after)
+        self.assertEqual([r['case'] for r in rows], ['small', 'large', 'hard', 'lost'])
+        self.assertEqual([r['ratio'] for r in rows], [3.0, 0.5, None, None])
+        # the large case halving does not hide the small one tripling
+        self.assertEqual(bench.verdicts(rows), dict(cheaper=1, dearer=1, same=0, newly_settled=1, no_longer_settled=1, unsettled=0))
+
+    def test_spread_over_seeds_is_reported(self):
+        result = bench.summaries([row(i, 100 + i) for i in range(10)])[0]
+        self.assertEqual((result['least'], result['most'], result['p90']), (100, 109, 108))
 
     def test_sample_cases_name_existing_tests(self):
         cases = bench.load_cases([bench.ROOT / 'benchmarks/checker/samples.json'], '')

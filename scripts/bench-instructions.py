@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Measure p90 CPU instructions for auto to settle every benchmark case.
+"""Measure, per benchmark case, the p90 across seeds of the CPU instructions auto
+executes to settle it.
 
 A case is settled when every declared bug site has failed or, for a safe case,
 when exhaustive search has finished. Counts come from valgrind (cachegrind), so
@@ -87,18 +88,44 @@ def summaries(rows):
     for case, group in sorted(groups.items()):
         done = [r for r in group if r['settled']]
         p90 = bench.percentile([r['instructions'] if r['instructions'] is not None else math.inf for r in group])
+        counts = [r['instructions'] for r in done if r['instructions'] is not None]
         output.append(dict(
             case=case, runs=len(group), settled=len(done), p90=None if math.isinf(p90) else p90,
+            least=min(counts, default=None), most=max(counts, default=None),
             p90_schedules=bench.percentile([r['schedules'] for r in group]),
         ))
     return output
 
 
-def aggregate(summary):
-    """Geometric mean of the settled cases' p90, and how many cases are not settled."""
-    finite = [s['p90'] for s in summary if s['p90'] is not None]
-    mean = math.exp(sum(math.log(max(v, 1)) for v in finite) / len(finite)) if finite else None
-    return dict(geomean_p90=mean, total_p90=sum(finite), censored=len(summary) - len(finite), cases=len(summary))
+def compare(before, after):
+    """Per case, the p90 after over the p90 before. Cases are not combined: a mean or a
+    sum over models of different sizes says mostly how the largest ones moved."""
+    old = {s['case']: s for s in before}
+    rows = []
+    for new in after:
+        was = old.get(new['case'])
+        if was is None:
+            continue
+        ratio = new['p90'] / was['p90'] if new['p90'] and was['p90'] else None
+        rows.append(dict(case=new['case'], before=was['p90'], after=new['p90'], ratio=ratio))
+    return rows
+
+
+def verdicts(rows, tolerance=0.1):
+    """How many cases got cheaper, dearer or stayed within `tolerance`, and how many
+    settle only before or only after."""
+    count = dict(cheaper=0, dearer=0, same=0, newly_settled=0, no_longer_settled=0, unsettled=0)
+    for row in rows:
+        if row['ratio'] is not None:
+            key = 'cheaper' if row['ratio'] < 1 - tolerance else 'dearer' if row['ratio'] > 1 + tolerance else 'same'
+        elif row['after'] is not None:
+            key = 'newly_settled'
+        elif row['before'] is not None:
+            key = 'no_longer_settled'
+        else:
+            key = 'unsettled'
+        count[key] += 1
+    return count
 
 
 def instructions(command, log):
@@ -123,6 +150,7 @@ def main():
     parser.add_argument('--seconds', type=float, default=3600, help='wall-clock cap per run; valgrind runs many times slower than native')
     parser.add_argument('--filter', default='')
     parser.add_argument('--jobs', type=int, default=os.cpu_count() or 2)
+    parser.add_argument('--compare', type=Path, help='an earlier result of this script: adds each case\'s change')
     parser.add_argument('--native', action='store_true', help='run without valgrind: checks which cases settle, counts no instructions')
     args = parser.parse_args()
     if min(args.seeds, args.steps, args.jobs) <= 0 or args.seed_start < 0:
@@ -164,26 +192,39 @@ def main():
                 print(f"{row['case']} seed={row['seed']}: {row['instructions']}", flush=True)
     rows.sort(key=lambda r: (r['case'], r['seed']))
     summary = summaries(rows)
-    total = aggregate(summary)
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     data = dict(
         timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(), revision=revision,
         dirty=bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)),
         binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), settings=settings, native=args.native,
         cases=[{k: v for k, v in c.items() if k not in ('source', 'sources')} for c in cases],
-        setup_instructions=dict(zip((c['name'] for c in cases), costs)), rows=rows, summary=summary, aggregate=total,
+        setup_instructions=dict(zip((c['name'] for c in cases), costs)), rows=rows, summary=summary,
     )
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     encoded = (json.dumps(data, indent=2) + '\n').encode()
     Path(args.out).write_bytes(gzip.compress(encoded, mtime=0) if str(args.out).endswith('.gz') else encoded)
-    print('| Case | Settled | p90 instructions | p90 schedules |\n|---|---:|---:|---:|')
+    earlier = None
+    if args.compare:
+        text = gzip.open(args.compare, 'rt').read() if str(args.compare).endswith('.gz') else args.compare.read_text()
+        earlier = {r['case']: r for r in compare(json.loads(text)['summary'], summary)}
+    count = (lambda n: f'{n:,}' if n is not None else 'not counted' if args.native else 'unsettled')
+    print('| Case | Settled | p90 instructions | Least to most over seeds | p90 schedules |' + (' Before | Change |' if earlier else ''))
+    print('|---|---:|---:|---:|---:|' + ('---:|---:|' if earlier else ''))
     for s in summary:
-        p90 = f"{s['p90']:,}" if s['p90'] is not None else 'not counted' if args.native else 'censored'
-        print(f"| {s['case']} | {s['settled']}/{s['runs']} | {p90} | {s['p90_schedules']:,} |")
-    if total['geomean_p90'] is not None and not args.native:
-        print(f"Geometric mean of p90 instructions over {total['cases'] - total['censored']} settled cases: {total['geomean_p90']:,.0f}; "
-              f"sum {total['total_p90']:,}; censored cases: {total['censored']}")
-
+        spread = f"{s['least']:,} to {s['most']:,}" if s['least'] is not None else ''
+        line = f"| {s['case']} | {s['settled']}/{s['runs']} | {count(s['p90'])} | {spread} | {s['p90_schedules']:,} |"
+        if earlier:
+            row = earlier.get(s['case'])
+            change = f"x{row['ratio']:.2f}" if row and row['ratio'] is not None else ''
+            line += f" {count(row['before']) if row else 'not run'} | {change} |"
+        print(line)
+    if not args.native:
+        print(f"The p90 is over the seeds of one case. {sum(s['p90'] is not None for s in summary)} of {len(summary)} cases "
+              f"settle on at least 9 seeds in 10.")
+    if earlier:
+        v = verdicts(list(earlier.values()))
+        print(f"Against {args.compare}: {v['cheaper']} cases cheaper by more than 10%, {v['dearer']} dearer by more than 10%, "
+              f"{v['same']} within 10%; {v['newly_settled']} newly settled, {v['no_longer_settled']} no longer settled.")
 
 if __name__ == '__main__':
     main()
