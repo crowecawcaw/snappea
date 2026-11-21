@@ -77,17 +77,18 @@ the designs in `examples/samples/`:
   is not finished within 50,000 and counts as unsettled until a change lets the search
   finish.
 
-A full run takes well over an hour on four cores at ten seeds per case;  sets
-the processes,  and  shorten a run. It is not part of CI.
+A full run takes well over an hour on four cores at ten seeds per case; `--jobs` sets
+the processes, `--seeds` and `--filter` shorten a run. It is not part of CI.
 
 Read the results case by case. The script prints no mean or sum over cases: across
-models of different sizes those mostly say how the largest moved.  adds each case's change against an earlier result.
+models of different sizes those mostly say how the largest moved. `--compare
+earlier.json` adds each case's change against an earlier result.
 
 Results of the changes in #205 to #211 (Rust 1.97.0, valgrind 3.22). The sample tests
-without  in their name were measured on one seed here, before they ran on ten,
+without `tcBug` in their name were measured on one seed here, before they ran on ten,
 so their figure is one run, not a p90:
 
-| Case | Seeds | Before () | After (#211) | Change |
+| Case | Seeds | Before (`fe2fef4`) | After (#211) | Change |
 |---|---:|---:|---:|---:|
 | aba-cas/tcFixedAbaInterleaving | 1 | 1,420,691,313 | 276,393,766 | x0.19 |
 | boundaries-1024 | 10 | 12,891,283 | 13,422,334 | x1.04 |
