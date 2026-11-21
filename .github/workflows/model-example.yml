@@ -38,7 +38,7 @@ jobs:
         run: |
           output=$(../../target/debug/snappea check tcAtomicReserve --timeout 2m)
           printf '%s\n' "$output"
-          grep -Eq '\(all [0-9]+ schedules?' <<< "$output"
+          grep -q '(proved,' <<< "$output"
       - name: The check-then-reserve design oversells
         working-directory: examples/model
         run: |

@@ -20,7 +20,7 @@ if (r.exitCode !== 1 || !trace.includes("<ErrorLog> Assertion Failed")) throw ne
 const safe = p.run(["check", "safe.p", "--timeout", "1s"], {
   "/work/safe.p": "// snappea-lint: allow no-model-machine -- single-machine fixture tests exhaustive search completion\nmachine Main { start state Init { } }",
 }, { seed: 1 });
-if (safe.exitCode !== 0 || !/\(all \d+ schedules?/.test(safe.stdout)) {
+if (safe.exitCode !== 0 || !safe.stdout.includes("(proved,")) {
   throw new Error(`expected exhaustive completion: ${safe.stdout}${safe.stderr}`);
 }
 // A timed model that loops never repeats a state (its clock only grows), so it is
