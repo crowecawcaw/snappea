@@ -141,7 +141,38 @@ pub struct SchedulerStats {
     pub reward: f64,
 }
 
+/// What one step (an operation run from one scheduling point to the next) did beyond its
+/// machine's own state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Footprint {
+    /// It added an event to an inbox (its own included).
+    pub sent: bool,
+    /// It ran a monitor.
+    pub monitor: bool,
+    /// The machine that ran looked for an event in its inbox and found none it could
+    /// take: an event sent to it earlier would have changed the step.
+    pub inbox_miss: bool,
+    /// It created or halted a machine.
+    pub lifecycle: bool,
+}
+
+impl Footprint {
+    /// The step changed only its own machine, and no step of another machine could have
+    /// changed what it did: it reaches the same state whenever it runs.
+    pub fn is_local(&self) -> bool {
+        !(self.sent || self.monitor || self.inbox_miss || self.lifecycle)
+    }
+}
+
 pub trait Strategy {
+    /// Whether [`Strategy::note_step`] is used.
+    fn wants_footprints(&self) -> bool {
+        false
+    }
+    /// The step that just reached a scheduling point did `footprint`. Called before the
+    /// state there is observed and the next operation picked among `ops`.
+    fn note_step(&mut self, _footprint: Footprint, _ops: &[OpInfo]) {}
+
     /// Retain scheduler observations needed to resume a schedule at a saved prefix.
     fn track_initial_prefix(&mut self) {}
     /// Resume the next schedule after `steps`, a prefix of the decisions it replays.

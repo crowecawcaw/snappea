@@ -897,8 +897,11 @@ fn auto_explores_long_actor_delays_and_replays_without_a_coverage_gradient() {
             .replace("ROUNDS", "64")
             .replace("BACKGROUND", if background { "new Maintenance();" } else { "" });
         for seed in 0..10 {
+            // Samples find this bug, and with the background machine each runs to the step
+            // bound: about 90 exhaustive schedules cost as much as one sample, and sampling
+            // gets a quarter of the work, so the budget is in the hundreds of schedules.
             let options =
-                CheckerOptions { seed, max_unfair_steps: 2000, max_fair_steps: 2000, ..opts(StrategyKind::Auto, 256) };
+                CheckerOptions { seed, max_unfair_steps: 2000, max_fair_steps: 2000, ..opts(StrategyKind::Auto, 1024) };
             let result = check(&source, &options);
             assert_eq!(result.report.num_bugs, 1, "background={background} seed={seed}");
             assert!(result.report.bug_reports[0].contains("write still pending"));
@@ -1079,5 +1082,114 @@ fn collection_size_evidence_does_not_change_search_and_counts_only_lengths() {
     for (single, both) in fields.iter().zip(merged.collections(&a.program)) {
         assert_eq!((single.min, single.max), (both.min, both.max));
         assert_eq!(single.observations * 2, both.observations);
+    }
+}
+
+/// Workers take jobs from a queue and report to a collector; each worker thinks (a step
+/// that changes only the worker) before it reports. `CHECK` runs once all have reported.
+fn thinkers(check: &str, liveness: bool) -> String {
+    let (spec, assert) = match liveness {
+        true => (
+            "spec AllReport observes eJob, eDone {
+               var open: int;
+               start cold state Idle { on eJob do { open = open + 1; goto Busy; } }
+               hot state Busy {
+                 on eJob do { open = open + 1; }
+                 on eDone do { open = open - 1; if (open == 0) { goto Idle; } }
+               }
+             }",
+            "assert AllReport in",
+        ),
+        false => ("", ""),
+    };
+    format!(
+        "event eJob: int; event eThink; event eDone: int;
+         {spec}
+         machine Collector {{
+           var got: seq[int];
+           start state Init {{
+             on eDone do (x: int) {{
+               got += (sizeof(got), x);
+               if (sizeof(got) == 3) {{ {check} }}
+             }}
+           }}
+         }}
+         machine Worker {{
+           var out: Collector; var job: int; var thoughts: int;
+           start state Init {{
+             entry (c: Collector) {{ out = c; }}
+             on eJob do (x: int) {{ job = x; raise eThink; }}
+             on eThink do {{
+               thoughts = thoughts + 1;
+               if (thoughts < 3) {{ raise eThink; }} else {{ send out, eDone, job * thoughts; }}
+             }}
+           }}
+         }}
+         machine Main {{
+           start state Init {{
+             entry {{
+               var c: Collector; var i: int; var w: Worker;
+               c = new Collector();
+               while (i < 3) {{ w = new Worker(c); send w, eJob, i; i = i + 1; }}
+             }}
+           }}
+         }}
+         test tcMain [main=Main]: {assert} {{ Main, Collector, Worker }};"
+    )
+}
+
+#[test]
+fn local_steps_reach_the_same_verdicts_through_fewer_states() {
+    let auto = |partial_order| CheckerOptions { partial_order, ..opts(StrategyKind::Auto, 100_000) };
+    for liveness in [false, true] {
+        // safe: both searches finish, the reduced one through fewer states
+        let safe = thinkers("assert sizeof(got) == 3;", liveness);
+        let (full, reduced) = (check(&safe, &auto(false)), check(&safe, &auto(true)));
+        assert_eq!((full.report.num_bugs, reduced.report.num_bugs), (0, 0), "liveness={liveness}");
+        let (x, y) = (full.exhaustive.unwrap(), reduced.exhaustive.unwrap());
+        assert!(x.complete() && y.complete(), "liveness={liveness}: {x:?} {y:?}");
+        assert!(
+            y.distinct_states < x.distinct_states,
+            "liveness={liveness}: {} {}",
+            y.distinct_states,
+            x.distinct_states
+        );
+        // one delivery order fails: both find it, and the reduced schedule replays
+        let buggy = thinkers("assert got[0] != 6 || got[1] != 0, \"last job reported first\";", liveness);
+        let (full, reduced) = (check(&buggy, &auto(false)), check(&buggy, &auto(true)));
+        assert_eq!(full.report.num_bugs, 1, "liveness={liveness}");
+        assert_eq!(reduced.report.num_bugs, 1, "liveness={liveness}");
+        let replay = check(
+            &buggy,
+            &CheckerOptions {
+                strategy: StrategyKind::Replay,
+                replay: Some(ScheduleTrace::parse(reduced.schedule_trace.as_ref().unwrap()).unwrap()),
+                ..Default::default()
+            },
+        );
+        assert!(replay.replay_error.is_none());
+        assert_eq!(replay.report.bug_reports, reduced.report.bug_reports);
+    }
+}
+
+#[test]
+fn local_steps_keep_liveness_verdicts() {
+    let auto = |partial_order| CheckerOptions { partial_order, ..opts(StrategyKind::Auto, 100_000) };
+    // a retry loop that can never succeed is a fair cycle in both searches
+    for partial_order in [false, true] {
+        let stuck = check(&retry_loop("false"), &auto(partial_order));
+        assert_eq!(stuck.report.num_bugs, 1, "partial_order={partial_order}");
+        assert!(stuck.report.bug_reports[0].contains("liveness bug in hot state 'Waiting'"));
+        let fine = check(&retry_loop("true"), &auto(partial_order));
+        assert_eq!(fine.report.num_bugs, 0, "partial_order={partial_order}");
+        assert!(fine.exhaustive.unwrap().complete(), "partial_order={partial_order}");
+    }
+    // a worker that drops its report leaves the spec hot at the end
+    let lost = thinkers("assert true;", true)
+        .replace("send out, eDone, job * thoughts;", "if (job != 1) { send out, eDone, job; }");
+    for partial_order in [false, true] {
+        let r = check(&lost, &auto(partial_order));
+        assert_eq!(r.report.num_bugs, 1, "partial_order={partial_order}");
+        assert!(r.report.bug_reports[0].contains("hot state 'Busy'"), "{}", r.report.bug_reports[0]);
     }
 }

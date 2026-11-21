@@ -49,6 +49,9 @@ pub(crate) struct AutoStrategy {
     window_work: u64,
     window_states: usize,
     window_prunes: usize,
+    window_branches: usize,
+    /// The exhaustive search uses the local-step reduction.
+    local_steps: bool,
     window_frontier: Option<usize>,
     dfs_bounds: usize,
     interrupted: bool,
@@ -106,6 +109,8 @@ impl AutoStrategy {
             window_work: 0,
             window_states: 0,
             window_prunes: 0,
+            window_branches: 0,
+            local_steps: false,
             window_frontier: None,
             dfs_bounds: 0,
             interrupted: false,
@@ -115,6 +120,13 @@ impl AutoStrategy {
             split: shared,
             graph: None,
         }
+    }
+    /// Lets the exhaustive search skip interleavings before local steps (see
+    /// [`ExhaustiveStrategy::with_local_steps`]).
+    pub(crate) fn with_local_steps(mut self) -> Self {
+        self.dfs = self.dfs.map(ExhaustiveStrategy::with_local_steps);
+        self.local_steps = true;
+        self
     }
     fn active(&self) -> &dyn Strategy {
         match self.dfs.as_ref().filter(|_| !self.probing) {
@@ -201,6 +213,14 @@ impl Strategy for AutoStrategy {
         self.operations = operations;
         self.portfolio.repeat_initial_observations(observations);
         true
+    }
+    fn wants_footprints(&self) -> bool {
+        !self.probing && self.dfs.as_ref().is_some_and(|dfs| dfs.wants_footprints())
+    }
+    fn note_step(&mut self, footprint: super::strategy::Footprint, ops: &[OpInfo]) {
+        if let Some(dfs) = self.dfs.as_mut().filter(|_| !self.probing) {
+            dfs.note_step(footprint, ops);
+        }
     }
     fn replayed_decisions(&self) -> Option<usize> {
         if self.probing || self.interrupted {
@@ -298,8 +318,15 @@ impl Strategy for AutoStrategy {
             // A shrinking frontier, or graph closures at least half as frequent as
             // discoveries, supports continuing DFS. Novel states/coverage alone can grow
             // forever, but a finite state space that DFS is still discovering already
-            // closes often (a lossy network: about 2 closures per 3 discoveries).
-            let closing = prunes > 0 && prunes.saturating_mul(2) >= states;
+            // closes often (a lossy network: about 2 closures per 3 discoveries). The
+            // local-step reduction runs through states without branching, where there is
+            // nothing to close: with it, closures are held against the choice points
+            // that branched.
+            let discoveries = match self.local_steps {
+                true => stats.branching_choices.saturating_sub(self.window_branches).min(states),
+                false => states,
+            };
+            let closing = prunes > 0 && prunes.saturating_mul(2) >= discoveries;
             if closing {
                 // Cache closures show convergence even if a narrow DFS frontier
                 // fluctuates. Renew the stall budget while that evidence continues;
@@ -327,6 +354,7 @@ impl Strategy for AutoStrategy {
                 self.window_frontier = Some(frontier);
                 self.window_states = stats.distinct_states;
                 self.window_prunes = stats.pruned_schedules;
+                self.window_branches = stats.branching_choices;
                 self.window_work = 0;
             }
         }

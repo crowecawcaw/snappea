@@ -129,9 +129,12 @@ test tcStolenToken [main=StolenToken]:
 test tcRepeatedExpiry [main=RepeatedExpiry]:
   assert TokenSafety, TabsServed in { RepeatedExpiry, AuthServer, Storage, LockManager, Network, Tab };
 
+// Only TokenSafety: without the lock the tabs also break TabsServed's single-flight rule
+// ("a tab ignored the newer stored token"), and whichever a search reaches first would
+// be the reported failure.
 // snappea: expect-bug "user logged out by reuse detection: refresh token 1 was presented after it was rotated"
 test tcBugNoLock [main=BugNoLock]:
-  assert TokenSafety, TabsServed in { BugNoLock, AuthServer, Storage, LockManager, Network, UnlockedTab };
+  assert TokenSafety in { BugNoLock, AuthServer, Storage, LockManager, Network, UnlockedTab };
 
 // snappea: expect-bug "user logged out by reuse detection: refresh token 1 was presented after it was rotated"
 test tcBugRetryAfterLostResponse [main=BugRetryAfterLostResponse]:

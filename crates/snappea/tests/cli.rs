@@ -1116,7 +1116,7 @@ fn check_reports_mutants_no_test_case_detects() {
     );
     assert_eq!(m["undetected"][0]["test_cases"], serde_json::json!(["tcCount"]));
     assert_eq!(m["undetected"][0]["search_complete"], true);
-    assert_eq!(m["undetected"][0]["schedules"], 5);
+    assert_eq!(m["undetected"][0]["schedules"], 4);
     assert_eq!(m["suppressed"], 0);
     assert_eq!(m["time_limit_reached"], false);
     // without `--strict` only the body and the `announce` are mutants; the undetected body fails the check
