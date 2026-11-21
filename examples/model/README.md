@@ -38,7 +38,7 @@ a test name to select both designs:
 
 ```text
 Checking Inventory: 1 test case
-ok    tcAtomicReserve (all 27753 schedules, 4 workers, 3.01s)
+ok    tcAtomicReserve (proved, 3.01s)
 🫛 The test case passed in 3.02s, peak memory 30 MB. Output: PCheckerOutput/
 ```
 

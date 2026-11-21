@@ -81,9 +81,9 @@ since both are already explored.
 ## Reading the output
 
 ```text
-ok    tcTwoWithdrawals (all 63 schedules, 2 workers, 0.01s)
+ok    tcTwoWithdrawals (proved, 0.01s)
       Coverage: 3/3 states, 39/39 statements, 10/10 branches, 7/7 event handlers, 10/10 condition outcomes, 2/4 transition pairs
-      Driver limits (held in all 63 schedules):
+      Driver limits (held in every schedule):
         creates 1 Account, never more
         TwoWithdrawals sends Withdraw exactly twice
         Withdraw is only sent with id = 1 or 2

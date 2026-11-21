@@ -111,8 +111,10 @@ Exploration:
                             failures of other specs or assertions. 1 stops at the
                             first bug, e.g. for the fastest red/green loop.
 
-Strategies are chosen automatically. A search that covers every schedule ends
-early; one that times out is incomplete.
+Strategies are chosen automatically. A passing test case is `proved` when every
+schedule was checked. Otherwise its search `settled` (the second half found nothing
+new, so more time is not needed) or was `still finding new behavior` (run longer once,
+as the hint says, or shrink the test). `-v` adds schedule and worker counts.
 
 Time (for models with timeouts or latency budgets):
       --latency <FILE>[:<PROFILE>]
@@ -1217,6 +1219,8 @@ fn run_check(
     let mut cases = Vec::new();
     let mut scenarios = Vec::new();
     let mut incomplete = 0;
+    // incomplete searches that did not settle either
+    let mut unsettled = 0;
     let sources = loaded.sources.source_map();
     let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
     let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
@@ -1270,6 +1274,7 @@ fn run_check(
             failed += 1;
         } else if expected.is_none() && case.exhaustive_finished != Some(true) {
             incomplete += 1;
+            unsettled += usize::from(verdict(&case) != Verdict::Settled);
         }
         if let Some(expected) = expected {
             con.inner.out_line(&format!(
@@ -1552,12 +1557,13 @@ fn run_check(
                 plural(required_gap_count)
             ));
         }
+        let not_proved = format!("no unexpected failure found; {}", unproved(incomplete, unsettled));
         con.inner.out_line(&format!(
             "Safety: {}.",
             if failed > 0 {
                 "test expectations failed"
             } else if incomplete > 0 {
-                "no unexpected failure found; search incomplete"
+                not_proved.as_str()
             } else {
                 "test expectations met; bounded searches complete"
             }
@@ -1688,6 +1694,10 @@ fn run_check(
         untested,
         &skipped,
     );
+    summary["settled"] = json!(incomplete - unsettled);
+    if summary["status"] == "search_incomplete" {
+        summary["message"] = json!(format!("No bugs found; {}", unproved(incomplete, unsettled)));
+    }
     summary["scenario_gaps"] = json!(scenario_gaps.len());
     summary["lint_failed"] = json!(lint_failed.is_some());
     if let Some(lint) = &lint_failed {
@@ -1771,7 +1781,7 @@ fn run_check(
             )
         } else {
             let incomplete = if incomplete > 0 {
-                format!("; search incomplete for {} test case{}", incomplete, plural(incomplete))
+                format!("; {}", unproved(incomplete, unsettled))
             } else {
                 String::new()
             };
@@ -1826,12 +1836,11 @@ fn run_check(
         )
     } else if failed == 0 && incomplete > 0 {
         format!(
-            "🫛 {success} in {}{}{}. Search incomplete for {} test case{}. Output: {}/",
+            "🫛 {success} in {}{}{}. {}. Output: {}/",
             elapsed,
             memory,
             with_warnings,
-            incomplete,
-            plural(incomplete),
+            capitalized(&unproved(incomplete, unsettled)),
             out
         )
     } else if failed == 0 && n == 1 {
@@ -2102,10 +2111,9 @@ fn driver_lines(d: &check::DriverReport, case: &check::CaseOutcome, hint: bool) 
     if d.facts.is_empty() {
         return Vec::new();
     }
-    let s = case.schedules;
     let schedules = match case.exhaustive_finished {
-        Some(true) => format!("all {} schedule{}", s, plural(s)),
-        _ => format!("all {} explored schedule{}", s, plural(s)),
+        Some(true) => "every schedule",
+        _ => "every explored schedule",
     };
     let mut out = vec![format!("      Driver limits (held in {}):", schedules)];
     for f in d.facts.iter().take(SHOWN_DRIVER_FACTS) {
@@ -2134,9 +2142,62 @@ fn little_to_explore(case: &check::CaseOutcome) -> bool {
         && case.exhaustive_states.is_some_and(|(states, depth)| states <= LITTLE_TO_EXPLORE * depth.max(1))
 }
 
+/// How far a passing test case's search got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// Every schedule was checked.
+    Proved,
+    /// Not every schedule, but the second half of the search reached no new coverage.
+    Settled,
+    /// New coverage was still turning up when the search stopped.
+    Finding,
+    /// Stopped with nothing to judge by: memory ran out, or coverage was not tracked.
+    Unjudged,
+}
+
+impl Verdict {
+    /// The name in JSON.
+    fn name(self) -> &'static str {
+        match self {
+            Verdict::Proved => "proved",
+            Verdict::Settled => "settled",
+            Verdict::Finding => "finding_new_behavior",
+            Verdict::Unjudged => "unjudged",
+        }
+    }
+}
+
+fn verdict(case: &check::CaseOutcome) -> Verdict {
+    match case.settled {
+        _ if case.exhaustive_finished == Some(true) => Verdict::Proved,
+        _ if case.memory_stop.is_some() => Verdict::Unjudged,
+        Some(true) => Verdict::Settled,
+        Some(false) => Verdict::Finding,
+        None => Verdict::Unjudged,
+    }
+}
+
+/// `3 test cases not proved: 2 settled, 1 not settled`, for `incomplete`
+/// searches of which `unsettled` did not settle.
+fn unproved(incomplete: usize, unsettled: usize) -> String {
+    let mut parts = Vec::new();
+    if incomplete > unsettled {
+        parts.push(format!("{} settled", incomplete - unsettled));
+    }
+    if unsettled > 0 {
+        parts.push(format!("{} not settled", unsettled));
+    }
+    format!("{} test case{} not proved: {}", incomplete, plural(incomplete), parts.join(", "))
+}
+
+fn capitalized(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
+
 /// Why a passing test case's search did not cover every schedule, for the JSON report:
 /// `memory_limit` (memory use neared the limit, so the search stopped),
-/// `exhaustive_search_unfinished` (more time may finish it), `timed_model_sampled` (time
+/// `exhaustive_search_unfinished` (the search ran out of time or states), `timed_model_sampled` (time
 /// tracking keeps clocks growing, so a model that loops cannot be exhausted) or `sampled`
 /// (too many schedules: the search sampled them).
 fn incomplete_reason(case: &check::CaseOutcome) -> Option<&'static str> {
@@ -2161,21 +2222,11 @@ fn memory_hint(m: check::MemoryStop) -> String {
     )
 }
 
-/// A `--timeout` worth trying for a search still running after `elapsed` seconds: five
-/// times as long, but no longer than `useful`, the time after which more cannot help.
-fn longer_timeout(elapsed: f64, useful: Option<f64>) -> &'static str {
-    const STEPS: [(f64, &str); 5] = [(30.0, "30s"), (60.0, "1m"), (120.0, "2m"), (300.0, "5m"), (600.0, "10m")];
-    let target = (5.0 * elapsed).min(useful.unwrap_or(f64::INFINITY));
-    STEPS.iter().find(|(secs, _)| *secs >= target).map_or("30m", |(_, s)| s)
-}
-
-/// The states at which a test case's exhaustive search hands off to sampling, over all
-/// its workers, and the seconds until then at the rate it found states so far. A time
-/// limit past that cannot finish the search.
-fn state_limit(case: &check::CaseOutcome) -> Option<(usize, f64)> {
-    let (states, _) = case.exhaustive_states.filter(|(states, _)| *states > 0)?;
-    let limit = crate::checker::EXHAUSTIVE_STATE_LIMIT * case.workers.max(1);
-    Some((limit, case.elapsed * limit as f64 / states as f64))
+/// A `--timeout` worth trying for a search still finding new behavior after `elapsed`
+/// seconds: five times as long, up to a minute. A search that has not settled in longer
+/// than that is too large to: suggesting ever more time only costs it.
+fn longer_timeout(elapsed: f64) -> Option<&'static str> {
+    [(30.0, "30s"), (60.0, "1m")].iter().find(|(secs, _)| *secs >= 5.0 * elapsed).map(|(_, s)| *s)
 }
 
 /// Whether a search's schedules mostly reach states it already explored: at least
@@ -2188,6 +2239,13 @@ fn mostly_revisits(case: &check::CaseOutcome) -> Option<usize> {
 
 /// Where an average schedule branches: `31 scheduling points with a choice; ready at
 /// them: Network 25, Sender 20; choices made: Network 3`.
+/// The machines ready at the most scheduling points with a choice, e.g. `Replica, Writer`.
+fn busiest_machines(machines: &[crate::checker::branching::MachineBranching]) -> String {
+    let mut ms: Vec<_> = machines.iter().filter(|m| m.ready > 0.0).collect();
+    ms.sort_by(|a, b| b.ready.total_cmp(&a.ready));
+    ms.iter().take(3).map(|m| m.machine.as_str()).collect::<Vec<_>>().join(", ")
+}
+
 fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBranching]) -> String {
     let n = |x: f64| if x >= 9.95 { format!("{:.0}", x) } else { format!("{:.1}", x) };
     let list = |count: fn(&crate::checker::branching::MachineBranching) -> f64| {
@@ -2279,6 +2337,9 @@ fn case_json(case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) -> Va
         "time_limit_reached": case.timed_out,
         "coverage_stopped_growing": case.plateaued,
     });
+    if case.bugs == 0 {
+        v["verdict"] = json!(verdict(case).name());
+    }
     if let Some(finished) = case.exhaustive_finished {
         v["search_complete"] = json!(finished);
     }
@@ -2394,7 +2455,7 @@ fn hot_spec_lines(
 
 /// One test case's result line, and for a bug its report and how to replay it.
 fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig, boundary: bool) {
-    for handoff in &case.auto_handoffs {
+    for handoff in case.auto_handoffs.iter().filter(|_| cfg.verbose) {
         host.out_line(&format!(
             "      auto {}: worker {} switched from exhaustive search to sampling after {} schedules ({} exhaustive choices): {}",
             case.test_case, handoff.worker, handoff.after_schedules, handoff.choices, handoff.reason
@@ -2429,7 +2490,17 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
     );
     let time = duration(case.elapsed);
     if case.bugs == 0 {
-        host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, schedules, limit, time));
+        let verdict = verdict(case);
+        let what = match verdict {
+            Verdict::Proved => "proved",
+            Verdict::Settled => "no bug found, search settled",
+            Verdict::Finding => "no bug found, still finding new behavior",
+            Verdict::Unjudged if case.memory_stop.is_some() => "no bug found, memory limit reached",
+            Verdict::Unjudged => "no bug found",
+        };
+        // how much was searched is detail: the verdict says what it amounts to
+        let detail = if cfg.verbose { format!(", {} schedule{}{}", s, plural(s), workers) } else { String::new() };
+        host.out_line(&format!("ok    {} ({}{}, {})", case.test_case, what, detail, time));
         if let Some(m) = case.memory_stop {
             host.out_line(&format!("      hint: {}", memory_hint(m)));
         }
@@ -2441,7 +2512,7 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
                 "      hint: give the model something to get wrong: a second client, concurrent requests, a failure, or a choice",
             );
         }
-        if (cfg.verbose || incomplete_reason(case).is_some()) && !case.collection_sizes.is_empty() {
+        if cfg.verbose && !case.collection_sizes.is_empty() {
             let fields = case
                 .collection_sizes
                 .iter()
@@ -2452,54 +2523,43 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
             host.out_line(&format!("      Sampled collection sizes (elements): {fields}"));
             host.out_line("      note: ranges combine sampled states and instances; they do not prove growth or identify the cause of search size (--json lists fields and locations)");
         }
-        let branching = case
-            .branching
-            .as_ref()
-            .filter(|(points, _)| *points >= 1.0)
-            .map(|(points, machines)| branching_text(*points, machines));
-        match incomplete_reason(case) {
-            Some("exhaustive_search_unfinished") => {
-                let states = case.exhaustive_states.map_or(0, |(states, _)| states);
-                match state_limit(case) {
-                    // two thirds of the way there: five times the time cannot finish it
-                    Some((limit, secs)) if secs <= 1.5 * case.elapsed => {
-                        host.out_line(&format!(
-                            "      note: the exhaustive search found {} states and stops at {}: more time is unlikely to finish it",
-                            states, limit
-                        ));
-                        host.out_line("      hint: to cover every schedule, shrink the test: fewer machines, messages, faults or choices (see `snappea guide modeling`)");
-                    }
-                    limit => host.out_line(&format!(
-                        "      hint: the exhaustive search was still running ({} states so far{}); more time may finish it, e.g. --timeout {}",
-                        states,
-                        limit.map(|(limit, _)| format!(", it stops at {}", limit)).unwrap_or_default(),
-                        longer_timeout(case.elapsed, limit.map(|(_, secs)| secs))
-                    )),
-                }
-                if let Some(states) = mostly_revisits(case) {
+        if verdict != Verdict::Proved && incomplete_reason(case) == Some("timed_model_sampled") {
+            host.out_line("      note: timed model: clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
+        }
+        match verdict {
+            Verdict::Settled => {
+                let busiest = case.branching.as_ref().map(|(_, machines)| busiest_machines(machines)).unwrap_or_default();
+                host.out_line(&format!(
+                    "      note: not proved: too many schedules to check them all in this time{}",
+                    if busiest.is_empty() { String::new() } else { format!("; most choices come from {}", busiest) }
+                ));
+                host.out_line("      hint: for a proof, shrink the test: fewer machines, messages, faults or choices (see `snappea guide modeling`)");
+            }
+            Verdict::Finding => match longer_timeout(case.elapsed) {
+                Some(timeout) => host.out_line(&format!(
+                    "      hint: new behavior was still turning up when the search stopped; run longer, e.g. --timeout {}",
+                    timeout
+                )),
+                None => {
                     host.out_line(&format!(
-                        "      note: {} schedules reached only {} distinct states: most run independent steps in other orders to the same states",
-                        case.schedules, states
+                        "      note: new behavior was still turning up after {}: the test is too large to settle",
+                        time
                     ));
-                    if let Some(b) = &branching {
-                        host.out_line(&format!("      note: per schedule: {}", b));
-                    }
-                    host.out_line("      hint: merge machines whose hop adds no order the spec cares about, or start workers after their inputs are fixed (see `snappea guide modeling`)");
+                    host.out_line("      hint: shrink or split the test so each part settles: fewer machines, messages, faults or choices (see `snappea guide modeling`)");
                 }
+            },
+            Verdict::Proved | Verdict::Unjudged => {}
+        }
+        if cfg.verbose {
+            if let Some(states) = mostly_revisits(case).filter(|_| verdict != Verdict::Proved) {
+                host.out_line(&format!(
+                    "      note: {} schedules reached only {} distinct states: most run independent steps in other orders to the same states",
+                    case.schedules, states
+                ));
             }
-            Some(reason) => {
-                if reason == "timed_model_sampled" {
-                    host.out_line("      note: timed model: clocks only grow, so a loop never returns to an explored state; the search sampled schedules");
-                }
-                if let Some(b) = &branching {
-                    host.out_line(&format!("      note: too many schedules to try them all. Per schedule: {}", b));
-                    host.out_line("      hint: merge machines whose hop adds no order the spec cares about, shrink fault budgets, or split fault classes into separate tests (see `snappea guide modeling`)");
-                }
-            }
-            None => {
-                if let Some(b) = branching.filter(|_| cfg.verbose) {
-                    host.out_line(&format!("      Branching per schedule: {}", b));
-                }
+            let branching = case.branching.as_ref().filter(|(points, _)| *points >= 1.0);
+            if let Some((points, machines)) = branching {
+                host.out_line(&format!("      Branching per schedule: {}", branching_text(*points, machines)));
             }
         }
         return;
@@ -2823,11 +2883,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_longer_timeout_never_passes_the_time_that_can_still_help() {
-        assert_eq!(longer_timeout(2.0, None), "30s");
-        assert_eq!(longer_timeout(30.0, None), "5m");
-        assert_eq!(longer_timeout(30.0, Some(50.0)), "1m");
-        assert_eq!(longer_timeout(8.0, Some(20.0)), "30s");
+    fn a_longer_timeout_is_suggested_only_up_to_a_minute() {
+        assert_eq!(longer_timeout(2.0), Some("30s"));
+        assert_eq!(longer_timeout(10.0), Some("1m"));
+        assert_eq!(longer_timeout(30.0), None);
+    }
+
+    #[test]
+    fn unproved_names_what_settled_and_what_did_not() {
+        assert_eq!(unproved(1, 0), "1 test case not proved: 1 settled");
+        assert_eq!(unproved(3, 1), "3 test cases not proved: 2 settled, 1 not settled");
+        assert_eq!(capitalized("no bug"), "No bug");
     }
 
     #[test]

@@ -99,8 +99,8 @@ it (a fencing token or epoch on the write).
   needs them together.
 - To force a rare order, add a test-only machine that holds a message until another
   actor finishes.
-- When search does not finish, `snappea check` shows where schedules branch; reduce
-  the top ones first. `-v` shows this and collection sizes for every test case.
+- When a test is not `proved`, `snappea check` names the machines most choices come
+  from; reduce those first. `-v` shows branching and collection sizes.
 
 A passing search covers only the modeled transitions and bounds. Map each modeled
 read, write, version check, retry and restart to its real primitive.

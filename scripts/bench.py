@@ -87,8 +87,8 @@ def cpu_model():
 
 def parse_check(out):
     """(schedules explored, bugs found) from a check's console output."""
-    # snappea: `ok    TEST (N schedules, ...)` or `FAIL  TEST (bug found after N schedules, ...)`
-    m = re.search(r"^(ok|FAIL)\s+\S+ \((?:bug found after )?(?:all )?(\d+) schedules?\b", out, re.M)
+    # snappea -v: `ok    TEST (proved, N schedules, ...)` or `FAIL  TEST (bug found after N schedules, ...)`
+    m = re.search(r"^(ok|FAIL)\s+\S+ \([^)]*?(\d+) schedules?\b", out, re.M)
     if m:
         return int(m.group(2)), int(m.group(1) == "FAIL")
     # snappea-compat and upstream P: `..... Explored N schedules` and `Found N bugs.`
@@ -119,7 +119,7 @@ def check_args(opts, cmd, test, n):
             sys.exit("--workers needs the snappea binary; snappea-compat and upstream P run one worker")
         return upstream_style
     if any((Path(cmd[0]).parent / name).exists() for name in COMPAT_NAMES):
-        return ["check", test, "-n", str(n), "--seed", str(SEED), "-j", str(opts.workers)]
+        return ["check", test, "-v", "-n", str(n), "--seed", str(SEED), "-j", str(opts.workers)]
     # a snappea binary from before snappea-compat existed: upstream's options and --workers
     return upstream_style + ["--workers", str(opts.workers)]
 

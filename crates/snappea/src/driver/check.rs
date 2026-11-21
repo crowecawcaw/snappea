@@ -591,7 +591,13 @@ impl Plateau {
     /// an exhaustive search is `exhausting`: finishing it proves the test, and it gets
     /// the rest of the test case's time to do so.
     pub fn reached(&self, now: f64, schedules: usize, exhausting: bool) -> bool {
-        !exhausting && now >= self.not_before && schedules >= Self::MIN_SCHEDULES && schedules >= 2 * self.last_novel
+        !exhausting && now >= self.not_before && Self::settled(schedules, self.last_novel)
+    }
+
+    /// Whether a search of `schedules` schedules settled: none reached new coverage after
+    /// `last_novel`, in the second half of at least [`Plateau::MIN_SCHEDULES`] of them.
+    pub fn settled(schedules: usize, last_novel: usize) -> bool {
+        schedules >= Self::MIN_SCHEDULES && schedules >= 2 * last_novel
     }
 }
 
@@ -640,6 +646,8 @@ struct ConsoleOut<'h> {
     /// Schedules finished, and whether the plateau stopped the search.
     schedules: usize,
     plateaued: bool,
+    /// The last schedule that reached new coverage, if any did.
+    last_novel: usize,
     /// An exhaustive search is still under way.
     exhausting: bool,
     /// Collecting further failures after the first (see [`CheckerOptions::max_bugs`]):
@@ -695,6 +703,7 @@ impl Output for ConsoleOut<'_> {
         self.host.write(Stream::Out, "\n", None);
     }
     fn schedule_novel(&mut self, schedule: usize) {
+        self.last_novel = self.last_novel.max(schedule);
         if let Some(p) = self.plateau.as_mut() {
             p.last_novel = p.last_novel.max(schedule);
         }
@@ -742,7 +751,7 @@ fn run_engine(
     // where the test case sits in the run, and when its check started
     progress: Option<(Position, f64)>,
     plateau: Option<Plateau>,
-) -> Result<(CheckResult, usize, bool, Option<MemoryStop>), Exit> {
+) -> Result<(CheckResult, usize, bool, Option<MemoryStop>, usize), Exit> {
     let prog = &loaded.analysis.program;
     let checker = if code_coverage { Checker::with_code_coverage(prog) } else { Checker::new(prog) };
     let opts = &CheckerOptions { assembly_name: loaded.sources.project_name.clone(), ..opts.clone() };
@@ -770,6 +779,7 @@ fn run_engine(
         plateau,
         schedules: 0,
         plateaued: false,
+        last_novel: 0,
         exhausting: false,
         more_bugs,
         memory: MemoryGuard::default(),
@@ -784,8 +794,8 @@ fn run_engine(
         let schedules = r.report.explored_fair_schedules + r.report.explored_unfair_schedules;
         t.finish(out.host, |phase| set_counts(phase, schedules, r.report.num_bugs));
     }
-    let (plateaued, memory_stop) = (out.plateaued, out.memory_stop);
-    result.map(|r| (r, workers, plateaued, memory_stop)).map_err(|e| report_and_exit(host, &e))
+    let (plateaued, memory_stop, last_novel) = (out.plateaued, out.memory_stop, out.last_novel);
+    result.map(|r| (r, workers, plateaued, memory_stop, last_novel)).map_err(|e| report_and_exit(host, &e))
 }
 
 /// A worker's output, sent to the thread that writes the console.
@@ -873,6 +883,7 @@ fn run_workers(
         }
     };
     (threads.run)(jobs, &mut main);
+    out.schedule_novel(novel.load(Ordering::Relaxed));
     let parts = parts.into_iter().map(|p| p.expect("every worker reports")).collect::<Result<Vec<_>, String>>()?;
     Ok(checker.finish(tc, opts, parts))
 }
@@ -895,6 +906,10 @@ pub struct CaseOutcome {
     pub plateaued: bool,
     /// It stopped because memory use neared the limit (see [`MemoryGuard`]).
     pub memory_stop: Option<MemoryStop>,
+    /// No schedule reached new coverage in the second half of the search (see
+    /// [`Plateau::settled`]): more of the same search would mostly repeat what it found.
+    /// `None` when no schedule reported coverage, so there is nothing to judge by.
+    pub settled: Option<bool>,
     /// For an exhaustive search: whether every alternative was explored.
     pub exhaustive_finished: Option<bool>,
     /// For an exhaustive search: the distinct states it reached (summed over workers, so
@@ -990,7 +1005,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         None => cfg.timeout.map(|t| engine_start + f64::from(t)),
     };
     let plateau = cfg.time_share.map(|share| Plateau::new(engine_start, share));
-    let (res, workers, plateaued, memory_stop) = run_engine(
+    let (res, workers, plateaued, memory_stop, last_novel) = run_engine(
         host,
         loaded,
         &tc,
@@ -1137,6 +1152,9 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         timed_out: res.cancelled && !plateaued && !collected && memory_stop.is_none(),
         plateaued: res.cancelled && plateaued && !collected && memory_stop.is_none(),
         memory_stop,
+        settled: (last_novel > 0).then(|| {
+            Plateau::settled(res.report.explored_fair_schedules + res.report.explored_unfair_schedules, last_novel)
+        }),
         exhaustive_finished: res.exhaustive.as_ref().map(|x| x.complete()),
         exhaustive_states: res.exhaustive.as_ref().map(|x| (x.distinct_states, x.max_depth)),
         exhaustive_unfinished: res

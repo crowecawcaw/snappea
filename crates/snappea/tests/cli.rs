@@ -97,7 +97,7 @@ fn check_finds_a_bug_that_replays() {
     h.add_file("coins.p", &COINS.replace("assert false, \"six heads\";", ""));
     assert_eq!(snappea(&mut h, &["check", "coins.p", "tcCoins"]), 0, "{}", h.stdout);
     assert!(names(&h, OUT).is_empty());
-    assert!(h.stdout.contains("\nok    tcCoins (all "), "{}", h.stdout);
+    assert!(h.stdout.contains("\nok    tcCoins (proved, "), "{}", h.stdout);
     // one of two test cases was selected, so mutation testing is skipped, and the summary says so
     assert!(
         h.stdout.ends_with(
@@ -204,7 +204,7 @@ fn tests_are_arguments() {
     let mut h = host();
     // all test cases by default; a bug in any fails the run
     assert_eq!(snappea(&mut h, &["check", "--seed", "2"]), 1, "{}", h.stdout);
-    assert!(h.stdout.contains("\nFAIL  tcCoins (") && h.stdout.contains("\nok    tcFine (all "), "{}", h.stdout);
+    assert!(h.stdout.contains("\nFAIL  tcCoins (") && h.stdout.contains("\nok    tcFine (proved, "), "{}", h.stdout);
     assert!(h.stdout.ends_with("\n1 of 2 test cases failed in 0.00s. Output: PCheckerOutput/\n"), "{}", h.stdout);
     assert!(h.is_dir(Path::new("/w/PCheckerOutput/tcFine")));
     assert_eq!(snappea(&mut h, &["check", "coins.p", "tcF*"]), 0, "{}", h.stdout);
@@ -357,7 +357,7 @@ fn exhaustive_search_writes_pex_output() {
     assert!(
         h.stdout.contains(
             "
-ok    tcFine (all "
+ok    tcFine (proved, "
         ),
         "{}",
         h.stdout
@@ -1420,9 +1420,7 @@ fn driver_limits_show_what_the_driver_never_did() {
     assert_eq!(snappea(&mut h, &["check", "lock.p", "--no-mutation", "--format", "text", "-v"]), 0, "{}", h.stderr);
     assert!(
         h.stdout.contains(
-            "      Driver limits (held in all "
-        ) && h.stdout.contains(
-            " schedules):\n        each Client sends eAcquire, then eRelease, once each\n        creates 1 LockServer and 2 Client, never more\n      hint: if the real environment can do more, extend the driver to try it\n"
+            "      Driver limits (held in every schedule):\n        each Client sends eAcquire, then eRelease, once each\n        creates 1 LockServer and 2 Client, never more\n      hint: if the real environment can do more, extend the driver to try it\n"
         ),
         "{}",
         h.stdout
@@ -1581,7 +1579,6 @@ fn a_timed_model_that_never_ends_says_it_was_sampled() {
     );
     let args = ["check", "ticker.p", "--seed", "1", "--timeout", "1s", "--no-mutation", "--warn", "all"];
     snappea(&mut h, &[&args[..], &["--format", "text"]].concat());
-    assert!(h.stdout.contains("timed model: sampled"), "{}{}", h.stdout, h.stderr);
     assert!(h.stdout.contains("note: timed model: clocks only grow"), "{}", h.stdout);
     snappea(&mut h, &[&args[..], &["--json"]].concat());
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
@@ -1598,7 +1595,7 @@ fn a_search_near_the_memory_limit_stops_and_says_so() {
     snappea(&mut h, &[&args[..], &["--format", "text"]].concat());
     assert!(h.stdout.contains("memory limit reached"), "{}{}", h.stdout, h.stderr);
     assert!(h.stdout.contains("hint: search stopped at 800 MB of 1000 MB memory; shrink bounds"), "{}", h.stdout);
-    assert!(h.stdout.contains("Search incomplete for 1 test case"), "{}", h.stdout);
+    assert!(h.stdout.contains("1 test case not proved: 1 not settled"), "{}", h.stdout);
     snappea(&mut h, &[&args[..], &["--json"]].concat());
     let v: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     let case = &v["test_cases"][0];
@@ -1696,7 +1693,13 @@ fn auto_explains_per_worker_handoffs_in_text_and_json() {
         assert!(handoff["after_schedules"].as_u64().unwrap() >= 1);
         assert!(handoff["choices"].as_u64().unwrap() > 0);
     }
-    assert_eq!(snappea(&mut h, &[&args[..], &["--format", "text"]].concat()), 0, "{}{}", h.stderr, h.stdout);
+    assert_eq!(
+        snappea(&mut h, &[&args[..], &["--format", "text", "--verbose"]].concat()),
+        0,
+        "{}{}",
+        h.stderr,
+        h.stdout
+    );
     assert!(
         h.stdout.contains("auto tcMain: worker 1 switched from exhaustive search to sampling after"),
         "{}",

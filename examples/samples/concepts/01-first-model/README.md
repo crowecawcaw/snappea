@@ -106,9 +106,9 @@ test tcTwoClients [main=Main]: assert PongsCountPings in { Main, Counter, Client
 ## Reading the output
 
 ```text
-ok    tcTwoClients (all 256 schedules, 2 workers, 0.02s)
+ok    tcTwoClients (proved, 0.02s)
       Coverage: 3/3 states, 19/19 statements, 4/4 branches, 4/4 event handlers, 4/4 condition outcomes, 1/2 transition pairs
-      Driver limits (held in all 256 schedules):
+      Driver limits (held in every schedule):
         creates 1 Counter and 2 Client, never more
         Client is always created with pings = 2
       hint: if the real environment can do more, extend the driver to try it
