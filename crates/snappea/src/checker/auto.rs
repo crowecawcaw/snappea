@@ -12,6 +12,10 @@ use super::random::RandomValueGenerator;
 use super::strategy::{OpInfo, SchedulerStats, Strategy};
 
 const WINDOW: u64 = 1_024;
+/// What starting and ending a schedule of the exhaustive search costs, in choices: the
+/// state it restores and hashes, whatever it then executes. At 8, two benchmark cases
+/// that need the samples no longer found every bug within 25,000 schedules.
+const RESUME_COST: u64 = 16;
 const MAX_WORK: u64 = 16_384;
 const SMALL_FRONTIER: usize = 256;
 const LOOKAHEAD_WORK: u64 = 4 * WINDOW;
@@ -30,6 +34,12 @@ pub(crate) struct AutoStrategy {
     contention: bool,
     probe_remaining: usize,
     probed: bool,
+    /// Choices the exhaustive search executed since the last interleaved sample, not
+    /// counting those a saved prefix stood in for, plus [`RESUME_COST`] per schedule.
+    executed: u64,
+    /// Choices of the last sampled schedule: what an interleaved sample costs.
+    sample_cost: u64,
+    /// Exhaustive schedules since the last interleaved sample.
     since_probe: usize,
     saw_bug: bool,
 
@@ -85,6 +95,8 @@ impl AutoStrategy {
             contention: false,
             probe_remaining: 0,
             probed: false,
+            executed: 0,
+            sample_cost: 1,
             since_probe: 0,
             saw_bug: false,
 
@@ -126,6 +138,7 @@ impl AutoStrategy {
         if let Some(dfs) = self.dfs.as_ref().filter(|_| !self.probing) {
             self.work += 1;
             self.window_work += 1;
+            self.executed += 1;
             let retained = dfs.retained_alternatives();
             if self.work > self.work_deadline {
                 // work other workers of a split search did not need
@@ -233,6 +246,7 @@ impl Strategy for AutoStrategy {
             return self.portfolio.prepare_next_iteration();
         }
         if self.probing {
+            self.sample_cost = (self.portfolio.scheduled_steps() as u64).max(1);
             self.portfolio.prepare_next_iteration();
             self.probe_remaining = self.probe_remaining.saturating_sub(1);
             self.probing = self.probe_remaining > 0;
@@ -331,9 +345,17 @@ impl Strategy for AutoStrategy {
         } else if self.dfs.is_some() && self.probed && !self.complete {
             // A closing state cache does not bound the remaining schedule tree.
             // Continue sampling alongside DFS so it cannot monopolize all-bug search.
+            // Until a schedule fails, the search is most likely proving the model safe:
+            // sampling gets a quarter of the work, as when every schedule ran from the
+            // start and one in four was a sample. A schedule that resumes at a saved
+            // prefix executes few choices, a sample a whole schedule. After a failure,
+            // samples find the other failures sooner: one per three schedules.
             self.since_probe += 1;
-            if self.since_probe >= 3 {
+            self.executed += RESUME_COST;
+            let due = if self.saw_bug { self.since_probe >= 3 } else { self.executed >= 3 * self.sample_cost };
+            if due {
                 self.since_probe = 0;
+                self.executed = 0;
                 self.probing = true;
                 // Once a concurrent execution has failed, proving correctness is
                 // no longer the task. Favor complementary samples while retaining

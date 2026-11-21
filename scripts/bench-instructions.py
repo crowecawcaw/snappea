@@ -50,7 +50,7 @@ def project_sources(project):
     return [[str(f.relative_to(ROOT)), f.read_text()] for f in files]
 
 
-def load_cases(manifests, name_filter):
+def load_cases(manifests, name_filter, budget=SYNTHETIC_BUDGET):
     cases = []
     for manifest in manifests:
         for case in json.loads(manifest.read_text())['cases']:
@@ -60,7 +60,7 @@ def load_cases(manifests, name_filter):
                 digest = json.dumps(case['sources']).encode()
             else:
                 case['source'] = (manifest.parent / case['path']).read_text()
-                case.setdefault('budget', SYNTHETIC_BUDGET)
+                case.setdefault('budget', budget)
                 digest = case['source'].encode()
             case['source_sha256'] = hashlib.sha256(digest).hexdigest()
             # an unbounded safe model has nothing to settle
@@ -118,6 +118,7 @@ def main():
     parser.add_argument('--manifest', type=Path, action='append', help='case lists (default: the synthetic and sample manifests)')
     parser.add_argument('--seeds', type=int, default=10)
     parser.add_argument('--seed-start', type=int, default=0)
+    parser.add_argument('--budget', type=int, default=SYNTHETIC_BUDGET, help='schedule limit of the cases that set none')
     parser.add_argument('--steps', type=int, default=2000)
     parser.add_argument('--seconds', type=float, default=3600, help='wall-clock cap per run; valgrind runs many times slower than native')
     parser.add_argument('--filter', default='')
@@ -127,7 +128,7 @@ def main():
     if min(args.seeds, args.steps, args.jobs) <= 0 or args.seed_start < 0:
         parser.error('positive seeds, steps and jobs are required')
     manifests = args.manifest or [ROOT / 'benchmarks/checker/manifest.json', ROOT / 'benchmarks/checker/samples.json']
-    cases = load_cases(manifests, args.filter)
+    cases = load_cases(manifests, args.filter, args.budget)
     if not cases:
         parser.error('no selected cases')
     if args.binary is None:
