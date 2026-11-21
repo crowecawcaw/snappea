@@ -39,7 +39,7 @@ is projected to finish within another 4,096 choices. If none applies, it release
 the exhaustive search and continues with an adaptive scheduling portfolio. Narrow frontiers
 (up to 256 untried alternatives) get the bounded probe to reach deeper recovery stages. The 16,384-choice stall budget renews while cache pruning keeps up with new states;
 workers share renewals and unused budget, since they share the state cache.
-Memory is limited to 100,000 cached states and 1,000,000 retained choice
+Memory is limited to 1,000,000 cached states and 1,000,000 retained choice
 alternatives; hitting a step bound also starts the portfolio.
 
 The portfolio keeps separate guided-random and deliberate-delay corpora,
