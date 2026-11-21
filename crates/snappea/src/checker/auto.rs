@@ -19,7 +19,7 @@ const RESUME_COST: u64 = 16;
 const MAX_WORK: u64 = 16_384;
 const SMALL_FRONTIER: usize = 256;
 const LOOKAHEAD_WORK: u64 = 4 * WINDOW;
-const MAX_STATES: usize = 100_000;
+const MAX_STATES: usize = 1_000_000;
 const MAX_ALTERNATIVES: usize = 1_000_000;
 
 pub(crate) struct AutoStrategy {

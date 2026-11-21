@@ -75,12 +75,24 @@ the designs in `examples/samples/`:
 - **sample-bug**: an expected-bug test, settled when its declared failure is found.
 - **sample-safe**: a test of a fixed design. One seed: its exhaustive search costs
   the same on every seed to within 0.1%.
-- **sample-stretch**: safe tests `auto` does not finish within 50,000 schedules. They
-  count as unsettled until a change lets the search finish.
+- **sample-stretch**: larger safe tests. One needs about 410,000 schedules; the other
+  is not finished within 50,000 and counts as unsettled until a change lets the search
+  finish.
 
-A full run takes about 15 minutes on four cores; `--jobs` sets the processes. It is not
-part of CI. At `fe2fef4` (Rust 1.97.0, valgrind 3.22) the geometric mean was
-114,595,984 instructions over 51 settled cases, with both stretch cases unsettled.
+A full run takes about 25 minutes on four cores; `--jobs` sets the processes. It is not
+part of CI. Results so far (Rust 1.97.0, valgrind 3.22), each row measured after the
+change it names:
+
+| Change | Geometric mean of p90 | Settled | Unsettled |
+|---|---:|---:|---:|
+| baseline (`fe2fef4`) | 114,595,984 | 51 | 2 |
+| resume at saved prefixes (#205) | 89,091,530 | 51 | 2 |
+| sampling by work (#206) | 78,620,720 | 51 | 2 |
+| local-step reduction (#208) | 63,432,677 | 51 | 2 |
+| 1,000,000 cached states | 72,435,209 | 52 | 1 |
+
+The last row's mean covers one more case, a 63 G instruction search that did not
+settle before; over the 51 cases of the rows above it is unchanged.
 
 ## CI
 
