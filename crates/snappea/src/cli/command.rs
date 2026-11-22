@@ -4,8 +4,7 @@
 //! sources as arguments, automatic scheduling, durations with units, parallel workers,
 //! time tracking) and its own output: a line per test case, the bug's report and replay
 //! command, and a folder per test case ([`Style::Snappea`]). The upstream-style progress shows
-//! with `--verbose`. Exit status: 0 when no bug or required coverage gap is found, 1 when
-//! either is, 2 on blocking lint findings without a bug, or any other error.
+//! with `--verbose`. Its exit statuses are stated once, in `exit_status!`.
 
 use std::path::Path;
 
@@ -25,7 +24,18 @@ pub(super) const ERROR: i32 = 2;
 // Internal status: run() turns argument failures into the public error result.
 const USAGE_ERROR: i32 = -1;
 
-const HELP: &str = "\
+/// The exit statuses of `snappea check`, shared by the help texts that state them.
+macro_rules! exit_status {
+    () => {
+        "\
+Exit status: 0 nothing failed; 1 a bug, a required coverage gap or an undetected
+mutant; 2 an error, or blocking lint findings with no bug.
+"
+    };
+}
+
+const HELP: &str = concat!(
+    "\
 🫛 snappea checks P models.
 
 Usage: snappea [output options] <command> [options]
@@ -56,13 +66,14 @@ instead.
 --json-report FILE also writes the JSON result to FILE.
 
 Run `snappea <command> --help` for a command's options and examples.
-Exit status: 0 no bug or required coverage gap, 1 bug or coverage gap, 2 error or
-blocking lint findings (with no bug).
-";
+",
+    exit_status!()
+);
 
-const CHECK_HELP: &str = "\
+const CHECK_HELP: &str = concat!(
+    "\
 Usage: snappea check [SOURCE...] [TEST...] [options]
-       snappea check lint [SOURCE...] [--list-rules]
+       snappea check lint [SOURCE...] [--strict] [--list-rules]
        snappea check mutation [SOURCE...] [TEST...] [options]
 
 Runs test cases over many schedules (event orders, nondeterministic choices) to
@@ -71,13 +82,10 @@ find assertion failures, spec violations and liveness bugs. A SOURCE is a .pproj
 
 Sources are linted first. Blocking findings fail the check, but the test cases still
 run, so bugs are reported first, then the findings. Mutation testing runs too when no
-test case failed; coverage is skipped. Exit status is 1 if a test case failed, else 2. `check lint` only lints;
-`check mutation` only runs mutation testing. See their --help.
+test case failed; coverage is skipped. `check lint` only lints; `check mutation` only
+runs mutation testing. See their --help.
 
-Lint findings, required coverage gaps and undetected mutants fail the check. Only
-mutants a spec or another machine could see are run: a removed `send` or `announce`, an
-emptied handler, a removed or forced branch. `--strict` also runs the rest (swapped
-operators, removed assignments) and reports advisory lint rules, and fails on them.
+Lint findings, required coverage gaps and undetected mutants fail the check.
 Mutation testing is skipped when only some test cases are named: one left out may be
 the one that detects a mutant. `snappea check mutation TEST` runs it on a selection.
 Silence an intended finding in the source with a
@@ -155,13 +163,9 @@ Output:
       --inspect-trace       Include source and values in replay traces; also retain a bounded
                             sample of early executions in schedules.json. Search is unchanged.
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
-      --coverage-file <FILE>
-                            Write every statement, branch and event handler no test
-                            case ran to FILE
       --list-suppressions   List suppressed mutants with reasons and stale suppressions.
   -v, --verbose             Show progress, statistics and driver limits, and log every
-                            schedule.
-                            Uses one worker.
+                            schedule (on one worker).
       --progress <WHEN>     auto, off or json. auto (default) shows a status line
                             when stderr is a terminal and a line every 30s in CI
                             (CI set); none with --verbose. json writes a JSON
@@ -197,7 +201,10 @@ the values it used. They show what the check never tried, e.g. `no Client sends 
 eRelease`; if the real environment can do that, extend the driver. The driver is the
 test's main machine, machines declared under PTst/, and machines marked with a
 `// snappea: driver` comment. Driver limits never change the exit status.
-";
+
+",
+    exit_status!()
+);
 
 const MUTATION_HELP: &str = "\
 Usage: snappea check mutation [SOURCE...] [TEST...] [options]
@@ -226,7 +233,8 @@ Options:
       --max-bugs <N>        Distinct failures per test case in the first run (default: 3);
                             mutants always stop at their first failure
       --latency <FILE>[:<PROFILE>], --timed
-      --warn <CHECK>, --deny <CHECK>, --strict
+      --warn <CHECK>, --deny <CHECK>, --strict, --list-suppressions,
+      --no-driver-facts, --ignore-foreign-files, --inspect-trace
                             As for `snappea check`
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
   -v, --verbose             Show progress and statistics
@@ -237,17 +245,18 @@ mutants; `allow mutation-nested[:<kind>]` before a handler, function or machine 
 the mutants inside it. See docs/checking-models.md.
 Exit status: 0 every mutant detected; 1 a mutant undetected, a mutant not tested (the
 time limit stopped it, or no passing test case ran its code) or a test case failed;
-2 error, or blocking lint findings (the test cases run, mutation testing does not).
+2 error, or blocking lint findings with no failed test case (mutation testing still
+runs then).
 Raise --mutation-timeout when mutants are not tested.
 ";
 
 const REPLAY_HELP: &str = "\
 Usage: snappea replay <FILE.schedule> [SOURCE...] [options]
 
-Replays a schedule written by `snappea check`: the same event order and choices,
-so the same bug. Use it to debug a bug (-v logs each step) and, after editing the
-model, to confirm the fix. Exit status 1 means the bug was reproduced, 0 that it
-was not.
+Replays a schedule written by `snappea check` (or `snappea-compat check`): the same
+event order and choices, so the same bug. Use it to debug a bug (-v logs each step)
+and, after editing the model, to confirm the fix. Exit status 1 means the bug was
+reproduced, 0 that it was not.
 
 Examples:
   snappea replay PCheckerOutput/tcBank/bug.schedule -v
@@ -255,13 +264,20 @@ Examples:
 
 Options:
       --test <NAME>         Test case to replay, for schedules that name none
-      --max-steps <N>       The step options the schedule was found with. Copy
-      --fair-max-steps <N>  them from the replay line `snappea check` prints;
-      --fail-on-max-steps   only older schedules need them.
+      --max-steps <N>       For a schedule written by `snappea-compat check`: the
+      --fair-max-steps <N>  step options that check was given. Schedules from
+      --fail-on-max-steps   `snappea check` need none.
       --ignore-foreign-files
                             Replay although the project lists foreign files, as
                             `snappea check --ignore-foreign-files` did
   -v, --verbose             Log the schedule
+";
+
+const VERSION_HELP: &str = "\
+Usage: snappea version
+
+Prints the snappea version, e.g. to report a bug or to check that a CI job installed
+the release it pins.
 ";
 
 const TESTS_HELP: &str = "\
@@ -390,6 +406,9 @@ pub fn run(args: &[String], host: &mut dyn Host) -> i32 {
     }
 }
 
+/// The commands [`HELP`] lists, for `snappea help <command>` and unknown-command errors.
+const COMMANDS: [&str; 7] = ["check", "replay", "tests", "observe", "coverage", "guide", "version"];
+
 fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
     let Some((cmd, rest)) = args.split_first() else {
         host.write(Stream::Out, HELP, None);
@@ -407,8 +426,12 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
         "version" | "--version" | "-V" => {
             let a = match parse_args(rest, &[]) {
                 Ok(a) => a,
-                Err(m) => return usage_error(host, &m, None),
+                Err(m) => return usage_error(host, &m, Some("version")),
             };
+            if a.help {
+                host.write(Stream::Out, &format!("{}\n{}", VERSION_HELP, OUTPUT_HELP), None);
+                return OK;
+            }
             with_output(host, &a, "version", |host| {
                 host.out_line(&format!("snappea {}", env!("CARGO_PKG_VERSION")));
                 Ok((OK, json!({"version": env!("CARGO_PKG_VERSION")})))
@@ -419,9 +442,7 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
                 host.write(Stream::Out, HELP, None);
                 OK
             }
-            Some(c @ ("check" | "replay" | "tests" | "observe" | "coverage" | "guide")) => {
-                dispatch(&[c.to_string(), "--help".into()], host)
-            }
+            Some(c) if COMMANDS.contains(&c) => dispatch(&[c.to_string(), "--help".into()], host),
             Some(c) => usage_error(host, &unknown_command(c), None),
         },
         c => usage_error(host, &unknown_command(c), None),
@@ -711,7 +732,6 @@ fn is_source(arg: &str) -> bool {
 
 /// `unknown command 'chek'; did you mean 'check'?`, with the commands.
 fn unknown_command(c: &str) -> String {
-    const COMMANDS: [&str; 7] = ["check", "replay", "tests", "observe", "coverage", "guide", "version"];
     let mut m = format!("unknown command '{}'", c);
     if let Some(s) = crate::sema::errors::closest(c, COMMANDS) {
         m.push_str(&format!("; did you mean '{}'?", s));
@@ -811,13 +831,15 @@ Examples:
   snappea check lint --list-rules
 ";
 
+const LINT_OPTS: &[Opt] = &[flag("list-rules", None), flag("strict", None)];
+
 fn lint(args: &[String], host: &mut dyn Host) -> i32 {
-    let a = match parse_args(args, &[flag("list-rules", None), flag("strict", None)]) {
+    let a = match parse_args(args, LINT_OPTS) {
         Ok(a) => a,
         Err(m) => return usage_error(host, &m, Some("check lint")),
     };
     if a.help {
-        host.write(Stream::Out, LINT_HELP, None);
+        host.write(Stream::Out, &format!("{}\n{}", LINT_HELP, OUTPUT_HELP), None);
         return OK;
     }
     if a.has("list-rules") && !a.positional.is_empty() {
@@ -1077,8 +1099,9 @@ fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
     Ok(())
 }
 
-/// `--max-steps`, `--fair-max-steps` and `--fail-on-max-steps`, which `check` and `replay`
-/// share (a schedule replays only with the step bounds it was found with).
+/// `replay`'s `--max-steps`, `--fair-max-steps` and `--fail-on-max-steps`, for schedules
+/// that `snappea-compat check` found with those bounds: a schedule replays only with the
+/// step bounds it was found with.
 fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
     if let Some(n) = uint(a, "max-steps")? {
         cfg.max_unfair_steps = n;
@@ -1096,22 +1119,6 @@ fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
     }
     cfg.fail_on_max_steps = a.has("fail-on-max-steps");
     Ok(())
-}
-
-/// The step options of `cfg` that differ from the defaults, as arguments.
-fn step_args(cfg: &CheckConfig) -> Vec<String> {
-    let default = CheckConfig::default();
-    let mut out = Vec::new();
-    if cfg.max_unfair_steps != default.max_unfair_steps {
-        out.extend(["--max-steps".to_string(), cfg.max_unfair_steps.to_string()]);
-    }
-    if cfg.user_set_max_fair_steps {
-        out.extend(["--fair-max-steps".to_string(), cfg.max_fair_steps.to_string()]);
-    }
-    if cfg.fail_on_max_steps {
-        out.push("--fail-on-max-steps".into());
-    }
-    out
 }
 
 /// Distinct failures `snappea check` collects per test case without `--max-bugs`.
@@ -2593,13 +2600,11 @@ fn print_case(host: &mut dyn Host, case: &check::CaseOutcome, cfg: &CheckConfig,
     }
 }
 
-/// The `snappea replay` command for `schedule`, with the sources and step options the check
-/// was given.
+/// The `snappea replay` command for `schedule`, with the sources the check was given.
 fn replay_command(schedule: &str, cfg: &CheckConfig) -> String {
     let mut words = vec!["snappea".to_string(), "replay".into(), schedule.to_string()];
     words.extend(cfg.input.pproj.iter().cloned());
     words.extend(cfg.input.pfiles.iter().cloned());
-    words.extend(step_args(cfg));
     if cfg.ignore_foreign_files {
         words.push("--ignore-foreign-files".into());
     }
@@ -2831,10 +2836,12 @@ fn coverage(args: &[String], host: &mut dyn Host) -> i32 {
     })
 }
 
+const MERGE_OBSERVE_OPTS: &[Opt] = &[flag("stdin", None)];
+
 /// Merge portable observed reports without loading or executing P sources.
 fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
     use crate::checker::observe_report::ObserveCoverageReport;
-    let a = match parse_args(args, &[flag("stdin", None)]) {
+    let a = match parse_args(args, MERGE_OBSERVE_OPTS) {
         Ok(a) => a,
         Err(e) => return usage_error(host, &e, Some("coverage")),
     };
@@ -2881,6 +2888,86 @@ fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    /// The `--options` a text mentions.
+    fn mentioned(text: &str) -> BTreeSet<String> {
+        text.match_indices("--")
+            .filter(|(i, _)| !text[..*i].ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-'))
+            .map(|(i, _)| text[i + 2..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect())
+            .filter(|name: &String| !name.is_empty())
+            .collect()
+    }
+
+    /// What `snappea <args> --help` prints.
+    fn help_of(args: &[&str]) -> String {
+        let mut h = crate::host::MemHost::default();
+        let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        args.push("--help".into());
+        assert_eq!(run(&args, &mut h), OK, "{}", h.stderr);
+        h.stdout
+    }
+
+    /// Each command's help names exactly the options it accepts, so the two cannot drift.
+    #[test]
+    fn every_help_names_exactly_the_options_its_command_accepts() {
+        // (command, its options, whether its help lists the output options, options its
+        // help and its table may disagree on: another command's, or one it rejects)
+        type Case<'a> = (&'a [&'a str], &'a [Opt], bool, &'a [&'a str]);
+        let commands: &[Case] = &[
+            (&["check"], CHECK_OPTS, true, &["list-rules", "p-trace"]),
+            (&["check", "mutation"], CHECK_OPTS, true, &["no-mutation"]),
+            (&["check", "lint"], LINT_OPTS, true, &[]),
+            (&["replay"], REPLAY_OPTS, true, &[]),
+            (&["tests"], &[], true, &[]),
+            (&["version"], &[], true, &[]),
+            (&["observe"], super::super::observe::OPTS, true, &[]),
+            // the overview of both subcommands
+            (&["coverage"], &[], true, &["stdin"]),
+            (&["coverage", "merge-observe"], MERGE_OBSERVE_OPTS, true, &[]),
+            // the guide ignores the output options, so its help leaves them out
+            (&["guide"], super::super::guide::OPTS, false, &[]),
+        ];
+        let mut wrong = Vec::new();
+        for (args, opts, output, foreign) in commands {
+            let help = help_of(args);
+            let mut accepted: BTreeSet<String> =
+                opts.iter().map(|o| o.long.to_string()).filter(|l| !foreign.contains(&l.as_str())).collect();
+            accepted.insert("help".into());
+            if *output {
+                accepted.extend(OUTPUT_OPTS.iter().map(|o| o.long.to_string()));
+            }
+            let named = mentioned(&help);
+            let cmd = args.join(" ");
+            for name in named.iter().filter(|n| !accepted.contains(*n) && !foreign.contains(&n.as_str())) {
+                wrong.push(format!("`snappea {cmd} --help` names --{name}, which it does not accept"));
+            }
+            for name in accepted.difference(&named).filter(|n| *n != "help") {
+                wrong.push(format!("`snappea {cmd} --help` does not name --{name}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// `snappea help <command>` works for every command the help lists, and only those.
+    #[test]
+    fn help_lists_and_dispatches_every_command() {
+        let listed: Vec<&str> = HELP
+            .split("Commands:\n")
+            .nth(1)
+            .unwrap()
+            .lines()
+            .take_while(|l| !l.is_empty())
+            .filter(|l| l.starts_with("  ") && !l.starts_with("   "))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        assert_eq!(listed, COMMANDS);
+        for c in COMMANDS {
+            let mut h = crate::host::MemHost::default();
+            assert_eq!(run(&["help".into(), c.into()], &mut h), OK, "{c}: {}", h.stderr);
+            assert_eq!(h.stdout, help_of(&[c]), "{c}");
+        }
+    }
 
     #[test]
     fn a_longer_timeout_is_suggested_only_up_to_a_minute() {

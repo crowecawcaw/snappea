@@ -1,8 +1,5 @@
-//! The `snappea` and `snappea-compat` command line tools.
-//!
-//! `snappea` ([`run`]) is snappea's own command line and `snappea-compat` upstream's `p`, option for
-//! option. Both run the commands of [`crate::driver`]; `snappea` adds
-//! what upstream lacks (parallel workers, time tracking) and options named for how snappea works.
+//! The `snappea` command line ([`run`]), and the host it runs on natively. It runs the
+//! commands of [`crate::driver`]; `snappea-compat`, upstream's `p`, is in [`crate::compat`].
 
 mod command;
 mod guide;
