@@ -2,7 +2,7 @@
 //!
 //! Only completed unbounded exhaustion can end checking early. Stalled or bounded
 //! searches hand off to a feedback/delay/PCT portfolio. Independent scheduler
-//! corpora and an exploration floor protect against misleading novelty signals.
+//! corpora and an exploration floor protect against misleading rarity signals.
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -397,12 +397,14 @@ impl Strategy for AutoStrategy {
             // sampling gets a quarter of the work, as when every schedule ran from the
             // start and one in four was a sample. A schedule that resumes at a saved
             // prefix executes few choices, a sample a whole schedule. After a failure,
-            // samples find the other failures sooner: one per three schedules.
+            // samples find the other failures sooner: three after every three schedules
+            // of the search, so half of all schedules.
             self.since_probe += 1;
             self.executed += RESUME_COST;
             // A model whose samples are long (a timer or a retry that goes on to the step
             // bound) would hardly be sampled by work alone, and samples reach its late
-            // stages far sooner than the search does: at least one in `SAMPLE_FLOOR`.
+            // stages far sooner than the search does: at least one sample after every
+            // `SAMPLE_FLOOR` schedules of the search.
             let due = match self.saw_bug {
                 true => self.since_probe >= 3,
                 false => self.executed >= 3 * self.sample_cost || self.since_probe >= SAMPLE_FLOOR,

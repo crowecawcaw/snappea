@@ -2,9 +2,10 @@
 //!
 //! The search is a depth-first search over the choice points the runtime already
 //! controls: which operation runs at a scheduling point, and every `$`/`choose` value.
-//! It is stateless in the sense that each schedule re-runs the test from the start,
-//! replaying the choices of the path to the branch being explored, then takes the next
-//! untried alternative there (so no runtime state has to be cloned).
+//! A schedule reaches the branch being explored by resuming from a saved prefix of the
+//! path when one matches ([`ExhaustiveStrategy::resume_initial_prefix`]), or else by re-running the
+//! test from the start and replaying the path's choices; then it takes the next untried
+//! alternative there.
 //!
 //! Visited-state caching cuts the search down: at every scheduling point the program
 //! state is hashed ([`crate::checker::statehash`]) and a schedule stops when it reaches a state
