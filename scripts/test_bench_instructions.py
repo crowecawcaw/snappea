@@ -55,6 +55,15 @@ class InstructionMetricsTests(unittest.TestCase):
             for expected in case['expected']:
                 self.assertIn(expected['match'], text, case['name'])
 
+    def test_a_patch_must_apply_exactly_once(self):
+        sources = [['a/PSrc/M.p', 'if (x) { y(); }'], ['b/PSrc/M.p', 'if (x) { z(); }']]
+        patch = dict(file='a/PSrc/M.p', find='if (x)', replace='if (true)')
+        self.assertEqual(bench.patched(sources, [patch])[0][1], 'if (true) { y(); }')
+        self.assertEqual(sources[0][1], 'if (x) { y(); }')
+        for wrong in (dict(patch, find='if (z)'), dict(patch, file='PSrc/M.p'), dict(patch, find='(')):
+            with self.assertRaises(SystemExit):
+                bench.patched(sources, [wrong])
+
 
 if __name__ == '__main__':
     unittest.main()

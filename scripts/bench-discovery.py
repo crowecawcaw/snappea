@@ -27,13 +27,14 @@ spec.loader.exec_module(instr)
 QUANTILES = (0.5, 0.9, 0.99)
 
 
-def discoveries(rows):
-    """One point per bug site and seed: where it was first found, or None values for a miss."""
+def discoveries(rows, large=()):
+    """One point per bug site and seed: where it was first found, or None values for a miss.
+    `large` names the cases that are bugs in large models."""
     points = []
     for row in rows:
         for site in row['expected']:
             points.append(dict(
-                case=row['case'], site=site, seed=row['seed'],
+                case=row['case'], site=site, seed=row['seed'], large=row['case'] in large,
                 schedules=row['first'].get(site), seconds=row.get('first_seconds', {}).get(site),
             ))
     return points
@@ -86,16 +87,18 @@ def label(value, unit):
     return f'{short(value / 1000)}k' if value >= 1000 else short(value)
 
 
-INK, MUTED, GRID, SURFACE, BAR, MISS, BEFORE = '#0b0b0b', '#52514e', '#e4e3df', '#fcfcfb', '#2a78d6', '#9a9993', '#52514e'
+INK, MUTED, GRID, SURFACE, BAR, LARGE, BEFORE = '#0b0b0b', '#52514e', '#e4e3df', '#fcfcfb', '#2a78d6', '#d9730d', '#52514e'
 
 
-def panel(values, earlier, unit, title, y0, width, height):
-    """One histogram as SVG elements: found values on a log axis, misses in their own bar."""
+def panel(values, earlier, unit, title, y0, width, height, large=()):
+    """One histogram as SVG elements: found values on a log axis, misses in their own bar.
+    `large` is the part of `values` from large models, stacked on top in its own color."""
     found = [v for v in values + (earlier or []) if v is not None]
     floor = 1 if unit == '' else 1e-4
     bins = edges(max(floor, min(found)), max(found))
     counts, missed = histogram(values, bins)
     old = histogram(earlier, bins) if earlier else None
+    big, big_missed = histogram(list(large), bins)
     left, right, top, bottom = 56, 24, 62, 40
     slots = len(counts) + 2  # a gap, then the `not found` bar
     step = (width - left - right) / slots
@@ -116,24 +119,29 @@ def panel(values, earlier, unit, title, y0, width, height):
         out.append(f'<text x="{left - 8}" y="{y + 4:.1f}" font-size="11" text-anchor="end" fill="{MUTED}">{round(t)}</text>')
     out.append(f'<line x1="{left}" x2="{width - right}" y1="{base}" y2="{base}" stroke="{MUTED}"/>')
 
-    def bar(i, n, color):
+    def bar(i, n, upper):
+        """A bar of n points; the upper `upper` of them are from large models."""
         if n == 0:
             return ''
         x, w, h = left + i * step + 1, step - 2, max(scale(n), 2)
         r = min(4, h, w / 2)
-        return (f'<path d="M{x:.1f},{base} v{-(h - r):.1f} q0,{-r} {r},{-r} h{w - 2 * r:.1f} q{r},0 {r},{r} v{h - r:.1f} z" '
-                f'fill="{color}"><title>{n}</title></path>')
+        whole = (f'<path d="M{x:.1f},{base} v{-(h - r):.1f} q0,{-r} {r},{-r} h{w - 2 * r:.1f} q{r},0 {r},{r} v{h - r:.1f} z" '
+                 f'fill="{LARGE if upper else BAR}"><title>{n} bugs, {upper} from the large set</title></path>')
+        lower = scale(n - upper)
+        if not upper or lower < 1:
+            return whole
+        return whole + f'<rect x="{x:.1f}" y="{base - lower:.1f}" width="{w:.1f}" height="{lower:.1f}" fill="{BAR}"/>'
 
     def outline(i, n):
         x, y = left + i * step, base - scale(n)
         return f'<line x1="{x:.1f}" x2="{x + step:.1f}" y1="{y:.1f}" y2="{y:.1f}" stroke="{BEFORE}" stroke-width="2"/>'
 
     for i, n in enumerate(counts):
-        out.append(bar(i, n, BAR))
+        out.append(bar(i, n, big[i]))
         if n:
             out.append(f'<text x="{left + (i + 0.5) * step:.1f}" y="{base - max(scale(n), 2) - 4:.1f}" font-size="10" text-anchor="middle" fill="{MUTED}">{n}</text>')
     miss_slot = len(counts) + 1
-    out.append(bar(miss_slot, missed, MISS))
+    out.append(bar(miss_slot, missed, big_missed))
     out.append(f'<text x="{left + (miss_slot + 0.5) * step:.1f}" y="{base - (max(scale(missed), 2) if missed else 0) - 4:.1f}" font-size="10" text-anchor="middle" fill="{MUTED}">{missed}</text>')
     if old:
         for i, n in enumerate(old[0]):
@@ -155,8 +163,14 @@ def svg(points, earlier=None, width=820, height=290):
     body = []
     for n, (key, unit, title) in enumerate((('schedules', '', 'Bugs found, by schedules'), ('seconds', 's', 'Bugs found, by time'))):
         before = [p[key] for p in earlier] if earlier else None
-        body += panel([p[key] for p in points], before, unit, title, n * height + 8, width, height)
+        large = [p[key] for p in points if p.get('large')]
+        body += panel([p[key] for p in points], before, unit, title, n * height + 8, width, height, large)
     total = 2 * height + 16
+    if any(p.get('large') for p in points):
+        body.append(f'<rect x="{width - 470}" y="16" width="14" height="12" rx="2" fill="{BAR}"/>'
+                    f'<text x="{width - 450}" y="26" font-size="11" fill="{MUTED}">small models</text>'
+                    f'<rect x="{width - 370}" y="16" width="14" height="12" rx="2" fill="{LARGE}"/>'
+                    f'<text x="{width - 350}" y="26" font-size="11" fill="{MUTED}">large models</text>')
     if earlier:
         body.append(f'<line x1="{width - 250}" x2="{width - 226}" y1="22" y2="22" stroke="{BEFORE}" stroke-width="2"/>'
                     f'<text x="{width - 220}" y="26" font-size="11" fill="{MUTED}">before</text>'
@@ -176,7 +190,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--out', required=True, help='result JSON; the histogram is written beside it as .svg')
     parser.add_argument('--binary', type=Path, help='use a frozen executable without rebuilding')
-    parser.add_argument('--manifest', type=Path, action='append', help='case lists (default: the synthetic and sample manifests)')
+    parser.add_argument('--manifest', type=Path, action='append', help='case lists (default: the synthetic, sample and large-model manifests)')
     parser.add_argument('--seeds', type=int, default=20)
     parser.add_argument('--seed-start', type=int, default=0)
     parser.add_argument('--budget', type=int, default=instr.SYNTHETIC_BUDGET, help='schedule limit of the cases that set none')
@@ -191,7 +205,7 @@ def main():
     if args.redraw:
         data = read(out)
     else:
-        manifests = args.manifest or [ROOT / 'benchmarks/checker/manifest.json', ROOT / 'benchmarks/checker/samples.json']
+        manifests = args.manifest or [ROOT / 'benchmarks/checker' / name for name in ('manifest.json', 'samples.json', 'large.json')]
         cases = [c for c in instr.load_cases(manifests, args.filter, args.budget) if c['expected']]
         if not cases:
             parser.error('no selected cases with a known bug')
@@ -215,7 +229,7 @@ def main():
             revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             dirty=bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)),
             settings=dict(settings, seeds=args.seeds, seed_start=args.seed_start, jobs=args.jobs),
-            points=discoveries(rows),
+            points=discoveries(rows, {c['name'] for c in cases if c.get('family', '').startswith('large')}),
         )
         out.parent.mkdir(parents=True, exist_ok=True)
         encoded = (json.dumps(data) + '\n').encode()

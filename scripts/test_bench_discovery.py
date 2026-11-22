@@ -12,9 +12,10 @@ class DiscoveryTest(unittest.TestCase):
     def test_a_missed_site_is_a_point_with_no_values(self):
         rows = [dict(case='c', seed=3, expected=['a', 'b'], first={'a': 7}, first_seconds={'a': 0.25})]
         self.assertEqual(bench.discoveries(rows), [
-            dict(case='c', site='a', seed=3, schedules=7, seconds=0.25),
-            dict(case='c', site='b', seed=3, schedules=None, seconds=None),
+            dict(case='c', site='a', seed=3, large=False, schedules=7, seconds=0.25),
+            dict(case='c', site='b', seed=3, large=False, schedules=None, seconds=None),
         ])
+        self.assertTrue(all(p['large'] for p in bench.discoveries(rows, {'c'})))
 
     def test_a_miss_is_infinite_in_a_quantile(self):
         self.assertEqual(bench.quantile([1, 2, 3, None], 0.5), 2)
@@ -41,6 +42,20 @@ class DiscoveryTest(unittest.TestCase):
         picture = bench.svg(points, points)
         for text in ('by schedules', 'by time', 'not found', 'before'):
             self.assertIn(text, picture)
+
+    def test_bugs_in_large_models_are_drawn_apart(self):
+        points = [dict(schedules=n, seconds=n / 1000, large=n > 100) for n in (1, 40, 900, 950)]
+        self.assertIn('large models', bench.svg(points))
+        self.assertNotIn('large models', bench.svg([dict(p, large=False) for p in points]))
+
+    def test_large_cases_apply_their_planted_bug(self):
+        cases = bench.instr.load_cases([bench.ROOT / 'benchmarks/checker/large.json'], '')
+        self.assertTrue(cases)
+        for case in cases:
+            text = '\n'.join(source for _, source in case['sources'])
+            self.assertIn(f"test {case['test']} ", text, case['name'])
+            for patch in case.get('patch', []):
+                self.assertIn(patch['replace'], text, case['name'])
 
 
 if __name__ == '__main__':
