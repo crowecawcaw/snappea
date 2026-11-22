@@ -534,10 +534,6 @@ jobs:
           server-id: central
           server-username: CENTRAL_TOKEN_USERNAME
           server-password: CENTRAL_TOKEN_PASSWORD
-      - uses: stCarolas/setup-maven@v5
-        if: steps.check.outputs.publish == 'true'
-        with:
-          maven-version: '3.9.9'
       - name: Import the signing key
         if: steps.check.outputs.publish == 'true'
         env:
