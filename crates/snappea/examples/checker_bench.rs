@@ -11,6 +11,8 @@ struct Discoveries {
     /// project cases, whose catalog is the test's declared `expect-bug` text.
     lenient: bool,
     first: BTreeMap<String, usize>,
+    /// Seconds into the run at each first discovery.
+    first_seconds: BTreeMap<String, f64>,
     tested: usize,
     start: Instant,
     seconds: f64,
@@ -40,7 +42,9 @@ impl Output for Discoveries {
                 return;
             }
             assert_eq!(matches.len(), 1, "failure absent or ambiguous in independent oracle: {bug}");
+            let seconds = self.start.elapsed().as_secs_f64();
             self.first.entry(matches[0].0.clone()).or_insert(n);
+            self.first_seconds.entry(matches[0].0.clone()).or_insert(seconds);
         }
     }
     fn cancelled(&mut self) -> bool {
@@ -107,6 +111,7 @@ fn main() {
                     expected,
                     lenient,
                     first: Default::default(),
+                    first_seconds: Default::default(),
                     tested: 0,
                     start: Instant::now(),
                     seconds: run["seconds"].as_f64().unwrap(),
@@ -132,7 +137,7 @@ fn main() {
                     .then(|| *out.first.values().max().unwrap());
                 println!(
                     "{}",
-                    json!({"budget":budget,"case":case["name"],"family":case["family"],"split":case["split"],"strategy":label,"seed":seed,"expected":out.expected.iter().map(|(id,_)|id).collect::<Vec<_>>(),"first":out.first,"schedules":out.tested,"schedules_to_all":all,"seconds":out.start.elapsed().as_secs_f64(),"time_censored":all.is_none() && out.start.elapsed().as_secs_f64()>=out.seconds,"exhausted":result.exhaustive.as_ref().is_some_and(|s|s.finished),"allocation":result.scheduler_stats.iter().map(|a|json!({"name":a.name,"runs":a.schedules,"work":a.work,"reward":a.reward})).collect::<Vec<_>>()})
+                    json!({"budget":budget,"case":case["name"],"family":case["family"],"split":case["split"],"strategy":label,"seed":seed,"expected":out.expected.iter().map(|(id,_)|id).collect::<Vec<_>>(),"first":out.first,"first_seconds":out.first_seconds,"schedules":out.tested,"schedules_to_all":all,"seconds":out.start.elapsed().as_secs_f64(),"time_censored":all.is_none() && out.start.elapsed().as_secs_f64()>=out.seconds,"exhausted":result.exhaustive.as_ref().is_some_and(|s|s.finished),"allocation":result.scheduler_stats.iter().map(|a|json!({"name":a.name,"runs":a.schedules,"work":a.work,"reward":a.reward})).collect::<Vec<_>>()})
                 );
             }
         }
