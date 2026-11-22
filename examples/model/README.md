@@ -34,23 +34,21 @@ The first explores every interleaving and data choice and finds no bug: no overs
 and every order gets an answer. Scoped coverage
 comments in the shared model identify the check-then-reserve paths that this test does
 not exercise; those paths are exercised by the second test. Run `snappea check` without
-a test name to select both designs:
+a test name to select both designs. The first proves the atomic design:
 
 ```text
-Checking Inventory: 1 test case
-ok    tcAtomicReserve (proved, 3.01s)
-🫛 The test case passed in 3.02s, peak memory 30 MB. Output: PCheckerOutput/
+ok    tcAtomicReserve (proved, ...)
 ```
 
 The second finds the oversell within a few schedules, and exits with 1:
 
 ```text
-Checking Inventory: 1 test case
-FAIL  tcCheckThenReserve (bug found after 8 schedules, 8 workers, 0.01s)
+FAIL  tcCheckThenReserve (bug found after ...)
       Assertion Failed: PSpec/inventory.p:27:7 reservation exceeds available stock
-      Replay: snappea replay PCheckerOutput/tcCheckThenReserve/bug.schedule
-1 of 1 test case failed in 0.02s, peak memory 10 MB. Output: PCheckerOutput/
 ```
+
+[Checking P models](../../docs/checking-models.md#errors-and-output) shows the whole
+output of `snappea check` for this model.
 
 The log in `PCheckerOutput/tcCheckThenReserve/bug.txt` shows both orders reading
 3 units before either commits, and the `snappea replay` command runs the same schedule

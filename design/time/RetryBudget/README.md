@@ -13,11 +13,8 @@ Runs with the current build:
 
 ```
 $ snappea check tcRetry --timeout 10s                        # no latency file
-Checking RetryBudget: 1 test case
-FAIL  tcRetry (bug found after 10 schedules, 8 workers, 0.00s)
-      Assertion Failed: PSpec/Budget.p:7:7 resolved (ok = False) after up to 1050000us; deadline is 1000000us
-      Replay: snappea replay PCheckerOutput/tcRetry/bug.schedule
-1 of 1 test case failed in 0.01s, peak memory 10 MB. Output: PCheckerOutput/
+FAIL  tcRetry (bug found after ...)
+      Assertion Failed: PSpec/Budget.p:8:7 resolved (ok = False) after up to 1050000us; deadline is 1000000us
 
 $ snappea check tcRetry --timeout 10s --latency PTst/latency.toml          # same bug
 $ snappea check tcRetry --timeout 10s --latency PTst/latency.toml --timed  # same bug

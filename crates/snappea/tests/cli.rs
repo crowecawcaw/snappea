@@ -2082,3 +2082,66 @@ fn an_assertion_lists_hot_specs_as_context() {
         h.stdout
     );
 }
+
+/// What the sample of `snappea check` output in docs/checking-models.md and a run of
+/// examples/model have in common: the lines, with every number (timings, schedule and
+/// worker counts, coverage) and the peak memory masked.
+fn sample_shape(text: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let mut out = String::new();
+        let mut digits = false;
+        for c in line.chars() {
+            if c.is_ascii_digit() || (digits && c == '.') {
+                if !digits {
+                    out.push('N');
+                }
+                digits = true;
+            } else {
+                digits = false;
+                out.push(c);
+            }
+        }
+        let out = out.replace(", peak memory N MB", "").replace("schedules", "schedule").replace("workers", "worker");
+        lines.push(out.trim_end().to_string());
+    }
+    lines
+}
+
+/// The documentation's sample output is what `snappea check` prints for examples/model.
+#[test]
+fn the_documented_check_output_matches_a_run_of_the_example_model() {
+    fn now() -> f64 {
+        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/model");
+    let mut h = MemHost::new("/w");
+    h.threads = Some(Threads { available: 4, run: run_threads });
+    h.clock = now;
+    let mut dirs = vec![root.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path.strip_prefix(&root).unwrap().to_str().unwrap().to_string();
+            if path.is_dir() && rel != "PCheckerOutput" {
+                dirs.push(path);
+            } else if rel.ends_with(".p") || rel.ends_with(".pproj") {
+                h.add_file(&rel, &std::fs::read_to_string(&path).unwrap());
+            }
+        }
+    }
+    // a time limit of its own lets the exhaustive search finish, so the verdict does not
+    // depend on how busy the machine is; the output is that of a plain `snappea check`
+    assert_eq!(snappea(&mut h, &["check", "--timeout", "1m"]), 1, "{}{}", h.stdout, h.stderr);
+    let doc = include_str!("../../../docs/checking-models.md");
+    let start = doc.find("```\n$ snappea check\n").expect("the sample in docs/checking-models.md") + 4;
+    let sample = &doc[start..start + doc[start..].find("```").unwrap()];
+    let sample = sample.strip_prefix("$ snappea check\n").unwrap();
+    assert_eq!(
+        sample_shape(sample),
+        sample_shape(&h.stdout),
+        "update the sample in docs/checking-models.md to this output:\n{}",
+        h.stdout
+    );
+}

@@ -2949,6 +2949,14 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
+    /// The reference page states the exit statuses as the help does.
+    #[test]
+    fn the_reference_page_states_the_exit_statuses() {
+        let page = include_str!("../../../../docs/checking-models.md").replace('\n', " ");
+        let status = exit_status!().trim().replace('\n', " ");
+        assert!(page.contains(&status), "docs/checking-models.md should say: {status}");
+    }
+
     /// `snappea help <command>` works for every command the help lists, and only those.
     #[test]
     fn help_lists_and_dispatches_every_command() {
