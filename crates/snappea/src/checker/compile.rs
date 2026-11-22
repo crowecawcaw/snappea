@@ -37,6 +37,8 @@ pub struct Code {
     pub field_defaults: Vec<Vec<crate::checker::value::Value>>,
     /// What the program-state hash leaves out.
     pub unhashed: Unhashed,
+    /// The `choose(n)` sites with values the model cannot tell apart.
+    pub value_classes: Rc<crate::checker::symmetry::ValueClasses>,
 }
 
 /// Values no check depends on (see [`crate::checker::checked`]), which the
@@ -112,19 +114,22 @@ pub(crate) fn compile_program_plain(prog: &Program) -> Code {
 /// unchecked-value masks would have to be recomputed for a state-hashing strategy.
 pub(super) fn compile_random_variant(prog: &Program, root: FunId, base: &Code) -> Code {
     let mut code = base.clone();
-    code.funs[root.idx()] = Some(Rc::new(compile_fun(prog, root, false, &[], None)));
+    // nor does it skip values: the base program's value classes do not describe `prog`
+    code.funs[root.idx()] = Some(Rc::new(compile_fun(prog, root, false, &[], None, &Default::default())));
     code
 }
 
 fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
     let mut probes = Vec::new();
+    let value_classes = Rc::new(crate::checker::symmetry::analyze(prog));
+    let names = &value_classes;
     let mut compile_all = |unread: &[Vec<bool>]| -> Vec<Option<Rc<CodeBlock>>> {
         probes.clear();
         let funs = prog.funs.iter().enumerate();
         funs.map(|(i, f)| {
             (f.parent.is_none() && f.body.is_some()).then(|| {
                 let probes = probe.then_some(&mut probes);
-                Rc::new(compile_fun(prog, FunId(i as u32), fuse, unread, probes))
+                Rc::new(compile_fun(prog, FunId(i as u32), fuse, unread, probes, names))
             })
         })
         .collect()
@@ -148,7 +153,7 @@ fn compile_program_with(prog: &Program, fuse: bool, probe: bool) -> Code {
         .iter()
         .map(|m| m.fields.iter().map(|v| crate::checker::value::default_value(&prog.var(*v).ty, prog)).collect())
         .collect();
-    Code { funs, permissions, probes, action_names, field_defaults, unhashed: Unhashed::new(prog) }
+    Code { funs, permissions, probes, action_names, field_defaults, unhashed: Unhashed::new(prog), value_classes }
 }
 
 /// Rewrites calls of functions whose code is just `ReturnNull` to `CallEmpty`.
@@ -195,7 +200,7 @@ fn unread_params(code: &CodeBlock) -> Vec<bool> {
             | Op::Receive { .. }
             | Op::ChooseBool
             | Op::ChooseFairBool
-            | Op::ChooseInt
+            | Op::ChooseInt { .. }
             | Op::ChooseSeq
             | Op::ChooseSet
             | Op::ChooseMap => None,
@@ -295,6 +300,7 @@ struct LoopCtx {
 
 struct Compiler<'a> {
     prog: &'a Program,
+    names: &'a crate::checker::symmetry::ValueClasses,
     ops: Vec<Op>,
     /// The source of each instruction in `ops` (see [`CodeBlock::spans`]).
     spans: Vec<crate::syntax::Span>,
@@ -327,10 +333,12 @@ fn compile_fun(
     fuse: bool,
     unread: &[Vec<bool>],
     probes: Option<&mut Vec<Probe>>,
+    names: &crate::checker::symmetry::ValueClasses,
 ) -> CodeBlock {
     let f = prog.fun(id);
     let mut c = Compiler {
         prog,
+        names,
         ops: Vec::new(),
         spans: Vec::new(),
         span: f.span,
@@ -1098,7 +1106,7 @@ impl<'a> Compiler<'a> {
                     PType::Seq(_) => Op::ChooseSeq,
                     PType::Set(_) => Op::ChooseSet,
                     PType::Map(..) => Op::ChooseMap,
-                    _ => Op::ChooseInt,
+                    _ => Op::ChooseInt { names: self.names.class_of(inner) },
                 };
                 self.emit(op);
             }

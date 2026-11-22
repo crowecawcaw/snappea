@@ -402,7 +402,7 @@ fn every_seed_must_match_even_when_comparing_failures() {
 fn failure_identity_ignores_formatted_values_at_the_same_assertion() {
     let src = r#"
         machine Main { start state S { entry {
-            assert false, format("known flaw value {0}", choose(100));
+            assert false, format("known flaw value {0}", choose(100) + 1);
         } } }
         // snappea: expect-bug "known flaw"
         test tcNegative [main=Main]: { Main };

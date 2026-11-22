@@ -1342,7 +1342,7 @@ impl<'p> Runtime<'p> {
                     | Op::CoerceInterface { .. }
                     | Op::ChooseBool
                     | Op::ChooseFairBool
-                    | Op::ChooseInt
+                    | Op::ChooseInt { .. }
                     | Op::ChooseSeq
                     | Op::ChooseSet
                     | Op::ChooseMap
@@ -1547,11 +1547,12 @@ impl<'p> Runtime<'p> {
             // `$` and `$$` are both fair for liveness (see `Runtime::check_lasso`)
             Op::ChooseBool | Op::ChooseFairBool => {
                 let name = self.actor_name(actor);
+                self.strategy.note_model_choice();
                 let b = self.choose_bool(2, &name)?;
                 self.note_choice(choice_site(&exec.frames, frame_idx), 2, usize::from(b));
                 stack.push(Value::Bool(b));
             }
-            Op::ChooseInt => {
+            Op::ChooseInt { names } => {
                 let v = pop(stack);
                 if v.is_null() {
                     return Err(nre().into());
@@ -1565,9 +1566,19 @@ impl<'p> Runtime<'p> {
                     return Err(self.assertion_failure(msg));
                 }
                 let name = self.actor_name(actor);
-                let i = self.choose_int(max.max(0) as i32, &name)?;
-                self.note_choice(choice_site(&exec.frames, frame_idx), max.max(0) as usize, i as usize);
-                stack.push(Value::Int(i as i64));
+                self.strategy.note_model_choice();
+                let site = choice_site(&exec.frames, frame_idx);
+                // a search that tries every value skips those the program cannot tell apart
+                let class = names.filter(|_| self.strategy.merges_values() && !self.java_semantics());
+                let i = match class {
+                    Some(class) => self.choose_named(class, site, &name)?,
+                    None => {
+                        let i = self.choose_int(max.max(0) as i32, &name)?;
+                        self.note_choice(site, max.max(0) as usize, i as usize);
+                        i64::from(i)
+                    }
+                };
+                stack.push(Value::Int(i));
             }
             Op::ChooseSeq => {
                 let v = pop(stack);

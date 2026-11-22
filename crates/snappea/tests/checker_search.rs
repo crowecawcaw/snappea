@@ -602,7 +602,7 @@ fn a_livelock_of_two_loops_that_each_decline_a_choice_is_reported_and_replays() 
 
 #[test]
 fn auto_resource_limit_falls_back_without_claiming_exhaustion() {
-    let src = "machine Main { start state S { entry { var i: int; var n: int; while (i < 200) { n = choose(10000); i = i + 1; } } } }
+    let src = "machine Main { start state S { entry { var i: int; var n: int; while (i < 200) { n = n + choose(10000); i = i + 1; } } } }
         test tcMain [main=Main]: { Main };";
     let result = check(src, &opts(StrategyKind::Auto, 30));
     assert_eq!(result.report.num_bugs, 0);
@@ -780,28 +780,24 @@ fn auto_depth_bound_hands_off_to_fair_feedback_and_replays_the_bug() {
 #[test]
 fn auto_keeps_coverage_from_both_sides_of_the_feedback_handoff() {
     let mut sm = snappea::syntax::SourceMap::new();
-    sm.add("model.p", "machine Main { start state S { entry { var n: int; var i: int; if ($) { print \"left\"; } else { print \"right\"; } while (i < 200) { n = choose(10000); i = i + 1; } print \"done\"; } } } test tcMain [main=Main]: { Main };");
+    sm.add("model.p", "machine Main { start state S { entry { var n: int; var i: int; if ($) { print \"left\"; } else { print \"right\"; } while (i < 200) { n = n + choose(10000); i = i + 1; } print \"done\"; } } } test tcMain [main=Main]: { Main };");
     let a = snappea::sema::compile(&sm, &Default::default()).unwrap();
     let tc = a.program.test_cases().remove(0);
     let checker = Checker::with_code_coverage(&a.program);
     for seed in 0..20 {
         let options = CheckerOptions { seed, activity_coverage: true, ..opts(StrategyKind::Auto, 1) };
         let dfs = checker.check(&tc, &options, &mut Quiet).unwrap().coverage.unwrap();
-        let feedback = checker
-            .check(&tc, &CheckerOptions { strategy: StrategyKind::Feedback, ..options.clone() }, &mut Quiet)
-            .unwrap()
-            .coverage
-            .unwrap();
-        let mut expected = feedback.probes.clone();
-        expected.union(&dfs.probes);
-        if expected == feedback.probes {
-            continue;
-        }
         let both = checker.check(&tc, &CheckerOptions { iterations: 2, ..options }, &mut Quiet).unwrap();
         assert_eq!(both.report.explored_unfair_schedules, 1);
         assert_eq!(both.report.explored_fair_schedules, 1);
-        assert_eq!(both.coverage.unwrap().probes, expected, "DFS-only hits must survive the fresh feedback history");
-        return;
+        let both = both.coverage.unwrap().probes;
+        let mut with_dfs = both.clone();
+        with_dfs.union(&dfs.probes);
+        assert_eq!(both, with_dfs, "DFS-only hits must survive the fresh feedback history");
+        // the sampled schedule took the other side of `$`
+        if both != dfs.probes {
+            return;
+        }
     }
     panic!("fixture did not exercise distinct DFS/feedback coverage");
 }
@@ -1191,5 +1187,78 @@ fn local_steps_keep_liveness_verdicts() {
         let r = check(&lost, &auto(partial_order));
         assert_eq!(r.report.num_bugs, 1, "partial_order={partial_order}");
         assert!(r.report.bug_reports[0].contains("hot state 'Busy'"), "{}", r.report.bug_reports[0]);
+    }
+}
+
+/// Three reservations of a key from `choose(5)`; `CHECK` runs on each.
+fn reservations(check: &str) -> String {
+    format!(
+        "event eReserve: int;
+         machine Registry {{
+           var taken: set[int];
+           start state S {{
+             on eReserve do (k: int) {{
+               {check}
+               taken += (k);
+             }}
+           }}
+         }}
+         machine Main {{
+           start state S {{
+             entry {{
+               var r: machine; var i: int;
+               r = new Registry();
+               while (i < 3) {{ send r, eReserve, choose(5); i = i + 1; }}
+             }}
+           }}
+         }}
+         test tcMain [main=Main]: {{ Main, Registry }};"
+    )
+}
+
+#[test]
+fn values_the_model_cannot_tell_apart_are_tried_once() {
+    for strategy in [StrategyKind::Dfs, StrategyKind::Auto] {
+        let search = |value_classes| CheckerOptions { value_classes, ..opts(strategy, 100_000) };
+        // safe: both searches finish; three keys are equal or different in 5 ways, and
+        // take 125 values
+        let safe = reservations("assert sizeof(taken) < 3;");
+        let (full, named) = (check(&safe, &search(false)), check(&safe, &search(true)));
+        assert_eq!((full.report.num_bugs, named.report.num_bugs), (0, 0), "{strategy:?}");
+        let (x, y) = (full.exhaustive.unwrap(), named.exhaustive.unwrap());
+        assert!(x.complete() && y.complete(), "{strategy:?}: {x:?} {y:?}");
+        assert!(y.distinct_states * 3 < x.distinct_states, "{strategy:?}: {} {}", y.distinct_states, x.distinct_states);
+        // Failures that need two equal keys, three different keys, one key in particular,
+        // and a key on one side of a bound: both searches find them, and the schedule of
+        // the shorter search replays where every value is offered.
+        for check_ in [
+            "assert !(k in taken), \"reserved twice\";",
+            "assert sizeof(taken) < 2 || k in taken, \"three keys\";",
+            "assert k != 4, \"key four\";",
+            "assert sizeof(taken) == 0 || k < 4, \"late key four\";",
+        ] {
+            let buggy = reservations(check_);
+            let (full, named) = (check(&buggy, &search(false)), check(&buggy, &search(true)));
+            assert_eq!((full.report.num_bugs, named.report.num_bugs), (1, 1), "{strategy:?} {check_}");
+            let replay = check(
+                &buggy,
+                &CheckerOptions {
+                    strategy: StrategyKind::Replay,
+                    replay: Some(ScheduleTrace::parse(named.schedule_trace.as_ref().unwrap()).unwrap()),
+                    ..Default::default()
+                },
+            );
+            assert!(replay.replay_error.is_none());
+            assert_eq!(replay.report.bug_reports, named.report.bug_reports);
+        }
+        // a fault injected at a rate has two outcomes, whatever the rate is out of
+        let faults = "machine Main { var n: int; var i: int; start state S { entry {
+            while (i < 6) { if (choose(100) < 5) { n = n + 1; } i = i + 1; } assert n < 6, \"all failed\"; } } }
+            test tcMain [main=Main]: { Main };";
+        let found = check(faults, &search(true));
+        assert_eq!(found.report.num_bugs, 1, "{strategy:?}");
+        let safe = faults.replace("n < 6", "n < 7");
+        let stats = check(&safe, &search(true)).exhaustive.unwrap();
+        assert!(stats.complete() && stats.distinct_states < 1000, "{strategy:?}: {stats:?}");
     }
 }

@@ -20,6 +20,21 @@ struct Arm {
     runs: usize,
 }
 const INITIAL_OBSERVATIONS: usize = 32;
+/// How one schedule resolves the model's `$` and `choose(n)`. A model injects a fault
+/// with such a choice (`choose(100) < 5`, `if ($)`), at one rate for every schedule; a
+/// bug that needs several faults close together, or a long stretch without any, then
+/// needs many schedules. Each schedule makes either the low or the high outcomes of
+/// every such choice likely, so some schedules are full of faults and others free of
+/// them. All values stay possible in both.
+///
+/// Drawing the skew per code site instead, or leaving some schedules even, found the
+/// Raft bug that needs a quiet stretch (`raft/commits-earlier-term`) less often: in 1 to
+/// 4 of 10 seeds within 60 s, against 7 of 10 this way and 1 of 10 with no skew.
+#[derive(Clone, Copy, PartialEq)]
+enum Skew {
+    Low,
+    High,
+}
 /// Change points of the PCT arms. A bug that needs k forced handovers needs about k
 /// change points: with 2 instead of 20, the upstream Paxos and Raft tutorials' bugs took
 /// about four times as long at the median, and PCT with 2 alone did not find them.
@@ -45,6 +60,11 @@ pub(crate) struct Portfolio {
     reached: rustc_hash::FxHashMap<(u32, u32, u32, usize), u32>,
     new_failure: bool,
     failures: FxHashSet<String>,
+    /// The choice about to be made is a `$` or a `choose(n)` of the model.
+    model_choice: bool,
+    /// The skew of the current schedule, drawn at its first such choice.
+    skew: Option<Skew>,
+    skew_rng: RandomValueGenerator,
     rng: RandomValueGenerator,
 }
 impl Portfolio {
@@ -78,6 +98,9 @@ impl Portfolio {
             counts: Default::default(),
             reached: Default::default(),
             new_failure: false,
+            model_choice: false,
+            skew: None,
+            skew_rng: RandomValueGenerator::new(seed.wrapping_add(0x51ed270b)),
             failures: Default::default(),
             rng: RandomValueGenerator::new(seed.wrapping_add(0x9e3779b9)),
         }
@@ -168,6 +191,14 @@ impl Portfolio {
         }
         rare.min(MAX_SCORE)
     }
+    /// The skew of the choice about to be made, if it is one of the model's.
+    fn skew(&mut self) -> Option<Skew> {
+        if !std::mem::take(&mut self.model_choice) {
+            return None;
+        }
+        let rng = &mut self.skew_rng;
+        Some(*self.skew.get_or_insert_with(|| if rng.next_below(2) == 0 { Skew::Low } else { Skew::High }))
+    }
     fn current(&self) -> &dyn Strategy {
         &*self.arms[self.active].strategy
     }
@@ -192,11 +223,27 @@ impl Strategy for Portfolio {
         self.observe_operations(ops);
         self.current_mut().next_operation(current, ops)
     }
+    fn note_model_choice(&mut self) {
+        self.model_choice = true;
+    }
     fn next_bool(&mut self, max: i32) -> bool {
-        self.current_mut().next_bool(max)
+        let skew = self.skew();
+        let fair = self.current_mut().next_bool(max);
+        // the arm still draws, so its own choices stay in step
+        match skew {
+            None => fair,
+            Some(Skew::Low) => self.skew_rng.next_below(8) != 0,
+            Some(Skew::High) => self.skew_rng.next_below(8) == 0,
+        }
     }
     fn next_int(&mut self, max: i32) -> i32 {
-        self.current_mut().next_int(max)
+        let skew = self.skew();
+        let even = self.current_mut().next_int(max);
+        let Some(skew) = skew.filter(|_| max >= 2) else { return even };
+        // the fourth power of a uniform draw: half of the draws land in the lowest 6%
+        let u = (f64::from(even) + 0.5) / f64::from(max);
+        let v = if skew == Skew::Low { u.powi(4) } else { 1.0 - (1.0 - u).powi(4) };
+        ((v * f64::from(max)) as i32).clamp(0, max - 1)
     }
     fn prepare_next_iteration(&mut self) -> bool {
         let work = self.current().scheduled_steps().max(1) as u64;
@@ -210,6 +257,8 @@ impl Strategy for Portfolio {
         self.current_mut().prepare_next_iteration();
         self.iterations += 1;
         self.counts.clear();
+        self.skew = None;
+        self.model_choice = false;
         self.active = if !self.contention {
             0
         } else if let Some(i) = self.arms.iter().position(|a| a.runs == 0) {

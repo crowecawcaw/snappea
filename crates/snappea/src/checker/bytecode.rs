@@ -84,7 +84,11 @@ pub enum Op {
     ChooseBool,
     /// `$$`: a fair boolean choice.
     ChooseFairBool,
-    ChooseInt,
+    /// `choose(n)`. `names` is the value class of the site, if it has one (see
+    /// [`crate::checker::symmetry`]).
+    ChooseInt {
+        names: Option<u32>,
+    },
     ChooseSeq,
     ChooseSet,
     ChooseMap,
