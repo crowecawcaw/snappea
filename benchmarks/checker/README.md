@@ -215,5 +215,18 @@ instead of measuring the correct design. `description` says what the mistake is.
 case finds its bug by the `match` text of the assertion; other failures of the same
 test are ignored.
 
+On 20 seeds with a 120 s cap and one worker, every large-sample mistake is found
+within 2,000 schedules and 50 ms: those specs catch a one-line mistake early even in
+tests that are never proved. The tail is the upstream models, where a schedule is long:
+
+| Case | Found | p50 | p90 | Worst |
+|---|---:|---:|---:|---:|
+| raft/commits-earlier-term | 4 of 20 | not found | not found | not found |
+| paxos/value-from-last-promise | 20 | 10.4 s | 38.1 s | 66.4 s (886,526 schedules) |
+| raft/upstream-leader-completeness | 20 | 9.7 s | 33.2 s | 68.2 s |
+| raft/votes-twice-in-a-term | 20 | 3.0 s | 6.1 s | 8.2 s |
+| raft/commit-on-half | 20 | 0.5 s | 1.6 s | 5.4 s |
+| raft/vote-without-log-check | 20 | 0.3 s | 0.7 s | 1.4 s |
+
 Add a case only after it is found on some seed. A mistake that no run finds may be a
 deep bug or one the test cannot observe, and the benchmark cannot tell which.
