@@ -155,6 +155,33 @@ impl CoverageInfo {
         self.probes.union(&other.probes);
         self.condition_edges.extend(other.condition_edges);
     }
+
+    /// How many features guide the search and count as new behavior: every set but the
+    /// queue policies, and of the probes those in `mask`, if one is given.
+    pub(crate) fn feature_count(&self, mask: Option<&ProbeSet>) -> usize {
+        self.condition_edges.len()
+            + self.transition_pairs.len()
+            + mask.map_or_else(|| self.probes.len(), |mask| self.probes.intersection_count(mask))
+            + self.received.len()
+            + self.sent.len()
+            + self.links.len()
+            + self.monitor_states.len()
+            + self.monitor_transitions.len()
+    }
+
+    /// Adds the features of `other` (those of [`CoverageInfo::feature_count`]), leaving
+    /// `other` as it is. The searches of a run each keep their own coverage; this joins
+    /// them into what the run as a whole has seen.
+    pub(crate) fn add_features(&mut self, other: &CoverageInfo) {
+        self.received.extend(&other.received);
+        self.sent.extend(&other.sent);
+        self.links.extend(&other.links);
+        self.monitor_states.extend(&other.monitor_states);
+        self.monitor_transitions.extend(&other.monitor_transitions);
+        self.transition_pairs.extend(&other.transition_pairs);
+        self.probes.union(&other.probes);
+        self.condition_edges.extend(&other.condition_edges);
+    }
 }
 
 /// Who put an entry in a graph-builder inbox (`EventInfo.Name/Type`).
@@ -219,17 +246,17 @@ impl Coverage {
     }
 
     pub(crate) fn feature_count(&self) -> usize {
-        self.info.condition_edges.len()
-            + self.info.transition_pairs.len()
-            + self
-                .guidance_probes
-                .as_ref()
-                .map_or_else(|| self.info.probes.len(), |mask| self.info.probes.intersection_count(mask))
-            + self.info.received.len()
-            + self.info.sent.len()
-            + self.info.links.len()
-            + self.info.monitor_states.len()
-            + self.info.monitor_transitions.len()
+        self.info.feature_count(self.guidance_probes.as_deref())
+    }
+
+    /// Adds this accumulator's features to `seen`; whether any of them was not there.
+    /// The engine calls it for a schedule that was new to its own accumulator, to learn
+    /// whether it is new to the whole run (see [`CoverageInfo::add_features`]).
+    pub(crate) fn add_features_to(&self, seen: &mut CoverageInfo) -> bool {
+        let mask = self.guidance_probes.as_deref();
+        let before = seen.feature_count(mask);
+        seen.add_features(&self.info);
+        seen.feature_count(mask) > before
     }
 
     /// Continues accumulating `info` (named by `tables`) in a new schedule.
