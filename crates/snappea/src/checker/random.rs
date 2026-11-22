@@ -97,11 +97,6 @@ impl RandomValueGenerator {
         RandomValueGenerator { seed, rng: DotNetRandom::new(seed as i32) }
     }
 
-    pub fn set_seed(&mut self, seed: u32) {
-        self.seed = seed;
-        self.rng = DotNetRandom::new(seed as i32);
-    }
-
     pub fn next_below(&mut self, max: i32) -> i32 {
         self.rng.next_below(max)
     }

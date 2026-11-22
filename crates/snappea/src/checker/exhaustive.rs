@@ -136,6 +136,17 @@ struct Choice {
     reducible: bool,
 }
 
+impl Choice {
+    /// The step of the alternative being explored is not local: offers the withheld
+    /// operations again, counting them in `retained`.
+    fn reveal(&mut self, retained: &mut usize, stats: &mut SearchStats) {
+        self.visible = true;
+        *retained += self.withheld.len();
+        stats.branching_choices += usize::from(self.options.len() == 1 && !self.withheld.is_empty());
+        self.options.append(&mut self.withheld);
+    }
+}
+
 /// The reduction of [`ExhaustiveStrategy::with_local_steps`].
 #[derive(Default)]
 struct LocalSteps {
@@ -196,16 +207,23 @@ impl Shared {
     /// worker reached it before), `None` when it was reached at the same or a smaller depth.
     fn visit(&self, hash: u64, depth: usize) -> Option<bool> {
         let mut shard = self.shards[(hash >> 58) as usize].lock().unwrap_or_else(|e| e.into_inner());
-        match shard.get_mut(&hash) {
-            Some(d) if *d <= depth => None,
-            Some(d) => {
-                *d = depth;
-                Some(false)
-            }
-            None => {
-                shard.insert(hash, depth);
-                Some(true)
-            }
+        visit_at(&mut shard, hash, depth)
+    }
+}
+
+/// Records in `depths` that `hash` was reached at `depth`: `Some(new)` to explore it
+/// (`new` when it is not in `depths` yet), `None` when it was reached at the same or a
+/// smaller depth.
+fn visit_at(depths: &mut FxHashMap<u64, usize>, hash: u64, depth: usize) -> Option<bool> {
+    match depths.get_mut(&hash) {
+        Some(d) if *d <= depth => None,
+        Some(d) => {
+            *d = depth;
+            Some(false)
+        }
+        None => {
+            depths.insert(hash, depth);
+            Some(true)
         }
     }
 }
@@ -433,17 +451,7 @@ impl ExhaustiveStrategy {
     /// explore it (`new` when it never reached it before), `None` when it reached it at
     /// the same or a smaller depth.
     fn visit_own(&mut self, hash: u64) -> Option<bool> {
-        match self.visited.get_mut(&hash) {
-            Some(d) if *d <= self.pos => None,
-            Some(d) => {
-                *d = self.pos;
-                Some(false)
-            }
-            None => {
-                self.visited.insert(hash, self.pos);
-                Some(true)
-            }
-        }
+        visit_at(&mut self.visited, hash, self.pos)
     }
 
     /// Allocated choice alternatives retained along the current DFS path.
@@ -530,10 +538,7 @@ impl Strategy for ExhaustiveStrategy {
         local.in_flight = false;
         let Some(c) = running.and_then(|p| self.path.get_mut(p)) else { return };
         if !step.is_local() {
-            c.visible = true;
-            self.retained += c.withheld.len();
-            self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
-            c.options.append(&mut c.withheld);
+            c.reveal(&mut self.retained, &mut self.stats);
         } else if c.reducible && !c.visible {
             // every run of the step so far was local: nothing else needs to go first
             self.retained -= c.options.len() - (c.taken + 1);
@@ -591,10 +596,7 @@ impl Strategy for ExhaustiveStrategy {
             let running = local.running.take().filter(|_| local.in_flight);
             local.in_flight = false;
             if let Some(c) = running.and_then(|p| self.path.get_mut(p)) {
-                c.visible = true;
-                self.retained += c.withheld.len();
-                self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
-                c.options.append(&mut c.withheld);
+                c.reveal(&mut self.retained, &mut self.stats);
             }
         }
         self.stats.max_depth = self.stats.max_depth.max(self.pos);
@@ -663,7 +665,7 @@ impl Strategy for ExhaustiveStrategy {
         self.pos >= self.path.len()
     }
 
-    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
+    fn observe_state(&mut self, hash: u64) -> bool {
         let facts = self.pending.take();
         let cycle = self.path_states.contains(&hash);
         self.cycle = None;

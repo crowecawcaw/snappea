@@ -1177,7 +1177,6 @@ impl<'p> Checker<'p> {
             strategy.track_initial_prefix();
         }
         let mut prefixes: Vec<crate::checker::runtime::Prefix> = Vec::new();
-        let mut spare_prefixes: Vec<crate::checker::runtime::Prefix> = Vec::new();
         while !idle && (max_iterations == 0 || i < max_iterations) {
             if out.borrow_mut().cancelled() {
                 result.cancelled = true;
@@ -1207,12 +1206,13 @@ impl<'p> Checker<'p> {
                 Some(limit) => {
                     while prefixes.last().is_some_and(|p| p.depth() > limit) {
                         // its memory serves the prefixes this schedule saves
-                        spare_prefixes.extend(prefixes.pop().filter(|_| spare_prefixes.len() < 64));
+                        let spare = &mut buffers.spare_prefixes;
+                        spare.extend(prefixes.pop().filter(|_| spare.len() < 64));
                     }
                 }
                 None if !strategy.exhausting() => {
                     prefixes.clear();
-                    spare_prefixes.clear();
+                    buffers.spare_prefixes.clear();
                 }
                 None => {}
             }
@@ -1241,12 +1241,10 @@ impl<'p> Checker<'p> {
                 };
                 let mut rt = Runtime::new(prog, code, module, &config, &mut *strategy, setup);
                 let previous_coverage = rt.coverage.as_ref().map_or(0, |c| c.feature_count());
-                rt.save_interval = SAVE_INTERVAL;
-                rt.spare_prefixes = std::mem::take(&mut spare_prefixes);
-                if replayed.is_some() && !counts_branching && rt.resume_last_prefix(&mut prefixes) {
+                if replayed.is_some() && !counts_branching && rt.resume_last_prefix(&mut prefixes, SAVE_EVERY) {
                     result.restored_prefixes += 1;
                 } else {
-                    rt.run_test_saving(main, &tc.name, replayed.map(|_| &mut prefixes));
+                    rt.run_test_saving(main, &tc.name, replayed.map(|_| (&mut prefixes, SAVE_EVERY)));
                 }
                 if rt.bug.is_none() {
                     rt.check_hot_monitors_at_termination();
@@ -1454,7 +1452,6 @@ impl<'p> Checker<'p> {
                     d.end_schedule(stopped, rt.bound_hit_at.is_some());
                     driver_facts = Some(d);
                 }
-                spare_prefixes = std::mem::take(&mut rt.spare_prefixes);
                 buffers = rt.take_buffers();
             }
             // a bug that ends the run ends it, deadline or not
@@ -1747,7 +1744,7 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
 
 /// Decisions between the prefixes an exhaustive search saves along its path: a schedule
 /// replays fewer than this many before it reaches the choice it changes.
-const SAVE_INTERVAL: usize = 4;
+const SAVE_EVERY: crate::checker::runtime::SavePolicy = crate::checker::runtime::SavePolicy::Every(4);
 
 #[cfg(test)]
 mod prefix_resume_tests {
@@ -1806,157 +1803,6 @@ mod prefix_resume_tests {
                 restored += resumed.restored_prefixes;
             }
             assert!(restored > 0, "expected to restore late branches for {assertion}");
-        }
-    }
-}
-
-#[cfg(test)]
-mod cold_fork_experiment {
-    use super::*;
-    use crate::checker::{compile::compile_program_plain, mutation, runtime::Prefix};
-    use std::{
-        fs,
-        path::Path,
-        time::{Duration, Instant},
-    };
-
-    #[test]
-    #[ignore = "release-mode cold mutation experiment"]
-    fn compare_random_forks() {
-        for (model, name) in
-            [("tests/upstream/Tutorial/6_Raft", "oneClientOneServerReliable"), ("examples/model", "tcAtomicReserve")]
-        {
-            let dense = std::env::var_os("SNAPPEA_BENCH_DENSE").is_some();
-            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(model);
-            let mut sources = crate::syntax::SourceMap::new();
-            for dir in ["PSrc", "PSpec", "PTst"] {
-                let mut paths: Vec<_> = fs::read_dir(root.join(dir))
-                    .unwrap()
-                    .map(|f| f.unwrap().path())
-                    .filter(|p| p.extension().is_some_and(|e| e == "p"))
-                    .collect();
-                paths.sort();
-                for path in paths {
-                    sources.add(path.to_str().unwrap(), fs::read_to_string(&path).unwrap());
-                }
-            }
-            let prog = crate::sema::compile(&sources, &Default::default()).unwrap().program;
-            let tc = prog.test_cases().into_iter().find(|t| t.name == name).unwrap();
-            let checker = Checker::with_code_coverage(&prog);
-            let opts = CheckerOptions::default();
-            let prep = checker.prepare(&tc, &opts).unwrap();
-            assert!(prep.time.is_none());
-            let funs = mutation::mutable_funs(&prog, std::slice::from_ref(&tc), &[]);
-            let mutations = mutation::mutants(&prog, &funs, &checker.code.probes);
-            let plain = compile_program_plain(&prog);
-            let bound = 1000;
-            let setup = || Setup { assignment: prep.assignment, ..Default::default() };
-            let start = Instant::now();
-            let mut corpus = Vec::new();
-            for seed in 1..=32 {
-                let rng = Rc::new(RefCell::new(RandomValueGenerator::new(seed)));
-                let mut strategy = RandomStrategy::new(bound, rng.clone());
-                let mut rt = Runtime::new(&prog, &plain, prep.module, &prep.config, &mut strategy, setup());
-                rt.touched.resize(prog.funs.len(), false);
-                rt.checkpoint_rng = Some(rng);
-                if dense {
-                    rt.fork_depths = &[4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512];
-                }
-                let mut prefixes = Vec::new();
-                rt.run_test_saving(prep.main, name, Some(&mut prefixes));
-                rt.check_hot_monitors_at_termination();
-                assert!(rt.bug.is_none(), "baseline seed {seed}: {:?}", rt.bug);
-                corpus.push((
-                    seed,
-                    prefixes,
-                    rt.touched,
-                    (rt.bug, rt.trace.steps, rt.bound_hit_at, rt.peak_step_work, rt.peak_inbox),
-                ));
-            }
-            let capture = start.elapsed();
-            let mut control = Duration::ZERO;
-            let mut shared = Duration::ZERO;
-            let mut compile = Duration::ZERO;
-            let mut overlay_compile = Duration::ZERO;
-            let mut apply = Duration::ZERO;
-            let mut shared_by_seed = [Duration::ZERO; 32];
-            let (mut forks, mut skips, mut pairs, mut killed, mut mutants) = (0, 0, 0, 0, 0);
-            let mut early_control = Duration::ZERO;
-            let mut early_shared = Duration::ZERO;
-            let mut by_seed = [0usize; 32];
-            for m in mutations {
-                let Some(mut root) = m.fun else { continue };
-                while let Some(parent) = prog.fun(root).parent {
-                    root = parent;
-                }
-                // Exercise the functions that this corpus actually reaches. Whole-corpus
-                // misses would inflate the apparent speedup without testing any forks.
-                if !corpus.iter().any(|(_, _, hit, _)| hit[root.idx()]) {
-                    continue;
-                }
-                let t = Instant::now();
-                let variant = mutation::apply(&prog, &m);
-                apply += t.elapsed();
-                let t = Instant::now();
-                let code = compile_program_plain(&variant);
-                compile += t.elapsed();
-                let t = Instant::now();
-                let overlay = crate::checker::compile::compile_random_variant(&variant, root, &plain);
-                overlay_compile += t.elapsed();
-                mutants += 1;
-                let mut caught = false;
-                for (seed, prefixes, hit, baseline_steps) in &corpus {
-                    let run = |code: &Code, prefix: Option<&Prefix>| {
-                        let random =
-                            prefix.map_or_else(|| RandomValueGenerator::new(*seed), |p| p.random.clone().unwrap());
-                        let rng = Rc::new(RefCell::new(random));
-                        let mut strategy =
-                            RandomStrategy::from_checkpoint(bound, rng, prefix.map_or(0, |p| p.steps.len()));
-                        let mut rt = Runtime::new(&variant, code, prep.module, &prep.config, &mut strategy, setup());
-                        match prefix {
-                            Some(p) => rt.continue_prefix(p),
-                            None => rt.run_test(prep.main, name),
-                        }
-                        rt.check_hot_monitors_at_termination();
-                        (rt.bug, rt.trace.steps, rt.bound_hit_at, rt.peak_step_work, rt.peak_inbox)
-                    };
-                    let start = Instant::now();
-                    let reference = run(&code, None);
-                    let elapsed = start.elapsed();
-                    control += elapsed;
-                    if !caught {
-                        early_control += elapsed;
-                    }
-                    pairs += 1;
-                    let start = Instant::now();
-                    let result = if hit[root.idx()] {
-                        let prefix = prefixes.iter().rev().find(|p| !p.touched[root.idx()]);
-                        forks += usize::from(prefix.is_some());
-                        Some(run(&overlay, prefix))
-                    } else {
-                        skips += 1;
-                        None
-                    };
-                    let elapsed = start.elapsed();
-                    shared += elapsed;
-                    if !caught {
-                        early_shared += elapsed;
-                        shared_by_seed[*seed as usize - 1] += elapsed;
-                    }
-                    assert_eq!(
-                        result.as_ref().unwrap_or(baseline_steps),
-                        &reference,
-                        "{} at seed {seed}",
-                        m.description
-                    );
-                    if !caught && reference.0.is_some() {
-                        by_seed[*seed as usize - 1] += 1;
-                        caught = true;
-                    }
-                }
-                killed += usize::from(caught);
-            }
-            eprintln!("{name}: dense={dense} mutants={mutants} pairs={pairs} forked={forks} skipped={skips} killed={killed} per_seed={by_seed:?} apply={apply:?} full_compile={compile:?} overlay_compile={overlay_compile:?} first_four={:?} capture={capture:?} control={control:?} shared={shared:?} stop_on_kill_control={early_control:?} stop_on_kill_shared={early_shared:?}", shared_by_seed[..4].iter().sum::<Duration>());
         }
     }
 }

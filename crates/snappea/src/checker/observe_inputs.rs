@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value as Json;
 
-use crate::checker::observe::{split_entries, ObserveSession, Parser};
+use crate::checker::observe::{ObserveSession, Parser};
 
 /// The file system operations input expansion needs.
 pub trait LogFiles {
@@ -91,24 +91,6 @@ pub fn log_paths(fs: &dyn LogFiles, cwd: &Path, values: &[impl AsRef<str>]) -> R
         add_log_paths(fs, cwd, v.as_ref(), &mut files)?;
     }
     Ok(files)
-}
-
-/// Reads the log files `values` name (see [`add_log_paths`]) and splits each into entries
-/// with `delimiter` ([`Parser::log_delimiter`]). The result is the `inputs` argument of
-/// [`Spec::observe`](crate::checker::observe::Spec::observe), which combines them into one stream:
-/// each key's events sorted by timestamp, equal timestamps keeping file order.
-pub fn read_logs(
-    fs: &dyn LogFiles,
-    cwd: &Path,
-    values: &[impl AsRef<str>],
-    delimiter: &str,
-) -> Result<Vec<Vec<String>>, String> {
-    let mut inputs = Vec::new();
-    for f in log_paths(fs, cwd, values)? {
-        let text = fs.read_to_string(&f).map_err(|e| format!("{} ({})", f.display(), e))?;
-        inputs.push(split_entries(&text, delimiter));
-    }
-    Ok(inputs)
 }
 
 /// `cwd.join(p)` with `.` and `..` resolved lexically.
