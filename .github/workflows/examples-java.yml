@@ -22,9 +22,6 @@ jobs:
           cache-dependency-path: |
             java/pom.xml
             examples/java/pom.xml
-      - uses: stCarolas/setup-maven@v5
-        with:
-          maven-version: '3.9.9'
       - run: cargo build --locked -p snappea
       - name: Test and install snappea, with a natives jar holding this build's snappea
         env:
