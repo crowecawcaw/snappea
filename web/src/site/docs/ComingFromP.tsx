@@ -96,7 +96,7 @@ $ p check -r PCheckerOutput/BugFinding/MyProject_0_0.schedule
           finds the project the way <code>p</code> does:
         </p>
         <Code lang="shell">{`
-$ snappea check tcMyTest                    # one test case, up to ten seconds
+$ snappea check tcMyTest                    # one test case
 $ snappea check 'tcMy*' --timeout 5m           # a glob, five minutes each
 $ snappea replay PCheckerOutput/tcMyTest/bug.schedule
 $ snappea observe --spec BankBalanceCorrect logs/
@@ -166,8 +166,8 @@ $ snappea observe --spec BankBalanceCorrect logs/
           <div>
             <dt>Parallel workers</dt>
             <dd>
-              <code>-j N</code> splits the schedules across workers. The first bug stops them all, and its{" "}
-              <code>.schedule</code> file replays as usual.
+              The schedules are split across one worker per CPU core (<code>-j N</code> sets a limit). A bug's{" "}
+              <code>.schedule</code> file replays as usual, whichever worker found it.
             </dd>
           </div>
           <div>
@@ -215,15 +215,15 @@ $ snappea observe --spec BankBalanceCorrect logs/
         <h2>How compatibility is tested</h2>
         <p>Upstream's own test suites are vendored in the repository and checked against:</p>
         <ul>
-          <li>All 424 compiler regression tests compile, or fail to, as upstream expects.</li>
-          <li>All 249 checker tests find a bug exactly when upstream expects one, across seeds.</li>
+          <li>All of upstream's compiler regression tests compile, or fail to, as upstream expects.</li>
+          <li>All of its checker tests find a bug exactly when upstream expects one, across seeds.</li>
           <li>The tutorials give the same results as upstream's tutorial CI.</li>
           <li>Readable and JSON traces match upstream's golden files.</li>
           <li>
             <code>snappea-compat observe</code> and PObserve are compared in CI on {observeTotals.runs} vendored runs.
             {" "}{observeTotals.identical} match after normalization; the remaining runs check only exit codes
-            because of a null-dereference message difference. The separate manual comparison of the full upstream
-            suite has 192 runs, with 186 outputs identical after normalization.
+            because of a null-dereference message difference. A separate manual comparison covers the full upstream
+            suite.
           </li>
         </ul>
         <p>
