@@ -77,7 +77,6 @@ that PObserve doesn't have (`--all-specs`, `--check-hot`, `--strict`,
 | `--sequence FIELD` | Check live lines in the order of a global sequence number in each line. |
 | `--record FILE` | Write the checked live lines to `FILE`, in check order. |
 | `--p-trace` | The logs are P JSON traces, such as the `bug.trace.json` of `snappea check`. |
-| `--parser NAME` | The log parser: `JsonLines` (default), `PTrace`, or a [custom one](#custom-parsers). |
 | `--parser-config JSON` | Parser settings, e.g. `JsonLines` field paths ([below](#log-formats)). |
 | `--key KEY` | Check only this partition key; repeat for several. |
 | `--key-file FILE` | Check only the keys in `FILE`, one per line. |

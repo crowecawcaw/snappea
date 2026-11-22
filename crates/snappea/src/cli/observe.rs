@@ -48,7 +48,6 @@ Input:
       --record <FILE>         Write the checked live lines, in check order, to FILE,
                               to re-check or debug them later
       --p-trace               The logs are P JSON traces (bug.trace.json of snappea check)
-      --parser <NAME>         Log parser: JsonLines (default), PTrace (--p-trace)
       --parser-config <JSON>  Parser settings; JsonLines takes the dotted paths of
                               its fields, e.g. {\"event\": \"msg.type\", \"key\": \"msg.id\"}
       --key <KEY>             Check only this key; repeat for several. Use to narrow
@@ -85,7 +84,6 @@ pub(super) const OPTS: &[Opt] = &[
     value("sequence", None),
     value("record", None),
     flag("p-trace", None),
-    value("parser", None),
     value("parser-config", None),
     value("key", None),
     value("key-file", None),
@@ -174,7 +172,6 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         input_kind: if a.has("p-trace") { InputKind::Json } else { InputKind::Text },
         sequence: a.get("sequence").map(str::to_string),
         record: a.has("record"),
-        parser: a.get("parser").map(str::to_string),
         parser_configuration: a.get("parser-config").map(str::to_string),
         assume_sorted: a.has("sorted"),
         keys: names_raw(a, "key"),

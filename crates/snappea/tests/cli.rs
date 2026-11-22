@@ -278,6 +278,15 @@ fn native_scheduling_controls_are_removed_and_compat_keeps_them() {
     assert!(!h.stdout.contains("--strategy"));
 }
 
+#[test]
+fn observe_has_no_parser_option_and_compat_keeps_it() {
+    let mut h = host();
+    assert_eq!(snappea(&mut h, &["observe", "--spec", "S", "--parser", "JsonLines"]), 2);
+    assert!(h.stderr.contains("unknown option '--parser'"), "{}", h.stderr);
+    assert_eq!(compat(&mut h, &["observe", "--help"]), 0);
+    assert!(h.stdout.contains("--parser"), "{}", h.stdout);
+}
+
 /// The schedule count of the `FAIL`/`ok` line of `test`.
 fn schedules(stdout: &str, test: &str) -> usize {
     let line = stdout.lines().find(|l| l.contains(&format!(" {} (", test))).unwrap();

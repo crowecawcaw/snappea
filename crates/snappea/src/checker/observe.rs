@@ -92,7 +92,8 @@ impl ObservedEvent {
 
 /// Turns log entries into events (upstream's `Parser` interface).
 pub trait Parser {
-    /// The name `--parser` selects the parser by.
+    /// The name `ObserveConfig::parser` (`--parser` in `snappea-compat observe`) selects
+    /// the parser by.
     fn name(&self) -> &str;
 
     /// What separates log entries (`getLogDelimiter`): `\n` for one entry per line.
