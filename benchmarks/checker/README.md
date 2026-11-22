@@ -28,8 +28,8 @@ python3 scripts/bench-checker.py --split evaluation --seed-start 100 --seeds 10 
 python3 -m unittest discover -s scripts -p test_bench_checker.py
 ```
 
-The full suite (`--split all`) compares auto, feedback, random and PCT with 0, 2
-and 10 change points. Ten seeds give 1,440 runs. `--strategies auto` gives 240 runs.
+The full suite (`--split all`) compares auto, feedback, random and PCT with 0, 10
+and 20 change points. Ten seeds give 1,440 runs. `--strategies auto` gives 240 runs.
 Development and evaluation use different sizes, permutations and actor creation
 orders; the CI commands below also use disjoint seed ranges. Keep evaluation
 performance separate from tuning. These synthetic cases complement the existing

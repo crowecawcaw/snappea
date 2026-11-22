@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STRATEGIES = 'auto,feedback,random,pct-0,pct-2,pct-10'
+DEFAULT_STRATEGIES = 'auto,feedback,random,pct-0,pct-10,pct-20'
 
 
 def percentile(values, q=0.9):
@@ -76,7 +76,7 @@ def main():
     args = parser.parse_args()
     if min(args.seeds, args.budget, args.steps, args.seconds, args.jobs) <= 0 or args.seed_start < 0 or args.seed_start + args.seeds > 2**32:
         parser.error('positive budgets and a valid unsigned seed range are required')
-    valid = {'auto', 'feedback', 'random', 'dfs', 'pct-0', 'pct-2', 'pct-10'}
+    valid = {'auto', 'feedback', 'random', 'dfs', 'pct-0', 'pct-2', 'pct-10', 'pct-20'}
     strategies = args.strategies.split(',')
     if any(s not in valid for s in strategies) or len(set(strategies)) != len(strategies):
         parser.error('invalid or duplicate strategy')
