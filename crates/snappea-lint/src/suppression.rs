@@ -263,12 +263,6 @@ fn each_comment(ctx: &Context<'_>, f: &mut OnComment<'_>) {
     }
 }
 
-/// The mutation suppressions of the sources: the code each covers, and `mutation` or
-/// `mutation:<kind>`. Malformed directives are reported by linting, not here.
-pub fn mutation_suppressions(ctx: &Context<'_>) -> Vec<(Span, String)> {
-    allowed_ids(directives(ctx, &|_| true).0).filter(|(_, id)| is_mutation(id)).collect()
-}
-
 /// A mutation suppression and the nested code it excludes unless explicitly opted in.
 #[derive(Debug, Clone)]
 pub struct MutationSuppression {
@@ -319,10 +313,6 @@ pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<
 
 /// A suppression: the scope, the ID it allows, and its reason (empty without `--`).
 type Allowed = (Span, String, String);
-
-fn allowed_ids(allowed: Vec<Allowed>) -> impl Iterator<Item = (Span, String)> {
-    allowed.into_iter().map(|(span, id, _)| (span, id))
-}
 
 /// Every `snappea-lint: allow` directive: the scope, ID and reason it allows, and the
 /// findings for malformed ones (with an ID `known` rejects, or not before a declaration

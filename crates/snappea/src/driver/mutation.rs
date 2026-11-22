@@ -721,7 +721,7 @@ impl Report {
 /// Runs the passing test cases `passed` (each with the code it ran) against the mutants
 /// of the code they ran, for at most `time_limit` seconds. `suppressed` lists the code
 /// suppression comments exclude, with the ID each allows (see
-/// [`snappea_lint::mutation_suppressions`]); `coverage_allowed`, the code `allow coverage`
+/// [`snappea_lint::mutation_suppression_details`]); `coverage_allowed`, the code `allow coverage`
 /// comments say need not run, whose mutants are not reported as unreached. With `deepen`, once every mutant had its
 /// [`budget`], the undetected ones get more turns, up to [`SCHEDULES`], until the time
 /// limit: a deeper search for a CI gate, where a quick check stops at the budget.

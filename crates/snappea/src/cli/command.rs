@@ -417,8 +417,6 @@ fn dispatch(args: &[String], host: &mut dyn Host) -> i32 {
     };
     match cmd.as_str() {
         "check" => check(rest, host),
-        // an unadvertised alias of `check lint`
-        "lint" => lint(rest, host),
         "replay" => replay(rest, host),
         "tests" => tests(rest, host),
         "observe" => super::observe::observe(rest, host),
@@ -860,7 +858,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         }
         Err(m) => return usage_error(host, &m, Some("check lint")),
     }
-    with_output(host, &a, "lint", |host| {
+    with_output(host, &a, "check lint", |host| {
         if a.has("list-rules") {
             let builtins = snappea_lint::Registry::builtins();
             let all: Vec<(&str, &str)> = builtins
@@ -893,7 +891,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
                 let json = crate::driver::lint::findings_json(&sm, &findings);
                 if errors != 0 {
                     // the findings, not their text again: stderr has that
-                    return Ok((ERROR, json!({"error": crate::driver::lint::summary(errors), "findings": json})));
+                    return Ok((ERROR, json!({"error": crate::driver::lint::SUMMARY, "findings": json})));
                 }
                 host.out_line("Lint passed.");
                 Ok((OK, json!({"findings": json})))

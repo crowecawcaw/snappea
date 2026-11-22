@@ -111,18 +111,6 @@ fn source_findings(
     snappea_lint::lint_with_spec_selections_usage(sm, &selections)
 }
 
-/// The unsuppressed findings of [`snappea_lint::PROGRAM_RULES`] on `prog`.
-pub fn program_findings(sm: &SourceMap, prog: &Program) -> Vec<Finding> {
-    let intents = snappea_lint::test_intents(sm).unwrap_or_default();
-    let tests = prog.test_cases();
-    match collect(sm, prog, &tests, &intents, false) {
-        Ok((findings, _)) => {
-            findings.into_iter().filter(|f| snappea_lint::PROGRAM_RULES.iter().any(|(r, _)| *r == f.rule)).collect()
-        }
-        Err(_) => Vec::new(),
-    }
-}
-
 /// An `unused-suppression` advisory for each lint suppression comment that removed no
 /// finding, and for `/* snappea-lint: ... */` block comments, which are not read.
 /// `findings` are the unsuppressed findings, to point at one the comment may be meant for.
@@ -291,7 +279,7 @@ pub fn gate_selected(
             return Err(Box::new(LintFailed {
                 exit: Exit(2),
                 findings: Some(findings_json(&sm, &findings)),
-                summary: summary(count),
+                summary: SUMMARY.into(),
                 count,
                 pending: findings,
                 strict,
@@ -402,9 +390,7 @@ fn render_with_help(sm: &SourceMap, f: &Finding, help: &str) -> String {
 }
 
 /// The line that ends a list of findings.
-pub fn summary(_n: usize) -> String {
-    "Lint failed. Each finding's help says how to fix it, or how to suppress an intended one; `snappea check lint --list-rules` describes the rules.".to_string()
-}
+pub const SUMMARY: &str = "Lint failed. Each finding's help says how to fix it, or how to suppress an intended one; `snappea check lint --list-rules` describes the rules.";
 
 /// Findings as JSON: rule, severity, message, help, and source location of each.
 pub fn findings_json(sm: &SourceMap, findings: &[Finding]) -> Value {
@@ -438,7 +424,7 @@ pub fn report(host: &mut dyn Host, sm: &SourceMap, findings: &[Finding], strict:
         host.write(Stream::Err, "\n", None);
     }
     if errors > 0 {
-        host.write(Stream::Err, &format!("{}\n", summary(errors)), None);
+        host.write(Stream::Err, &format!("{SUMMARY}\n"), None);
     }
     errors
 }
