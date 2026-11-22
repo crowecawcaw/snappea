@@ -221,12 +221,24 @@ tests that are never proved. The tail is the upstream models, where a schedule i
 
 | Case | Found | p50 | p90 | Worst |
 |---|---:|---:|---:|---:|
-| raft/commits-earlier-term | 4 of 20 | not found | not found | not found |
-| paxos/value-from-last-promise | 20 | 10.4 s | 38.1 s | 66.4 s (886,526 schedules) |
-| raft/upstream-leader-completeness | 20 | 9.7 s | 33.2 s | 68.2 s |
-| raft/votes-twice-in-a-term | 20 | 3.0 s | 6.1 s | 8.2 s |
-| raft/commit-on-half | 20 | 0.5 s | 1.6 s | 5.4 s |
-| raft/vote-without-log-check | 20 | 0.3 s | 0.7 s | 1.4 s |
+| raft/commits-earlier-term | 18 of 20 | 25.7 s | 108.6 s | not found |
+| paxos/value-from-last-promise | 20 | 3.2 s | 7.3 s | 27.6 s (302,846 schedules) |
+| raft/upstream-leader-completeness | 20 | 0.8 s | 3.7 s | 9.3 s |
+| raft/votes-twice-in-a-term | 20 | 0.8 s | 2.1 s | 3.5 s |
+| raft/commit-on-half | 20 | 0.5 s | 1.9 s | 2.1 s |
+| raft/vote-without-log-check | 20 | 0.3 s | 0.7 s | 1.1 s |
+
+Three changes brought this tail in; before them `raft/commits-earlier-term` was found
+on 4 of 20 seeds, and the p90 of the next two cases was 38.1 s and 33.2 s. Over the
+whole suite the p99 time to a bug fell from 54.7 s to 8.75 s.
+
+- PCT arms with 0, 10 and 20 change points, and a reward for the arm that reaches
+  rare points.
+- A skew per schedule: each sampled schedule makes the low or the high outcomes of
+  every `$` and `choose(n)` likely, so some schedules are full of injected faults and
+  others free of them.
+- Exhaustive search tries one value of each group of `choose(n)` values the model
+  cannot tell apart (see [checking models](../../docs/checking-models.md)).
 
 Add a case only after it is found on some seed. A mistake that no run finds may be a
 deep bug or one the test cannot observe, and the benchmark cannot tell which.
