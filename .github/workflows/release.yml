@@ -280,6 +280,7 @@ jobs:
           go test -count=1 ./go/internal/snappeabin
           # -u: also the docs and examples whose version pins `set` rewrote
           git add -u
+          git diff --cached --stat
           git commit -m "Release Snap Pea ${TAG}"
           git tag -a "${TAG}" -m "Snap Pea ${TAG}"
 

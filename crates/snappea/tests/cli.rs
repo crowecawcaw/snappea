@@ -2134,7 +2134,7 @@ fn the_documented_check_output_matches_a_run_of_the_example_model() {
     // a time limit of its own lets the exhaustive search finish, so the verdict does not
     // depend on how busy the machine is; the output is that of a plain `snappea check`
     assert_eq!(snappea(&mut h, &["check", "--timeout", "1m"]), 1, "{}{}", h.stdout, h.stderr);
-    let doc = include_str!("../../../docs/checking-models.md");
+    let doc = include_str!("../../../docs/checking-models.md").replace("\r\n", "\n");
     let start = doc.find("```\n$ snappea check\n").expect("the sample in docs/checking-models.md") + 4;
     let sample = &doc[start..start + doc[start..].find("```").unwrap()];
     let sample = sample.strip_prefix("$ snappea check\n").unwrap();

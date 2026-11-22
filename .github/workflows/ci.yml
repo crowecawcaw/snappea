@@ -39,6 +39,14 @@ jobs:
           shellcheck --version
           "${RUNNER_TEMP}/actionlint" -color
 
+  docs:
+    name: doc links + version pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Markdown links and the docs' release version pins
+        run: python3 -m unittest -v scripts/test_markdown_links.py scripts/test_release.py
+
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest
@@ -108,8 +116,8 @@ jobs:
         with:
           key: checker-discovery
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Test benchmark metrics, CI gates and release version pins
-        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Test benchmark metrics and CI gates
+        run: python3 -m unittest discover -s scripts -p 'test_bench*.py'
       - name: Build the checker benchmark
         run: cargo build --release --locked -p snappea --example checker_bench
       - name: Find every development bug with auto

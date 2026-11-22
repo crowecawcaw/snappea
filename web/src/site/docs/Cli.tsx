@@ -129,7 +129,9 @@ FAIL  tcCheckThenReserve (bug found after ...)
         <p>
           Every command exits with 0 when nothing failed and non-zero otherwise, so it works as a CI step or a
           pre-commit hook as it is. <a href={`${BLOB}/docs/checking-models.md#what-fails-a-check`}>What fails a
-          check</a> lists each exit status, and every command's <code>--help</code> states its own.
+          check</a> lists the exit statuses of <code>check</code>; the <code>--help</code> of <code>check</code>,{" "}
+          <code>check mutation</code>, <code>check lint</code>, <code>replay</code> and <code>observe</code> states
+          theirs.
         </p>
         <p>
           Every command prints text by default, for people and agents alike. <code>--json</code> or{" "}

@@ -47,7 +47,8 @@ The workflow:
    `Release Snap Pea vX.Y.Z` with every package at the version: `Cargo.toml` and the lock
    files, `java/pom.xml` (and `examples/java`), and Go's
    `go/internal/snappeabin/version.go` and `SHA256SUMS` (checked by
-   `go test ./go/internal/snappeabin`). It tags that commit `vX.Y.Z`, then commits
+   `go test ./go/internal/snappeabin`), and the docs and examples that pin snappea's
+   version (`snappea = "X.Y"`, the install script's `--version X.Y.Z`). It tags that commit `vX.Y.Z`, then commits
    `Release Snap Pea vX.Y.Z: back to development`, and pushes both commits and the tag
    atomically. If `main` moved since the run started, the push fails and nothing is
    published.
@@ -77,7 +78,8 @@ The tagged commit has the release version everywhere. Afterwards `main` keeps it
   from a checkout never overwrites the released version in `~/.m2`.
 
 `python3 scripts/release.py set X.Y.Z` and `python3 scripts/release.py dev` make these
-edits; the workflow is the only caller in normal use.
+edits; the workflow is the only caller in normal use. `set` also rewrites the doc pins,
+and `scripts/test_release.py` (in CI) fails when one differs from `Cargo.toml`.
 
 ### Re-runs
 

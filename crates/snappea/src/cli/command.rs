@@ -28,8 +28,9 @@ const USAGE_ERROR: i32 = -1;
 macro_rules! exit_status {
     () => {
         "\
-Exit status: 0 nothing failed; 1 a bug, a required coverage gap or an undetected
-mutant; 2 an error, or blocking lint findings with no bug.
+Exit status: 0 nothing failed; 1 a bug, a required coverage gap, an undetected
+mutant or, with --strict, an untested one; 2 an error, or blocking lint findings
+with no bug.
 "
     };
 }
@@ -2952,7 +2953,7 @@ mod tests {
     /// The reference page states the exit statuses as the help does.
     #[test]
     fn the_reference_page_states_the_exit_statuses() {
-        let page = include_str!("../../../../docs/checking-models.md").replace('\n', " ");
+        let page = include_str!("../../../../docs/checking-models.md").replace("\r\n", "\n").replace('\n', " ");
         let status = exit_status!().trim().replace('\n', " ");
         assert!(page.contains(&status), "docs/checking-models.md should say: {status}");
     }

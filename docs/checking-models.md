@@ -278,8 +278,9 @@ these statistics does not change state hashing, scheduling choices, or search li
 
 ### What fails a check
 
-Exit status: 0 nothing failed; 1 a bug, a required coverage gap or an undetected
-mutant; 2 an error, or blocking lint findings with no bug.
+Exit status: 0 nothing failed; 1 a bug, a required coverage gap, an undetected
+mutant or, with --strict, an untested one; 2 an error, or blocking lint findings
+with no bug.
 
 Besides bugs, `snappea check` reports three kinds of findings. Each one either fails
 the check or is reported as a warning:

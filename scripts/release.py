@@ -6,7 +6,6 @@
   scripts/release.py set VERSION [--sums F] write VERSION into every package and the
                                             docs that pin it; with --sums, also Go's
                                             committed SHA256SUMS
-  scripts/release.py docs                   check that the docs pin Cargo.toml's version
   scripts/release.py dev                    between releases: Go "dev" with no
                                             checksums, Java <next patch>-SNAPSHOT
   scripts/release.py package TARGET VERSION BINARY OUT
@@ -56,12 +55,13 @@ POM_VERSION = re.compile(r"(<artifactId>snappea</artifactId>\s*<version>)([^<]*)
 EXAMPLE_VERSION = re.compile(r"(<snappea\.version>)([^<]*)(</snappea\.version>)")
 GO_CONST = re.compile(r'^(const Version = ")([^"]*)(")$', re.M)
 
-# Version pins in docs and examples: Cargo dependencies name major.minor, install
-# commands X.Y.Z. Each pattern's second group is the version.
+# Version pins in docs and examples: Cargo dependencies on the snappea crate name
+# major.minor; the install script's --version and SNAPPEA_VERSION name X.Y.Z. Each
+# pattern's second group is the version. scripts/test_release.py checks them.
 DOC_PINS = [
-    (re.compile(r'(snappea = (?:\{ ?version = )?")(\d+\.\d+)(")'), "minor"),
-    (re.compile(r"(--version )(\d+\.\d+\.\d+)()"), "full"),
-    (re.compile(r"(SNAPPEA_VERSION: ?)(\d+\.\d+\.\d+)()"), "full"),
+    (re.compile(r'((?<![\w-])snappea = (?:\{ ?version = )?")(\d+\.\d+)(")'), "minor"),
+    (re.compile(r"(\| sh -s -- --version )(\d+\.\d+\.\d+)()"), "full"),
+    (re.compile(r"((?<![\w-])SNAPPEA_VERSION: ?)(\d+\.\d+\.\d+)()"), "full"),
 ]
 DOC_SUFFIXES = {".md", ".rs", ".tsx", ".yml", ".sh", ".ps1"}
 # Pins of older releases on purpose: the install test and recorded eval bundles.
@@ -111,6 +111,15 @@ def doc_files():
                 yield path
 
 
+def doc_texts():
+    """Each file of doc_files() with its text, exactly as stored (line endings kept)."""
+    for path in doc_files():
+        try:
+            yield path, path.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+
+
 def doc_pin(version, kind):
     major, minor, _ = parse(version)
     return f"{major}.{minor}" if kind == "minor" else version
@@ -125,8 +134,7 @@ def set_doc_pins(text, version):
 def doc_pin_mismatches(version):
     """`file:line: pin` for every doc pin that names another version."""
     out = []
-    for path in doc_files():
-        text = path.read_text(errors="replace")
+    for path, text in doc_texts():
         for pattern, kind in DOC_PINS:
             for m in pattern.finditer(text):
                 if m[2] != doc_pin(version, kind):
@@ -169,23 +177,14 @@ def cmd_set(version, sums=None):
     replace(POM, POM_VERSION, version)
     replace(EXAMPLE_POM, EXAMPLE_VERSION, version)
     replace(GO_VERSION, GO_CONST, version)
-    for path in doc_files():
-        text = path.read_text(errors="replace")
+    for path, text in doc_texts():
         new = set_doc_pins(text, version)
         if new != text:
-            path.write_text(new, newline="")
+            path.write_bytes(new.encode("utf-8"))
     if sums is not None:
         text = pathlib.Path(sums).read_text()
         check_sums(text, version)
         GO_SUMS.write_text(text, newline="")
-
-
-def cmd_docs():
-    version = cargo_version()
-    wrong = doc_pin_mismatches(version)
-    if wrong:
-        fail(f"these pins differ from Cargo.toml's {version}; run "
-             f"`scripts/release.py set {version}`:\n  " + "\n  ".join(wrong))
 
 
 def cmd_dev():
@@ -304,7 +303,6 @@ def main(argv):
         "next": (cmd_next, 1, 1),
         "set": (None, 1, 3),
         "dev": (cmd_dev, 0, 0),
-        "docs": (cmd_docs, 0, 0),
         "package": (cmd_package, 4, 4),
         "sums": (cmd_sums, 2, 2),
         "verify": (cmd_verify, 1, 2),

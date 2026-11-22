@@ -14,21 +14,27 @@ class DocPinTests(unittest.TestCase):
         wrong = MODULE.doc_pin_mismatches(MODULE.cargo_version())
         self.assertEqual(wrong, [], 'run `scripts/release.py set <Cargo.toml version>`')
 
-    def test_set_rewrites_cargo_dependencies_and_install_pins(self):
+    def test_set_rewrites_snappea_pins_only(self):
         text = (
             'snappea = "0.1"\n'
             'snappea = { version = "0.1", default-features = false, features = ["test"] }\n'
-            'sh -s -- --version 0.1.0\n'
+            'curl -fsSL URL | sh -s -- --version 0.1.0\n'
             'SNAPPEA_VERSION: 0.1.0\n'
             'snappea-syntax = { version = "0.1.0" }\n'
+            'pysnappea = "0.1"\n'
+            'cargo install cargo-fuzz --version 0.12.0\n'
+            'OTHER_SNAPPEA_VERSION: 0.1.0\n'
         )
         self.assertEqual(
             MODULE.set_doc_pins(text, '1.4.2'),
             'snappea = "1.4"\n'
             'snappea = { version = "1.4", default-features = false, features = ["test"] }\n'
-            'sh -s -- --version 1.4.2\n'
+            'curl -fsSL URL | sh -s -- --version 1.4.2\n'
             'SNAPPEA_VERSION: 1.4.2\n'
-            'snappea-syntax = { version = "0.1.0" }\n',
+            'snappea-syntax = { version = "0.1.0" }\n'
+            'pysnappea = "0.1"\n'
+            'cargo install cargo-fuzz --version 0.12.0\n'
+            'OTHER_SNAPPEA_VERSION: 0.1.0\n',
         )
 
     def test_older_pins_kept_on_purpose_are_exempt(self):
