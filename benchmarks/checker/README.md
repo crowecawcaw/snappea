@@ -173,3 +173,23 @@ The report refuses to compare different catalogs, sources, seed ranges or bounds
 Inspect each case rather than just an aggregate mean: better completion can still
 slow a tail or lose an individual seed. Plain JSON and deterministic `.json.gz`
 results are both supported.
+
+## When each bug is found
+
+`scripts/bench-discovery.py` draws a histogram of when `auto` first finds each known
+bug, one point per bug site and seed, by schedules and by seconds. The bulk is the
+usual cost. The tail and the `not found` bar are the uncertainty left after a short
+run. Use it to judge a search change: the whole shape should move left.
+
+```sh
+python3 scripts/bench-discovery.py --out benchmark-results/discovery.json
+python3 scripts/bench-discovery.py --out /tmp/after.json --compare benchmark-results/discovery.json
+python3 scripts/bench-discovery.py --out /tmp/after.json --redraw   # draw again, no run
+```
+
+It writes the points as JSON and the picture beside it as `.svg`, and prints the
+p50, p90 and p99 and the slowest sites. `--compare` draws an earlier result as an
+outline. Schedules repeat exactly for a seed. Seconds are what a user waits; they
+vary with the machine and with `--jobs`, so compare seconds only between runs on the
+same machine. Runs use one checker worker, 20 seeds and the bug cases above. A miss
+is infinite in a quantile.
