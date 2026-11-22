@@ -191,5 +191,29 @@ It writes the points as JSON and the picture beside it as `.svg`, and prints the
 p50, p90 and p99 and the slowest sites. `--compare` draws an earlier result as an
 outline. Schedules repeat exactly for a seed. Seconds are what a user waits; they
 vary with the machine and with `--jobs`, so compare seconds only between runs on the
-same machine. Runs use one checker worker, 20 seeds and the bug cases above. A miss
-is infinite in a quantile.
+same machine. Runs use one checker worker, 20 seeds, the bug cases above and the
+large-model cases below. A miss is infinite in a quantile.
+
+### Bugs in large models
+
+The cases above are found within a second, so they say little about the tail.
+[large.json](large.json) adds bugs in models whose correct design is not proved
+quickly. The picture stacks them in their own color.
+
+- **large-sample**: the largest test of a design in `examples/samples/use-cases`, with
+  one implementation mistake planted in the correct design: an ack that ignores the
+  receipt, a cache invalidation that keeps the fill lease, a quorum read that returns
+  the last answer, a cutover that does not wait for a write.
+- **large-upstream**: the upstream P tutorials in `tests/upstream/Tutorial`. Paxos and
+  Raft get one planted mistake each (a majority off by one, a vote without the log
+  check, a value taken from the last promise). Raft with message loss and two-phase
+  commit run unchanged: the checker finds a bug in the tutorials as they are.
+
+A case plants its mistake with a `patch`: a file, a line to `find` and its
+`replace`. The line must occur exactly once, so a sample that changes fails the load
+instead of measuring the correct design. `description` says what the mistake is. A
+case finds its bug by the `match` text of the assertion; other failures of the same
+test are ignored.
+
+Add a case only after it is found on some seed. A mistake that no run finds may be a
+deep bug or one the test cannot observe, and the benchmark cannot tell which.

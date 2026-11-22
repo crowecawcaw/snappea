@@ -1,0 +1,432 @@
+{
+ "suite_version": 1,
+ "cases": [
+  {
+   "name": "cache-invalidation/delete-keeps-lease",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/cache-invalidation/CacheInvalidation.pproj",
+   "test": "tcGeneratedWorkload",
+   "patch": [
+    {
+     "file": "cache-invalidation/PSrc/Stores.p",
+     "find": "      present = false;\n      lease = 0;",
+     "replace": "      present = false;"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "cache holds stale value"
+    }
+   ],
+   "budget": 2000000,
+   "description": "Invalidating the cache does not cancel the outstanding fill lease, so a reader that missed before the write fills the old value afterwards."
+  },
+  {
+   "name": "cache-invalidation/fill-ignores-lease",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/cache-invalidation/CacheInvalidation.pproj",
+   "test": "tcGeneratedWorkload",
+   "patch": [
+    {
+     "file": "cache-invalidation/PSrc/Stores.p",
+     "find": "if (s.lease == lease) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "cache holds stale value"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The cache accepts a fill without comparing its lease to the current one."
+  },
+  {
+   "name": "job-queue/ack-ignores-receipt",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/job-queue/JobQueue.pproj",
+   "test": "tcGenerated",
+   "patch": [
+    {
+     "file": "job-queue/PSrc/Queue.p",
+     "find": "if (a.job in inFlight && inFlight[a.job].receipt == a.receipt) {",
+     "replace": "if (a.job in inFlight) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "was completed by an ack with stale receipt"
+    }
+   ],
+   "budget": 2000000,
+   "description": "An ack completes a job by job id alone, so a worker whose delivery timed out completes the redelivered job."
+  },
+  {
+   "name": "job-queue/effect-not-idempotent",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/job-queue/JobQueue.pproj",
+   "test": "tcGenerated",
+   "patch": [
+    {
+     "file": "job-queue/PSrc/Worker.p",
+     "find": "if (!(a.job in recorded)) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "recorded twice"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The worker applies a job's effect on every delivery instead of once per job."
+  },
+  {
+   "name": "quorum-kv/read-takes-last-answer",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcWriteAndReads",
+   "patch": [
+    {
+     "file": "quorum-kv/PSrc/Client.p",
+     "find": "if (Newer(resp.version, best.version)) { best = resp; }",
+     "replace": "best = resp;"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "returned the initial value after write"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A quorum read returns the last replica answer instead of the newest version among the answers."
+  },
+  {
+   "name": "quorum-kv/version-without-writer",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcTwoWriters",
+   "patch": [
+    {
+     "file": "quorum-kv/PSrc/Client.p",
+     "find": "version = (counter = seen.version.counter + 1, writer = input.id);",
+     "replace": "version = (counter = seen.version.counter + 1, writer = 0);"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "replicas did not converge"
+    }
+   ],
+   "budget": 2000000,
+   "description": "Writers leave their id out of the version, so two concurrent writes get the same version and replicas keep whichever arrived first."
+  },
+  {
+   "name": "quorum-kv/replica-overwrites",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/quorum-kv/QuorumKv.pproj",
+   "test": "tcWriteWriteRead",
+   "patch": [
+    {
+     "file": "quorum-kv/PSrc/Replica.p",
+     "find": "if (Newer(w.version, version)) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "the newest it was offered is"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A replica stores every write it receives, also one older than what it holds."
+  },
+  {
+   "name": "online-migration/copy-overwrites-newer",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/online-migration/OnlineMigration.pproj",
+   "test": "tcGeneratedMigration",
+   "patch": [
+    {
+     "file": "online-migration/PSrc/Stores.p",
+     "find": "if (row.lsn > RowOf(rows, key).lsn) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "back from version"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The new store applies a backfill copy without comparing sequence numbers, so a copy of an old row replaces a newer dual write."
+  },
+  {
+   "name": "online-migration/cutover-during-write",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/online-migration/OnlineMigration.pproj",
+   "test": "tcGeneratedMigration",
+   "patch": [
+    {
+     "file": "online-migration/PSrc/Migration.p",
+     "find": "if (writes == 0 && reads == 0) {",
+     "replace": "if (reads == 0) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "new store lost a change"
+    }
+   ],
+   "budget": 2000000,
+   "description": "Cutover waits for reads to drain but not for a write that has reached only the old store."
+  },
+  {
+   "name": "offline-sync/retry-not-deduplicated",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/offline-sync/OfflineSync.pproj",
+   "test": "tcGeneratedSync",
+   "patch": [
+    {
+     "file": "offline-sync/PSrc/NoteServer.p",
+     "find": "if (u.req in applied) {",
+     "replace": "if (false) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "conflicted with itself"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The server does not remember applied requests, so a retry after a lost reply is treated as a new update."
+  },
+  {
+   "name": "seat-hold/confirm-ignores-hold",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/seat-hold/SeatHold.pproj",
+   "test": "tcGeneratedCheckouts",
+   "patch": [
+    {
+     "file": "seat-hold/PSrc/SeatStore.p",
+     "find": "if (r.seat in held && held[r.seat] == r.hold) {\n        held -= (r.seat);\n        sold",
+     "replace": "if (r.seat in held) {\n        held -= (r.seat);\n        sold"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "which does not hold it"
+    }
+   ],
+   "budget": 2000000,
+   "description": "Confirm checks that the seat is held, not that it is held by the confirming hold, so an expired hold buys a seat held by someone else."
+  },
+  {
+   "name": "order-cancel-vs-ship/refund-not-idempotent",
+   "family": "large-sample",
+   "project": "examples/samples/use-cases/order-cancel-vs-ship/OrderCancelVsShip.pproj",
+   "test": "tcGeneratedOrders",
+   "patch": [
+    {
+     "file": "order-cancel-vs-ship/PSrc/Payments.p",
+     "find": "if (!(order in captured)) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "captured or voided twice"
+    }
+   ],
+   "budget": 2000000,
+   "description": "Payments settles an order on every request instead of once."
+  },
+  {
+   "name": "paxos/value-from-last-promise",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/5_Paxos/SingleDecreePaxos.pproj",
+   "test": "testBasicPaxos3on5",
+   "patch": [
+    {
+     "file": "5_Paxos/PSrc/proposer.p",
+     "find": "if (rsp.n_accepted > highest_proposal_n) {",
+     "replace": "if (rsp.n_accepted > -1) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "PSpec/spec.p:13:5"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A proposer adopts the accepted value of the last promise it receives instead of the one with the highest ballot."
+  },
+  {
+   "name": "paxos/majority-off-by-one",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/5_Paxos/SingleDecreePaxos.pproj",
+   "test": "testBasicPaxos3on5",
+   "patch": [
+    {
+     "file": "5_Paxos/PSrc/proposer.p",
+     "find": "majority = sizeof(jury) / 2 + 1;",
+     "replace": "majority = sizeof(jury) / 2;"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "PSpec/spec.p:13:5"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A proposer counts half of the acceptors as a majority."
+  },
+  {
+   "name": "paxos/accept-ignores-promise",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/5_Paxos/SingleDecreePaxos.pproj",
+   "test": "testBasicPaxos3on5",
+   "patch": [
+    {
+     "file": "5_Paxos/PSrc/acceptor.p",
+     "find": "if (req.ballot_n >= n_prepared) {",
+     "replace": "if (true) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "PSpec/spec.p:13:5"
+    }
+   ],
+   "budget": 2000000,
+   "description": "An acceptor accepts a proposal with a ballot below the one it promised."
+  },
+  {
+   "name": "raft/vote-without-log-check",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/6_Raft/Raft.pproj",
+   "test": "twoClientsThreeServersReliable",
+   "patch": [
+    {
+     "file": "6_Raft/PSrc/Server.p",
+     "find": "                    && logUpToDateCheck(reply.lastLogIndex, reply.lastLogTerm)) {",
+     "replace": "                    ) {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "applied before does not match with"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A server grants its vote without checking that the candidate's log is as up to date as its own."
+  },
+  {
+   "name": "raft/votes-twice-in-a-term",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/6_Raft/Raft.pproj",
+   "test": "twoClientsThreeServersReliable",
+   "patch": [
+    {
+     "file": "6_Raft/PSrc/Server.p",
+     "find": "if ((votedFor == default(Server) || votedFor == reply.candidate)",
+     "replace": "if ((true)"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "there are multiple leaders"
+    }
+   ],
+   "budget": 2000000,
+   "description": "A server grants a vote to every candidate of a term, not only the first."
+  },
+  {
+   "name": "raft/commit-on-half",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/6_Raft/Raft.pproj",
+   "test": "twoClientsThreeServersReliable",
+   "patch": [
+    {
+     "file": "6_Raft/PSrc/Server.p",
+     "find": "if (validMatchIndices > clusterSize / 2 ",
+     "replace": "if (validMatchIndices >= clusterSize / 2 "
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "applied before does not match with"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The leader commits an entry once half of the cluster holds it, not a majority."
+  },
+  {
+   "name": "raft/commits-earlier-term",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/6_Raft/Raft.pproj",
+   "test": "oneClientThreeServersUnreliable",
+   "patch": [
+    {
+     "file": "6_Raft/PSrc/Server.p",
+     "find": " && logs[nextCommit].term == currentTerm) {",
+     "replace": ") {"
+    }
+   ],
+   "expected": [
+    {
+     "id": "bug",
+     "match": "applied before does not match with"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The leader commits an entry of an earlier term by counting replicas."
+  },
+  {
+   "name": "raft/upstream-leader-completeness",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/6_Raft/Raft.pproj",
+   "test": "oneClientThreeServersUnreliable",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "was committed before but not in the new leader"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The upstream tutorial as it is: with message loss a new leader misses a committed entry."
+  },
+  {
+   "name": "two-phase-commit/upstream-read-mismatch",
+   "family": "large-upstream",
+   "project": "tests/upstream/Tutorial/2_TwoPhaseCommit/TwoPhaseCommit.pproj",
+   "test": "tcMultipleClientsNoFailure",
+   "expected": [
+    {
+     "id": "bug",
+     "match": "Record read is not same as what was written"
+    }
+   ],
+   "budget": 2000000,
+   "description": "The upstream tutorial as it is: a client reads a value other than the one its committed transaction wrote."
+  }
+ ]
+}

@@ -41,7 +41,8 @@ def project_files(project, seen):
         files += project_files(project.parent / entry.text.strip(), seen)
     for entry in root.iter('PFile'):
         path = (project.parent / entry.text.strip()).resolve()
-        files += sorted(path.rglob('*.p')) if path.is_dir() else [path]
+        # upstream projects list folders they do not have, such as PForeign
+        files += sorted(path.rglob('*.p')) if path.is_dir() else [path] if path.exists() else []
     return files
 
 
@@ -51,13 +52,26 @@ def project_sources(project):
     return [[str(f.relative_to(ROOT)), f.read_text()] for f in files]
 
 
+def patched(sources, patches):
+    """The sources with each planted bug applied. A patch names a file and a line of it to
+    find and replace; the text must occur exactly once, so a sample that drifts fails here
+    rather than silently measuring the correct design."""
+    sources = [list(pair) for pair in sources]
+    for patch in patches:
+        hits = [pair for pair in sources if pair[0].endswith(patch['file'])]
+        if len(hits) != 1 or hits[0][1].count(patch['find']) != 1:
+            raise SystemExit(f"patch does not apply exactly once: {patch['file']}: {patch['find']!r}")
+        hits[0][1] = hits[0][1].replace(patch['find'], patch['replace'])
+    return sources
+
+
 def load_cases(manifests, name_filter, budget=SYNTHETIC_BUDGET):
     cases = []
     for manifest in manifests:
         for case in json.loads(manifest.read_text())['cases']:
             case = case.copy()
             if 'project' in case:
-                case['sources'] = project_sources(case['project'])
+                case['sources'] = patched(project_sources(case['project']), case.get('patch', []))
                 digest = json.dumps(case['sources']).encode()
             else:
                 case['source'] = (manifest.parent / case['path']).read_text()
