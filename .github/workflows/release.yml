@@ -278,7 +278,8 @@ jobs:
           cargo update --workspace
           cargo update --manifest-path examples/rust/Cargo.toml -p snappea
           go test -count=1 ./go/internal/snappeabin
-          git add Cargo.toml Cargo.lock examples/rust/Cargo.lock java/pom.xml examples/java/pom.xml go/internal/snappeabin
+          # -u: also the docs and examples whose version pins `set` rewrote
+          git add -u
           git commit -m "Release Snap Pea ${TAG}"
           git tag -a "${TAG}" -m "Snap Pea ${TAG}"
 

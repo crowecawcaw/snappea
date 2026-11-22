@@ -3,8 +3,10 @@
 
   scripts/release.py next LEVEL             print the version a release would get
                                             (LEVEL: patch, minor, major or release)
-  scripts/release.py set VERSION [--sums F] write VERSION into every package; with
-                                            --sums, also Go's committed SHA256SUMS
+  scripts/release.py set VERSION [--sums F] write VERSION into every package and the
+                                            docs that pin it; with --sums, also Go's
+                                            committed SHA256SUMS
+  scripts/release.py docs                   check that the docs pin Cargo.toml's version
   scripts/release.py dev                    between releases: Go "dev" with no
                                             checksums, Java <next patch>-SNAPSHOT
   scripts/release.py package TARGET VERSION BINARY OUT
@@ -24,6 +26,7 @@ runs on every release runner, Windows included.
 
 import hashlib
 import io
+import os
 import pathlib
 import re
 import sys
@@ -53,6 +56,18 @@ POM_VERSION = re.compile(r"(<artifactId>snappea</artifactId>\s*<version>)([^<]*)
 EXAMPLE_VERSION = re.compile(r"(<snappea\.version>)([^<]*)(</snappea\.version>)")
 GO_CONST = re.compile(r'^(const Version = ")([^"]*)(")$', re.M)
 
+# Version pins in docs and examples: Cargo dependencies name major.minor, install
+# commands X.Y.Z. Each pattern's second group is the version.
+DOC_PINS = [
+    (re.compile(r'(snappea = (?:\{ ?version = )?")(\d+\.\d+)(")'), "minor"),
+    (re.compile(r"(--version )(\d+\.\d+\.\d+)()"), "full"),
+    (re.compile(r"(SNAPPEA_VERSION: ?)(\d+\.\d+\.\d+)()"), "full"),
+]
+DOC_SUFFIXES = {".md", ".rs", ".tsx", ".yml", ".sh", ".ps1"}
+# Pins of older releases on purpose: the install test and recorded eval bundles.
+DOC_EXEMPT = ("target", "node_modules", ".git", ".github/workflows/install-script.yml",
+              "evals/certified-bundles")
+
 
 def fail(message):
     sys.exit(f"release.py: {message}")
@@ -80,6 +95,44 @@ def replace(path, pattern, value):
         fail(f"no version to replace in {path.relative_to(ROOT)}")
     # newline="" keeps the file's line endings on Windows runners.
     path.write_text(new, newline="")
+
+
+def doc_files():
+    """The files DOC_PINS applies to: docs, examples and sources, outside DOC_EXEMPT."""
+    def exempt(rel):
+        return any(rel == e or rel.startswith(e + "/") or rel.endswith("/" + e) for e in DOC_EXEMPT)
+
+    for top, dirs, files in os.walk(ROOT):
+        base = pathlib.Path(top)
+        dirs[:] = sorted(d for d in dirs if not exempt((base / d).relative_to(ROOT).as_posix()))
+        for name in sorted(files):
+            path = base / name
+            if path.suffix in DOC_SUFFIXES and not exempt(path.relative_to(ROOT).as_posix()):
+                yield path
+
+
+def doc_pin(version, kind):
+    major, minor, _ = parse(version)
+    return f"{major}.{minor}" if kind == "minor" else version
+
+
+def set_doc_pins(text, version):
+    for pattern, kind in DOC_PINS:
+        text = pattern.sub(lambda m: m[1] + doc_pin(version, kind) + m[3], text)
+    return text
+
+
+def doc_pin_mismatches(version):
+    """`file:line: pin` for every doc pin that names another version."""
+    out = []
+    for path in doc_files():
+        text = path.read_text(errors="replace")
+        for pattern, kind in DOC_PINS:
+            for m in pattern.finditer(text):
+                if m[2] != doc_pin(version, kind):
+                    line = text.count("\n", 0, m.start()) + 1
+                    out.append(f"{path.relative_to(ROOT).as_posix()}:{line}: {m[0]}")
+    return out
 
 
 def asset(target, version):
@@ -116,10 +169,23 @@ def cmd_set(version, sums=None):
     replace(POM, POM_VERSION, version)
     replace(EXAMPLE_POM, EXAMPLE_VERSION, version)
     replace(GO_VERSION, GO_CONST, version)
+    for path in doc_files():
+        text = path.read_text(errors="replace")
+        new = set_doc_pins(text, version)
+        if new != text:
+            path.write_text(new, newline="")
     if sums is not None:
         text = pathlib.Path(sums).read_text()
         check_sums(text, version)
         GO_SUMS.write_text(text, newline="")
+
+
+def cmd_docs():
+    version = cargo_version()
+    wrong = doc_pin_mismatches(version)
+    if wrong:
+        fail(f"these pins differ from Cargo.toml's {version}; run "
+             f"`scripts/release.py set {version}`:\n  " + "\n  ".join(wrong))
 
 
 def cmd_dev():
@@ -238,6 +304,7 @@ def main(argv):
         "next": (cmd_next, 1, 1),
         "set": (None, 1, 3),
         "dev": (cmd_dev, 0, 0),
+        "docs": (cmd_docs, 0, 0),
         "package": (cmd_package, 4, 4),
         "sums": (cmd_sums, 2, 2),
         "verify": (cmd_verify, 1, 2),

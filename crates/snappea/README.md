@@ -16,14 +16,14 @@ snappea observe --spec BankBalanceCorrect logs/      # check production logs
 
 ## Library
 
-`cargo add --dev snappea` for tests. Production code needs only the emitter:
+Tests need the `test` feature; production code needs only the emitter:
 
 ```toml
 [dependencies]
-snappea = { version = "0.1", default-features = false, features = ["emit"] }
+snappea = { version = "0.2", default-features = false, features = ["emit"] }
 
 [dev-dependencies]
-snappea = "0.1"
+snappea = { version = "0.2", default-features = false, features = ["test"] }
 ```
 
 ```rust,ignore

@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The latest release; add `-s -- --version 0.1.0` after `sh` to pin one.
+      # The latest release; add `-s -- --version 0.2.0` after `sh` to pin one.
       - name: Install snappea
         run: curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh
 
