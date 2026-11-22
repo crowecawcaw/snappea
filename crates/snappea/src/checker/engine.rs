@@ -51,6 +51,13 @@ pub struct CheckerOptions {
     /// states; turn it off to compare. Enabled by default; not used with clocks or
     /// foreign functions.
     pub partial_order: bool,
+    /// Let an exhaustive search try one value of each group of `choose(n)` values the
+    /// model cannot tell apart: `choose(100) < 5` has two outcomes, and a key that is
+    /// only stored and compared is an old key or a new one (see
+    /// [`crate::checker::symmetry`]). It reaches the same verdicts through fewer
+    /// schedules; turn it off to compare. Enabled by default; sampling still draws from
+    /// every value.
+    pub value_classes: bool,
     /// Keep exploring after the first bug (`--explore`).
     pub full_exploration: bool,
     /// Distinct failures to collect before the search stops (`snappea check --max-bugs`);
@@ -155,6 +162,7 @@ impl Default for CheckerOptions {
             branching: false,
             resume_prefixes: true,
             partial_order: true,
+            value_classes: true,
             verbose_trace_schedules: 0,
         }
     }
@@ -586,6 +594,7 @@ fn build_strategy(
                 split,
             )
             .with_frontier_guidance(opts.feedback_frontier_guidance && !opts.upstream_feedback);
+            let auto = if opts.value_classes { auto.with_value_classes() } else { auto };
             Box::new(if local_steps { auto.with_local_steps() } else { auto })
         }
         StrategyKind::Random => Box::new(RandomStrategy::new(opts.max_fair_steps, rng.clone())),
@@ -609,6 +618,7 @@ fn build_strategy(
         StrategyKind::Dfs | StrategyKind::RandomDfs => {
             let rng = (opts.strategy == StrategyKind::RandomDfs).then(|| rng.clone());
             let dfs = crate::checker::exhaustive::ExhaustiveStrategy::new(opts.max_unfair_steps, rng);
+            let dfs = if opts.value_classes { dfs.with_value_classes() } else { dfs };
             Box::new(if has_hot { dfs.with_live_graph(crate::checker::fairness::RECORD_BUDGET) } else { dfs })
         }
         StrategyKind::Replay => match &opts.replay {
@@ -1745,7 +1755,7 @@ mod mutation_prefix_tests {
 
     #[test]
     fn restored_prefixes_preserve_search_and_bug_schedules() {
-        for assertion in ["true", "choice < 3 || initial == 0"] {
+        for assertion in ["choice + 1 > 0", "choice < 3 || initial == 0"] {
             let source = format!(
                 r#"
                 event tick;

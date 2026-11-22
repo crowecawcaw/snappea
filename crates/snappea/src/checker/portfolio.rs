@@ -1,5 +1,10 @@
 //! Automatic scheduling: retain a guided corpus per scheduler and
-//! spend bounded work on every arm, even when novelty gives no useful signal.
+//! spend bounded work on every arm, even when rarity gives no useful signal.
+//!
+//! An arm earns more schedules when its schedules reach what the run rarely reaches: a
+//! machine handling an event in a state, a given number of times ([`Portfolio::rarity`]).
+//! Code coverage stops growing early in a large model, so it cannot tell the arms apart;
+//! rare points keep telling them apart for the whole run.
 use super::{
     feedback::{ControlledRandom, DelayScheduler, FeedbackGuidedStrategy, RandomScheduler, Source},
     random::RandomValueGenerator,
@@ -13,9 +18,34 @@ struct Arm {
     work: u64,
     reward: f64,
     runs: usize,
-    frontiers: FxHashSet<(u32, u32, u32, usize)>,
 }
 const INITIAL_OBSERVATIONS: usize = 32;
+/// How one schedule resolves the model's `$` and `choose(n)`. A model injects a fault
+/// with such a choice (`choose(100) < 5`, `if ($)`), at one rate for every schedule; a
+/// bug that needs several faults close together, or a long stretch without any, then
+/// needs many schedules. Each schedule makes either the low or the high outcomes of
+/// every such choice likely, so some schedules are full of faults and others free of
+/// them. All values stay possible in both.
+///
+/// Drawing the skew per code site instead, or leaving some schedules even, found the
+/// Raft bug that needs a quiet stretch (`raft/commits-earlier-term`) less often: in 1 to
+/// 4 of 10 seeds within 60 s, against 7 of 10 this way and 1 of 10 with no skew.
+#[derive(Clone, Copy, PartialEq)]
+enum Skew {
+    Low,
+    High,
+}
+/// Change points of the PCT arms. A bug that needs k forced handovers needs about k
+/// change points: with 2 instead of 20, the upstream Paxos and Raft tutorials' bugs took
+/// about four times as long at the median, and PCT with 2 alone did not find them.
+const PCT_DEPTHS: [usize; 3] = [0, 10, 20];
+const NAMES: [&str; 5] = ["feedback", "delay", "pct-0", "pct-10", "pct-20"];
+/// A point is rare while fewer than one schedule in this many reached it.
+const RARE: u64 = 100;
+/// Rare points of one schedule that count: a long loop cannot buy an unlimited allocation.
+const MAX_SCORE: usize = 8;
+/// Distinct points counted; a model with more keeps the counts of the first ones.
+const MAX_POINTS: usize = 1 << 16;
 
 pub(crate) struct Portfolio {
     arms: Vec<Arm>,
@@ -24,9 +54,17 @@ pub(crate) struct Portfolio {
     contention: bool,
     fan_in: usize,
     observations: usize,
+    /// Times each (machine, state, event) was handled in the current schedule.
     counts: rustc_hash::FxHashMap<(u32, u32, u32), usize>,
-    novelty: usize,
+    /// Schedules that reached each point: a (machine, state, event) and how often.
+    reached: rustc_hash::FxHashMap<(u32, u32, u32, usize), u32>,
+    new_failure: bool,
     failures: FxHashSet<String>,
+    /// The choice about to be made is a `$` or a `choose(n)` of the model.
+    model_choice: bool,
+    /// The skew of the current schedule, drawn at its first such choice.
+    skew: Option<Skew>,
+    skew_rng: RandomValueGenerator,
     rng: RandomValueGenerator,
 }
 impl Portfolio {
@@ -43,7 +81,7 @@ impl Portfolio {
             guided(fair, Box::new(RandomScheduler::new(Source::Controlled(ControlledRandom::new(seed))))),
             guided(unfair, Box::new(DelayScheduler::new(Source::Controlled(ControlledRandom::new(seed))))),
         ];
-        for depth in [0, 2, 10] {
+        for depth in PCT_DEPTHS {
             strategies.push(Box::new(PctStrategy::new(
                 unfair,
                 depth,
@@ -51,17 +89,18 @@ impl Portfolio {
             )));
         }
         Self {
-            arms: strategies
-                .into_iter()
-                .map(|strategy| Arm { strategy, work: 0, reward: 0.0, runs: 0, frontiers: Default::default() })
-                .collect(),
+            arms: strategies.into_iter().map(|strategy| Arm { strategy, work: 0, reward: 0.0, runs: 0 }).collect(),
             active: 0,
             iterations: 0,
             contention: false,
             fan_in: 0,
             observations: 0,
             counts: Default::default(),
-            novelty: 0,
+            reached: Default::default(),
+            new_failure: false,
+            model_choice: false,
+            skew: None,
+            skew_rng: RandomValueGenerator::new(seed.wrapping_add(0x51ed270b)),
             failures: Default::default(),
             rng: RandomValueGenerator::new(seed.wrapping_add(0x9e3779b9)),
         }
@@ -133,6 +172,33 @@ impl Portfolio {
             self.active = 2;
         }
     }
+    /// Points of the schedule that just ran which fewer than one schedule in [`RARE`]
+    /// reached so far, itself included; a failure of a new kind counts as all of them.
+    fn rarity(&mut self) -> usize {
+        let total = self.iterations as u64 + 1;
+        let mut rare = 0;
+        for (&(m, s, e), &count) in &self.counts {
+            let bucket = if count <= 8 { count } else { 8 + count.ilog2() as usize };
+            if self.reached.len() >= MAX_POINTS && !self.reached.contains_key(&(m, s, e, bucket)) {
+                continue;
+            }
+            let n = self.reached.entry((m, s, e, bucket)).or_default();
+            *n = n.saturating_add(1);
+            rare += usize::from(*n == 1 || u64::from(*n) * RARE <= total);
+        }
+        if std::mem::take(&mut self.new_failure) {
+            rare = MAX_SCORE;
+        }
+        rare.min(MAX_SCORE)
+    }
+    /// The skew of the choice about to be made, if it is one of the model's.
+    fn skew(&mut self) -> Option<Skew> {
+        if !std::mem::take(&mut self.model_choice) {
+            return None;
+        }
+        let rng = &mut self.skew_rng;
+        Some(*self.skew.get_or_insert_with(|| if rng.next_below(2) == 0 { Skew::Low } else { Skew::High }))
+    }
     fn current(&self) -> &dyn Strategy {
         &*self.arms[self.active].strategy
     }
@@ -146,7 +212,7 @@ impl Strategy for Portfolio {
             .iter()
             .enumerate()
             .map(|(i, a)| SchedulerStats {
-                name: ["feedback", "delay", "pct-0", "pct-2", "pct-10"][i].into(),
+                name: NAMES[i].into(),
                 schedules: a.runs + usize::from(i == self.active && a.strategy.scheduled_steps() > 0),
                 work: a.work + if i == self.active { a.strategy.scheduled_steps() as u64 } else { 0 },
                 reward: a.reward,
@@ -157,24 +223,42 @@ impl Strategy for Portfolio {
         self.observe_operations(ops);
         self.current_mut().next_operation(current, ops)
     }
+    fn note_model_choice(&mut self) {
+        self.model_choice = true;
+    }
     fn next_bool(&mut self, max: i32) -> bool {
-        self.current_mut().next_bool(max)
+        let skew = self.skew();
+        let fair = self.current_mut().next_bool(max);
+        // the arm still draws, so its own choices stay in step
+        match skew {
+            None => fair,
+            Some(Skew::Low) => self.skew_rng.next_below(8) != 0,
+            Some(Skew::High) => self.skew_rng.next_below(8) == 0,
+        }
     }
     fn next_int(&mut self, max: i32) -> i32 {
-        self.current_mut().next_int(max)
+        let skew = self.skew();
+        let even = self.current_mut().next_int(max);
+        let Some(skew) = skew.filter(|_| max >= 2) else { return even };
+        // the fourth power of a uniform draw: half of the draws land in the lowest 6%
+        let u = (f64::from(even) + 0.5) / f64::from(max);
+        let v = if skew == Skew::Low { u.powi(4) } else { 1.0 - (1.0 - u).powi(4) };
+        ((v * f64::from(max)) as i32).clamp(0, max - 1)
     }
     fn prepare_next_iteration(&mut self) -> bool {
         let work = self.current().scheduled_steps().max(1) as u64;
+        let score = self.rarity();
         let arm = &mut self.arms[self.active];
         arm.work = arm.work.saturating_add(work);
         arm.runs += 1;
-        // Novelty is bounded per schedule; a counter or long loop cannot buy an
-        // unlimited allocation. Work, not just schedules, is charged to each arm.
-        arm.reward = arm.reward * 0.9 + (self.novelty.min(8) as f64);
+        // Work, not just schedules, is charged to each arm. The reward is an average
+        // over about the arm's last 50 schedules: rare points are rare per schedule.
+        arm.reward = arm.reward * 0.98 + score as f64;
         self.current_mut().prepare_next_iteration();
         self.iterations += 1;
         self.counts.clear();
-        self.novelty = 0;
+        self.skew = None;
+        self.model_choice = false;
         self.active = if !self.contention {
             0
         } else if let Some(i) = self.arms.iter().position(|a| a.runs == 0) {
@@ -193,7 +277,7 @@ impl Strategy for Portfolio {
                 .map(|(i, a)| {
                     let cost = a.work as f64 / a.runs.max(1) as f64;
                     let hint = if self.fan_in >= 2 && i == 2 { 1.0 + 3.0 / (a.runs.max(1) as f64).sqrt() } else { 1.0 };
-                    ((1.0 + a.reward.sqrt()) * hint / cost.sqrt()).max(0.001)
+                    ((0.05 + a.reward * a.reward) * hint / cost.sqrt()).max(0.001)
                 })
                 .collect();
             let sum: f64 = weights.iter().sum();
@@ -235,21 +319,12 @@ impl Strategy for Portfolio {
         self.current_mut().observe_condition(fun, pc, outcome);
     }
     fn observe_frontier(&mut self, m: u32, s: u32, e: u32) {
-        let count = self.counts.entry((m, s, e)).or_default();
-        *count += 1;
-        let bucket = if *count <= 8 { *count } else { 8 + count.ilog2() as usize };
-        let arm = &mut self.arms[self.active];
-        if arm.frontiers.len() < 4096 && arm.frontiers.insert((m, s, e, bucket)) {
-            self.novelty += 1;
-        }
-        arm.strategy.observe_frontier(m, s, e);
+        *self.counts.entry((m, s, e)).or_default() += 1;
+        self.arms[self.active].strategy.observe_frontier(m, s, e);
     }
     fn observe_progress(&mut self, coverage: usize, bug: Option<&str>) {
-        self.novelty += coverage.min(8);
         if let Some(bug) = bug {
-            if self.failures.len() < 64 && self.failures.insert(super::feedback::failure_class(bug)) {
-                self.novelty += 8;
-            }
+            self.new_failure |= self.failures.len() < 64 && self.failures.insert(super::feedback::failure_class(bug));
         }
         self.current_mut().observe_progress(coverage, bug);
     }

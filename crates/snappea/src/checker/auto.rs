@@ -133,6 +133,13 @@ impl AutoStrategy {
         self.local_steps = true;
         self
     }
+    /// Lets the exhaustive search name interchangeable values (see
+    /// [`ExhaustiveStrategy::with_value_classes`]). The sampled schedules still draw from
+    /// all the values.
+    pub(crate) fn with_value_classes(mut self) -> Self {
+        self.dfs = self.dfs.map(ExhaustiveStrategy::with_value_classes);
+        self
+    }
     fn active(&self) -> &dyn Strategy {
         match self.dfs.as_ref().filter(|_| !self.probing) {
             Some(dfs) => dfs,
@@ -254,6 +261,14 @@ impl Strategy for AutoStrategy {
             return None;
         }
         self.active_mut().next_operation(current, ops)
+    }
+    fn merges_values(&self) -> bool {
+        self.active().merges_values()
+    }
+    fn note_model_choice(&mut self) {
+        if self.dfs.is_none() || self.probing {
+            self.portfolio.note_model_choice();
+        }
     }
     fn next_bool(&mut self, max: i32) -> bool {
         self.choice(2) && self.active_mut().next_bool(max)

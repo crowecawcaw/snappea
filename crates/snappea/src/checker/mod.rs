@@ -39,6 +39,7 @@ pub mod rl;
 pub mod runtime;
 pub mod statehash;
 pub mod strategy;
+pub mod symmetry;
 pub mod time;
 pub mod timeline;
 pub mod value;

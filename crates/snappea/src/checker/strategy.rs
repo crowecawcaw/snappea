@@ -267,6 +267,15 @@ pub trait Strategy {
     }
     /// Coverage delta and failure observed during the current execution.
     fn observe_progress(&mut self, _new_coverage: usize, _bug: Option<&str>) {}
+    /// The next [`Strategy::next_bool`] or [`Strategy::next_int`] resolves a `$` or a
+    /// `choose(n)` of the model, not a pick from a collection.
+    fn note_model_choice(&mut self) {}
+    /// Whether a `choose(n)` with a value class (see [`crate::checker::symmetry`])
+    /// should offer one value of each group the model cannot tell apart, not all `n`.
+    /// True for a search that tries every value: the others repeat a schedule it tries.
+    fn merges_values(&self) -> bool {
+        false
+    }
     /// Enable native prefix guidance for guided scheduler arms.
     fn enable_frontier_guidance(&mut self) {}
     /// Whether event-count frontier checkpoints are used during execution.

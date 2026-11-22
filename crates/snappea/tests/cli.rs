@@ -1678,7 +1678,7 @@ fn auto_explains_per_worker_handoffs_in_text_and_json() {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     let mut h = host();
     h.clock = || START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
-    h.add_file("range.p", "machine Main { start state S { entry { var n: int; var i: int; while (i < 200) { n = choose(10000); i = i + 1; } } } } test tcMain [main=Main]: { Main };");
+    h.add_file("range.p", "machine Main { start state S { entry { var n: int; var i: int; while (i < 200) { n = n + choose(10000); i = i + 1; } } } } test tcMain [main=Main]: { Main };");
     let args =
         ["check", "range.p", "--timeout", "1s", "--workers", "2", "--no-mutation", "--warn", "all", "--seed", "7"];
     assert_eq!(snappea(&mut h, &[&args[..], &["--json"]].concat()), 0, "{}{}", h.stderr, h.stdout);

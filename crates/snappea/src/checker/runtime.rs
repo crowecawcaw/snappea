@@ -215,6 +215,11 @@ struct FairChoice {
     /// How many values it had.
     count: u32,
     value: u32,
+    /// The class the value was chosen in (see [`Runtime::choose_named`]), plus one; zero
+    /// if none.
+    names: u32,
+    /// The value chosen, when `names` is set: `value` is then what a fair cycle counts.
+    named: u32,
 }
 
 /// One active call. Its locals and operand stack live in [`Exec::values`].
@@ -1398,8 +1403,55 @@ impl<'p> Runtime<'p> {
     pub(crate) fn note_choice(&mut self, site: u64, count: usize, value: usize) {
         if count > 1 {
             let step = self.trace.steps.len() - 1;
-            self.fair_choices.push(FairChoice { step, site, count: count as u32, value: value as u32 });
+            self.fair_choices.push(FairChoice {
+                step,
+                site,
+                count: count as u32,
+                value: value as u32,
+                names: 0,
+                named: 0,
+            });
         }
+    }
+
+    /// Chooses among the values of class `class` that the program can tell apart (see
+    /// [`crate::checker::symmetry`]), at code site `site`. The trace records the value,
+    /// so that it replays under a strategy that offers them all.
+    pub(crate) fn choose_named(&mut self, class: u32, site: u64, caller: &str) -> Result<i64, Stop> {
+        let code = self.code.clone();
+        let class_def = &code.value_classes.classes[class as usize];
+        let used: Vec<i64> =
+            self.fair_choices.iter().filter(|c| c.names == class + 1).map(|c| i64::from(c.named)).collect();
+        let offered = class_def.offered(&used);
+        self.check_steps_bound()?;
+        self.check_liveness_temperatures()?;
+        self.count_choice(offered.len() as i32);
+        let i = self.strategy.next_int(offered.len() as i32);
+        if self.strategy.diverged() {
+            self.stopped = true;
+            return Err(Stop);
+        }
+        let value = offered[i as usize];
+        self.scheduled_steps = self.strategy.scheduled_steps();
+        self.trace.steps.push(ScheduleStep::Int(value as i32));
+        self.log(|_| format!("<RandomLog> {} nondeterministically chose '{}'.", caller, value));
+        self.xml_random(&value.to_string(), caller);
+        // A fair cycle takes each value the program can tell apart. When the values are
+        // compared with each other that depends on those chosen before, so it takes all.
+        let (count, taken) =
+            if class_def.mutual { (class_def.bound as u32, value as u32) } else { (offered.len() as u32, i as u32) };
+        if count > 1 || class_def.mutual {
+            let step = self.trace.steps.len() - 1;
+            self.fair_choices.push(FairChoice {
+                step,
+                site,
+                count,
+                value: taken,
+                names: class + 1,
+                named: value as u32,
+            });
+        }
+        Ok(value)
     }
 
     pub(crate) fn check_cancelled(&mut self) -> Result<(), Stop> {

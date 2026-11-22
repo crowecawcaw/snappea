@@ -289,6 +289,8 @@ pub struct ExhaustiveStrategy {
     cycle: Option<u64>,
     /// The local-step reduction, when on.
     local: Option<LocalSteps>,
+    /// See [`ExhaustiveStrategy::with_value_classes`].
+    value_classes: bool,
     /// The record of the state graph for the fair-cycle analysis, if kept.
     graph: Option<LiveGraph>,
     /// What the runtime said about the state the next [`Strategy::observe_state`] observes.
@@ -311,6 +313,7 @@ impl ExhaustiveStrategy {
             path_states: rustc_hash::FxHashSet::default(),
             cycle: None,
             local: None,
+            value_classes: false,
             graph: None,
             pending: None,
             stats: SearchStats::default(),
@@ -363,6 +366,14 @@ impl ExhaustiveStrategy {
     /// of local steps always ends, since each consumes an event and none sends one.
     pub fn with_local_steps(mut self) -> Self {
         self.local = Some(LocalSteps::default());
+        self
+    }
+
+    /// Tries one value of each group of `choose(n)` values the model cannot tell apart
+    /// (see [`crate::checker::symmetry`]). The schedules left out differ from one tried
+    /// only in values the model never looks at, so the verdicts are unchanged.
+    pub fn with_value_classes(mut self) -> Self {
+        self.value_classes = true;
         self
     }
 
@@ -561,6 +572,10 @@ impl Strategy for ExhaustiveStrategy {
 
     fn next_bool(&mut self, _max: i32) -> bool {
         self.decide(Kind::Bool, |v| v < 2, || vec![0, 1]) == 1
+    }
+
+    fn merges_values(&self) -> bool {
+        self.value_classes
     }
 
     fn next_int(&mut self, max: i32) -> i32 {

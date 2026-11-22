@@ -178,6 +178,17 @@ the same order, so assertions, deadlocks and liveness verdicts are the same, thr
 fewer states: about half the schedules on the sample designs. It is off with time
 tracking and foreign functions, whose effects a step does not record.
 
+Exhaustive search does not try every value of a `choose(n)` the model cannot tell
+apart. A fault injected with `choose(100) < 5` has two outcomes, so the search tries
+one value on each side of 5, not 100. A key from `choose(10)` that the model only
+stores, sends and compares for equality is either a key chosen before or a new one, so
+three such choices have 5 outcomes, not 1000. Literals the value is compared with, and
+the zero a field starts as, are tried too. The search tries every value of a `choose(n)`
+whose value the model does arithmetic on, orders against another choice, uses as an
+index, or compares as part of a formatted string. Values shown only in `print` or an
+assertion message do not count as told apart, so a report from this search shows the
+smallest value that fails. Sampling still draws from all `n` values.
+
 The state cache leaves out fields, locals and event payloads that no assertion,
 condition, send or spec depends on (the values the `unchecked-state` lint reports): such
 a value cannot change what happens next, so a write-only counter neither keeps the
