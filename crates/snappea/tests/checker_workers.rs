@@ -397,3 +397,79 @@ fn split_search_reaches_the_same_liveness_verdicts_as_one_worker() {
         }
     }
 }
+
+/// Every schedule of this model runs the same code and handles the same events: only the
+/// order of the machines' steps differs. Each machine has its own type, since activity
+/// coverage links the states of two machines of one type by the order of their sends.
+fn same_behavior() -> String {
+    let stepper = |name: &str| {
+        format!(
+            "machine {name} {{
+                var n: int;
+                start state Run {{
+                    entry {{ send this, eStep; }}
+                    on eStep do {{
+                        n = n + 1;
+                        if (n < 4) {{ send this, eStep; }} else {{ goto Done; }}
+                    }}
+                }}
+                state Done {{ }}
+            }}"
+        )
+    };
+    format!(
+        "event eStep;
+        machine Main {{ start state Init {{ entry {{ new A(); new B(); new C(); }} }} }}
+        {} {} {}
+        test tcSteps [main = Main]: {{ Main, A, B, C }};",
+        stepper("A"),
+        stepper("B"),
+        stepper("C")
+    )
+}
+
+/// The schedules reported as reaching new behavior.
+#[derive(Default)]
+struct Novel(Vec<usize>);
+
+impl snappea::checker::engine::Output for Novel {
+    fn line(&mut self, _: &str) {}
+    fn error(&mut self, _: &str) {}
+    fn schedule_novel(&mut self, schedule: usize) {
+        self.0.push(schedule);
+    }
+}
+
+/// Auto mode's exhaustive search and its samples keep separate coverage, as do workers:
+/// a schedule that repeats what another search or worker reached is not new behavior.
+#[test]
+fn a_schedule_is_novel_only_when_no_earlier_one_reached_its_behavior() {
+    let mut sm = snappea::syntax::SourceMap::new();
+    sm.add("model.p", same_behavior());
+    let analysis = snappea::sema::compile(&sm, &snappea::sema::Options::default()).expect("compiles");
+    let tc = analysis.program.test_cases().remove(0);
+    let checker = Checker::new(&analysis.program);
+
+    let opts = CheckerOptions { strategy: StrategyKind::Auto, iterations: 60, seed: 1, ..Default::default() };
+    let mut out = Novel::default();
+    let result = checker.check(&tc, &opts, &mut out).unwrap();
+    assert_eq!(result.report.explored_fair_schedules + result.report.explored_unfair_schedules, 60);
+    assert!(result.report.explored_fair_schedules > 0, "the run sampled as well as searched");
+    assert!(result.report.explored_unfair_schedules > 0, "the run searched as well as sampled");
+    assert_eq!(out.0, [1], "only the first schedule reaches new behavior");
+
+    // two workers, one after the other on this thread
+    let opts = CheckerOptions {
+        strategy: StrategyKind::Random,
+        iterations: 20,
+        seed: 1,
+        activity_coverage: true,
+        ..Default::default()
+    };
+    let pool = WorkerPool::new(2);
+    let mut out = Novel::default();
+    for w in 0..2 {
+        checker.explore(&tc, &opts, &pool, w, &mut out).unwrap();
+    }
+    assert_eq!(out.0.len(), 1, "the second worker repeats the first: {:?}", out.0);
+}

@@ -438,7 +438,8 @@ pub trait Output {
     /// running.
     fn schedule_bounded(&mut self, _hit: bool, _steps: usize) {}
     /// Schedule `schedule` (numbered as for [`Output::schedule_finished`]) reached
-    /// coverage no earlier schedule of its worker did. `snappea check` uses it to stop a
+    /// coverage no earlier schedule of the run did, in any worker or search phase (see
+    /// [`WorkerPool::adds_behavior`]). `snappea check` uses it to stop a
     /// test case whose coverage stopped growing.
     fn schedule_novel(&mut self, _schedule: usize) {}
     /// Polled before every schedule; returning true stops exploration (timeouts).
@@ -655,6 +656,9 @@ pub struct WorkerPool {
     shared: std::sync::Arc<crate::checker::exhaustive::Shared>,
     /// With [`CheckerOptions::max_bugs`] > 1: the signatures of the failures found so far.
     signatures: std::sync::Mutex<Vec<String>>,
+    /// The coverage features any schedule of any worker reached (see
+    /// [`WorkerPool::adds_behavior`]).
+    seen: std::sync::Mutex<crate::checker::coverage::CoverageInfo>,
 }
 
 impl WorkerPool {
@@ -668,7 +672,17 @@ impl WorkerPool {
             exhausted: AtomicUsize::new(0),
             shared: Default::default(),
             signatures: Default::default(),
+            seen: Default::default(),
         }
+    }
+
+    /// Whether `coverage` holds a feature no earlier schedule of the run reached, in any
+    /// worker or search phase; records its features. Each worker, and each phase of auto
+    /// mode, keeps its own coverage to steer its search, so a schedule that is new there
+    /// may repeat what another already reached. Called only for such a schedule, which
+    /// is rare: the cost is that of walking one coverage record.
+    fn adds_behavior(&self, coverage: &Coverage) -> bool {
+        coverage.add_features_to(&mut self.seen.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
     pub fn count(&self) -> usize {
@@ -1230,7 +1244,11 @@ impl<'p> Checker<'p> {
                 let new_coverage =
                     rt.coverage.as_ref().map_or(0, |c| c.feature_count()).saturating_sub(previous_coverage);
                 rt.strategy.observe_progress(new_coverage, rt.bug.as_deref());
-                if new_coverage > 0 && !is_replay {
+                // new to this search's own record; the run counts it only if no other
+                // search or worker reached it first
+                let novel =
+                    new_coverage > 0 && !is_replay && rt.coverage.as_ref().is_some_and(|c| pool.adds_behavior(c));
+                if novel {
                     out.borrow_mut().schedule_novel(schedule);
                 }
                 if rt.strategy.wants_feedback() {
