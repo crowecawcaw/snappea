@@ -15,21 +15,32 @@ Make P easier for developers to incorporate into application design and developm
 
 ## Tenets
 
-1. **The audience is implementors, not theorists.** Documentation, examples, tools and
-   interfaces should focus on clarity, ergonomics and practicality.
+1. **The primary audience is agents driven by developers.** Help agents make better
+   designs and find bugs by writing quality models and getting good feedback from them.
+   Documentation, examples, tools and interfaces aim at implementors, not theorists.
 2. **`snappea-compat` is a drop-in for upstream P, and thin.** The `snappea-compat` CLI should be
    as compatible with upstream P as possible, while keeping its own code minimal so the
    main functionality lives in the core library. Outside `snappea-compat`, the library is
    shaped by the other tenets, not by upstream P.
-3. **Agentic development is the primary use case.** P is especially well suited to it.
-   Help developers understand what P is and how to use it strategically, and help agents
-   incorporate P effectively into development for design and implementation validation.
-4. **Fail on likely modeling mistakes, with explicit suppression for intentional cases.**
-   Models and validation fail by default to avoid undetected issues; runtime instrumentation
-   must remain best-effort and must not introduce errors that break application code.
+3. **Fail early, fast and loudly.** In most cases, fail on likely mistakes so they are
+   quick to debug, with explicit suppression for intentional cases. Runtime
+   instrumentation is the exception: it stays best-effort and never breaks application code.
+4. **Errors are clear and suggest a next step or fix.** See [Error messages](#error-messages).
 5. **The CLI and library target agents; the playground targets humans.** Choose defaults,
    options and output for that audience. When they differ, keep one mechanism in the core
    and let each interface set its own default.
+6. **Code is idiomatic for its language.**
+7. **One source of truth.** Do not duplicate code paths, constants or behaviours. In order
+   of preference: a single source of truth; a structural check that turns drift into a
+   mismatch; a test that pins equivalence; a comment reference (a weak check, last resort).
+8. **Prevent repeats with hard checks.** When you find a bug or bad pattern, prefer a
+   build, test or CI check that stops it recurring. Fix bugs red/green: failing test first.
+9. **Nothing is stable yet.** Interfaces and code may change freely. Write no
+   backwards-compatibility code, do not defer to existing code, and refactor whenever
+   there is something to gain, even something small.
+10. **Comments are terse and say why.** Prefer self-describing code. A needed comment
+    explains why, not what, and describes the current code, never what came before;
+    history belongs in commit messages.
 
 For compatibility details, see [Compatibility](docs/compatibility.md).
 
