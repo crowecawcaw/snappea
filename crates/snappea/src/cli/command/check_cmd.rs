@@ -358,218 +358,46 @@ pub(in crate::cli) fn run_check(
         Ok(n) => (n, None),
         Err(e) => (0, Some(e)),
     };
-    // what lint failing skips, as reported in the JSON result
-    const LINT_SKIP: &str = "lint failed";
-    if !suite.expected_bug_seeds.is_empty()
-        && !selected_tests.iter().any(|tc| {
-            crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
-                .is_some_and(|i| i.expected_bug.is_some())
-        })
-    {
-        error(con.inner, "--expect-bug-seeds requires a selected test with a snappea: expect-bug marker");
-        return Err(Exit(ERROR));
-    }
-    let mut planned = Vec::new();
-    for name in selected {
-        let tc = selected_tests.iter().find(|t| t.name == name).unwrap();
-        let negative = crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
-            .is_some_and(|i| i.expected_bug.is_some());
-        if negative && !suite.expected_bug_seeds.is_empty() {
-            planned.extend(suite.expected_bug_seeds.iter().map(|&seed| (name.clone(), Some(seed))));
-        } else {
-            planned.push((name, None));
-        }
-    }
+    let prog = &loaded.analysis.program;
+    let planned = plan(prog, selected, &selected_tests, &intents, &suite.expected_bug_seeds).map_err(|m| {
+        error(con.inner, &m);
+        Exit(ERROR)
+    })?;
     let n = planned.len();
     con.inner.out_line(&format!("Checking {}: {} test case{}", cfg.project_name, n, plural(n)));
-    let mut failed = 0;
-    let prog = &loaded.analysis.program;
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
-    let (mut scope, mut hits) = (Scope::default(), Hits::default());
-    let mut selected_scope = Scope::default();
-    let mut positive_scope = Scope::default();
-    let mut cases = Vec::new();
-    let mut scenarios = Vec::new();
-    let mut incomplete = 0;
-    // incomplete searches that did not settle either
-    let mut unsettled = 0;
     let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &loaded.linter);
-    let (mut negative_driver_scope, mut negative_hits, mut positive_design) =
-        (Scope::default(), Hits::default(), Scope::default());
+    let (mut positive_scope, mut positive_design) = (Scope::default(), Scope::default());
     for tc in &selected_tests {
         if crate::driver::lint::intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()) {
             positive_scope.add(&Scope::test_case(prog, tc));
             positive_design.add(&Scope::partition_drivers(prog, tc, &drivers).1);
         }
     }
-    let mut passed = Vec::new();
-    // The driver-limits hint is the same for every test case; say it once per run.
-    let mut driver_hint_shown = false;
-    let check_start = con.inner.now();
-    let (base_seed, base_max_bugs) = (cfg.seed, cfg.max_bugs);
-    let mut seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>> = Default::default();
-    for (i, (name, seed)) in planned.into_iter().enumerate() {
-        cfg.test_case_name = name;
-        cfg.seed = seed.or(base_seed);
-        cfg.seed_artifact = seed;
-        // the shared budget left, split between the test cases left
-        cfg.time_share = suite.budget.map(|b| {
-            let left = b - (con.inner.now() - check_start);
-            (left / (n - i) as f64).max(MIN_SHARE)
-        });
-        cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
-        // an expected-bug test passes on its first matching bug: searching on would only
-        // spend the budget the other test cases share
-        let negative = selected_tests.iter().find(|t| t.name == cfg.test_case_name).is_some_and(|tc| {
-            crate::driver::lint::intent(prog, tc, &intents).is_some_and(|i| i.expected_bug.is_some())
-        });
-        cfg.max_bugs = if negative { 1 } else { base_max_bugs };
-        check::set_output_directory(&mut con, &mut cfg)?;
-        let case = check::testing_process(&mut con, &loaded, &cfg)?;
-        let tc = all_tests.iter().find(|t| t.name == case.test_case).unwrap();
-        let intent = crate::driver::lint::intent(prog, tc, &intents);
-        let expected = intent.and_then(|i| i.expected_bug.as_deref());
-        let boundary = intent.is_some_and(|i| i.boundary.is_some());
-        let matched = expected.is_some_and(|text| {
-            case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, sm).contains(text))
-        });
-        if let Some(seed) = seed {
-            seed_runs.entry(case.test_case.clone()).or_default().push(SeedFailure {
-                seed,
-                matched,
-                identity: case.bug_identity.clone(),
-            });
-        }
-        if expected.is_some() && !matched || expected.is_none() && case.bugs > 0 {
-            failed += 1;
-        } else if expected.is_none() && case.exhaustive_finished != Some(true) {
-            incomplete += 1;
-            unsettled += usize::from(verdict(&case) != Verdict::Settled);
-        }
-        if let Some(expected) = expected {
-            con.inner.out_line(&format!(
-                "{}  {}{} (expected bug: {:?})",
-                if matched { "ok  " } else { "FAIL" },
-                case.test_case,
-                seed.map(|s| format!(" [seed {s}]")).unwrap_or_default(),
-                expected
-            ));
-            if !matched {
-                let reason = if case.bugs > 0 {
-                    "the observed failure did not match"
-                } else if case.exhaustive_finished == Some(true) {
-                    "search complete, no bug: this test cannot reach the expected flaw"
-                } else {
-                    "search incomplete, no matching bug found within the run budget"
-                };
-                con.inner.out_line(&format!("      {reason}; check the test and expected failure text"));
-            }
-            if let Some(report) = &case.bug_report {
-                for l in report.lines() {
-                    con.inner.out_line(&format!("      {l}"));
-                }
-            }
-            for l in hot_spec_lines(case.bug_identity.as_ref(), &case.hot_specs) {
-                con.inner.out_line(&format!("      {l}"));
-            }
-            if let Some(schedule) = &case.schedule_file {
-                con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, &cfg)));
-            }
-            if matched && case.schedules == 1 {
-                con.inner.out_line("      note: the expected bug appeared in the first schedule; check that the control exercises the intended flaw");
-            }
-        } else {
-            print_case(con.inner, &case, &cfg, boundary);
-        }
-        let mut result = case_json(&case, &cfg, boundary);
-        if let Some(seed) = seed {
-            result["seed"] = json!(seed);
-        }
-        if let Some(text) = expected {
-            result["result"] = json!(if matched { "expected_bug" } else { "expectation_failed" });
-            let outcome = if matched {
-                "matched"
-            } else if case.bugs > 0 {
-                "wrong_failure"
-            } else if case.exhaustive_finished == Some(true) {
-                "unreachable"
-            } else {
-                "not_found"
-            };
-            result["expected_bug"] = json!({"text": text, "matched": matched, "outcome": outcome});
-        }
-        if let Some(reason) = intent.and_then(|i| i.boundary.as_deref()) {
-            result["boundary"] = json!(reason);
-        }
-        if let Some((s, h)) = &case.code_coverage {
-            selected_scope.add(s);
-            let summary = CodeMap::new(prog, &probes, s).coverage(h).summary();
-            if !only && lint_failed.is_none() {
-                con.inner.out_line(&format!(
-                    "      Coverage: {}{}",
-                    summary,
-                    match (case.bugs > 0, case.collected_bugs) {
-                        (false, _) => "",
-                        (true, false) => " (partial: stopped at first bug)",
-                        (true, true) => " (partial: stopped after the bugs)",
-                    }
-                ));
-            }
-            result["coverage"] = summary.to_json();
-            result["coverage"]["partial"] = json!(case.bugs > 0);
-            if expected.is_some() {
-                let (mut driver_scope, design_scope) = Scope::partition_drivers(prog, tc, &drivers);
-                driver_scope.exclude(&positive_design);
-                let driver_coverage = CodeMap::new(prog, &probes, &driver_scope).coverage(h);
-                result["expected_bug_driver_coverage"] = driver_coverage.to_json(false);
-                result["expected_bug_driver_coverage"]["included"] = json!(matched);
-                let design_map = CodeMap::new(prog, &probes, &design_scope);
-                let design_coverage = design_map.coverage(h);
-                result["expected_bug_design_coverage"] = design_coverage.summary().to_json();
-                result["expected_bug_design_coverage"]["partial"] =
-                    json!(case.bugs > 0 || case.exhaustive_finished != Some(true));
-                if !only && lint_failed.is_none() {
-                    con.inner.out_line(&format!(
-                        "      Expected-bug design coverage (separate): {}",
-                        design_coverage.summary()
-                    ));
-                }
-                if matched {
-                    negative_driver_scope.add(&driver_scope);
-                    negative_hits.add(h);
-                }
-            } else {
-                scope.add(s);
-                hits.add(h);
-            }
-            if expected.is_none() && case.bugs == 0 {
-                if let Some(tc) = all_tests.iter().find(|t| t.name == case.test_case) {
-                    passed.push((tc.clone(), h.clone()));
-                }
-            }
-        }
-        if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
-            // on request: the limits are long, and JSON always has them
-            if !only && lint_failed.is_none() && cfg.verbose {
-                for l in driver_lines(d, &case, !driver_hint_shown) {
-                    con.inner.out_line(&l);
-                }
-                driver_hint_shown |= !d.facts.is_empty();
-            }
-            result["driver"] = json!({
-                "machines": d.machines,
-                "repeats": d.repeats,
-                "facts": d.facts.iter().map(|f| f.to_json()).collect::<Vec<_>>(),
-            });
-        }
-        if !case.scenario_coverage.scenarios.is_empty() {
-            result["scenarios"] = serde_json::from_str(&case.scenario_coverage.to_json()).unwrap();
-            if expected.is_none() {
-                scenarios.push(case.scenario_coverage.clone());
-            }
-        }
-        cases.push(result);
-    }
+    let ctx = CaseContext {
+        loaded: &loaded,
+        all_tests: &all_tests,
+        intents: &intents,
+        probes: &probes,
+        drivers: &drivers,
+        positive_design: &positive_design,
+        details: !only && lint_failed.is_none(),
+        budget: suite.budget,
+    };
+    let SuiteState {
+        failed,
+        incomplete,
+        unsettled,
+        mut scope,
+        mut hits,
+        selected_scope,
+        mut negative_driver_scope,
+        negative_hits,
+        passed,
+        scenarios,
+        cases,
+        seed_runs,
+    } = run_cases(&mut con, &mut cfg, &ctx, planned)?;
     let seed_checks = expected_seed_checks(&seed_runs);
     for check in &seed_checks {
         let name = check["test_case"].as_str().unwrap();
@@ -579,9 +407,6 @@ pub(in crate::cli) fn run_check(
             _ => con.inner.out_line(&format!("      {name}: expected failure identity consistent across {} seeds (evidence from these runs, not a guarantee)", check["runs"].as_array().unwrap().len())),
         }
     }
-    cfg.seed = base_seed;
-    cfg.max_bugs = base_max_bugs;
-    cfg.seed_artifact = None;
     negative_driver_scope.exclude(&positive_design);
     hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
     scope.add(&negative_driver_scope);
@@ -772,8 +597,6 @@ pub(in crate::cli) fn run_check(
             }
         }
     }
-    let mut undetected = 0;
-    let mut untested = Untested::default();
     let mut skipped = Vec::new();
     if coverage_warned {
         skipped.push("required coverage (--warn coverage reported gaps as warnings)");
@@ -781,63 +604,19 @@ pub(in crate::cli) fn run_check(
     if matches!(mutation, Mutation::After(None)) && failed == 0 && lint_failed.is_none() {
         skipped.push("mutation testing (--no-mutation)");
     }
-    let mutation = match mutation {
-        Mutation::After(None) => json!({"skipped": "--no-mutation"}),
-        // a test case that failed leaves lint as the next thing to fix; mutation testing
-        // still runs after a lint failure, since its findings are independent of lint's
-        _ if lint_failed.is_some() && failed > 0 => json!({"skipped": LINT_SKIP}),
-        _ if passed.is_empty() && failed == 0 => {
-            skipped.push("mutation testing (no passing positive test case)");
-            con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
-            json!({"skipped": "no passing positive test case"})
-        }
-        _ if failed > 0 => {
-            con.inner.out_line("Mutation testing skipped: a test case failed.");
-            json!({"skipped": "a test case failed"})
-        }
-        // a test case that was not selected may be the one that detects a mutant
-        Mutation::After(Some(_)) if selected_tests.len() < all_tests.len() => {
-            skipped.push("mutation testing (only some test cases were selected)");
-            json!({"skipped": "only some test cases were selected"})
-        }
-        Mutation::After(Some(limit)) | Mutation::Only(limit) => {
-            let suppressed = loaded.linter.mutation_suppressions(sm);
-            let report = crate::driver::mutation::run(
-                &mut con,
-                prog,
-                &cfg,
-                &passed,
-                &suppressed,
-                &coverage_suppressions,
-                &drivers,
-                f64::from(limit),
-                only,
-                gates.strict,
-            );
-            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
-                con.inner.out_line(&l);
-            }
-            if report.blanket_suppressions > 0 {
-                con.inner.out_line("hint: blanket `allow mutation` suppressions hide every mutation kind in their scope; prefer mutation:<kind>. Use --list-suppressions to inspect their scope.");
-            }
-            if suite.list_suppressions || cfg.verbose {
-                for line in report.suppression_lines() {
-                    con.inner.out_line(&line);
-                }
-            }
-            // those inside an undetected coarse mutant too
-            undetected = report.failing().len();
-            untested = Untested {
-                not_tested: report.not_tested(),
-                under_searched: report.under_searched(),
-                failed: report.failed_to_run(),
-                unreached: report.unreached.len(),
-                // `snappea check` reports code no test case ran as coverage gaps
-                count_unreached: only,
-            };
-            report.to_json()
-        }
-    };
+    let (mutation, undetected, untested) = mutation_phase(
+        &mut con,
+        mutation,
+        &cfg,
+        &suite,
+        &ctx,
+        failed,
+        &passed,
+        lint_failed.is_some(),
+        selected_tests.len() < all_tests.len(),
+        &coverage_suppressions,
+        &mut skipped,
+    );
     let seconds = con.inner.now() - start;
     let (elapsed, memory) = (duration(seconds), memory(con.inner));
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
@@ -1054,6 +833,352 @@ pub(in crate::cli) fn run_check(
     }
     let code = if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK };
     Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()))
+}
+
+/// One check of a selected test case: an expected-bug test runs once per
+/// `--expect-bug-seeds` seed.
+pub(in crate::cli) struct PlannedCase {
+    pub(in crate::cli) name: String,
+    pub(in crate::cli) seed: Option<u32>,
+    /// The test expects a bug (`snappea: expect-bug`).
+    pub(in crate::cli) expects_bug: bool,
+}
+
+/// The checks to run for the `selected` test cases, in order.
+pub(in crate::cli) fn plan(
+    prog: &crate::sema::Program,
+    selected: Vec<String>,
+    tests: &[crate::sema::TestCase],
+    intents: &[snappea_lint::TestIntent],
+    seeds: &[u32],
+) -> Result<Vec<PlannedCase>, String> {
+    let expects_bug = |name: &str| {
+        tests
+            .iter()
+            .find(|t| t.name == name)
+            .is_some_and(|tc| crate::driver::lint::intent(prog, tc, intents).is_some_and(|i| i.expected_bug.is_some()))
+    };
+    if !seeds.is_empty() && !selected.iter().any(|n| expects_bug(n)) {
+        return Err("--expect-bug-seeds requires a selected test with a snappea: expect-bug marker".into());
+    }
+    let mut planned = Vec::new();
+    for name in selected {
+        let expects = expects_bug(&name);
+        if expects && !seeds.is_empty() {
+            planned.extend(seeds.iter().map(|&seed| PlannedCase {
+                name: name.clone(),
+                seed: Some(seed),
+                expects_bug: true,
+            }));
+        } else {
+            planned.push(PlannedCase { name, seed: None, expects_bug: expects });
+        }
+    }
+    Ok(planned)
+}
+
+/// What [`run_cases`] reads besides the config.
+pub(in crate::cli) struct CaseContext<'a> {
+    pub(in crate::cli) loaded: &'a check::Loaded,
+    pub(in crate::cli) all_tests: &'a [crate::sema::TestCase],
+    pub(in crate::cli) intents: &'a [snappea_lint::TestIntent],
+    pub(in crate::cli) probes: &'a [crate::checker::bytecode::Probe],
+    pub(in crate::cli) drivers: &'a [bool],
+    /// Design code of the positive test cases, left out of expected-bug driver coverage.
+    pub(in crate::cli) positive_design: &'a Scope,
+    /// Print per-case coverage and driver limits: not for `check mutation`, or once lint failed.
+    pub(in crate::cli) details: bool,
+    /// Seconds the test cases share ([`SuiteConfig::budget`]).
+    pub(in crate::cli) budget: Option<f64>,
+}
+
+/// What the test cases of a run found, together.
+#[derive(Default)]
+pub(in crate::cli) struct SuiteState {
+    pub(in crate::cli) failed: usize,
+    pub(in crate::cli) incomplete: usize,
+    /// Incomplete searches that did not settle either.
+    pub(in crate::cli) unsettled: usize,
+    /// Code of the positive test cases, and what it ran.
+    pub(in crate::cli) scope: Scope,
+    pub(in crate::cli) hits: Hits,
+    /// Code of every selected test case.
+    pub(in crate::cli) selected_scope: Scope,
+    /// Driver code of the expected-bug test cases that found their bug, and what it ran.
+    pub(in crate::cli) negative_driver_scope: Scope,
+    pub(in crate::cli) negative_hits: Hits,
+    /// Positive test cases that passed, for mutation testing.
+    pub(in crate::cli) passed: Vec<(crate::sema::TestCase, Hits)>,
+    pub(in crate::cli) scenarios: Vec<scenario::Artifact>,
+    /// Each case's JSON result.
+    pub(in crate::cli) cases: Vec<Value>,
+    pub(in crate::cli) seed_runs: std::collections::BTreeMap<String, Vec<SeedFailure>>,
+}
+
+/// Checks each planned case with its share of the budget, printing a line or a report per
+/// case. Leaves `cfg`'s seed and bug limit as it found them.
+pub(in crate::cli) fn run_cases(
+    con: &mut Quiet,
+    cfg: &mut CheckConfig,
+    ctx: &CaseContext,
+    planned: Vec<PlannedCase>,
+) -> Result<SuiteState, Exit> {
+    let prog = &ctx.loaded.analysis.program;
+    let n = planned.len();
+    let mut st = SuiteState::default();
+    // The driver-limits hint is the same for every test case; say it once per run.
+    let mut driver_hint_shown = false;
+    let check_start = con.inner.now();
+    let (base_seed, base_max_bugs) = (cfg.seed, cfg.max_bugs);
+    for (i, PlannedCase { name, seed, expects_bug }) in planned.into_iter().enumerate() {
+        cfg.test_case_name = name;
+        cfg.seed = seed.or(base_seed);
+        cfg.seed_artifact = seed;
+        // the shared budget left, split between the test cases left
+        cfg.time_share = ctx.budget.map(|b| {
+            let left = b - (con.inner.now() - check_start);
+            (left / (n - i) as f64).max(MIN_SHARE)
+        });
+        cfg.progress = cfg.progress.map(|_| Position { test: i + 1, tests: n });
+        // an expected-bug test passes on its first matching bug: searching on would only
+        // spend the budget the other test cases share
+        cfg.max_bugs = if expects_bug { 1 } else { base_max_bugs };
+        check::set_output_directory(con, cfg)?;
+        let case = check::testing_process(con, ctx.loaded, cfg)?;
+        let tc = ctx.all_tests.iter().find(|t| t.name == case.test_case).unwrap();
+        let intent = crate::driver::lint::intent(prog, tc, ctx.intents);
+        let expected = intent.and_then(|i| i.expected_bug.as_deref());
+        let boundary = intent.is_some_and(|i| i.boundary.is_some());
+        let matched = expected.is_some_and(|text| {
+            case.bugs > 0
+                && case
+                    .bug_report
+                    .as_deref()
+                    .is_some_and(|r| failure_message(r, &ctx.loaded.sources.map).contains(text))
+        });
+        if let Some(seed) = seed {
+            st.seed_runs.entry(case.test_case.clone()).or_default().push(SeedFailure {
+                seed,
+                matched,
+                identity: case.bug_identity.clone(),
+            });
+        }
+        if expected.is_some() && !matched || expected.is_none() && case.bugs > 0 {
+            st.failed += 1;
+        } else if expected.is_none() && case.exhaustive_finished != Some(true) {
+            st.incomplete += 1;
+            st.unsettled += usize::from(verdict(&case) != Verdict::Settled);
+        }
+        if let Some(expected) = expected {
+            con.inner.out_line(&format!(
+                "{}  {}{} (expected bug: {:?})",
+                if matched { "ok  " } else { "FAIL" },
+                case.test_case,
+                seed.map(|s| format!(" [seed {s}]")).unwrap_or_default(),
+                expected
+            ));
+            if !matched {
+                let reason = if case.bugs > 0 {
+                    "the observed failure did not match"
+                } else if case.exhaustive_finished == Some(true) {
+                    "search complete, no bug: this test cannot reach the expected flaw"
+                } else {
+                    "search incomplete, no matching bug found within the run budget"
+                };
+                con.inner.out_line(&format!("      {reason}; check the test and expected failure text"));
+            }
+            if let Some(report) = &case.bug_report {
+                for l in report.lines() {
+                    con.inner.out_line(&format!("      {l}"));
+                }
+            }
+            for l in hot_spec_lines(case.bug_identity.as_ref(), &case.hot_specs) {
+                con.inner.out_line(&format!("      {l}"));
+            }
+            if let Some(schedule) = &case.schedule_file {
+                con.inner.out_line(&format!("      Replay: {}", replay_command(schedule, cfg)));
+            }
+            if matched && case.schedules == 1 {
+                con.inner.out_line("      note: the expected bug appeared in the first schedule; check that the control exercises the intended flaw");
+            }
+        } else {
+            print_case(con.inner, &case, cfg, boundary);
+        }
+        let mut result = case_json(&case, cfg, boundary);
+        if let Some(seed) = seed {
+            result["seed"] = json!(seed);
+        }
+        if let Some(text) = expected {
+            result["result"] = json!(if matched { "expected_bug" } else { "expectation_failed" });
+            let outcome = if matched {
+                "matched"
+            } else if case.bugs > 0 {
+                "wrong_failure"
+            } else if case.exhaustive_finished == Some(true) {
+                "unreachable"
+            } else {
+                "not_found"
+            };
+            result["expected_bug"] = json!({"text": text, "matched": matched, "outcome": outcome});
+        }
+        if let Some(reason) = intent.and_then(|i| i.boundary.as_deref()) {
+            result["boundary"] = json!(reason);
+        }
+        if let Some((s, h)) = &case.code_coverage {
+            st.selected_scope.add(s);
+            let summary = CodeMap::new(prog, ctx.probes, s).coverage(h).summary();
+            if ctx.details {
+                con.inner.out_line(&format!(
+                    "      Coverage: {}{}",
+                    summary,
+                    match (case.bugs > 0, case.collected_bugs) {
+                        (false, _) => "",
+                        (true, false) => " (partial: stopped at first bug)",
+                        (true, true) => " (partial: stopped after the bugs)",
+                    }
+                ));
+            }
+            result["coverage"] = summary.to_json();
+            result["coverage"]["partial"] = json!(case.bugs > 0);
+            if expected.is_some() {
+                let (mut driver_scope, design_scope) = Scope::partition_drivers(prog, tc, ctx.drivers);
+                driver_scope.exclude(ctx.positive_design);
+                let driver_coverage = CodeMap::new(prog, ctx.probes, &driver_scope).coverage(h);
+                result["expected_bug_driver_coverage"] = driver_coverage.to_json(false);
+                result["expected_bug_driver_coverage"]["included"] = json!(matched);
+                let design_map = CodeMap::new(prog, ctx.probes, &design_scope);
+                let design_coverage = design_map.coverage(h);
+                result["expected_bug_design_coverage"] = design_coverage.summary().to_json();
+                result["expected_bug_design_coverage"]["partial"] =
+                    json!(case.bugs > 0 || case.exhaustive_finished != Some(true));
+                if ctx.details {
+                    con.inner.out_line(&format!(
+                        "      Expected-bug design coverage (separate): {}",
+                        design_coverage.summary()
+                    ));
+                }
+                if matched {
+                    st.negative_driver_scope.add(&driver_scope);
+                    st.negative_hits.add(h);
+                }
+            } else {
+                st.scope.add(s);
+                st.hits.add(h);
+            }
+            if expected.is_none() && case.bugs == 0 {
+                if let Some(tc) = ctx.all_tests.iter().find(|t| t.name == case.test_case) {
+                    st.passed.push((tc.clone(), h.clone()));
+                }
+            }
+        }
+        if let Some(d) = case.driver.as_ref().filter(|_| case.bugs == 0) {
+            // on request: the limits are long, and JSON always has them
+            if ctx.details && cfg.verbose {
+                for l in driver_lines(d, &case, !driver_hint_shown) {
+                    con.inner.out_line(&l);
+                }
+                driver_hint_shown |= !d.facts.is_empty();
+            }
+            result["driver"] = json!({
+                "machines": d.machines,
+                "repeats": d.repeats,
+                "facts": d.facts.iter().map(|f| f.to_json()).collect::<Vec<_>>(),
+            });
+        }
+        if !case.scenario_coverage.scenarios.is_empty() {
+            result["scenarios"] = serde_json::from_str(&case.scenario_coverage.to_json()).unwrap();
+            if expected.is_none() {
+                st.scenarios.push(case.scenario_coverage.clone());
+            }
+        }
+        st.cases.push(result);
+    }
+    cfg.seed = base_seed;
+    cfg.max_bugs = base_max_bugs;
+    cfg.seed_artifact = None;
+    Ok(st)
+}
+
+/// What lint failing skips, as reported in the JSON result.
+const LINT_SKIP: &str = "lint failed";
+
+/// Runs mutation testing after the test cases, or says why it is skipped (adding that to
+/// `skipped`): its JSON result, the undetected mutants and those left untested.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::cli) fn mutation_phase(
+    con: &mut Quiet,
+    mutation: Mutation,
+    cfg: &CheckConfig,
+    suite: &SuiteConfig,
+    ctx: &CaseContext,
+    failed: usize,
+    passed: &[(crate::sema::TestCase, Hits)],
+    lint_failed: bool,
+    partial_selection: bool,
+    coverage_suppressions: &[(crate::syntax::Span, String)],
+    skipped: &mut Vec<&'static str>,
+) -> (Value, usize, Untested) {
+    let only = matches!(mutation, Mutation::Only(_));
+    let mut undetected = 0;
+    let mut untested = Untested::default();
+    let json = match mutation {
+        Mutation::After(None) => json!({"skipped": "--no-mutation"}),
+        // a test case that failed leaves lint as the next thing to fix; mutation testing
+        // still runs after a lint failure, since its findings are independent of lint's
+        _ if lint_failed && failed > 0 => json!({"skipped": LINT_SKIP}),
+        _ if passed.is_empty() && failed == 0 => {
+            skipped.push("mutation testing (no passing positive test case)");
+            con.inner.out_line("Mutation testing skipped: no passing positive test case was selected.");
+            json!({"skipped": "no passing positive test case"})
+        }
+        _ if failed > 0 => {
+            con.inner.out_line("Mutation testing skipped: a test case failed.");
+            json!({"skipped": "a test case failed"})
+        }
+        // a test case that was not selected may be the one that detects a mutant
+        Mutation::After(Some(_)) if partial_selection => {
+            skipped.push("mutation testing (only some test cases were selected)");
+            json!({"skipped": "only some test cases were selected"})
+        }
+        Mutation::After(Some(limit)) | Mutation::Only(limit) => {
+            let suppressed = ctx.loaded.linter.mutation_suppressions(&ctx.loaded.sources.map);
+            let report = crate::driver::mutation::run(
+                con,
+                &ctx.loaded.analysis.program,
+                cfg,
+                passed,
+                &suppressed,
+                coverage_suppressions,
+                ctx.drivers,
+                f64::from(limit),
+                only,
+                suite.gates.strict,
+            );
+            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
+                con.inner.out_line(&l);
+            }
+            if report.blanket_suppressions > 0 {
+                con.inner.out_line("hint: blanket `allow mutation` suppressions hide every mutation kind in their scope; prefer mutation:<kind>. Use --list-suppressions to inspect their scope.");
+            }
+            if suite.list_suppressions || cfg.verbose {
+                for line in report.suppression_lines() {
+                    con.inner.out_line(&line);
+                }
+            }
+            // those inside an undetected coarse mutant too
+            undetected = report.failing().len();
+            untested = Untested {
+                not_tested: report.not_tested(),
+                under_searched: report.under_searched(),
+                failed: report.failed_to_run(),
+                unreached: report.unreached.len(),
+                // `snappea check` reports code no test case ran as coverage gaps
+                count_unreached: only,
+            };
+            report.to_json()
+        }
+    };
+    (json, undetected, untested)
 }
 
 /// Ends the summary of a check with nothing left to fix, so work on the model can stop.
