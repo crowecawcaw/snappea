@@ -41,7 +41,7 @@
       - <!-- -->uses<!-- -->: <!-- -->actions<!-- -->/<!-- -->checkout<span class="nm">@v7</span>
 
       - <!-- -->name<!-- -->: <!-- -->Install<!-- --> <!-- -->snappea<!-- -->
-        <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.2.0
+        <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.3.0
 
       - <!-- -->name<!-- -->: <!-- -->Check<!-- --> <!-- -->the<!-- --> <!-- -->model<!-- -->
         <!-- -->run<!-- -->: <!-- -->snappea<!-- --> <!-- -->check<!-- --> --<!-- -->timeout<!-- --> 2m
@@ -61,7 +61,7 @@
       <!-- -->tests<!-- -->: ${{ <!-- -->steps<!-- -->.<!-- -->list<!-- -->.<!-- -->outputs<!-- -->.<!-- -->tests<!-- --> }}
     <!-- -->steps<!-- -->:
       - <!-- -->uses<!-- -->: <!-- -->actions<!-- -->/<!-- -->checkout<span class="nm">@v7</span>
-      - <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.2.0
+      - <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.3.0
       - <!-- -->id<!-- -->: <!-- -->list<!-- -->
         <!-- -->working<!-- -->-<!-- -->directory<!-- -->: <!-- -->model<!-- -->
         <!-- -->run<!-- -->: <!-- -->echo<!-- --> <span class="s">&quot;tests=$(snappea tests | jq -R . | jq -sc .)&quot;</span> &gt;&gt; <span class="s">&quot;$GITHUB_OUTPUT&quot;</span>
@@ -75,12 +75,12 @@
     <!-- -->runs<!-- -->-<!-- -->on<!-- -->: <!-- -->ubuntu<!-- -->-<!-- -->latest<!-- -->
     <!-- -->steps<!-- -->:
       - <!-- -->uses<!-- -->: <!-- -->actions<!-- -->/<!-- -->checkout<span class="nm">@v7</span>
-      - <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.2.0
+      - <!-- -->run<!-- -->: <!-- -->curl<!-- --> -<!-- -->fsSL<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->sh<!-- --> | <!-- -->sh<!-- --> -<!-- -->s<!-- --> -- --<!-- -->version<!-- --> 0.3.0
       - <!-- -->working<!-- -->-<!-- -->directory<!-- -->: <!-- -->model<!-- -->
         <!-- -->run<!-- -->: <!-- -->snappea<!-- --> <!-- -->check<!-- --> <span class="s">&quot;${{ matrix.test }}&quot;</span> --<!-- -->timeout<!-- --> 5m</code></pre></figure></section><section><h2 id="other-runners">macOS and Windows runners</h2><p>The script works on <code>macos-latest</code> and, in a <code>bash</code> step, on<!-- --> <code>windows-latest</code>. For a PowerShell step on Windows:</p><figure class="code lang-yaml"><pre><code>      - <!-- -->name<!-- -->: <!-- -->Install<!-- --> <!-- -->snappea<!-- -->
         <!-- -->shell<!-- -->: <!-- -->pwsh<!-- -->
         <!-- -->env<!-- -->:
-          <!-- -->SNAPPEA_VERSION<!-- -->: 0.2.0
+          <!-- -->SNAPPEA_VERSION<!-- -->: 0.3.0
         <!-- -->run<!-- -->: <!-- -->irm<!-- --> <!-- -->https<!-- -->://<!-- -->raw<!-- -->.<!-- -->githubusercontent<!-- -->.<!-- -->com<!-- -->/<!-- -->crowecawcaw<!-- -->/<!-- -->snappea<!-- -->/<!-- -->main<!-- -->/<!-- -->scripts<!-- -->/<!-- -->install<!-- -->.<!-- -->ps1<!-- --> | <!-- -->iex</code></pre></figure></section><section><h2 id="language-tests">Specs in your language&#x27;s tests</h2><p>The language helpers check P specs inside your ordinary unit tests and bring the checker with them, so CI needs no install step: see <a href="../docs/python.html">Python</a>, <a href="../docs/rust.html">Rust</a>,<!-- --> <a href="../docs/go.html">Go</a> and <a href="../docs/java.html">Java</a>. Run <code>pytest</code>, <code>go test</code>, <code>cargo test</code> or your Maven or Gradle build as usual.</p></section><section class="next"><h2>More</h2><p>The <a href="../docs/cli.html">command line</a> page says what each command is for; <code>snappea check --help</code> <!-- -->lists every option and default.</p></section></main></div></div></div>
   </body>
 </html>
