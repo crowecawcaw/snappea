@@ -40,6 +40,7 @@ cfg.input.pfiles = vec!["model.p".into()]; // or cfg.input.pproj = Some("Model.p
 check::resolve_sources(&mut host, &mut cfg)?; // errors are printed to stderr
 let loaded = check::load(&mut host, &cfg)?;
 cfg.test_case_name = "tcMain".into();
+check::set_output_directory(&mut host, &mut cfg)?;
 let outcome = check::testing_process(&mut host, &loaded, &cfg)?;
 println!("{} bug(s) in {} schedules", outcome.bugs, outcome.schedules);
 ```

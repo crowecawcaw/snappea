@@ -22,6 +22,7 @@ use crate::host::{Color, Host, Job, LiveInput, LiveRead, LiveSource, MemoryUse, 
 /// check::resolve_sources(&mut host, &mut cfg).expect("errors are printed to stderr");
 /// let loaded = check::load(&mut host, &cfg).expect("errors are printed to stderr");
 /// cfg.test_case_name = "tcMain".into();
+/// check::set_output_directory(&mut host, &mut cfg).expect("errors are printed to stderr");
 /// let outcome = check::testing_process(&mut host, &loaded, &cfg).expect("errors are printed to stderr");
 /// println!("{} bug(s) in {} schedules", outcome.bugs, outcome.schedules);
 /// ```

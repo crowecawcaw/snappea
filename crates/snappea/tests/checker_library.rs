@@ -216,6 +216,7 @@ fn driver_on_the_native_host() {
     check::resolve_sources(&mut host, &mut cfg).expect("reported on stderr");
     let loaded = check::load(&mut host, &cfg).expect("reported on stderr");
     cfg.test_case_name = "tcMain".into();
+    check::set_output_directory(&mut host, &mut cfg).expect("reported on stderr");
     let outcome = check::testing_process(&mut host, &loaded, &cfg).expect("reported on stderr");
     assert_eq!(outcome.bugs, 1);
     std::fs::remove_dir_all(dir).unwrap();
