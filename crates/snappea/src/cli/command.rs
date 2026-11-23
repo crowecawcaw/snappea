@@ -14,11 +14,10 @@ use serde_json::{json, Value};
 use crate::checker::code_coverage::{uncovered_lines, CodeMap, Hits, Scope, SHOWN_UNCOVERED};
 use crate::checker::runtime::StepBounds;
 use crate::checker::strategy::StrategyKind;
-use crate::driver::check::{self, CheckConfig, Gate, Style};
+use crate::driver::check::{self, CheckConfig, Gate, SuiteConfig};
 use crate::driver::progress::Position;
 use crate::driver::scenario;
 use crate::host::{full_path, Buffered, Color, Exit, Host, HostExt, ProgressView, Quiet, Stream};
-use crate::project::pproj::Includes;
 
 pub(super) const OK: i32 = 0;
 pub(super) const BUG: i32 = 1;
@@ -821,7 +820,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     if a.has("list-rules") && !a.positional.is_empty() {
         return usage_error(host, "--list-rules does not take sources", Some("check lint"));
     }
-    let mut cfg = snappea_config();
+    let mut cfg = CheckConfig::snappea();
     // nothing runs, so foreign code is not left out of a check
     cfg.ignore_foreign_files = true;
     match sources(&mut cfg.input, &a.positional) {
@@ -921,8 +920,8 @@ fn check(args: &[String], host: &mut dyn Host) -> i32 {
         host.write(Stream::Out, &format!("{}\n{}", CHECK_HELP, OUTPUT_HELP), None);
         return OK;
     }
-    let mut cfg = snappea_config();
-    let patterns = match check_config(&parsed, &mut cfg) {
+    let (mut cfg, mut suite) = (CheckConfig::snappea(), SuiteConfig::default());
+    let patterns = match check_config(&parsed, &mut cfg, &mut suite) {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, Some("check")),
     };
@@ -931,7 +930,7 @@ fn check(args: &[String], host: &mut dyn Host) -> i32 {
         Err(m) => return usage_error(host, &m, Some("check")),
     };
     with_output(host, &parsed, "check", |host| {
-        run_check(host, cfg, &patterns, parsed.get("latency"), Mutation::After(mutation))
+        run_check(host, cfg, suite, &patterns, parsed.get("latency"), Mutation::After(mutation))
     })
 }
 
@@ -951,9 +950,9 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
     if parsed.has("no-mutation") {
         return usage_error(host, "'--no-mutation' does not apply to `check mutation`", CMD);
     }
-    let mut cfg = snappea_config();
-    cfg.gates.set("mutation", Gate::Deny).expect("a known check");
-    let patterns = match check_config(&parsed, &mut cfg) {
+    let (mut cfg, mut suite) = (CheckConfig::snappea(), SuiteConfig::default());
+    suite.gates.set("mutation", Gate::Deny).expect("a known check");
+    let patterns = match check_config(&parsed, &mut cfg, &mut suite) {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, CMD),
     };
@@ -962,7 +961,7 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
         Err(m) => return usage_error(host, &m, CMD),
     };
     with_output(host, &parsed, "check mutation", |host| {
-        run_check(host, cfg, &patterns, parsed.get("latency"), Mutation::Only(limit))
+        run_check(host, cfg, suite, &patterns, parsed.get("latency"), Mutation::Only(limit))
     })
 }
 
@@ -989,13 +988,13 @@ fn mutation_timeout(a: &Args, default: u32) -> Result<Option<u32>, String> {
     }
 }
 
-/// Fills `cfg` from the `check` options; returns the test patterns.
-fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> {
+/// Fills `cfg` and `suite` from the `check` options; returns the test patterns.
+fn check_config(a: &Args, cfg: &mut CheckConfig, suite: &mut SuiteConfig) -> Result<Vec<String>, String> {
     let patterns = sources(&mut cfg.input, &a.positional)?;
     if let Some(t) = a.get("timeout") {
         cfg.timeout =
             Some(parse_duration(t).ok_or_else(|| format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t))?);
-        cfg.suite_budget = None;
+        suite.budget = None;
     }
     cfg.workers = match uint(a, "workers")? {
         Some(0) => return Err("'--workers' needs at least 1 worker".into()),
@@ -1008,16 +1007,16 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     cfg.max_bugs = match uint(a, "max-bugs")? {
         Some(0) => return Err("'--max-bugs' needs at least 1 (1 stops each test case at its first bug)".into()),
         Some(n) => n,
-        None => MAX_BUGS,
+        None => cfg.max_bugs,
     };
     if let Some(seeds) = a.get("expect-bug-seeds") {
-        cfg.expected_bug_seeds = seeds
+        suite.expected_bug_seeds = seeds
             .split(',')
             .map(|s| s.trim().parse::<u32>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "'--expect-bug-seeds' needs comma-separated seed numbers, e.g. 1,2,3".to_string())?;
-        let distinct: std::collections::BTreeSet<_> = cfg.expected_bug_seeds.iter().collect();
-        if !(2..=32).contains(&cfg.expected_bug_seeds.len()) || distinct.len() != cfg.expected_bug_seeds.len() {
+        let distinct: std::collections::BTreeSet<_> = suite.expected_bug_seeds.iter().collect();
+        if !(2..=32).contains(&suite.expected_bug_seeds.len()) || distinct.len() != suite.expected_bug_seeds.len() {
             return Err("'--expect-bug-seeds' needs 2 to 32 distinct seeds".into());
         }
     }
@@ -1030,13 +1029,12 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
         cfg.output_path = o.to_string();
     }
     cfg.verbose = a.has("verbose");
-    cfg.list_suppressions = a.has("list-suppressions");
+    suite.list_suppressions = a.has("list-suppressions");
     cfg.driver_limits = !a.has("no-driver-limits");
-    cfg.gates.strict = a.has("strict");
+    suite.gates.strict = a.has("strict");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
-    gates(a, &mut cfg.gates)?;
-    check::finish_options(cfg);
+    gates(a, &mut suite.gates)?;
     Ok(patterns)
 }
 
@@ -1086,34 +1084,13 @@ fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
     Ok(())
 }
 
-/// Distinct failures `snappea check` collects per test case without `--max-bugs`.
-const MAX_BUGS: usize = 3;
-
-/// Seconds the test cases of a `snappea check` share without `--timeout`.
-const SUITE_BUDGET: f64 = 10.0;
 /// Least time a test case gets from the shared budget.
 const MIN_SHARE: f64 = 0.25;
-
-/// A [`CheckConfig`] for snappea: its output folder layout, and `<IncludeProject>` paths
-/// resolved against the including project file.
-fn snappea_config() -> CheckConfig {
-    let mut cfg = CheckConfig {
-        style: Style::Snappea,
-        code_coverage: true,
-        driver_limits: true,
-        strategy: StrategyKind::Auto,
-        iterations: 0,
-        suite_budget: Some(SUITE_BUDGET),
-        max_bugs: MAX_BUGS,
-        ..CheckConfig::default()
-    };
-    cfg.input.includes = Includes::FromProject;
-    cfg
-}
 
 fn run_check(
     host: &mut dyn Host,
     mut cfg: CheckConfig,
+    suite: SuiteConfig,
     patterns: &[String],
     latency: Option<&str>,
     mutation: Mutation,
@@ -1127,7 +1104,7 @@ fn run_check(
     }
     check::resolve_sources(&mut con, &mut cfg)?;
     let loaded = check::load(&mut con, &cfg)?;
-    let gates = cfg.gates;
+    let gates = suite.gates;
 
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
     let selected = select_tests(&names, patterns).map_err(|m| {
@@ -1158,7 +1135,7 @@ fn run_check(
     };
     // what lint failing skips, as reported in the JSON result
     const LINT_SKIP: &str = "lint failed";
-    if !cfg.expected_bug_seeds.is_empty()
+    if !suite.expected_bug_seeds.is_empty()
         && !selected_tests.iter().any(|tc| {
             crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
                 .is_some_and(|i| i.expected_bug.is_some())
@@ -1172,8 +1149,8 @@ fn run_check(
         let tc = selected_tests.iter().find(|t| t.name == name).unwrap();
         let negative = crate::driver::lint::intent(&loaded.analysis.program, tc, &intents)
             .is_some_and(|i| i.expected_bug.is_some());
-        if negative && !cfg.expected_bug_seeds.is_empty() {
-            planned.extend(cfg.expected_bug_seeds.iter().map(|&seed| (name.clone(), Some(seed))));
+        if negative && !suite.expected_bug_seeds.is_empty() {
+            planned.extend(suite.expected_bug_seeds.iter().map(|&seed| (name.clone(), Some(seed))));
         } else {
             planned.push((name, None));
         }
@@ -1211,7 +1188,7 @@ fn run_check(
         cfg.seed = seed.or(base_seed);
         cfg.seed_artifact = seed;
         // the shared budget left, split between the test cases left
-        cfg.time_share = cfg.suite_budget.map(|b| {
+        cfg.time_share = suite.budget.map(|b| {
             let left = b - (con.inner.now() - check_start);
             (left / (n - i) as f64).max(MIN_SHARE)
         });
@@ -1384,7 +1361,7 @@ fn run_check(
     hits.add(&CodeMap::new(prog, &probes, &negative_driver_scope).restrict_hits(&negative_hits));
     scope.add(&negative_driver_scope);
     let map = CodeMap::new(prog, &probes, &scope);
-    let suite = map.coverage(&hits);
+    let all_cases = map.coverage(&hits);
     let coverage_suppressions = loaded.linter.coverage_suppressions(sm);
     // A declared failure can stop a negative-only driver before its remaining
     // work runs. Preserve that evidence, but require coverage only for components
@@ -1397,7 +1374,7 @@ fn run_check(
     negative_only_scope.exclude(&positive_scope);
     let negative_only = CodeMap::new(prog, &probes, &negative_only_scope).coverage(&negative_hits);
     let negative_only_gaps = negative_only.uncovered();
-    let (mut uncovered, mut uncovered_suppressed) = map.split_uncovered(&suite, &coverage_suppressions);
+    let (mut uncovered, mut uncovered_suppressed) = map.split_uncovered(&all_cases, &coverage_suppressions);
     // a scenario no test case satisfied is a gap like code no test case ran
     let (scenario_gaps, scenario_accepted) = scenario::gaps(prog, &scenarios, &coverage_suppressions);
     for (list, add) in [
@@ -1422,7 +1399,7 @@ fn run_check(
                 })
                 .map(|m| {
                     let loc = prog.sources.location(m.span);
-                    let counts = map.hidden_points(&suite, m.span);
+                    let counts = map.hidden_points(&all_cases, m.span);
                     json!({"machine": m.name, "file": loc.file, "line": loc.line, "reason": reason,
                     "hidden_points": counts.values().sum::<usize>(), "hidden_kinds": counts})
                 })
@@ -1457,7 +1434,7 @@ fn run_check(
     let excluded = selected_scope.excluded(prog);
     if !only && lint_failed.is_none() {
         if n > 1 {
-            con.inner.out_line(&format!("Coverage of all test cases: {}", suite.summary()));
+            con.inner.out_line(&format!("Coverage of all test cases: {}", all_cases.summary()));
         }
         let heading = if n > 1 { "Not covered by any test case:" } else { "Not covered by the test case:" };
         let (conditions, pairs) = required_map.advisory_uncovered(&required_suite, &coverage_suppressions);
@@ -1549,7 +1526,7 @@ fn run_check(
                 o["monitor_states"]
             ));
         }
-        con.inner.out_line(&format!("Code coverage (raw): {}", suite.summary()));
+        con.inner.out_line(&format!("Code coverage (raw): {}", all_cases.summary()));
         con.inner.out_line(&format!("Code coverage (required after exemptions): {required}"));
         for e in &broad_exemptions {
             con.inner.out_line(&format!("Broad coverage exemption: {}:{} exempts entire machine {}; {} uncovered points hidden ({:?}). Reason: {}. Prefer a narrower scope; --json lists details.",
@@ -1618,7 +1595,7 @@ fn run_check(
             if report.blanket_suppressions > 0 {
                 con.inner.out_line("hint: blanket `allow mutation` suppressions hide every mutation kind in their scope; prefer mutation:<kind>. Use --list-suppressions to inspect their scope.");
             }
-            if cfg.list_suppressions || cfg.verbose {
+            if suite.list_suppressions || cfg.verbose {
                 for line in report.suppression_lines() {
                     con.inner.out_line(&line);
                 }
@@ -1816,7 +1793,7 @@ fn run_check(
     if let Some(note) = summary["note"].as_str() {
         con.inner.out_line(note);
     }
-    let mut coverage = suite.to_json(false);
+    let mut coverage = all_cases.to_json(false);
     coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
     coverage["uncovered_suppressed"] = uncovered_suppressed.iter().map(|u| u.to_json()).collect();
     coverage["excluded_components"] = excluded.iter().map(|u| u.to_json()).collect();
@@ -2616,7 +2593,7 @@ fn replay(args: &[String], host: &mut dyn Host) -> i32 {
         host.write(Stream::Out, &format!("{}\n{}", REPLAY_HELP, OUTPUT_HELP), None);
         return OK;
     }
-    let mut cfg = snappea_config();
+    let mut cfg = CheckConfig::snappea();
     let rest = match sources(&mut cfg.input, &a.positional) {
         Ok(r) => r,
         Err(m) => return usage_error(host, &m, Some("replay")),
@@ -2699,7 +2676,7 @@ fn tests(args: &[String], host: &mut dyn Host) -> i32 {
         host.write(Stream::Out, &format!("{}\n{}", TESTS_HELP, OUTPUT_HELP), None);
         return OK;
     }
-    let mut cfg = snappea_config();
+    let mut cfg = CheckConfig::snappea();
     // nothing runs, so foreign code is not left out of a check
     cfg.ignore_foreign_files = true;
     match sources(&mut cfg.input, &a.positional) {
@@ -2974,13 +2951,13 @@ mod tests {
 
     #[test]
     fn automatic_defaults_and_timeout() {
-        let mut cfg = snappea_config();
+        let (mut cfg, mut suite) = (CheckConfig::snappea(), SuiteConfig::default());
         assert_eq!(cfg.strategy, StrategyKind::Auto);
-        assert_eq!((cfg.timeout, cfg.suite_budget), (None, Some(SUITE_BUDGET)));
+        assert_eq!((cfg.timeout, suite.budget), (None, Some(check::SUITE_BUDGET)));
         assert_eq!(cfg.iterations, 0);
         let args = parse_args(&["--timeout".into(), "30s".into()], CHECK_OPTS).unwrap();
-        check_config(&args, &mut cfg).unwrap();
-        assert_eq!((cfg.timeout, cfg.suite_budget), (Some(30), None));
+        check_config(&args, &mut cfg, &mut suite).unwrap();
+        assert_eq!((cfg.timeout, suite.budget), (Some(30), None));
     }
 
     #[test]

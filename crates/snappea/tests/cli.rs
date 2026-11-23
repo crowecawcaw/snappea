@@ -306,13 +306,11 @@ fn workers_share_the_schedule_count() {
         style: Style::Snappea,
         workers: Some(4),
         iterations: 1003,
-        user_set_iterations: true,
         seed: Some(9),
         test_case_name: "tcCoins".into(),
-        ..CheckConfig::default()
+        ..CheckConfig::upstream()
     };
     cfg.input.pfiles = vec!["coins.p".into()];
-    check::finish_options(&mut cfg);
     check::resolve_sources(&mut h, &mut cfg).unwrap();
     let loaded = check::load(&mut h, &cfg).unwrap();
     check::set_output_directory(&mut h, &mut cfg).unwrap();

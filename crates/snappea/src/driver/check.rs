@@ -89,18 +89,13 @@ pub struct CheckConfig {
     pub output_directory: String,
     pub mode: Mode,
     pub test_case_name: String,
-    pub list_test_cases: bool,
     pub strategy: StrategyKind,
     pub strategy_bound: usize,
     pub iterations: usize,
     /// Workers exploring schedules in parallel; `None` = one per CPU core. Upstream has
     /// one, so `p check` keeps the default of 1.
     pub workers: Option<usize>,
-    /// `--schedules` (or `--timeout`) was given.
-    pub user_set_iterations: bool,
     pub seed: Option<u32>,
-    /// Explicit seeds for repeated expected-bug checks; native CLI only.
-    pub expected_bug_seeds: Vec<u32>,
     /// Artifact subdirectory for a repeated expected-bug check.
     pub seed_artifact: Option<u32>,
     pub full_exploration: bool,
@@ -119,11 +114,7 @@ pub struct CheckConfig {
     /// `timeout`, and the check stops sooner once coverage stops growing (see
     /// [`Plateau`]), leaving the rest of the budget to the test cases after it.
     pub time_share: Option<f64>,
-    /// Seconds all the selected test cases share (`snappea check` without `--timeout`):
-    /// each gets the rest divided by the test cases left, as [`CheckConfig::time_share`].
-    pub suite_budget: Option<f64>,
     pub verbose: bool,
-    pub list_suppressions: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
     /// Include execution-time source and value captures for visual replay.
@@ -143,8 +134,37 @@ pub struct CheckConfig {
     /// Send progress snapshots to [`Host::progress`] while checking, for the test case at
     /// this position of the run (and during mutation testing). `None` sends none.
     pub progress: Option<Position>,
+}
+
+/// Distinct failures `snappea check` collects per test case without `--max-bugs`.
+pub const MAX_BUGS: usize = 3;
+
+/// Seconds the test cases of a `snappea check` share without `--timeout`.
+pub const SUITE_BUDGET: f64 = 10.0;
+
+/// How `snappea check` runs its test cases together, beyond how each one is checked.
+#[derive(Debug, Clone)]
+pub struct SuiteConfig {
     /// Whether lint findings, coverage gaps and undetected mutants fail the check.
     pub gates: Gates,
+    /// Seconds all the selected test cases share (`None` with `--timeout`): each gets the
+    /// rest divided by the test cases left, as [`CheckConfig::time_share`].
+    pub budget: Option<f64>,
+    /// Seeds to check an expected-bug test case with, each expected to fail.
+    pub expected_bug_seeds: Vec<u32>,
+    /// Report every lint suppression, used or not.
+    pub list_suppressions: bool,
+}
+
+impl Default for SuiteConfig {
+    fn default() -> SuiteConfig {
+        SuiteConfig {
+            gates: Gates::default(),
+            budget: Some(SUITE_BUDGET),
+            expected_bug_seeds: Vec::new(),
+            list_suppressions: false,
+        }
+    }
 }
 
 /// What a check does with what it finds.
@@ -209,8 +229,14 @@ impl Gates {
     }
 }
 
-impl Default for CheckConfig {
-    fn default() -> CheckConfig {
+impl CheckConfig {
+    /// Checks as `p check` does: upstream's output layout, one random schedule, one worker.
+    ///
+    /// ```
+    /// let cfg = snappea::driver::check::CheckConfig::upstream(); // bug traces go to PCheckerOutput/
+    /// assert_eq!(cfg.iterations, 1);
+    /// ```
+    pub fn upstream() -> CheckConfig {
         CheckConfig {
             style: Style::Upstream,
             input: Default::default(),
@@ -222,14 +248,11 @@ impl Default for CheckConfig {
             output_directory: String::new(),
             mode: Mode::BugFinding,
             test_case_name: String::new(),
-            list_test_cases: false,
             strategy: StrategyKind::Random,
             strategy_bound: 0,
             iterations: 1,
             workers: Some(1),
-            user_set_iterations: false,
             seed: None,
-            expected_bug_seeds: Vec::new(),
             seed_artifact: None,
             full_exploration: false,
             max_bugs: 1,
@@ -238,9 +261,7 @@ impl Default for CheckConfig {
             liveness_threshold: None,
             timeout: None,
             time_share: None,
-            suite_budget: None,
             verbose: false,
-            list_suppressions: false,
             xml_trace: false,
             inspection_trace: false,
             timeline: Default::default(),
@@ -251,8 +272,24 @@ impl Default for CheckConfig {
             code_coverage: false,
             driver_limits: false,
             progress: None,
-            gates: Gates::default(),
         }
+    }
+
+    /// Checks as `snappea check` does: its output layout, the automatic strategy until
+    /// coverage stops growing, coverage and driver reports, up to [`MAX_BUGS`] failures,
+    /// and `<IncludeProject>` paths resolved against the including project file.
+    pub fn snappea() -> CheckConfig {
+        let mut cfg = CheckConfig {
+            style: Style::Snappea,
+            code_coverage: true,
+            driver_limits: true,
+            strategy: StrategyKind::Auto,
+            iterations: 0,
+            max_bugs: MAX_BUGS,
+            ..CheckConfig::upstream()
+        };
+        cfg.input.includes = crate::project::pproj::Includes::FromProject;
+        cfg
     }
 }
 
@@ -263,21 +300,6 @@ pub fn resolve_sources(host: &mut dyn Host, cfg: &mut CheckConfig) -> Result<(),
     cfg.p_files = resolved.p_files;
     cfg.foreign_files = resolved.foreign_files;
     Ok(())
-}
-
-/// The strategy and limits implied by the mode and step bounds (`SanitizeConfiguration`).
-pub fn finish_options(cfg: &mut CheckConfig) {
-    // PEx mode searches exhaustively: `--sch-pex dfs` in order, otherwise (`random`, the
-    // default) trying the alternatives at each choice point in a random order, with no
-    // schedule limit unless one is given
-    if cfg.mode == Mode::PEx && cfg.strategy != StrategyKind::Replay {
-        if cfg.strategy != StrategyKind::Dfs {
-            cfg.strategy = StrategyKind::RandomDfs;
-        }
-        if !cfg.user_set_iterations {
-            cfg.iterations = 0;
-        }
-    }
 }
 
 /// Reads and parses a latency profile file (time tracking).

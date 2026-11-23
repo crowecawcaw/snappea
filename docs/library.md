@@ -35,7 +35,7 @@ use snappea::driver::check::{self, CheckConfig};
 use snappea::host::NativeHost;
 
 let mut host = NativeHost::new(); // paths are relative to the working directory
-let mut cfg = CheckConfig::default(); // bug traces go to PCheckerOutput/
+let mut cfg = CheckConfig::snappea(); // as `snappea check`; CheckConfig::upstream() as `p check`
 cfg.input.pfiles = vec!["model.p".into()]; // or cfg.input.pproj = Some("Model.pproj".into())
 check::resolve_sources(&mut host, &mut cfg)?; // errors are printed to stderr
 let loaded = check::load(&mut host, &cfg)?;

@@ -211,7 +211,7 @@ fn driver_on_the_native_host() {
     std::fs::write(&model, MODEL).unwrap();
 
     let mut host = snappea::host::NativeHost::new();
-    let mut cfg = CheckConfig { output_path: dir.join("out").to_string_lossy().into_owned(), ..Default::default() };
+    let mut cfg = CheckConfig { output_path: dir.join("out").to_string_lossy().into_owned(), ..CheckConfig::snappea() };
     cfg.input.pfiles = vec![model.to_string_lossy().into_owned()];
     check::resolve_sources(&mut host, &mut cfg).expect("reported on stderr");
     let loaded = check::load(&mut host, &cfg).expect("reported on stderr");
