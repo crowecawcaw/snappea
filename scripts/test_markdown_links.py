@@ -1,11 +1,10 @@
 """Links in the repository's Markdown point at files, headings and site anchors that exist."""
-import os
+import subprocess
 from pathlib import Path
 import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP = {'target', 'node_modules', '.git', 'evals'}
 # [text](target), not images' remote URLs; the target ends at whitespace or ')'.
 LINK = re.compile(r'(?<!\!)\[[^\]]*\]\(([^)\s]+)\)')
 FENCE = re.compile(r'^(```|~~~).*?^\1', re.S | re.M)
@@ -15,11 +14,10 @@ WEB = ROOT / 'web/src/site'
 
 
 def markdown_files():
-    for top, dirs, files in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in SKIP]
-        for name in files:
-            if name.endswith('.md'):
-                yield Path(top) / name
+    # tracked files only: agent worktrees and build output hold stale copies
+    out = subprocess.run(['git', 'ls-files', '-z', '--', '*.md', ':(exclude)evals'],
+                         cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    return [ROOT / p for p in out.split('\0') if p]
 
 
 def slug(heading):
