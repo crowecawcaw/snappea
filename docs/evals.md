@@ -137,6 +137,10 @@ ahead: `leader-election` build, `offline-sync` guard and build, `worker-drain` b
 seven mistakes in 36, in the same direction in both batches; treat them as a
 direction, not a size. No run raised a false alarm.
 
+Summed over the seven mistake-count rows of this table (ties included), `snappea`
+runs missed 22 of 180 hidden mistakes and `p` runs missed 50, which is 56% fewer.
+The landing page quotes this figure.
+
 - Hidden tests on a build still tie: Haiku writes a correct design from DESIGN.md
   with either command line. The difference is in what the run leaves to protect that
   design. `snappea` runs added specs and scenarios for undetected mutants and

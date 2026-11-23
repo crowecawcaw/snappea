@@ -70,3 +70,18 @@ machine Main {
 
 test tcTwoClients [main=Main]: { Main, Counter, Client };
 `;
+
+/** The lines of `src` containing each marker, in order, without indentation. */
+function pick(src: string, markers: string[]): string {
+  const lines = src.split("\n");
+  return markers.map((m) => {
+    const line = lines.find((l) => l.includes(m));
+    if (line === undefined) throw new Error(`miniModel: no line contains ${m}`);
+    return line.trim();
+  }).join("\n");
+}
+
+// The few lines that decide the outcome, taken from the models above.
+export const BROKEN_FOCUS = pick(BROKEN_MODEL, ["send input.counter, eRead", "receive {", "send input.counter, eWrite"]);
+export const FIXED_FOCUS = pick(FIXED_MODEL, ["send input.counter, eIncrement"]);
+export const FIXED_HANDLER = pick(FIXED_MODEL, ["on eIncrement do"]);

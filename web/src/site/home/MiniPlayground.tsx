@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import type { CheckResult, Request, WorkerReply } from "../../protocol";
 import { encodeShared, MAX_SHARE_CHARS } from "../../share";
 import { Code } from "../docs/Code";
-import { BROKEN_MODEL, FIXED_MODEL, TEST_SETUP } from "./miniModel";
+import { BROKEN_FOCUS, BROKEN_MODEL, FIXED_FOCUS, FIXED_HANDLER, FIXED_MODEL, TEST_SETUP } from "./miniModel";
 
-/** A focused view of the real Playground worker; no checker work until Run. */
+/** The counter example: a few lines and the known result first, the real Playground worker on Run. */
 export function MiniPlayground() {
   const [model, setModel] = useState(BROKEN_MODEL);
   const [setup, setSetup] = useState(TEST_SETUP);
   const [file, setFile] = useState<"model" | "setup">("model");
   const [editing, setEditing] = useState(false);
+  const [full, setFull] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<CheckResult>();
   const [error, setError] = useState<string>();
@@ -17,6 +18,9 @@ export function MiniPlayground() {
   const watchdog = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const editor = useRef<HTMLTextAreaElement>(null);
   const source = file === "model" ? model : setup;
+  // Which starting design is on screen, unedited; the written-out result only applies to these.
+  const design = setup !== TEST_SETUP ? undefined : model === BROKEN_MODEL ? "broken" : model === FIXED_MODEL ? "fixed" : undefined;
+  const showFull = full || !design;
 
   useEffect(() => () => {
     worker.current?.terminate();
@@ -39,6 +43,7 @@ export function MiniPlayground() {
     setSetup(TEST_SETUP);
     setFile("model");
     setEditing(false);
+    setFull(false);
   }
 
   function run() {
@@ -107,30 +112,53 @@ export function MiniPlayground() {
       </div>
       <div className="mini-workspace">
         <div className="mini-source">
-          <div className="mini-filebar">
+          {!showFull ? <div className="mini-focus">
+            <p className="mini-label">{design === "broken" ? "Each client reads, then writes" : "Each client sends one message"} <span>Model.p</span></p>
+            <Code lang="p">{design === "broken" ? BROKEN_FOCUS : FIXED_FOCUS}</Code>
+            {design === "fixed" && <>
+              <p className="mini-label">The counter adds one in a single step <span>Model.p</span></p>
+              <Code lang="p">{FIXED_HANDLER}</Code>
+            </>}
+            <p className="mini-label">The test starts two clients, then checks the total <span>Test.p</span></p>
+            <Code lang="p">{`assert final == 2;`}</Code>
+            <button onClick={() => setFull(true)}>Show the full model</button>
+          </div> : <><div className="mini-filebar">
             <div role="group" aria-label="P source files">
               <button aria-pressed={file === "model"} onClick={() => setFile("model")}>Model.p</button>
               <button aria-pressed={file === "setup"} onClick={() => setFile("setup")}>Test.p</button>
             </div>
-            <button onClick={() => setEditing(!editing)}>{editing ? "Done editing" : "Edit P code"}</button>
+            <div>
+              {design && !editing && <button onClick={() => setFull(false)}>Show less</button>}
+              <button onClick={() => setEditing(!editing)}>{editing ? "Done editing" : "Edit P code"}</button>
+            </div>
           </div>
           {editing ? <textarea ref={editor} className="mini-editor" aria-label={`Edit ${file === "model" ? "Model.p" : "Test.p"}`}
             spellCheck={false} value={source} onChange={(e) => {
               invalidate();
               if (file === "model") setModel(e.target.value); else setSetup(e.target.value);
-            }} /> : <div className="mini-code" role="region" aria-label={`Read ${file === "model" ? "Model.p" : "Test.p"}`} tabIndex={0}><Code lang="p">{source}</Code></div>}
+            }} /> : <div className="mini-code" role="region" aria-label={`Read ${file === "model" ? "Model.p" : "Test.p"}`} tabIndex={0}><Code lang="p">{source}</Code></div>}</>}
         </div>
         <div className="mini-result">
-          <h3>Two increments should leave 2.</h3>
-          <Code lang="p">{`assert final == 2;`}</Code>
-          <p>Each client runs independently. The checker chooses which message is delivered next.</p>
-          <p><b>Read then write</b> leaves a gap for the other client to run. <b>Atomic increment</b> updates the value in a single handler.</p>
-          {setup !== TEST_SETUP && <p className="mini-edited-note">Test.p has been edited. The checker will use your edited assertions, not necessarily the starting property above.</p>}
+          {setup !== TEST_SETUP && <p className="mini-edited-note">Test.p has been edited. The checker will use your edited assertions.</p>}
           <div className="mini-status" role="status" aria-live="polite">
-            {error ? <p className="mini-error">{error}</p> : result ? <>
-              <h4 className={result.exitCode === 0 ? "mini-pass" : "mini-error"}>{verdict}</h4>
-              <p>{result.exitCode === 0 ? "Read the checker output for search completion and warnings. This checks the model within its bounds, not your implementation." : result.bug ? "An execution broke a check. Inspect the output and trace below." : "Read the diagnostics below, edit the code, and run again."}</p>
-            </> : <p>{running ? "Loading the checker and exploring event orderings…" : "Run the model, inspect the result, then try the other design or edit the P code."}</p>}
+            {error ? <p className="mini-error">{error}</p> : running ? <p>Loading the checker and trying message orderings…</p> : result ? <>
+              <h3 className={result.exitCode === 0 ? "mini-pass" : "mini-error"}>{verdict}</h3>
+              <p>{result.exitCode === 0 ? "This checks the model within its bounds, not your implementation. Read the output below for warnings." : result.bug ? "One ordering broke a check. The output and trace are below." : "Read the diagnostics below, edit the code, and run again."}</p>
+            </> : design === "broken" ? <>
+              <h3>The checker finds an ordering that loses an increment</h3>
+              <ol className="mini-steps">
+                <li>Client A reads <b>0</b></li>
+                <li>Client B reads <b>0</b></li>
+                <li>Client A writes <b>1</b></li>
+                <li>Client B writes <b>1</b></li>
+              </ol>
+              <p className="mini-fail">Assertion failed: expected 2 increments, counter is 1</p>
+              <p className="mini-note">This is the result for the model as written. Run it to get the checker's own output, then try <b>Atomic increment</b>.</p>
+            </> : design === "fixed" ? <>
+              <h3>The checker tries every ordering and none fails</h3>
+              <p>The counter handles one message at a time, so nothing can arrive between reading the value and writing it.</p>
+              <p className="mini-note">This is the result for the model as written. Run it to get the checker's own output.</p>
+            </> : <p>Run the model to check your edit.</p>}
           </div>
         </div>
       </div>
@@ -139,7 +167,7 @@ export function MiniPlayground() {
         {result.traceText && <details><summary>Counterexample trace</summary><pre>{result.traceText}</pre></details>}
       </div>}
       <div className="mini-footer">
-        <span>2-second exploration budget · mutation checks off for this demo</span>
+        <span>Runs in your browser; no code leaves this page. 2-second budget, mutation testing off.</span>
         <a href={playground}>{shareFits ? "Open these files in the full Playground →" : "Project too large for a link — open Playground and copy your files →"}</a>
       </div>
       <noscript><p>Enable JavaScript to edit and run this model, or follow the <a href="./docs/first-model.html">tutorial</a>.</p></noscript>
