@@ -27,7 +27,7 @@ for (const file of ["index.html", ...pages.map((file) => `docs/${file}`)]) {
       assert.equal((html.match(/data-island=/g) ?? []).length, id === "overview" ? 3 : id === "first-model" ? 1 : 0);
     } else {
       assert.match(html, /data-island="speed"/);
-      assert.match(html, /class="mini-code"[\s\S]*?<pre/);
+      assert.match(html, /class="mini-focus"[\s\S]*?<pre/);
       for (const island of ["mini-playground", "loops"]) {
         assert.match(html, new RegExp(`data-island="${island}"`));
       }

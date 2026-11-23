@@ -1,13 +1,14 @@
-// The README's headline benchmark as a time-lapse race: checking the Raft tutorial
-// (120 schedules) takes 0.4 s with snappea and 38 s with P 3.1.0, 4 s of it compiling.
+// The README's headline benchmark as a time-lapse race: six P tutorial tests (19,120
+// schedules) take 1.8 s with snappea-compat and 189 s with P 3.1.0, 13 s of it compiling.
+// Source: the latest entry of upstream.jsonl on the benchmarks branch (2026-11-12).
 import { useEffect, useState } from "react";
 import { useClock, useInView, useReducedMotion } from "../motion";
 
-const TOTAL = 38;
-const SPEEDUP = 12; // the race plays at 12x real time
+const TOTAL = 189;
+const SPEEDUP = 40; // the race plays at 40x real time
 const RUNS = [
-  { name: "snappea", seconds: 0.4, compile: 0 },
-  { name: "P 3.1.0", seconds: 38, compile: 4 },
+  { name: "snappea", seconds: 1.8, compile: 0 },
+  { name: "P 3.1.0", seconds: 189, compile: 13 },
 ];
 
 export function SpeedBars() {

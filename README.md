@@ -116,8 +116,9 @@ Snap Pea is a Rust implementation of the P toolchain that reads `.p` and `.pproj
 files directly. `snappea` provides concise output and parallel checking;
 `snappea-compat` accepts upstream `p` options and reproduces its output formats.
 
-In the Raft tutorial benchmark, checking 120 schedules takes 0.4 seconds with Snap Pea
-and 38 seconds with P 3.1.0, including compilation. See the
+On six P tutorial tests (19,120 schedules), `snappea-compat` takes 1.8 seconds and
+P 3.1.0 takes 189 seconds, including 13 seconds of compilation (same runner, one
+worker, 2026-11-12). See the
 [benchmark methodology](docs/development.md#benchmarks) and
 [comparison charts](https://snappea.dev/bench/) for context.
 
