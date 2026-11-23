@@ -101,12 +101,12 @@ export function Home() {
           </p>
           <div className="home-agents-grid">
             <div className="home-stat">
-              <p className="home-stat-n">56%</p>
-              <p className="home-stat-label">fewer missed design mistakes</p>
+              <h3>Fewer missed design mistakes in pilot evals</h3>
               <p>
                 In pilot evals, agents modeled a design. Hidden broken versions of that design were then run
                 against the specs and tests the agents wrote. Agents using <code>snappea</code> missed 22 of 180.
                 Agents using the same checker through the upstream <code>p</code> command line missed 50.
+                That is 56% fewer.
               </p>
               <p className="muted small">
                 Haiku agents, three to six runs per task. <a href={`${BLOB}/docs/evals.md#model-gaps`}>Eval setup and results</a>

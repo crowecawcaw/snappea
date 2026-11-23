@@ -1,6 +1,7 @@
 /* Shell shared by the landing page and the docs. Tokens come from ../styles.css. */
 
-.site-body { height: auto; }
+/* White at every width; the playground keeps its tinted desktop background. */
+.site-body { height: auto; background: var(--panel); }
 .site {
   --g: 16px;
   min-height: 100%;
