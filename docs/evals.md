@@ -151,6 +151,32 @@ The landing page quotes this figure.
 - In guard mode a suppression has to sit in `PSrc/`, which the solver may not change,
   so equivalent mutants stayed as errors at the end of several `snappea` runs.
 
+Finding output, 2026-11-23. Arms built from `899f489`; then `snappea` alone, built
+from `59d93e2` (a failing check ends with one line naming every remaining finding,
+nested undetected mutants listed, `--no-mutation` no longer suggested) and from
+`f8f95b2` (an undetected mutant is a missing check unless the changed model is still
+correct, mutation suppressions need a reason, and a payload field no spec reads is
+judged by sending a wrong value in it: the `change-field` mutant).
+
+| Task and mode | Grade | `p`, `899f489` | `snappea`, `899f489` | `59d93e2` | `f8f95b2` |
+| --- | --- | --- | --- | --- | --- |
+| `offline-sync` guard | hidden mistakes caught | 10/12 | 11/12 | 16/18 | 15/18 |
+| `idempotent-payments` build | mistakes caught by the model left behind | 8/12 | 7/12 | 14/18 | 15/18 |
+| `idempotent-payments` build | hidden tests | 24/24 | 24/24 | 36/36 | 36/36 |
+
+Two runs per arm, then three per build. No run raised a false alarm.
+
+- At `899f489`, across five tasks, half the `snappea` runs passed `--no-mutation` or stopped with the check
+  failing; no run of the later builds used `--no-mutation`. Every `f8f95b2` run ended
+  with the check passing.
+- The payments gain is one mistake: an answer saved before its amount is checked. All
+  six later runs made a spec compare an answer's amount with the charge; no earlier
+  run did. A late processor reply taken after a timeout was missed by all ten runs
+  in this table.
+- `offline-sync` runs at `f8f95b2` left 0, 0 and 1 suppressions; one `59d93e2` run left
+  13, mostly request ids. One run saw `change-field` mutants (a replay sent with a
+  wrong base or client) and caught all six mistakes.
+
 **Setup.** [`evals/model-gaps/`](../evals/model-gaps/README.md).
 
 ## design-review
