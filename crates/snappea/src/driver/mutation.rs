@@ -351,9 +351,10 @@ impl Report {
     }
 
     /// The console lines: the undetected mutants that fail the check (at most `shown`),
-    /// each with what would detect it; with `inner`, each followed by the undetected
-    /// mutants inside it. No counts: one undetected mutant is a gap, the total says nothing.
-    pub fn lines(&self, shown: usize, inner: bool) -> Vec<String> {
+    /// each with what would detect it and the undetected mutants inside it, so one check
+    /// names every gap a fix or suppression must cover. No counts: one undetected mutant
+    /// is a gap, the total says nothing.
+    pub fn lines(&self, shown: usize) -> Vec<String> {
         let mut out = vec![format!("Mutation testing ({:.1}s)", self.seconds)];
         if self.reused_turns > 0 {
             out.push(format!("Reused {} search turns with identical inputs.", self.reused_turns));
@@ -395,11 +396,7 @@ impl Report {
         if !undetected.is_empty() {
             let list = &undetected[..undetected.len().min(shown)];
             for (i, (m, ..)) in list {
-                let inside = match self.inside(*i) {
-                    0 => "",
-                    _ if inner => " (and more undetected inside it:)",
-                    _ => " (and more undetected inside it; -v lists them)",
-                };
+                let inside = if self.inside(*i) == 0 { "" } else { " (and more undetected inside it:)" };
                 // one self-contained line per mutant, shaped like a lint error: output is often
                 // filtered to its `error` lines
                 out.push(format!(
@@ -409,7 +406,17 @@ impl Report {
                     m.description,
                     inside
                 ));
-                let why = if let Some(event) = &m.unobserved_announcement {
+                for (c, _) in self
+                    .mutants
+                    .iter()
+                    .zip(&self.verdicts)
+                    .filter(|(_, v)| matches!(v, Verdict::Subsumed { by, .. } if by == i))
+                {
+                    out.push(format!("      {}  {}", location(c), c.description));
+                }
+                let why = if let Some(finding) = &m.unread_field {
+                    format!("{finding}. If a wrong value would be a bug, make that spec check it against what the spec knows: that a reply carries what its request asked for, or answers a request that is still open. If any value is correct there, suppress `unused-payload-field` at that handler and say why")
+                } else if let Some(event) = &m.unobserved_announcement {
                     format!("no selected spec observes {event}")
                 } else if let Some(v) = &m.unchecked {
                     format!("it only writes '{}', which no check depends on: see the unchecked-state lint", v)
@@ -425,25 +432,18 @@ impl Report {
                             .into(),
                     );
                 }
-                if inner {
-                    for (c, _) in self
-                        .mutants
-                        .iter()
-                        .zip(&self.verdicts)
-                        .filter(|(_, v)| matches!(v, Verdict::Subsumed { by, .. } if by == i))
-                    {
-                        out.push(format!("      {}  {}", location(c), c.description));
-                    }
-                }
             }
             if undetected.len() > list.len() {
                 out.push("  ... and more: fix these first, or see --json for all".into());
             }
             if list.iter().any(|(_, (m, ..))| !m.announces) {
                 out.push(
-                    "  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`"
+                    "  help: a model with each change above passes every test case. Unless the changed model would still be correct in the real system, a check is missing: add it. Suppress one only with that argument: `// snappea-lint: allow mutation -- <why the changed behavior is still correct>`"
                         .into(),
                 );
+                if list.iter().any(|(i, _)| self.inside(*i) > 0) {
+                    out.push("  help: `allow mutation` covers only the statement after it; `allow mutation-nested` also covers the code inside it".into());
+                }
             }
             // a coarse mutant counts when what it removes holds such code
             let fault_like = undetected
@@ -734,6 +734,7 @@ pub fn run(
     suppressed: &[snappea_lint::MutationSuppression],
     coverage_allowed: &[(crate::syntax::Span, String)],
     drivers: &[bool],
+    unread: &[mutation::UnreadField],
     time_limit: f64,
     deepen: bool,
     strict: bool,
@@ -744,7 +745,7 @@ pub fn run(
     let base = Checker::with_code_coverage(prog);
     let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
-    let mut all_mutants = mutation::mutants_with_observers(prog, &funs, &base.code.probes, &tests);
+    let mut all_mutants = mutation::mutants_with_observers(prog, &funs, &base.code.probes, &tests, unread);
     all_mutants.extend(mutation::queue_mutants(prog, &tests, drivers));
     let stale_suppressions = suppressed
         .iter()

@@ -224,7 +224,10 @@ checks it in every selected test that uses that monitor. Without `--strict` it i
 reported; no suppression is needed just to divide responsibilities.
 
 A field with no reader in any one of those test configurations remains a blocking
-`unused-payload-field`, naming the affected tests. Selecting a companion in another
+`unused-payload-field`, naming the affected tests. When `snappea check` runs mutation
+testing, it judges such a field by sending a wrong value instead (a
+[`change-field` mutant](checking-models.md#mutation-testing)): the finding is reported
+only when no test case notices the wrong value. Selecting a companion in another
 test does not help. Scenarios, unselected specs, handlers for other events, and
 handlers outside a spec's `observes` list cannot provide evidence. Printing a field
 or using it only in an assertion message does not count. Whole-tuple forwarding or
@@ -467,8 +470,8 @@ The same comment excludes code from `snappea check`'s mutation testing:
 `allow mutation` for every mutant directly on the following statement or declaration,
 or `allow mutation:<kind>`
 (`remove-statement`, `condition-true`, `condition-false`, `swap-operator`, `remove-not`,
-`flip-boolean`, `empty-body`, `drop-conjunct`, `drop-disjunct`, `remove-defer`,
-`defer-to-ignore`, `remove-ignore`) for one kind; after a `mutation:<kind>`, a bare kind
+`flip-boolean`, `empty-body`, `drop-conjunct`, `drop-disjunct`, `change-field`,
+`remove-defer`, `defer-to-ignore`, `remove-ignore`) for one kind; after a `mutation:<kind>`, a bare kind
 names another, so `allow mutation:remove-statement,condition-false` allows both. See
 [mutation testing](checking-models.md#suppressing-a-mutant).
 
@@ -488,6 +491,9 @@ mutation checking. It gives an event to exercise when reviewing the suppression;
 it does not establish that the handlers differ semantically. See the mutation
 suppression section of [checking models](checking-models.md) for JSON fields and
 analysis limits.
+
+Mutation suppressions require a nonempty reason after `--` that says why the changed
+model would still be correct.
 
 `allow coverage` accepts deliberate missing statement, handler, or branch coverage in
 `snappea check`. Coverage suppressions require a nonempty reason after `--`:

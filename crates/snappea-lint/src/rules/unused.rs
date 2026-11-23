@@ -112,14 +112,17 @@ impl UnusedPayloadField {
                     } else {
                         format!("; no selected companion spec reads this event field in test(s) {}", missing.join(", "))
                     };
-                    out.push(Finding::new(
-                        "unused-payload-field",
-                        payload.param.name.span,
-                        format!(
-                            "spec '{}' never reads payload field '{}.{}' of event '{}' outside diagnostic output{}",
-                            payload.spec, payload.param.name.name, field, payload.event, scope
-                        ),
-                    ));
+                    out.push(
+                        Finding::new(
+                            "unused-payload-field",
+                            payload.param.name.span,
+                            format!(
+                                "spec '{}' never reads payload field '{}.{}' of event '{}' outside diagnostic output{}",
+                                payload.spec, payload.param.name.name, field, payload.event, scope
+                            ),
+                        )
+                        .with_field(payload.event, field),
+                    );
                 }
             }
         }

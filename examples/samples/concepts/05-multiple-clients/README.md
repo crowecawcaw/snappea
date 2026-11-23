@@ -107,7 +107,7 @@ never gives one back, both passed:
 Mutation testing: 21 of 25 mutants detected (0.8s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Permits.p:27  PermitServer.Serving, on Release: removed the whole body (2 statements)
-  PSrc/Permits.p:45  Client.Acquiring, on AcquireResponse: removed the whole `if (r.ok)` (and 2 more undetected inside it; -v lists them)
+  PSrc/Permits.p:45  Client.Acquiring, on AcquireResponse: removed the whole `if (r.ok)` (and 2 more undetected inside it, listed under it)
 ```
 
 The fix is in `Settle()`: stay hot until every client finished **and** `holding == 0`.

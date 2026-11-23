@@ -613,6 +613,7 @@ pub fn lints_with_progress_tests(
             }
             let what = if roles[m] == Role::Spec { "spec" } else { "machine" };
             out.push(Finding {
+                field: None,
                 help: None,
                 rule: "unchecked-state",
                 span: var.span,
@@ -733,7 +734,7 @@ pub fn lints_with_progress_tests(
                     prog.event(e).name
                 )
             };
-            out.push(Finding { rule: "unchecked-event", span, message, help: None });
+            out.push(Finding { rule: "unchecked-event", span, message, help: None, field: None });
         }
     }
     // no-progress-spec
@@ -795,6 +796,7 @@ pub fn lints_with_progress_tests(
         });
         if waits {
             out.push(Finding {
+                field: None,
                 help: None,
                 rule: "no-progress-spec",
                 span: t.span,
@@ -812,6 +814,7 @@ pub fn lints_with_progress_tests(
                 continue;
             }
             out.push(Finding {
+                field: None,
                 help: None,
                 rule: "no-progress-spec",
                 span,
@@ -956,6 +959,7 @@ fn shared_spec_helpers(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> 
     }
     let names = |set: BTreeSet<String>| set.into_iter().collect::<Vec<_>>().join(", ");
     shared.into_iter().map(|(f, users)| Finding {
+        field: None,
         help: None,
         rule: "shared-spec-helper",
         span: prog.fun(f).span,
@@ -1054,6 +1058,7 @@ fn unused_design_payloads(prog: &Program, tests: &[TestCase], drivers: &[bool]) 
             // votes, say) is not abstracting away data
             if !used.contains(&i) && !is_address(prog, ty) {
                 out.push(Finding {
+                    field: None,
                     help: None,
                     rule: "unused-design-payload-field",
                     span: prog.var(*p).span,

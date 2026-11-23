@@ -344,6 +344,28 @@ pub(in crate::cli) fn run_check(
     let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
     let sm = &loaded.sources.map;
     let intents = loaded.linter.test_intents(sm);
+    let prog = &loaded.analysis.program;
+    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &loaded.linter);
+    // A payload field no spec reads is judged by mutation testing, when it runs: a wrong
+    // value is sent, and only one no test case notices is reported (as an undetected mutant).
+    let mutation_runs = match mutation {
+        Mutation::After(None) => false,
+        Mutation::After(Some(_)) => selected_tests.len() == all_tests.len(),
+        Mutation::Only(_) => true,
+    };
+    let funs = crate::checker::mutation::mutable_funs(prog, &selected_tests, &drivers);
+    let mut deferred = Vec::new();
+    let mut defer = |f: &snappea_lint::Finding| {
+        let later = mutation_runs
+            && f.rule == "unused-payload-field"
+            && f.field
+                .as_ref()
+                .is_some_and(|(event, field)| crate::checker::mutation::field_can_change(prog, &funs, event, field));
+        if later {
+            deferred.push(f.clone());
+        }
+        later
+    };
     // Blocking lint findings fail the check, but the test cases still run so their bugs
     // are reported, and mutation testing runs when none failed, so one run lists every
     // gap; coverage is skipped. The findings print after the test cases.
@@ -354,11 +376,22 @@ pub(in crate::cli) fn run_check(
         gates.strict,
         &selected_tests,
         &intents,
+        &mut defer,
     ) {
         Ok(n) => (n, None),
         Err(e) => (0, Some(e)),
     };
-    let prog = &loaded.analysis.program;
+    let unread: Vec<_> = deferred
+        .iter()
+        .filter_map(|f| {
+            let (event, field) = f.field.clone()?;
+            let loc = sm.location(f.span);
+            // the part before `;` names the spec and the field
+            let what = f.message.split(';').next().unwrap_or_default();
+            let finding = format!("{} ({}:{})", what, loc.file.unwrap_or_default(), loc.line);
+            Some(crate::checker::mutation::UnreadField { event, field, finding })
+        })
+        .collect();
     let planned = plan(prog, selected, &selected_tests, &intents, &suite.expected_bug_seeds).map_err(|m| {
         error(con.inner, &m);
         Exit(ERROR)
@@ -366,7 +399,6 @@ pub(in crate::cli) fn run_check(
     let n = planned.len();
     con.inner.out_line(&format!("Checking {}: {} test case{}", cfg.project_name, n, plural(n)));
     let probes = crate::checker::compile::compile_program_with_probes(prog).probes;
-    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &loaded.linter);
     let (mut positive_scope, mut positive_design) = (Scope::default(), Scope::default());
     for tc in &selected_tests {
         if crate::driver::lint::intent(prog, tc, &intents).is_none_or(|i| i.expected_bug.is_none()) {
@@ -503,7 +535,7 @@ pub(in crate::cli) fn run_check(
             if incomplete == 0 && failed == 0 {
                 con.inner.out_line("No schedule of the selected tests reaches these gaps: their searches completed. Run other tests or add a scenario that reaches the missing behavior.");
             }
-            con.inner.out_line("For an impossible spec event, use a handler with `assert false` to state that contract. For an unreachable defensive branch, remove it and document why it is unnecessary, or use `allow coverage` with a reason.");
+            con.inner.out_line("If the code handles a fault the test drivers never produce (a lost, late or repeated message, a crash), make a driver or scenario produce it so the code runs. For an impossible spec event, use a handler with `assert false` to state that contract. For a branch that cannot run in the real system either, remove it, or use `allow coverage` with the reason it cannot run.");
         }
         for l in uncovered_lines(
             "Informational condition coverage (does not fail the check):",
@@ -615,6 +647,7 @@ pub(in crate::cli) fn run_check(
         lint_failed.is_some(),
         selected_tests.len() < all_tests.len(),
         &coverage_suppressions,
+        &unread,
         &mut skipped,
     );
     let seconds = con.inner.now() - start;
@@ -795,7 +828,7 @@ pub(in crate::cli) fn run_check(
         format!("{} of {} test case{} failed in {}{}. Output: {}/", failed, n, plural(n), elapsed, memory, out)
     });
     if let Some(note) = summary["note"].as_str() {
-        con.inner.out_line(note);
+        con.inner.out_line(&format!("warning: {}{}", note[..1].to_lowercase(), &note[1..]));
     }
     let mut coverage = all_cases.to_json(false);
     coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
@@ -832,7 +865,12 @@ pub(in crate::cli) fn run_check(
         result["scenarios"] = scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect();
     }
     let code = if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK };
-    Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()))
+    let (code, result) = with_lint_failure(code, result, failed, lint_failed.as_deref());
+    // Last, so `tail` and `grep ^error` keep it.
+    if let Some(recap) = failure_recap(code, &result, mutation_failed) {
+        con.inner.out_line(&recap);
+    }
+    Ok((code, result))
 }
 
 /// One check of a selected test case: an expected-bug test runs once per
@@ -1116,6 +1154,7 @@ pub(in crate::cli) fn mutation_phase(
     lint_failed: bool,
     partial_selection: bool,
     coverage_suppressions: &[(crate::syntax::Span, String)],
+    unread: &[crate::checker::mutation::UnreadField],
     skipped: &mut Vec<&'static str>,
 ) -> (Value, usize, Untested) {
     let only = matches!(mutation, Mutation::Only(_));
@@ -1150,11 +1189,12 @@ pub(in crate::cli) fn mutation_phase(
                 &suppressed,
                 coverage_suppressions,
                 ctx.drivers,
+                unread,
                 f64::from(limit),
                 only,
                 suite.gates.strict,
             );
-            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
+            for l in report.lines(SHOWN_UNCOVERED) {
                 con.inner.out_line(&l);
             }
             if report.blanket_suppressions > 0 {
@@ -1185,7 +1225,7 @@ pub(in crate::cli) fn mutation_phase(
 pub(in crate::cli) const DONE: &str = "Nothing left to fix: more tests are optional.";
 /// Ends the summary of a check that undetected mutants failed.
 pub(in crate::cli) const UNDETECTED: &str =
-    "the test cases pass with each change listed as error[undetected-mutant] above. For each, add what its help names, or suppress it with a reason.";
+    "the test cases pass with each change listed as error[undetected-mutant] above. For each, add what its help names; suppress one only if the changed model would still be correct, and say why.";
 
 /// A check's exit status and result when its blocking lint findings `lint` failed it:
 /// 1 when a test case failed (the bug is the first thing to fix), else 2, as when lint

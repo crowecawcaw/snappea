@@ -12,6 +12,7 @@ pub const MUTATIONS: &[&str] = &[
     "empty-body",
     "drop-conjunct",
     "drop-disjunct",
+    "change-field",
     "remove-defer",
     "defer-to-ignore",
     "remove-ignore",
@@ -411,6 +412,14 @@ fn commented_directives(ctx: &Context<'_>, known: &dyn Fn(&str) -> bool) -> (Vec
                     if ids.contains(&"coverage") && !reason.is_some_and(|reason| !reason.is_empty()) {
                         invalid.push(bad("coverage suppression has no reason after '--'").with_help(
                             "say why the code need not be covered, e.g. `// snappea-lint: allow coverage -- exercised by the Python suite`",
+                        ));
+                        return;
+                    }
+                    if ids.iter().any(|id| id.starts_with("mutation"))
+                        && !reason.is_some_and(|reason| !reason.is_empty())
+                    {
+                        invalid.push(bad("mutation suppression has no reason after '--'").with_help(
+                            "say why the changed model would still be correct, e.g. `// snappea-lint: allow mutation -- a repeated Drain gets the same answer as the first`",
                         ));
                         return;
                     }

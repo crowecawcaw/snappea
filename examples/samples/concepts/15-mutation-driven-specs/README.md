@@ -85,11 +85,11 @@ With `--warn lint` it explores, passes with full coverage, and mutation testing 
 Mutation testing: 1 of 14 mutants detected, 2 suppressed (0.6s)
 Not detected by any test case (every test case still passes with the change):
   PSrc/Account.p:13  Account.Serving entry: removed `balance = initial;`
-  PSrc/Account.p:15  Account.Serving, on Withdraw: removed the whole body (4 statements) (and 11 more undetected inside it; -v lists them)
+  PSrc/Account.p:15  Account.Serving, on Withdraw: removed the whole body (4 statements) (and 11 more undetected inside it, listed under it)
 ```
 
 A *coarse* mutant ("removed the whole body") means nothing notices the handler doing
-nothing at all; fix those first. `-v` lists the mutants inside it, and the JSON result
+nothing at all; fix those first. The mutants inside it are listed under it, and the JSON result
 has them under `mutation.undetected[].undetected_inside`.
 
 ## What each check kills

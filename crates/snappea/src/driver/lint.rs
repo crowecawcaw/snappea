@@ -203,7 +203,8 @@ fn skipped_note(host: &mut dyn Host, skipped: usize) {
 }
 
 /// Test-specific lints follow selection; expected failures do not need progress specs.
-/// Blocking findings with [`Gate::Deny`] are returned unprinted as [`LintFailed`].
+/// Blocking findings with [`Gate::Deny`] are returned unprinted as [`LintFailed`], except
+/// those `defer` accepts: it takes them for a later step to judge.
 /// When `tests` leaves some out, findings only those tests have are skipped, with a note
 /// saying how many, and suppressions are not reported as unused.
 pub fn gate_selected(
@@ -213,6 +214,7 @@ pub fn gate_selected(
     strict: bool,
     tests: &[TestCase],
     intents: &[TestIntent],
+    defer: &mut dyn FnMut(&Finding) -> bool,
 ) -> Result<usize, Box<LintFailed>> {
     let (sm, linter, prog) = (&loaded.sources.map, &loaded.linter, &loaded.analysis.program);
     let all = prog.test_cases();
@@ -231,7 +233,8 @@ pub fn gate_selected(
         findings.extend(unused_suppressions(sm, linter, &findings, &used));
         sort(&mut findings);
     }
-    let findings = shown(findings, strict);
+    let mut findings = shown(findings, strict);
+    findings.retain(|f| !defer(f));
     if gate == Gate::Deny {
         let count = findings.len();
         if count > 0 {

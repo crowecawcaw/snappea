@@ -362,6 +362,7 @@ fn unplanned_driver_stage(prog: &Program, tests: &[crate::sema::TestCase], drive
                     continue;
                 }
                 out.push(Finding {
+                    field: None,
                     help: None,
                     rule: "unplanned-driver-stage",
                     span,
@@ -466,6 +467,7 @@ fn unreachable_statements(prog: &Program, out: &mut Vec<Finding>) {
                     ),
                 };
                 out.push(Finding {
+                    field: None,
                     help: Some(help),
                     rule: "unreachable-statement",
                     span: next.span,
