@@ -17,7 +17,7 @@ const CHECKS = [
 
 const AGENT_ROWS = [
   { title: "The guide is in the binary", text: <><code>snappea guide</code> teaches the workflow: what to model, where to stop, and how to test the implementation against the specs. There is no skill file to write or keep in sync.</> },
-  { title: "One command runs every check", text: <><code>snappea check</code> lints the model, tries message orderings, and reports coverage and mutation results. It picks the search strategies; the caller sets a time budget. One binary, no compile step.</> },
+  { title: "One command runs every check", text: <><code>snappea check</code> lints the model, tries message orderings, and reports coverage and mutation results. It picks the search strategies; the caller sets a time budget. It is one binary with no .NET or Java to install, so it runs in a bare CI image or agent sandbox.</> },
   { title: "JSON results, and errors that name the fix", text: <><code>snappea check --json</code> prints structured results. Every error says what went wrong, where, and what to try next.</> },
   { title: "A model with untested behavior fails the check", text: <>Lint findings, coverage gaps and undetected mutants fail the check, so an agent cannot stop at a model that passes without testing anything.</> },
 ];
@@ -127,13 +127,17 @@ export function Home() {
         <section className="home-p" id="compare">
           <h2>How it compares</h2>
           <h3>Upstream P</h3>
-          <p>Snap Pea runs the P models you already have, through either of two commands.</p>
+          <p>
+            Snap Pea runs the P models you already have, through either of two commands. Both are one binary that
+            reads <code>.p</code> files directly. Upstream P compiles a model to C# and runs it on .NET; Snap Pea
+            needs no .NET, C# or Java toolchain and has no compile step.
+          </p>
           <div className="home-options">
             <article>
               <h4><code>snappea-compat</code>: a drop-in for <code>p</code>, about 100 times faster</h4>
               <p>
                 It takes the same options and prints the same output and replayable schedules, so existing scripts
-                keep working. There is no compile step. See <a href={l.comingFromP}>compatibility and migration</a>.
+                keep working. See <a href={l.comingFromP}>compatibility and migration</a>.
               </p>
             </article>
             <article>
@@ -177,7 +181,7 @@ export function Home() {
 
         <section className="home-p home-install" id="install">
           <h2>Install</h2>
-          <p>On Linux or macOS, install the checker and read the built-in guide:</p>
+          <p>The checker is one binary with no runtime dependencies. On Linux or macOS, install it and read the built-in guide:</p>
           <pre className="terminal">
             <code>
               <span className="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh{"\n"}
