@@ -2,7 +2,7 @@
 # Installs the snappea CLI from a GitHub release.
 #
 #   curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh -s -- --version 0.2.0
+#   curl -fsSL https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh | sh -s -- --version 0.3.0
 #
 # Options (or environment variables):
 #   --version <X.Y.Z>   SNAPPEA_VERSION      release to install (default: the latest)

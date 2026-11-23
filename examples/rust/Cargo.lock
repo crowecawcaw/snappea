@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "snappea"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "regex",
  "roxmltree",
@@ -488,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "snappea-lint"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "snappea-syntax",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "snappea-syntax"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "syn"

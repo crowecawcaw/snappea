@@ -6,7 +6,7 @@ feature, `snappea` compiles no checker and depends only on `serde` / `serde_json
 
 ```toml
 [dependencies]
-snappea = { version = "0.2", default-features = false, features = ["emit"] }
+snappea = { version = "0.3", default-features = false, features = ["emit"] }
 ```
 
 ```rust

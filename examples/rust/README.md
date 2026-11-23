@@ -81,7 +81,7 @@ when fixing a bug so later runs replay it.
 ## Adapt to your project
 
 Depend on the `snappea` crate under `[dev-dependencies]`:
-`snappea = { version = "0.2", default-features = false, features = ["test"] }`. Add
+`snappea = { version = "0.3", default-features = false, features = ["test"] }`. Add
 `[package.metadata.snappea]` to your `Cargo.toml`, and map your existing domain events or outbox in a `record` function like the one in
 [tests/support/mod.rs](tests/support/mod.rs). Or instrument with
 [`snappea::emit`](../../crates/snappea/src/emit/README.md), which feeds test recordings

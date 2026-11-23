@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install snappea
-        run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
+        run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.3.0
 
       - name: Check the model
         run: snappea check --timeout 2m
@@ -129,7 +129,7 @@ jobs:
       tests: \${{ steps.list.outputs.tests }}
     steps:
       - uses: actions/checkout@v7
-      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
+      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.3.0
       - id: list
         working-directory: model
         run: echo "tests=$(snappea tests | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
@@ -143,7 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
+      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.3.0
       - working-directory: model
         run: snappea check "\${{ matrix.test }}" --timeout 5m
 `}</Code>
@@ -159,7 +159,7 @@ jobs:
       - name: Install snappea
         shell: pwsh
         env:
-          SNAPPEA_VERSION: 0.2.0
+          SNAPPEA_VERSION: 0.3.0
         run: irm ${INSTALL_PS1} | iex
 `}</Code>
       </section>

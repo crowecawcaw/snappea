@@ -8,10 +8,10 @@ control and proptest sequences. Application code emits through
 
 ```toml
 [dependencies]
-snappea = { version = "0.2", default-features = false, features = ["emit"] }
+snappea = { version = "0.3", default-features = false, features = ["emit"] }
 
 [dev-dependencies]
-snappea = { version = "0.2", default-features = false, features = ["test"] }
+snappea = { version = "0.3", default-features = false, features = ["test"] }
 ```
 
 ## Configure once

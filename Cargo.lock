@@ -506,7 +506,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "snappea"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "mimalloc",
  "regex",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "snappea-fuzz"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "snappea-lint"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "snappea-syntax",
@@ -539,11 +539,11 @@ dependencies = [
 
 [[package]]
 name = "snappea-syntax"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "snappea-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",

@@ -20,10 +20,10 @@ Tests need the `test` feature; production code needs only the emitter:
 
 ```toml
 [dependencies]
-snappea = { version = "0.2", default-features = false, features = ["emit"] }
+snappea = { version = "0.3", default-features = false, features = ["emit"] }
 
 [dev-dependencies]
-snappea = { version = "0.2", default-features = false, features = ["test"] }
+snappea = { version = "0.3", default-features = false, features = ["test"] }
 ```
 
 ```rust,ignore

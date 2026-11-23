@@ -39,7 +39,7 @@ irm ${INSTALL_PS1} | iex
         </p>
         <p>To pin a version or pick the folder:</p>
         <Code lang="shell">{`
-curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0 --to /usr/local/bin
+curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.3.0 --to /usr/local/bin
 `}</Code>
         <p>
           The same settings work as environment variables, <code>SNAPPEA_VERSION</code> and{" "}
