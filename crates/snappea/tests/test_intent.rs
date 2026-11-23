@@ -183,8 +183,8 @@ fn intent_directives_validate_values_and_bind_to_test_declarations() {
     let parse = |directives: &str| {
         let mut sources = SourceMap::new();
         sources.add("model.p", format!("machine M {{ start state S {{}} }}\n{directives}\ntest tc [main=M]: {{M}};"));
-        let findings = snappea_lint::lint(&sources).unwrap();
-        (snappea_lint::test_intents(&sources).unwrap(), findings)
+        let linter = snappea_lint::Linter::parse(&sources).unwrap();
+        (linter.test_intents(&sources), linter.lint(&sources, None).0)
     };
     let (intents, findings) =
         parse("// snappea: expect-bug \"text with -- and \\\"quotes\\\"\"\n// snappea: boundary -- deliberate");

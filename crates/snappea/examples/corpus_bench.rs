@@ -56,12 +56,12 @@ fn main() {
         }
     };
     let sources = snappea::project::read(&host, &resolved.project_name, &resolved.p_files, Path::new(root)).unwrap();
-    let sm = sources.source_map();
-    let compiled = match snappea::sema::compile(&sm, &Default::default()) {
+    let sm = &sources.map;
+    let compiled = match snappea::sema::compile(sm, &Default::default()) {
         Ok(a) => a,
         Err(error) => {
             let detail = match error {
-                snappea::sema::CompileError::Analysis(a) => a.messages(&sm).join("\n"),
+                snappea::sema::CompileError::Analysis(a) => a.messages(sm).join("\n"),
                 e => format!("{e:?}"),
             };
             emit(json!({"kind":"project", "status":"compile_error", "detail":detail}));
@@ -84,7 +84,7 @@ fn main() {
         .collect();
     emit(json!({"kind":"project", "status":"ready", "cases":names,
         "case_monitors":monitors,
-        "sources":sources.files.iter().map(|f| &f.name).collect::<Vec<_>>(), "has_hot":has_hot,
+        "sources":sources.map.files().iter().map(|f| &f.name).collect::<Vec<_>>(), "has_hot":has_hot,
         "foreign_files":resolved.foreign_files}));
     let budget = manifest["budget"].as_u64().unwrap() as usize;
     let steps = manifest["steps"].as_u64().unwrap() as usize;

@@ -836,10 +836,8 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     }
     with_output(host, &a, "check lint", |host| {
         if a.has("list-rules") {
-            let builtins = snappea_lint::Registry::builtins();
-            let all: Vec<(&str, &str)> = builtins
-                .rules()
-                .map(|r| (r.id(), r.description()))
+            let all: Vec<(&str, &str)> = snappea_lint::rules()
+                .into_iter()
                 .chain(snappea_lint::PROGRAM_RULES.iter().copied())
                 .chain(snappea_lint::COMMENT_RULES.iter().copied())
                 .collect();
@@ -857,14 +855,14 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
         let Buffered { out, .. } = quiet;
         match loaded {
             Ok(loaded) => {
-                let sm = loaded.sources.source_map();
+                let sm = &loaded.sources.map;
                 let strict = a.has("strict");
                 let findings = crate::driver::lint::shown(
-                    crate::driver::lint::findings(host, &sm, &loaded.analysis.program)?,
+                    crate::driver::lint::findings(sm, &loaded.linter, &loaded.analysis.program),
                     strict,
                 );
-                let errors = crate::driver::lint::report(host, &sm, &findings, strict);
-                let json = crate::driver::lint::findings_json(&sm, &findings);
+                let errors = crate::driver::lint::report(host, sm, &findings, strict);
+                let json = crate::driver::lint::findings_json(sm, &findings);
                 if errors != 0 {
                     // the findings, not their text again: stderr has that
                     return Ok((ERROR, json!({"error": crate::driver::lint::SUMMARY, "findings": json})));
@@ -1143,22 +1141,21 @@ fn run_check(
     }
     let all_tests = loaded.analysis.program.test_cases();
     let selected_tests: Vec<_> = all_tests.iter().filter(|t| selected.contains(&t.name)).cloned().collect();
-    let intents = snappea_lint::test_intents(&loaded.sources.source_map()).unwrap_or_default();
+    let sm = &loaded.sources.map;
+    let intents = loaded.linter.test_intents(sm);
     // Blocking lint findings fail the check, but the test cases still run so their bugs
     // are reported, and mutation testing runs when none failed, so one run lists every
     // gap; coverage is skipped. The findings print after the test cases.
     let (lint_findings, lint_failed) = match crate::driver::lint::gate_selected(
         con.inner,
-        &loaded.sources,
-        &loaded.analysis.program,
+        &loaded,
         gates.lint,
         gates.strict,
         &selected_tests,
         &intents,
     ) {
         Ok(n) => (n, None),
-        Err(e) if e.findings.is_some() => (0, Some(e)),
-        Err(e) => return Err(e.exit),
+        Err(e) => (0, Some(e)),
     };
     // what lint failing skips, as reported in the JSON result
     const LINT_SKIP: &str = "lint failed";
@@ -1195,8 +1192,7 @@ fn run_check(
     let mut incomplete = 0;
     // incomplete searches that did not settle either
     let mut unsettled = 0;
-    let sources = loaded.sources.source_map();
-    let drivers = crate::checker::driver_facts::driver_machines(prog, &sources);
+    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &loaded.linter);
     let (mut negative_driver_scope, mut negative_hits, mut positive_design) =
         (Scope::default(), Hits::default(), Scope::default());
     for tc in &selected_tests {
@@ -1234,7 +1230,7 @@ fn run_check(
         let expected = intent.and_then(|i| i.expected_bug.as_deref());
         let boundary = intent.is_some_and(|i| i.boundary.is_some());
         let matched = expected.is_some_and(|text| {
-            case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, &sources).contains(text))
+            case.bugs > 0 && case.bug_report.as_deref().is_some_and(|r| failure_message(r, sm).contains(text))
         });
         if let Some(seed) = seed {
             seed_runs.entry(case.test_case.clone()).or_default().push(SeedFailure {
@@ -1390,7 +1386,7 @@ fn run_check(
     scope.add(&negative_driver_scope);
     let map = CodeMap::new(prog, &probes, &scope);
     let suite = map.coverage(&hits);
-    let coverage_suppressions = snappea_lint::coverage_suppressions(&loaded.sources.source_map()).unwrap_or_default();
+    let coverage_suppressions = loaded.linter.coverage_suppressions(sm);
     // A declared failure can stop a negative-only driver before its remaining
     // work runs. Preserve that evidence, but require coverage only for components
     // selected by a positive test (including shared drivers and their helpers).
@@ -1604,11 +1600,7 @@ fn run_check(
             json!({"skipped": "only some test cases were selected"})
         }
         Mutation::After(Some(limit)) | Mutation::Only(limit) => {
-            // the sources parsed when they were loaded
-            let suppressed =
-                snappea_lint::mutation_suppression_details(&loaded.sources.source_map()).unwrap_or_default();
-            let sources = loaded.sources.source_map();
-            let drivers = crate::checker::driver_facts::driver_machines(prog, &sources);
+            let suppressed = loaded.linter.mutation_suppressions(sm);
             let report = crate::driver::mutation::run(
                 &mut con,
                 prog,
@@ -1733,7 +1725,7 @@ fn run_check(
         "No bugs found"
     };
     let lint_line = lint_failed.as_ref().map(|lint| {
-        lint.print(con.inner, &sources);
+        lint.print(con.inner, sm);
         let mutation_ran = mutation.get("skipped").is_none();
         let skipped = match (only, mutation_ran) {
             (true, false) => "; mutation testing skipped",

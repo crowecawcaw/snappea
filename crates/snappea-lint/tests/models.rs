@@ -1,4 +1,4 @@
-use snappea_lint::{lint, Context, Finding, Registry, Rule};
+use snappea_lint::{Finding, Linter};
 use snappea_syntax::SourceMap;
 
 fn findings(files: &[&str]) -> Vec<Finding> {
@@ -6,7 +6,7 @@ fn findings(files: &[&str]) -> Vec<Finding> {
     for (i, text) in files.iter().enumerate() {
         sm.add(format!("model{i}.p"), *text);
     }
-    lint(&sm).unwrap()
+    Linter::parse(&sm).unwrap().lint(&sm, None).0
 }
 fn has(text: &str, id: &str) -> bool {
     findings(&[text]).iter().any(|f| f.rule == id)
@@ -203,35 +203,12 @@ fn suppression_is_scoped_and_unknown_ids_fail() {
 }
 
 #[test]
-fn external_rules_share_the_same_suppression_and_reporting_pipeline() {
-    struct Example;
-    impl Rule for Example {
-        fn id(&self) -> &'static str {
-            "example-rule"
-        }
-        fn description(&self) -> &'static str {
-            "Example extension"
-        }
-        fn check(&self, ctx: &Context<'_>, out: &mut Vec<Finding>) {
-            for m in ctx.machines() {
-                out.push(Finding::new(self.id(), m.name.span, "example"));
-            }
-        }
-    }
-    let mut registry = Registry::default();
-    registry.register(Example);
-    let mut sm = SourceMap::new();
-    sm.add("test.p", "// snappea-lint: allow example-rule -- fixture\nmachine Main { start state S {} }");
-    assert!(registry.check(&Context::parse(&sm).unwrap()).is_empty());
-}
-
-#[test]
 fn driver_directives_mark_machines_and_malformed_ones_fail() {
     let marked = "// snappea: driver -- stands in for real clients\nmachine Client { start state S {} }\nmachine Server { start state S {} }";
     assert!(!has(marked, "invalid-directive"));
     let mut sm = SourceMap::new();
     sm.add("model.p", marked);
-    let spans = snappea_lint::driver_machines(&sm).unwrap();
+    let spans = Linter::parse(&sm).unwrap().driver_machines(&sm);
     assert_eq!(spans.len(), 1);
     assert!(sm.text(spans[0]).starts_with("machine Client"));
     // a typo, a directive before something else, and trailing code all fail
@@ -278,7 +255,7 @@ fn scenarios_need_a_cold_state_and_a_non_cold_start() {
 fn observation_lint_keeps_only_spec_rules_and_bad_suppressions() {
     let mut sm = SourceMap::new();
     sm.add("a.p", "event A; event B; spec S observes A { start state X { on A goto X; on B goto X; } }\n// snappea-lint: allow nonsense\nmachine M { start state X {} }");
-    let rules: Vec<_> = snappea_lint::lint_observation(&sm).unwrap().into_iter().map(|f| f.rule).collect();
+    let rules: Vec<_> = Linter::parse(&sm).unwrap().lint_observation(&sm).into_iter().map(|f| f.rule).collect();
     assert_eq!(rules, ["unobserved-handler", "invalid-suppression"]);
 }
 
@@ -405,7 +382,7 @@ fn block_comment_suppressions_are_reported_as_unread() {
         "model0.p".to_string(),
         "event E;\n/* snappea-lint: allow permissive-monitor */\nspec P observes E { start state S { on E goto S; } }",
     );
-    let (suppressions, unread) = snappea_lint::lint_suppressions(&sm).unwrap();
+    let (suppressions, unread) = Linter::parse(&sm).unwrap().lint_suppressions(&sm);
     assert!(suppressions.is_empty());
     assert_eq!(unread.len(), 1);
     assert_eq!(unread[0].rule, "unused-suppression");
@@ -414,7 +391,7 @@ fn block_comment_suppressions_are_reported_as_unread() {
     // a `//` inside a block comment is still not a directive, and not reported
     let mut sm = SourceMap::new();
     sm.add("model0.p".to_string(), "/* // snappea-lint: allow typo */ machine Main { start state S {} }");
-    assert!(snappea_lint::lint_suppressions(&sm).unwrap().1.is_empty());
+    assert!(Linter::parse(&sm).unwrap().lint_suppressions(&sm).1.is_empty());
 }
 
 #[test]
@@ -424,12 +401,12 @@ fn suppression_usage_is_reported() {
         "model0.p".to_string(),
         "event E;\n// snappea-lint: allow permissive-monitor, unselected-spec -- trace fixture\nspec P observes E { start state S { on E goto S; } }\n// snappea-lint: allow tautological-assert -- nothing here\nmachine M { start state S {} }",
     );
-    let (findings, used) = snappea_lint::lint_usage(&sm).unwrap();
+    let (findings, used) = Linter::parse(&sm).unwrap().lint(&sm, None);
     assert!(findings.is_empty(), "{findings:?}");
     let mut rules: Vec<_> = used.iter().map(|u| u.rule.as_str()).collect();
     rules.sort();
     assert_eq!(rules, ["permissive-monitor", "unselected-spec"]);
-    assert_eq!(snappea_lint::lint_suppressions(&sm).unwrap().0.len(), 3);
+    assert_eq!(Linter::parse(&sm).unwrap().lint_suppressions(&sm).0.len(), 3);
 }
 
 #[test]

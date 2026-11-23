@@ -157,8 +157,9 @@ fn analyze(text: &str) -> Option<snappea::sema::Program> {
     sm.add(FILE, text);
     match snappea::sema::compile(&sm, &Default::default()) {
         Ok(analysis) => {
-            let _ = snappea_lint::lint(&sm);
-            let _ = snappea_lint::lint_observation(&sm);
+            let linter = snappea_lint::Linter::parse(&sm).expect("sources that type-check parse");
+            let _ = linter.lint(&sm, None);
+            let _ = linter.lint_observation(&sm);
             Some(analysis.program)
         }
         Err(snappea::sema::CompileError::Parse { span, message, .. }) => {

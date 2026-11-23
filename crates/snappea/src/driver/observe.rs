@@ -129,15 +129,12 @@ pub fn compile(
     style: Style,
 ) -> Result<SpecProgram, String> {
     let art = project::read(host, project_name, files, root)?;
-    let sm = art.source_map();
-    let r = crate::sema::compile(&sm, &crate::sema::Options::default());
-    if !project::report_result(host, &art, &sm, &r, style == Style::Upstream) {
+    let r = crate::sema::compile(&art.map, &crate::sema::Options::default());
+    if !project::report_result(host, &art, &r, style == Style::Upstream) {
         return Err("The P specification does not type-check.".into());
     }
     // Observation enforces the spec rules of `snappea check lint`; upstream has no lint.
-    if style == Style::Snappea
-        && crate::driver::lint::run_observation(host, &sm).map_err(|_| "The P specification does not parse.")? > 0
-    {
+    if style == Style::Snappea && crate::driver::lint::run_observation(host, &art.map) > 0 {
         return Err("The P specification has lint findings. Fix them, or suppress an intended one with `// snappea-lint: allow <rule> -- reason`.".into());
     }
     let program = r.map(|a| a.program).map_err(|_| "The P specification does not type-check.".to_string())?;

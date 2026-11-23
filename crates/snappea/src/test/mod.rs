@@ -135,7 +135,7 @@ impl Model {
             config(errors.join("\n\n"))
         })?;
         // the spec rules `snappea observe` enforces
-        let findings = snappea_lint::lint_observation(&map).map_err(|e| config(e.message))?;
+        let findings = crate::driver::lint::parse(&map).lint_observation(&map);
         if !findings.is_empty() {
             let mut text: String = findings.iter().map(|f| crate::driver::lint::render(&map, f) + "\n").collect();
             text.push_str(crate::driver::lint::SUMMARY);

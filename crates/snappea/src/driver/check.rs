@@ -398,6 +398,7 @@ pub fn set_output_directory(host: &mut dyn Host, cfg: &mut CheckConfig) -> Resul
 pub struct Loaded {
     pub sources: Sources,
     pub analysis: crate::sema::Analysis,
+    pub linter: snappea_lint::Linter,
 }
 
 /// Reads and type-checks the project's sources (upstream: `TestingEngine.LoadAssembly`);
@@ -407,9 +408,8 @@ pub fn load(host: &mut dyn Host, cfg: &CheckConfig) -> Result<Loaded, Exit> {
         Ok(s) => s,
         Err(e) => return Err(report_and_exit(host, &e)),
     };
-    let sm = sources.source_map();
-    let r = crate::sema::compile(&sm, &crate::sema::Options::default());
-    if !project::report_result(host, &sources, &sm, &r, cfg.style == Style::Upstream) {
+    let r = crate::sema::compile(&sources.map, &crate::sema::Options::default());
+    if !project::report_result(host, &sources, &r, cfg.style == Style::Upstream) {
         return Err(Exit(1));
     }
     if cfg.style == Style::Upstream {
@@ -435,7 +435,8 @@ pub fn load(host: &mut dyn Host, cfg: &CheckConfig) -> Result<Loaded, Exit> {
         ));
     }
     let analysis = r.map_err(|_| Exit(1))?;
-    Ok(Loaded { sources, analysis })
+    let linter = crate::driver::lint::parse(&sources.map);
+    Ok(Loaded { sources, analysis, linter })
 }
 
 /// Reads a `.schedule` file.
@@ -1000,8 +1001,11 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         opts.verbose_trace_schedules = VERBOSE_TRACE_SCHEDULES;
     }
     if cfg.driver_limits {
-        let sources = loaded.sources.source_map();
-        opts.driver_machines = Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources));
+        opts.driver_machines = Some(crate::checker::driver_facts::driver_machines(
+            &loaded.analysis.program,
+            &loaded.sources.map,
+            &loaded.linter,
+        ));
     }
     let engine_start = host.now();
     let deadline = match cfg.time_share {

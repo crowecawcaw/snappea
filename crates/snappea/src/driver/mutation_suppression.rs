@@ -160,7 +160,7 @@ mod tests {
         let probes = compile_program_with_probes(prog).probes;
         let funs = mutation::mutable_funs(prog, &prog.test_cases(), &[]);
         let mutants = mutation::mutants(prog, &funs, &probes);
-        let allowed = snappea_lint::mutation_suppression_details(&sm).unwrap();
+        let allowed = snappea_lint::Linter::parse(&sm).unwrap().mutation_suppressions(&sm);
         let verdicts = mutants
             .iter()
             .map(|m| {

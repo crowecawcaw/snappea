@@ -1,7 +1,16 @@
-//! Extensible, source-based checks for weak P models. No I/O or schedule execution.
+//! Source-based checks for weak P models. No I/O or schedule execution.
 //!
-//! Rules inspect a shared parsed [`Context`] and emit findings with stable IDs and
-//! source spans. [`Registry`] applies source suppressions and orders diagnostics.
+//! [`Linter::parse`] parses a project's sources once; its methods run the rules, read the
+//! `// snappea-lint:` and `// snappea:` comments, and return findings with stable rule IDs
+//! and source spans.
+//!
+//! ```
+//! let mut sm = snappea_syntax::SourceMap::new();
+//! sm.add("model.p", "machine Main { start state S { entry { assert true; } } }");
+//! let linter = snappea_lint::Linter::parse(&sm).unwrap();
+//! let (findings, _) = linter.lint(&sm, None);
+//! assert!(findings.iter().any(|f| f.rule == "tautological-assert"));
+//! ```
 
 mod rules;
 mod suppression;
@@ -9,16 +18,11 @@ mod visit;
 
 use snappea_syntax::{ast::*, parse, FileId, ParseError, SourceMap, Span};
 
-pub use rules::{
+use rules::{
     AnnounceAndSend, EnumValueShadowsMachine, NoModelMachine, PermissiveMonitor, ScenarioColdStart,
     ScenarioNeverAccepts, TautologicalAssert, UnobservedHandler, UnselectedSpec, UnusedPayloadField,
 };
 pub use suppression::{MutationSuppression, TestIntent, MUTATIONS};
-
-/// Intent declarations on test cases; malformed declarations are lint findings.
-pub fn test_intents(sources: &SourceMap) -> Result<Vec<TestIntent>, ParseError> {
-    Ok(suppression::test_intents(&Context::parse(sources)?))
-}
 
 /// Rules that need the type-checked program, which `snappea` runs on it (see
 /// `snappea::checker::checked`): their IDs and descriptions, so suppression comments and
@@ -71,22 +75,6 @@ pub const COMMENT_RULES: &[(&str, &str)] = &[
         "Advisory: a lint suppression matches no finding in the code it covers, or is a block comment, which is not read.",
     ),
 ];
-
-/// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
-/// comment covers. Returns the suppressions that covered at least one finding.
-pub fn suppress_program_findings(
-    sources: &SourceMap,
-    findings: &mut Vec<Finding>,
-) -> Result<Vec<SuppressionUse>, ParseError> {
-    let allowed = suppression::program_suppressions(&Context::parse(sources)?);
-    let mut used = Vec::new();
-    findings.retain(|f| {
-        let by: Vec<_> = allowed.iter().filter(|s| s.rule == f.rule && s.scope.contains(f.span)).collect();
-        used.extend(by.iter().map(|s| SuppressionUse { comment: s.comment, rule: s.rule.clone() }));
-        by.is_empty()
-    });
-    Ok(used)
-}
 
 /// The rule of the advisory about a lint suppression that has no effect: it matches no
 /// finding, or it is written in a form linting does not read.
@@ -143,44 +131,129 @@ pub struct SuppressionUse {
     pub rule: String,
 }
 
-/// Every well-formed lint suppression of the sources (see [`LintSuppression`]), and the
-/// [`UNUSED_SUPPRESSION`] advisories for `/* snappea-lint: ... */` block comments, which
-/// linting does not read.
-pub fn lint_suppressions(sources: &SourceMap) -> Result<(Vec<LintSuppression>, Vec<Finding>), ParseError> {
-    let ctx = Context::parse(sources)?;
-    let registry = Registry::builtins();
-    Ok((suppression::lint_suppressions(&ctx, &registry.rules), suppression::block_comment_suppressions(&ctx)))
+/// The built-in rules: each one's ID and description, for `--list-rules`.
+pub fn rules() -> Vec<(&'static str, &'static str)> {
+    Registry::builtins().rules.iter().map(|r| (r.id(), r.description())).collect()
 }
 
 /// Every lint rule ID a suppression may name: the built-in source rules and
 /// [`PROGRAM_RULES`].
 pub fn rule_ids() -> Vec<&'static str> {
-    let registry = Registry::builtins();
-    registry.rules().map(|r| r.id()).chain(PROGRAM_RULES.iter().map(|(id, _)| *id)).collect()
+    rules().into_iter().map(|(id, _)| id).chain(PROGRAM_RULES.iter().map(|(id, _)| *id)).collect()
 }
 
-/// Parsed files share the source map's file IDs. All project files must be included.
-pub struct Context<'a> {
-    pub sources: &'a SourceMap,
-    pub programs: Vec<Program>,
+/// Resolved spec monitors selected together by one concrete test configuration.
+/// Scenarios must not appear here: they describe evidence, not correctness checks.
+pub struct SpecSelection {
+    pub name: String,
+    pub specs: Vec<String>,
 }
 
-impl<'a> Context<'a> {
-    pub fn parse(sources: &'a SourceMap) -> Result<Self, ParseError> {
+/// The rules checking logs against specs enforces (`snappea observe`, test libraries):
+/// definite mistakes in a spec, not the model-test rules such as `unselected-spec`.
+pub const OBSERVATION_RULES: &[&str] = &["unobserved-handler"];
+
+/// A project's sources, parsed once for every lint query. Each method takes the
+/// [`SourceMap`] it was parsed from.
+pub struct Linter {
+    programs: Vec<Program>,
+    registry: Registry,
+}
+
+impl Linter {
+    /// Parses every file of `sources`; all project files must be included.
+    pub fn parse(sources: &SourceMap) -> Result<Self, ParseError> {
         let programs = sources
             .files()
             .iter()
             .enumerate()
             .map(|(i, f)| parse(FileId(i as u32), &f.text))
             .collect::<Result<_, _>>()?;
-        Ok(Self { sources, programs })
+        Ok(Self { programs, registry: Registry::builtins() })
     }
 
-    pub fn declarations(&self) -> impl Iterator<Item = &TopDecl> {
+    fn context<'a>(&'a self, sources: &'a SourceMap) -> Context<'a> {
+        debug_assert_eq!(sources.files().len(), self.programs.len(), "not the map this linter parsed");
+        Context { sources, programs: &self.programs }
+    }
+
+    /// Every rule's findings after suppressions, and the suppressions that removed one.
+    /// With `selections`, specs selected together may share payload validation.
+    pub fn lint(
+        &self,
+        sources: &SourceMap,
+        selections: Option<&[SpecSelection]>,
+    ) -> (Vec<Finding>, Vec<SuppressionUse>) {
+        self.registry.check(&self.context(sources), selections)
+    }
+
+    /// [`Linter::lint`] restricted to [`OBSERVATION_RULES`], plus malformed suppressions
+    /// and directives, so a misspelled suppression cannot hide a finding.
+    pub fn lint_observation(&self, sources: &SourceMap) -> Vec<Finding> {
+        let (mut findings, _) = self.lint(sources, None);
+        findings.retain(|f| {
+            OBSERVATION_RULES.contains(&f.rule) || matches!(f.rule, "invalid-suppression" | "invalid-directive")
+        });
+        findings
+    }
+
+    /// Intent declarations on test cases; malformed declarations are lint findings.
+    pub fn test_intents(&self, sources: &SourceMap) -> Vec<TestIntent> {
+        suppression::test_intents(&self.context(sources))
+    }
+
+    /// Removes from `findings` (of [`PROGRAM_RULES`]) those a `// snappea-lint: allow`
+    /// comment covers. Returns the suppressions that covered at least one finding.
+    pub fn suppress_program_findings(&self, sources: &SourceMap, findings: &mut Vec<Finding>) -> Vec<SuppressionUse> {
+        let allowed = suppression::program_suppressions(&self.context(sources));
+        let mut used = Vec::new();
+        findings.retain(|f| {
+            let by: Vec<_> = allowed.iter().filter(|s| s.rule == f.rule && s.scope.contains(f.span)).collect();
+            used.extend(by.iter().map(|s| SuppressionUse { comment: s.comment, rule: s.rule.clone() }));
+            by.is_empty()
+        });
+        used
+    }
+
+    /// Every well-formed lint suppression (see [`LintSuppression`]), and the
+    /// [`UNUSED_SUPPRESSION`] advisories for `/* snappea-lint: ... */` block comments,
+    /// which linting does not read.
+    pub fn lint_suppressions(&self, sources: &SourceMap) -> (Vec<LintSuppression>, Vec<Finding>) {
+        let ctx = self.context(sources);
+        (suppression::lint_suppressions(&ctx, &self.registry.rules), suppression::block_comment_suppressions(&ctx))
+    }
+
+    /// The code `// snappea-lint: allow mutation[:<kind>]` comments exclude from mutation
+    /// testing, with the ID each allows (`mutation` or `mutation:<kind>`).
+    pub fn mutation_suppressions(&self, sources: &SourceMap) -> Vec<MutationSuppression> {
+        suppression::mutation_suppression_details(&self.context(sources))
+    }
+
+    /// The machines marked `// snappea: driver` (test code that drives the model), as the
+    /// spans of their declarations.
+    pub fn driver_machines(&self, sources: &SourceMap) -> Vec<Span> {
+        suppression::driver_machines(&self.context(sources))
+    }
+
+    /// The source scopes intentionally omitted from `snappea check` coverage requirements,
+    /// with the reason each `// snappea-lint: allow coverage -- reason` gives.
+    pub fn coverage_suppressions(&self, sources: &SourceMap) -> Vec<(Span, String)> {
+        suppression::coverage_suppressions(&self.context(sources), &self.registry.rules)
+    }
+}
+
+/// What a rule sees: the parsed files, which share the source map's file IDs.
+pub(crate) struct Context<'a> {
+    pub(crate) sources: &'a SourceMap,
+    pub(crate) programs: &'a [Program],
+}
+
+impl Context<'_> {
+    pub(crate) fn declarations(&self) -> impl Iterator<Item = &TopDecl> {
         self.programs.iter().flat_map(|p| &p.decls)
     }
 
-    pub fn machines(&self) -> impl Iterator<Item = &MachineDecl> {
+    pub(crate) fn machines(&self) -> impl Iterator<Item = &MachineDecl> {
         self.declarations().filter_map(|d| match d {
             TopDecl::Machine(m) => Some(m),
             _ => None,
@@ -188,7 +261,7 @@ impl<'a> Context<'a> {
     }
 
     /// Resolve type aliases, with a bound for malformed/cyclic input.
-    pub fn resolve_type<'b>(&'b self, ty: &'b Type) -> &'b Type {
+    pub(crate) fn resolve_type<'b>(&'b self, ty: &'b Type) -> &'b Type {
         let mut current = ty;
         for _ in 0..64 {
             let TypeKind::Named(name) = &current.kind else { break };
@@ -204,20 +277,19 @@ impl<'a> Context<'a> {
     }
 }
 
-/// Implement and register a rule without changing the runner or suppression system.
-pub trait Rule: Send + Sync {
+pub(crate) trait Rule: Send + Sync {
     fn id(&self) -> &'static str;
     fn description(&self) -> &'static str;
     fn check(&self, context: &Context<'_>, findings: &mut Vec<Finding>);
 }
 
 #[derive(Default)]
-pub struct Registry {
+struct Registry {
     rules: Vec<Box<dyn Rule>>,
 }
 
 impl Registry {
-    pub fn builtins() -> Self {
+    fn builtins() -> Self {
         let mut r = Self::default();
         r.register(PermissiveMonitor);
         r.register(NoModelMachine);
@@ -233,7 +305,7 @@ impl Registry {
     }
 
     /// Rule IDs must be unique and may not use the reserved suppression diagnostic ID.
-    pub fn register(&mut self, rule: impl Rule + 'static) {
+    fn register(&mut self, rule: impl Rule + 'static) {
         assert!(
             !["invalid-suppression", "invalid-directive", UNUSED_SUPPRESSION].contains(&rule.id())
                 && !self.rules.iter().any(|r| r.id() == rule.id()),
@@ -242,20 +314,7 @@ impl Registry {
         self.rules.push(Box::new(rule));
     }
 
-    pub fn rules(&self) -> impl Iterator<Item = &dyn Rule> {
-        self.rules.iter().map(|r| r.as_ref())
-    }
-
-    pub fn check(&self, context: &Context<'_>) -> Vec<Finding> {
-        self.check_selected(context, None)
-    }
-
-    fn check_selected(&self, context: &Context<'_>, selections: Option<&[SpecSelection]>) -> Vec<Finding> {
-        self.check_selected_usage(context, selections).0
-    }
-
-    /// [`Registry::check_selected`], with the suppressions that removed a finding.
-    fn check_selected_usage(
+    fn check(
         &self,
         context: &Context<'_>,
         selections: Option<&[SpecSelection]>,
@@ -273,72 +332,4 @@ impl Registry {
         findings.dedup();
         (findings, used)
     }
-}
-
-pub fn lint(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
-    Ok(Registry::builtins().check(&Context::parse(sources)?))
-}
-
-/// Resolved spec monitors selected together by one concrete test configuration.
-/// Scenarios must not appear here: they describe evidence, not correctness checks.
-pub struct SpecSelection {
-    pub name: String,
-    pub specs: Vec<String>,
-}
-
-/// Lint with resolved test selection, allowing complementary specs to share payload
-/// validation only within each test. Source-only callers can continue using [`lint`].
-pub fn lint_with_spec_selections(
-    sources: &SourceMap,
-    selections: &[SpecSelection],
-) -> Result<Vec<Finding>, ParseError> {
-    Ok(Registry::builtins().check_selected(&Context::parse(sources)?, Some(selections)))
-}
-
-/// [`lint_with_spec_selections`], with the suppressions that removed a finding, for
-/// reporting suppressions that match nothing.
-pub fn lint_with_spec_selections_usage(
-    sources: &SourceMap,
-    selections: &[SpecSelection],
-) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
-    Ok(Registry::builtins().check_selected_usage(&Context::parse(sources)?, Some(selections)))
-}
-
-/// [`lint`], with the suppressions that removed a finding.
-pub fn lint_usage(sources: &SourceMap) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
-    Ok(Registry::builtins().check_selected_usage(&Context::parse(sources)?, None))
-}
-
-/// The rules checking logs against specs enforces (`snappea observe`, test libraries):
-/// definite mistakes in a spec, not the model-test rules such as `unselected-spec`.
-pub const OBSERVATION_RULES: &[&str] = &["unobserved-handler"];
-
-/// [`lint`] restricted to [`OBSERVATION_RULES`], plus malformed suppressions and
-/// directives, so a misspelled suppression cannot hide a finding.
-pub fn lint_observation(sources: &SourceMap) -> Result<Vec<Finding>, ParseError> {
-    let mut findings = lint(sources)?;
-    findings.retain(|f| {
-        OBSERVATION_RULES.contains(&f.rule) || matches!(f.rule, "invalid-suppression" | "invalid-directive")
-    });
-    Ok(findings)
-}
-
-/// The code `// snappea-lint: allow mutation[:<kind>]` comments exclude from mutation
-/// testing, with the ID each allows (`mutation` or `mutation:<kind>`).
-pub fn mutation_suppression_details(sources: &SourceMap) -> Result<Vec<MutationSuppression>, ParseError> {
-    Ok(suppression::mutation_suppression_details(&Context::parse(sources)?))
-}
-
-/// The machines marked `// snappea: driver` (test code that drives the model), as the
-/// spans of their declarations.
-pub fn driver_machines(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {
-    Ok(suppression::driver_machines(&Context::parse(sources)?))
-}
-
-/// The source scopes intentionally omitted from `snappea check` coverage requirements,
-/// with the reason each `// snappea-lint: allow coverage -- reason` gives.
-pub fn coverage_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
-    let context = Context::parse(sources)?;
-    let registry = Registry::builtins();
-    Ok(suppression::coverage_suppressions(&context, &registry.rules))
 }

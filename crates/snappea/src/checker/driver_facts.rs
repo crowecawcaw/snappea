@@ -29,8 +29,8 @@ const COUNT_LIMIT: u32 = 2;
 /// The machines that drive the model, by [`MachineId`]: those declared under a `PTst`
 /// folder or marked `// snappea: driver`. A test case's main machine is a driver too;
 /// the checker adds it.
-pub fn driver_machines(prog: &Program, sources: &SourceMap) -> Vec<bool> {
-    let marked = snappea_lint::driver_machines(sources).unwrap_or_default();
+pub fn driver_machines(prog: &Program, sources: &SourceMap, linter: &snappea_lint::Linter) -> Vec<bool> {
+    let marked = linter.driver_machines(sources);
     prog.machines
         .iter()
         .map(|m| {
