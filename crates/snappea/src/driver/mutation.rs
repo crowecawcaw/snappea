@@ -61,11 +61,11 @@ pub const TURN: usize = 100;
 /// Schedules of a mutant's first turn on each test case. Most mutants a test case detects,
 /// it detects within a few schedules, so short first turns find the test case that
 /// detects them sooner than long turns on the others.
-pub const FIRST_TURN: usize = 10;
+const FIRST_TURN: usize = 10;
 
 /// Schedules of a mutant's turn on a test case it ran `visit` turns before:
 /// [`FIRST_TURN`], three times as many each visit, at most [`TURN`].
-pub fn turn_length(visit: u32) -> usize {
+fn turn_length(visit: u32) -> usize {
     (FIRST_TURN * 3usize.pow(visit.min(4))).min(TURN)
 }
 /// Schedules of a turn before a mutant can be stopped as a runaway (see [`runaway`]).
@@ -87,14 +87,14 @@ pub fn runaway(hits: usize, schedules: usize, leading: usize, baseline: f64) -> 
 
 /// How many times the longest schedule of the unchanged model that ended a mutant's
 /// schedules may run (see [`step_cap`]).
-pub const STEP_FACTOR: usize = 10;
+const STEP_FACTOR: usize = 10;
 
 /// The step bound for the mutants of a test case whose unchanged schedules that ended took
 /// at most `longest` steps: [`STEP_FACTOR`] times that, but no more than `bound`, and none
 /// (`bound`) when no schedule ended. A mutant that runs far longer than the model ever
 /// does is stopped there instead of at the step bound, which can be thousands of times
 /// longer.
-pub fn step_cap(longest: Option<usize>, bound: usize) -> usize {
+fn step_cap(longest: Option<usize>, bound: usize) -> usize {
     longest.map_or(bound, |n| (n.max(1) * STEP_FACTOR).min(bound))
 }
 
@@ -103,7 +103,7 @@ pub fn step_cap(longest: Option<usize>, bound: usize) -> usize {
 /// [`STEP_FACTOR`] times that (at least 1000), but no more than `bound`. A mutant that
 /// loops inside one step, such as a `while` whose counter no longer moves, fails there
 /// instead of running to the default bound, which can take seconds a schedule.
-pub fn work_cap(peak: u64, bound: u64) -> u64 {
+fn work_cap(peak: u64, bound: u64) -> u64 {
     let cap = peak.max(1000) * STEP_FACTOR as u64;
     if bound == 0 {
         cap
@@ -219,7 +219,7 @@ impl Report {
     }
 
     /// Mutants detected only because their schedules ran to the step bound.
-    pub fn step_bound(&self) -> usize {
+    fn step_bound(&self) -> usize {
         self.count(|v| matches!(v, Verdict::Detected { step_bound: true, .. }))
     }
 
@@ -259,7 +259,7 @@ impl Report {
     }
 
     /// Undetected mutants reported with the undetected coarse mutant around them.
-    pub fn subsumed(&self) -> usize {
+    fn subsumed(&self) -> usize {
         self.count(|v| matches!(v, Verdict::Subsumed { .. }))
     }
 
@@ -275,7 +275,7 @@ impl Report {
 
     /// Every undetected mutant ran, changed a value, and had an incomplete search, so a
     /// deeper search than the quick check's may still detect it (see [`Report::deepened`]).
-    pub fn deeper_search_may_detect(&self) -> bool {
+    fn deeper_search_may_detect(&self) -> bool {
         let mut any = false;
         let all = self.mutants.iter().zip(&self.verdicts).all(|(m, v)| match v {
             Verdict::Undetected { search_complete, unchanged, .. }

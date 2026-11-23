@@ -543,9 +543,6 @@ impl crate::checker::observe_inputs::LogFiles for HostFiles<'_> {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
         self.0.read_dir(path)
     }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        self.0.read_to_string(path)
-    }
 }
 
 /// `Path.GetFullPath`: makes `p` absolute against `cwd` and resolves `.`/`..` lexically.
@@ -555,7 +552,7 @@ pub fn full_path(cwd: &Path, p: &Path) -> PathBuf {
 }
 
 /// Lexically resolves `.` and `..` components.
-pub fn normalize(p: &Path) -> PathBuf {
+pub(crate) fn normalize(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {

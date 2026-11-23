@@ -542,7 +542,7 @@ pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> 
                 Some((_, new)) => format!("unknown option '{}': it was renamed, use '{}'", name, new),
                 None => {
                     let longs = spec.iter().chain(OUTPUT_OPTS).map(|o| o.long).filter(|l| !l.is_empty());
-                    match crate::sema::errors::closest(name.trim_start_matches('-'), longs) {
+                    match crate::syntax::closest(name.trim_start_matches('-'), longs) {
                         Some(l) => format!("unknown option '{}'; did you mean '--{}'?", a, l),
                         None => format!("unknown option '{}'", a),
                     }
@@ -732,7 +732,7 @@ fn is_source(arg: &str) -> bool {
 /// `unknown command 'chek'; did you mean 'check'?`, with the commands.
 fn unknown_command(c: &str) -> String {
     let mut m = format!("unknown command '{}'", c);
-    if let Some(s) = crate::sema::errors::closest(c, COMMANDS) {
+    if let Some(s) = crate::syntax::closest(c, COMMANDS) {
         m.push_str(&format!("; did you mean '{}'?", s));
     }
     m.push_str(&format!("{}{}", if m.ends_with('?') { " Commands: " } else { "; commands: " }, COMMANDS.join(", ")));
@@ -788,7 +788,7 @@ fn select_tests(names: &[String], patterns: &[String]) -> Result<Vec<String>, St
     for p in patterns {
         if !names.iter().any(|n| glob_match(p, n)) {
             let mut m = format!("no test case matches '{}'. Test cases: {}", p, names.join(", "));
-            if let Some(s) = crate::sema::errors::closest(p, names.iter().map(String::as_str)) {
+            if let Some(s) = crate::syntax::closest(p, names.iter().map(String::as_str)) {
                 m = format!("no test case matches '{}'; did you mean '{}'? Test cases: {}", p, s, names.join(", "));
             }
             if p.contains('/') || p.contains('.') {

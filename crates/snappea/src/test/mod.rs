@@ -9,7 +9,7 @@ mod routing;
 pub use crate::checker::observe::UnknownEvents;
 pub use crate::checker::observe_report::ObserveCoverageReport;
 pub use crate::emit::{json, Emitter, Event, Time, Value, EVENTS_DIR_ENV};
-pub use config::Mode;
+use config::Mode;
 pub use errors::{CheckError, ErrorKind, SetupError, SpecViolation};
 pub use routing::BindGuard;
 
@@ -253,7 +253,7 @@ impl Model {
             prog.machines.iter().filter(|m| m.kind == MachineKind::Spec).map(|m| m.name.as_str()).collect();
         let unknown = |name: &str| {
             let mut m = format!("there is no spec named {name}");
-            if let Some(s) = crate::sema::errors::closest(name, declared.iter().copied()) {
+            if let Some(s) = crate::syntax::closest(name, declared.iter().copied()) {
                 m.push_str(&format!("; did you mean {s}?"));
             }
             match declared.is_empty() {

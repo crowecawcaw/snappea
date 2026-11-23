@@ -4,7 +4,7 @@
 //! These are shared by `snappea observe` and by in-process test helpers. File access goes
 //! through [`LogFiles`], so the same code runs on the real file system ([`StdFiles`]) and on
 //! the command line's virtual hosts. Live inputs come from a [`LiveSource`] that the caller
-//! supplies; [`observe_live`] feeds them to [`ObserveSession`]s.
+//! supplies; `observe_live` feeds them to [`ObserveSession`]s.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -20,7 +20,6 @@ pub trait LogFiles {
     fn is_dir(&self, path: &Path) -> bool;
     /// Entries (full paths) of a directory, in any order.
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
-    fn read_to_string(&self, path: &Path) -> io::Result<String>;
 }
 
 /// [`LogFiles`] on the real file system.
@@ -36,9 +35,6 @@ impl LogFiles for StdFiles {
     }
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
         std::fs::read_dir(path)?.map(|e| e.map(|e| e.path())).collect()
-    }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        std::fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 }
 
@@ -240,7 +236,7 @@ pub trait LiveSource {
 /// open when every input has ended are errors. Each line carries a `T` through the
 /// merge, such as where it came from.
 #[derive(Debug, Clone)]
-pub struct SequenceMerger<T = ()> {
+pub(crate) struct SequenceMerger<T = ()> {
     field: String,
     next: u64,
     pending: BTreeMap<u64, (String, T)>,
@@ -250,14 +246,14 @@ pub struct SequenceMerger<T = ()> {
 
 impl<T> SequenceMerger<T> {
     /// Lines held back by default before a missing number fails the run.
-    pub const DEFAULT_LIMIT: usize = 10_000;
+    pub(crate) const DEFAULT_LIMIT: usize = 10_000;
 
-    pub fn new(field: &str) -> SequenceMerger<T> {
+    pub(crate) fn new(field: &str) -> SequenceMerger<T> {
         SequenceMerger { field: field.to_string(), next: 1, pending: BTreeMap::new(), limit: Self::DEFAULT_LIMIT }
     }
 
     /// Adds a line, from where `name` says; returns the lines now ready, in sequence order.
-    pub fn push(&mut self, name: &str, line: &str, tag: T) -> Result<Vec<(String, T)>, String> {
+    pub(crate) fn push(&mut self, name: &str, line: &str, tag: T) -> Result<Vec<(String, T)>, String> {
         let entry = line.trim();
         if entry.is_empty() {
             return Ok(Vec::new());
@@ -287,7 +283,7 @@ impl<T> SequenceMerger<T> {
     }
 
     /// Checks that nothing is left waiting once every input has ended.
-    pub fn finish(&self) -> Result<(), String> {
+    pub(crate) fn finish(&self) -> Result<(), String> {
         match self.pending.keys().next() {
             None => Ok(()),
             Some(first) => Err(format!(
@@ -302,7 +298,7 @@ impl<T> SequenceMerger<T> {
 
 /// How [`observe_live`] ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LiveOutcome {
+pub(crate) struct LiveOutcome {
     /// Every input reached EOF and nothing was left unchecked; sessions can be finished
     /// with `finish(true, ..)`. Otherwise use `finish_after_failure`.
     pub complete: bool,
@@ -316,7 +312,7 @@ pub struct LiveOutcome {
 /// `sequence` lines are checked as they arrive (meant for a single input); with it, in
 /// sequence order. Each checked line is passed to `record`. Read errors and sequence
 /// errors are reported to every session with [`ObserveSession::input_error`].
-pub fn observe_live(
+pub(crate) fn observe_live(
     sessions: &mut [ObserveSession<'_>],
     parser: &dyn Parser,
     source: &mut dyn LiveSource,

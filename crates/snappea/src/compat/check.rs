@@ -312,7 +312,7 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
 }
 
 /// `Checker.Run`.
-pub fn run_checker(mut cfg: CheckConfig, host: &mut dyn Host) -> Result<i32, Exit> {
+pub(crate) fn run_checker(mut cfg: CheckConfig, host: &mut dyn Host) -> Result<i32, Exit> {
     if let Some(schedule_file) = cfg.schedule_file.clone() {
         host.out_line(&format!(
             "Replay option is used, checker is ignoring all other parameters and using the {} to replay the schedule",

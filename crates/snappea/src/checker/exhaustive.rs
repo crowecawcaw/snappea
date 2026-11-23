@@ -24,7 +24,7 @@
 //!   This finds a simple livelock on the first schedule that closes it.
 //! - Every other cycle is pruned, so the verdict comes from the fair-cycle analysis
 //!   ([`crate::checker::fairness`]): with hot monitor states, the search records the graph
-//!   of states where a liveness monitor is not cold ([`ExhaustiveStrategy::with_live_graph`])
+//!   of states where a liveness monitor is not cold (`ExhaustiveStrategy::with_live_graph`)
 //!   and, once it has explored every state, looks for a fair cycle in it that keeps a
 //!   monitor hot, possibly made of several loops. Pruning by the state cache loses no
 //!   transition: each one leaves a state the search explores, so it is recorded when a
@@ -250,7 +250,7 @@ impl Split {
     pub const TARGET_PER_WORKER: u64 = 8;
 
     /// Worker `index` of `workers`; `seed` and `shared` must be the same for every worker.
-    pub fn new(workers: usize, index: usize, seed: u32, shared: std::sync::Arc<Shared>) -> Split {
+    pub(crate) fn new(workers: usize, index: usize, seed: u32, shared: std::sync::Arc<Shared>) -> Split {
         Split {
             workers: workers as u64,
             index: index as u64,
@@ -291,7 +291,7 @@ impl Split {
 /// Depth-first search with visited-state caching (`--sch-pex dfs`); with a random
 /// generator the alternatives at each new choice point are tried in random order
 /// (`--sch-pex random`, the default).
-pub struct ExhaustiveStrategy {
+pub(crate) struct ExhaustiveStrategy {
     max_steps: usize,
     rng: Option<SharedRandom>,
     split: Option<Split>,
@@ -319,7 +319,7 @@ pub struct ExhaustiveStrategy {
 }
 
 impl ExhaustiveStrategy {
-    pub fn new(max_steps: usize, rng: Option<SharedRandom>) -> Self {
+    pub(crate) fn new(max_steps: usize, rng: Option<SharedRandom>) -> Self {
         ExhaustiveStrategy {
             max_steps,
             rng,
@@ -383,7 +383,7 @@ impl ExhaustiveStrategy {
     /// Monitors see the same events in the same order, so assertions, deadlocks and
     /// liveness verdicts are unchanged: local steps are invisible to monitors, and a run
     /// of local steps always ends, since each consumes an event and none sends one.
-    pub fn with_local_steps(mut self) -> Self {
+    pub(crate) fn with_local_steps(mut self) -> Self {
         self.local = Some(LocalSteps::default());
         self
     }
@@ -391,7 +391,7 @@ impl ExhaustiveStrategy {
     /// Tries one value of each group of `choose(n)` values the model cannot tell apart
     /// (see [`crate::checker::symmetry`]). The schedules left out differ from one tried
     /// only in values the model never looks at, so the verdicts are unchanged.
-    pub fn with_value_classes(mut self) -> Self {
+    pub(crate) fn with_value_classes(mut self) -> Self {
         self.value_classes = true;
         self
     }
@@ -399,7 +399,7 @@ impl ExhaustiveStrategy {
     /// Records the graph of states where a liveness monitor is not cold, up to `limit`
     /// states and transitions, for the fair-cycle analysis that decides liveness once the
     /// search is over (see [`crate::checker::fairness`]).
-    pub fn with_live_graph(mut self, limit: usize) -> Self {
+    pub(crate) fn with_live_graph(mut self, limit: usize) -> Self {
         self.graph = Some(LiveGraph::new(limit));
         self
     }
@@ -410,7 +410,7 @@ impl ExhaustiveStrategy {
     }
 
     /// Explores only this worker's part of a split search.
-    pub fn with_split(mut self, split: Split) -> Self {
+    pub(crate) fn with_split(mut self, split: Split) -> Self {
         self.split = Some(split);
         self
     }
@@ -750,12 +750,12 @@ impl SearchStats {
 
     /// The search closed a cycle while a liveness monitor was not cold and liveness was
     /// not verified: the model may repeat it without progress, which fair schedules check.
-    pub fn live_cycles_unchecked(&self) -> bool {
+    pub(crate) fn live_cycles_unchecked(&self) -> bool {
         self.liveness_unverified() && self.live_cycle_prunes > 0
     }
 
     /// Adds another worker's part of a split search: complete only when every part is.
-    pub fn combine(&mut self, other: &SearchStats) {
+    pub(crate) fn combine(&mut self, other: &SearchStats) {
         self.auto_handoffs.extend(other.auto_handoffs.iter().cloned());
         self.auto_handoffs.sort_by_key(|h| h.worker);
         self.distinct_states += other.distinct_states;

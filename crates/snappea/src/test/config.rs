@@ -14,7 +14,7 @@ const KEYS: &[&str] = &["spec_files", "specs", "exclude", "strict", "check_hot",
 /// without checking. Rust has no global test hook, so `auto` and `marked` both mean
 /// "check where the fixture is used".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
+pub(crate) enum Mode {
     /// Check where the fixture is used (the default).
     Auto,
     /// Same as `Auto` in Rust.

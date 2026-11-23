@@ -524,5 +524,4 @@ impl<'a> Errors<'a> {
     }
 }
 
-pub use crate::syntax::closest;
 use crate::syntax::edit_distance;

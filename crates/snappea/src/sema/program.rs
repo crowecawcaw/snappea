@@ -1,4 +1,4 @@
-//! The typed, resolved representation of a P program produced by [`crate::sema::analyze`].
+//! The typed, resolved representation of a P program produced by [`crate::sema::compile`].
 //!
 //! Everything is stored in arenas indexed by small id newtypes so the structure is cheap to
 //! clone, easy to serialize and friendly to an interpreter.

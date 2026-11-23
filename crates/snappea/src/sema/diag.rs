@@ -123,7 +123,7 @@ fn text_offset(f: &crate::syntax::SourceFile, offset: u32) -> u32 {
 /// Collects errors. In collecting mode (`continue_on_error`) reporting appends; in strict mode
 /// (`--strict-errors`) the first error is returned as `Err` so analysis aborts.
 #[derive(Debug, Default)]
-pub struct Diagnostics {
+pub(crate) struct Diagnostics {
     pub errors: Vec<Diagnostic>,
     pub warnings: Vec<String>,
     pub continue_on_error: bool,
@@ -191,4 +191,4 @@ fn sort_key(d: &Diagnostic, sm: &SourceMap) -> (String, i64, i64) {
 }
 
 /// Convenience type for "thrown" errors.
-pub type Fatal = Diagnostic;
+pub(crate) type Fatal = Diagnostic;

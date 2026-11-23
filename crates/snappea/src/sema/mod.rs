@@ -10,14 +10,15 @@ pub(crate) mod check;
 pub(crate) mod collect;
 pub(crate) mod csharp;
 pub mod diag;
-pub mod errors;
+pub(crate) mod errors;
 pub(crate) mod modules;
 pub mod program;
 pub(crate) mod scope;
 pub mod types;
 pub(crate) mod validate;
 
-pub use diag::{Diagnostic, Diagnostics};
+pub use diag::Diagnostic;
+use diag::Diagnostics;
 pub use program::*;
 pub use types::{PType, PermissionOrigin, TypeKind};
 
@@ -135,7 +136,7 @@ pub fn compile(sm: &SourceMap, opts: &Options) -> Result<Analysis, CompileError>
 }
 
 /// Runs semantic analysis over parsed programs (`Analyzer.AnalyzeCompilationUnit`).
-pub fn analyze(sm: &SourceMap, programs: &[ast::Program], opts: &Options) -> Result<Analysis, AnalysisError> {
+pub(crate) fn analyze(sm: &SourceMap, programs: &[ast::Program], opts: &Options) -> Result<Analysis, AnalysisError> {
     let mut a = Analyzer::new(sm, opts.continue_on_error);
     let r = run(&mut a, programs);
     let thrown = r.err();
