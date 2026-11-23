@@ -217,31 +217,11 @@ fn report_native(
     sm: &crate::syntax::SourceMap,
     r: &Result<crate::sema::Analysis, crate::sema::CompileError>,
 ) -> bool {
-    use crate::sema::diag::render_snippet;
-    use crate::sema::CompileError;
     // The front end's warnings are upstream's text; snappea reports each as a lint
     // finding instead (`snappea check lint`), which fails unless suppressed.
-    let errors: Vec<String> = match r {
+    let errors = match r {
         Ok(_) => return true,
-        Err(CompileError::Parse { message, span, .. }) => {
-            // `message` is `line L:C detail`; the location is shown separately
-            let detail =
-                message.split_once(' ').and_then(|(_, m)| m.split_once(' ')).map_or(message.as_str(), |(_, m)| m);
-            let before = &sm.file(span.file).text[..span.start as usize];
-            let (headline, help) = syntax_error(detail, before);
-            vec![render_snippet(sm, Some(*span), &headline, Some(&help))]
-        }
-        Err(CompileError::NotSupported { file, line, col, keyword }) => {
-            let help = format!(
-                "'{}' is PVerifier syntax, which snappea does not support yet; remove it to check the model",
-                keyword
-            );
-            let at = format!("{}:{}:{}", sm.file(*file).name, line, col + 1);
-            vec![render_snippet(sm, None, &format!("'{}' is not supported, at {}", keyword, at), Some(&help))]
-        }
-        Err(CompileError::Analysis(a)) => {
-            a.diagnostics(sm).iter().map(|d| render_snippet(sm, d.span, &d.message, d.help.as_deref())).collect()
-        }
+        Err(e) => render_errors(sm, e),
     };
     for (i, e) in errors.iter().enumerate() {
         if i > 0 {
@@ -261,6 +241,34 @@ fn report_native(
         ),
     );
     false
+}
+
+/// Each error of `e` as `snappea` shows it: its location, the source around it and a
+/// suggested fix ([`render_snippet`](crate::sema::diag::render_snippet)).
+pub(crate) fn render_errors(sm: &crate::syntax::SourceMap, e: &crate::sema::CompileError) -> Vec<String> {
+    use crate::sema::diag::render_snippet;
+    use crate::sema::CompileError;
+    match e {
+        CompileError::Parse { message, span, .. } => {
+            // `message` is `line L:C detail`; the location is shown separately
+            let detail =
+                message.split_once(' ').and_then(|(_, m)| m.split_once(' ')).map_or(message.as_str(), |(_, m)| m);
+            let before = &sm.file(span.file).text[..span.start as usize];
+            let (headline, help) = syntax_error(detail, before);
+            vec![render_snippet(sm, Some(*span), &headline, Some(&help))]
+        }
+        CompileError::NotSupported { file, line, col, keyword } => {
+            let help = format!(
+                "'{}' is PVerifier syntax, which snappea does not support yet; remove it to check the model",
+                keyword
+            );
+            let at = format!("{}:{}:{}", sm.file(*file).name, line, col + 1);
+            vec![render_snippet(sm, None, &format!("'{}' is not supported, at {}", keyword, at), Some(&help))]
+        }
+        CompileError::Analysis(a) => {
+            a.diagnostics(sm).iter().map(|d| render_snippet(sm, d.span, &d.message, d.help.as_deref())).collect()
+        }
+    }
 }
 
 /// The headline and suggested fix `snappea` shows for a syntax error, from the

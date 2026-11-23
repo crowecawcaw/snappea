@@ -291,13 +291,16 @@ fn closure_checks_after_the_body_and_preserves_panics() {
 }
 
 #[test]
-fn compile_errors_name_the_file() {
-    let e = Model::compile(&[("broken.p", "spec {")]).unwrap_err();
+fn compile_errors_show_the_source_and_a_fix() {
+    let e = Model::compile(&[("broken.p", "event E;\nspec {")]).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Config);
-    assert!(e.message.contains("broken.p"), "{e}");
-    let e = Model::compile(&[("types.p", "event E; spec S observes E { start state A { entry { absent = 1; } } }")])
-        .unwrap_err();
-    assert!(e.message.contains("types.p") && e.message.contains("absent"), "{e}");
+    assert!(e.message.contains("--> broken.p:2:"), "{e}");
+    assert!(e.message.contains("2 | spec {") && e.message.contains("= help: "), "{e}");
+    let e =
+        Model::compile(&[("types.p", "event E;\nspec S observes E {\n  start state A { entry { absent = 1; } }\n}")])
+            .unwrap_err();
+    assert!(e.message.contains("--> types.p:3:") && e.message.contains("absent"), "{e}");
+    assert!(e.message.contains("^^^^^^") && e.message.contains("= help: "), "{e}");
 }
 
 #[test]

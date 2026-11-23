@@ -130,13 +130,9 @@ impl Model {
             map.add(*name, *source);
         }
         let analysis = crate::sema::compile(&map, &Default::default()).map_err(|e| {
-            config(match e {
-                crate::sema::CompileError::Parse { file, message, .. } => format!("{}: {message}", map.file(file).name),
-                crate::sema::CompileError::NotSupported { file, line, col, keyword } => {
-                    format!("{}:{line}:{col}: unsupported syntax '{keyword}'", map.file(file).name)
-                }
-                crate::sema::CompileError::Analysis(error) => error.messages(&map).join("\n"),
-            })
+            let errors: Vec<String> =
+                crate::project::render_errors(&map, &e).iter().map(|e| e.trim_end().to_string()).collect();
+            config(errors.join("\n\n"))
         })?;
         // the spec rules `snappea observe` enforces
         let findings = snappea_lint::lint_observation(&map).map_err(|e| config(e.message))?;
