@@ -116,7 +116,13 @@ fn fault_recipes_check() {
     );
     let dir = temp("faults");
     std::fs::write(dir.join("faults.p"), model).unwrap();
-    let out = snappea(&["check", "faults.p", "--no-mutation", "--timeout", "5s", "--format", "text"], &dir);
+    // The search does not finish in the time limit, so whether it reaches the rare crash
+    // window behind the stale-epoch branch depends on the machine's speed: check the
+    // recipes find no bug, not that coverage.
+    let out = snappea(
+        &["check", "faults.p", "--no-mutation", "--warn", "coverage", "--timeout", "5s", "--format", "text"],
+        &dir,
+    );
     assert!(out.status.success(), "{}", text(&out));
 }
 
