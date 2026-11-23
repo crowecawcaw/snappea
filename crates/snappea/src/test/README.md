@@ -90,8 +90,10 @@ nanoseconds for a logical clock); each key's events are checked in time order.
   code or move into threads. It panics if used after `verify()`.
 - `snappea::emit::emit(...)` (the global emitter) in application code: a recording binds
   the thread that creates it, so emits on that thread go to it. Bind the scoped threads
-  the test spawns with `let _guard = recording.bind();`; a `thread::spawn` thread
-  cannot borrow the recording, so use `std::thread::scope` or inject `emitter()`. An
+  the test spawns with `let _guard = recording.bind();`. For `thread::spawn` threads,
+  thread pools or async workers, move a `recording.binder()` (cloneable, `'static`) in
+  and call `let _guard = binder.bind();` there; after `verify()` that guard does
+  nothing. An
   emit on an unbound thread goes to the only open recording; with several open (Cargo
   runs tests in parallel) it fails them all with a `Config` error, so bind or inject
   instead.

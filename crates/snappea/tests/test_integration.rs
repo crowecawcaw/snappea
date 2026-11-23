@@ -444,6 +444,36 @@ fn global_emit_reaches_the_recording_bound_to_the_thread() {
 }
 
 #[test]
+fn a_binder_routes_spawned_threads_and_is_inert_after_verify() {
+    // In a child process: the emit after verify could reach a recording open in this one.
+    let name = "a_binder_routes_spawned_threads_and_is_inert_after_verify";
+    if std::env::var("SNAPPEA_TEST_CHILD").as_deref() != Ok(name) {
+        return run_child(name, std::env::vars_os());
+    }
+    fn require_static<T: Clone + Send + Sync + 'static>(_: &T) {}
+    let recording = model().specs(["Inventory"]).recording();
+    let binder = recording.binder();
+    require_static(&binder);
+    snappea::emit::emit("Stock", "k", 1);
+    let spawned = binder.clone();
+    std::thread::spawn(move || {
+        let _bound = spawned.bind();
+        snappea::emit::emit("Pair", "k", json!(["o", 2]));
+    })
+    .join()
+    .unwrap();
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
+    assert_eq!(v.events.len(), 2);
+    // after verify: binding does not panic, and the emit goes where an unbound one would
+    std::thread::spawn(move || {
+        let _bound = binder.bind();
+        snappea::emit::emit("Stock", "k", 1);
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
 fn global_emit_on_an_unbound_thread_with_several_recordings_fails_them() {
     // In a child process: the failure would hit every recording open in this one.
     let name = "global_emit_on_an_unbound_thread_with_several_recordings_fails_them";

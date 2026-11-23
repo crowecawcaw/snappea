@@ -139,10 +139,11 @@ What fails the check:
                             coverage, mutation or all. Repeatable. Use it to explore,
                             not to pass: fix or suppress findings before relying on
                             the result.
-      --deny <CHECK>        Fail on CHECK's findings (the default). For mutation, also
-                            fail on mutants left untested, e.g. at the time limit.
-                            Use it for a final check. When --warn and --deny name
-                            the same check (or all), the last one wins.
+      --deny <CHECK>        Fail on CHECK's findings, as by default. --deny mutation
+                            (or all) also fails on mutants left untested, e.g. at
+                            the time limit: use it for a final check. When --warn
+                            and --deny name the same check (or all), the last one
+                            wins.
       --strict              Also run the mutants that change only a value, and report
                             advisory lint rules; fail on both. Use it for a model
                             that guards a critical design, not while iterating.
@@ -1054,7 +1055,9 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
 /// order given; the last one naming a check (or `all`) wins, so `--warn all --deny
 /// mutation` warns on all but mutation.
 fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
-    let mut denied_mutation = false;
+    // the last flag that set the mutation gate: `--deny mutation` there conflicts with
+    // `--no-mutation`, but `--deny all` does not
+    let mut last_mutation = None;
     for (option, value) in a.options.iter().filter(|(l, _)| matches!(*l, "warn" | "deny")) {
         let gate = if *option == "warn" { Gate::Warn } else { Gate::Deny };
         for name in value.split(',').map(str::trim) {
@@ -1065,12 +1068,12 @@ fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
                 ));
             }
             gates.set(name, gate)?;
-            if name == "mutation" {
-                denied_mutation = gate == Gate::Deny;
+            if name == "mutation" || name == "all" {
+                last_mutation = Some((name, gate));
             }
         }
     }
-    if a.has("no-mutation") && denied_mutation {
+    if a.has("no-mutation") && last_mutation == Some(("mutation", Gate::Deny)) {
         return Err("use only one of '--no-mutation' and '--deny mutation'".into());
     }
     Ok(())
@@ -1975,7 +1978,7 @@ impl Untested {
 }
 
 /// A concise top-level outcome. Mutation time limits change it only when `--deny mutation`
-/// (or `check mutation`) requires every mutant to be tested; they never change whether the
+/// (or `check mutation`, `--strict`) requires every mutant to be tested; they never change whether the
 /// test search or required-coverage gate passed.
 #[allow(clippy::too_many_arguments)]
 fn check_summary(
@@ -2050,7 +2053,7 @@ fn check_summary(
             "The test cases pass with changes to the model that a spec or assertion should detect".to_string(),
         )
     } else if mutation_failed {
-        ("mutation_incomplete", format!("Mutation testing incomplete: {} (--deny mutation)", untested.describe()))
+        ("mutation_incomplete", format!("Mutation testing incomplete: {}", untested.describe()))
     } else if incomplete > 0 {
         (
             "search_incomplete",

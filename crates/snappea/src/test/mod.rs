@@ -11,7 +11,7 @@ pub use crate::checker::observe_report::ObserveCoverageReport;
 pub use crate::emit::{json, Emitter, Event, Time, Value, EVENTS_DIR_ENV};
 use config::Mode;
 pub use errors::{CheckError, ErrorKind, SetupError, SpecViolation};
-pub use routing::BindGuard;
+pub use routing::{BindGuard, Binder};
 
 use std::ffi::OsString;
 use std::fmt::Display;
@@ -336,7 +336,7 @@ struct Buffer {
 }
 
 fn closed_error() -> SetupError {
-    config("emitted into a recording that was already verified: join producer threads before verify()")
+    config("emitted into a recording that was already verified or dropped: join producer threads before verify()")
 }
 
 fn lock(state: &Mutex<Buffer>) -> std::sync::MutexGuard<'_, Buffer> {
@@ -528,7 +528,6 @@ impl Recording {
         routing::close(&self.state);
         let (events, failed) = {
             let mut state = lock(&self.state);
-            state.closed = true;
             let dropped: u64 = state.emitters.iter().map(Emitter::dropped).sum();
             let failed = if let Some(&(kind, _)) = state.errors.first() {
                 let message = state.errors.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>().join("\n");

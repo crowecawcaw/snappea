@@ -309,8 +309,8 @@ one declaration or statement, and carries its reason into code review. To change
 fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `all`
 names every check). They apply in order, and the last one naming a check wins, so
 `--warn all --deny mutation` warns on all but mutation. Every check fails by default;
-`--deny mutation` also fails on mutants left untested, such as those the time limit
-stopped, so use it for a final check:
+`--deny mutation` (or `--deny all`, which names it too) also fails on mutants left
+untested, such as those the time limit stopped, so use it for a final check:
 
 ```sh
 snappea check --warn lint        # run coverage and mutation testing before addressing lints

@@ -253,9 +253,9 @@ emit_at(row.commit_time, "eReserved", sku, json!({"order": order, "units": units
           </li>
           <li>
             The global <code>snappea::emit::emit</code>: a recording binds the thread that creates it. Bind the scoped
-            threads the test spawns with <code>let _guard = recording.bind();</code>; a <code>thread::spawn</code>{" "}
-            thread cannot borrow the recording, so use <code>std::thread::scope</code> or inject{" "}
-            <code>emitter()</code>. With several recordings open and an unbound thread, the emit fails them all, so
+            threads the test spawns with <code>let _guard = recording.bind();</code>. For{" "}
+            <code>thread::spawn</code> threads, thread pools or async workers, move a{" "}
+            <code>recording.binder()</code> in and call <code>binder.bind()</code> there. With several recordings open and an unbound thread, the emit fails them all, so
             bind or inject.
           </li>
         </ul>

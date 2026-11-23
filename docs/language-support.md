@@ -80,7 +80,7 @@ Relative paths in environment variables resolve against the process working dire
 | `file`, `stdout`, `writer`, `callback` | L1 | Production sink constructors |
 | `dropped`, `flush`, `close` | L1 | Events dropped so far; wait for queued events (with a timeout); write them and turn the sink off |
 | `check_spec` (or the language's scoped form) | L2 | Scoped recording that checks on exit |
-| `Recording` / `Recorder`, `start`, `stop`, `check` | L2 | Manual form |
+| `Recording` / `Recorder`, `start`, `stop`, `check` (Rust and Go: `verify`) | L2 | Manual form |
 | `events_dir`, `env` | L2 | The recording's `SNAPPEA_EVENTS_DIR` folder, and an environment for children |
 | `add_events_dir`, `add_log` | L2 | Extra event inputs |
 | `SpecViolation`, `SetupError` | L2 | Error types |
@@ -415,7 +415,9 @@ failing; then the default flips. `[tool.snappea] strict` and `--snappea-strict` 
   nothing, like Go's and Java's `emit`; a payload that cannot be serialized fails
   `verify()`.
 - No `EventSink`: application code takes a `snappea::emit::Emitter`, and tests inject
-  `recording.emitter()`. Threads using the global emit bind with `recording.bind()`.
+  `recording.emitter()`. Threads using the global emit bind with `recording.bind()`
+  (scoped threads) or a `recording.binder()` moved into the thread; a `Binder` only
+  binds, it cannot emit.
 - `Recording::verify()` checks a recording, as Go's `Verify()`; `Model::check(|r| ..)`
   keeps its name. The crate is pre-1.0, so no aliases.
 

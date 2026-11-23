@@ -42,7 +42,7 @@ fn negative_control_detects_overselling() {
 }
 
 // Code instrumented with the global `snappea::emit::emit` needs no injected emitter: the
-// recording binds the test's thread. Bind scoped threads you spawn with `recorder.bind()`.
+// recording binds the test's thread. Bind scoped threads with `recorder.bind()`, others with `recorder.binder()`.
 #[test]
 fn global_emit_is_recorded() {
     let recorder = model().recording();
