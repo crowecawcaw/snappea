@@ -21,10 +21,11 @@ use std::time::{Duration, Instant};
 
 use crate::checker::observe::{
     split_entries, ErrorKind as CoreKind, ObserveError, ObserveOptions, ObservedEvent, ParsedEntry, Parser, Report,
-    Spec, Timestamp,
+    Spec,
 };
 use crate::checker::observe_inputs::{add_log_paths, log_paths, StdFiles};
-use crate::sema::{MachineKind, PType, Program};
+use crate::driver::observe::{JsonLinesParser, Writer};
+use crate::sema::{MachineKind, Program};
 use crate::syntax::SourceMap;
 
 use config::config;
@@ -907,8 +908,8 @@ fn event_of(o: &ObservedEvent) -> Event {
     }
 }
 
-/// Reads events-format lines. Undeclared names are reported for `unknown_events`;
-/// declared events the spec does not observe are skipped before payload conversion.
+/// Reads the events format snappea's emitter writes (see [`JsonLinesParser::parse_line`]).
+/// Undeclared names are reported for `unknown_events`.
 struct Lines;
 
 impl Parser for Lines {
@@ -919,52 +920,7 @@ impl Parser for Lines {
         self.parse_entry(entry, spec).map(|p| p.events)
     }
     fn parse_entry(&self, entry: &str, spec: &Spec) -> Result<ParsedEntry, String> {
-        if entry.trim().is_empty() {
-            return Ok(ParsedEntry::default());
-        }
-        let line: Value = serde_json::from_str(entry).map_err(|e| format!("not a JSON line: {e}"))?;
-        let name = line
-            .get("event")
-            .and_then(Value::as_str)
-            .ok_or("missing event name: the line has no string 'event' field")?;
-        let key = match line.get("key") {
-            None | Some(Value::Null) => String::new(),
-            Some(Value::String(s)) => s.clone(),
-            Some(other) => other.to_string(),
-        };
-        let Some(id) = spec.event_id(name) else {
-            return Ok(ParsedEntry {
-                unknown_events: vec![name.to_string()],
-                unknown_keys: vec![key],
-                ..Default::default()
-            });
-        };
-        if !spec.observes_event(id) {
-            return Ok(ParsedEntry::default());
-        }
-        let payload = line.get("payload").unwrap_or(&Value::Null);
-        if matches!(spec.payload_type(id), PType::Null) && !payload.is_null() {
-            return Err(format!("{name} has no payload, so its payload must be null"));
-        }
-        let value = crate::checker::observe_json::value_from_json(spec.prog, payload, spec.payload_type(id))?;
-        let event = spec.event(key, timestamp(line.get("timestamp"))?, name, value, Some(entry))?;
-        Ok(ParsedEntry { events: vec![event], ..Default::default() })
-    }
-}
-
-/// ISO-8601, or an integer of epoch milliseconds, as `snappea observe` reads it.
-fn timestamp(v: Option<&Value>) -> Result<Timestamp, String> {
-    match v {
-        Some(Value::String(s)) => match s.parse::<i64>() {
-            Ok(ms) => Ok(Timestamp::from_millis(ms)),
-            Err(_) => crate::checker::observe_json::parse_instant(s)
-                .ok_or_else(|| format!("invalid timestamp '{s}'; {}", crate::driver::observe::TIMESTAMP_FORMS)),
-        },
-        Some(Value::Number(n)) => n
-            .as_i64()
-            .map(Timestamp::from_millis)
-            .ok_or_else(|| format!("invalid timestamp {n}; {}", crate::driver::observe::TIMESTAMP_FORMS)),
-        _ => Err("missing timestamp".into()),
+        JsonLinesParser::default().parse_line(entry, spec, Writer::Emitter)
     }
 }
 
