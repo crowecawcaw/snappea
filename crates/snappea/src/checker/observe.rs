@@ -483,10 +483,11 @@ fn entry_location(opts: &ObserveOptions, parser: &dyn Parser, input: usize, entr
     }
 }
 
-/// The declared event closest to `name`, if it is close enough to be a likely misspelling.
+/// The declared event closest to `name`, if it is close enough to be a likely misspelling:
+/// at most three edits, since a log's event names are often long and alike.
 pub fn suggest_event(prog: &Program, name: &str) -> Option<String> {
     let events = prog.events.iter().map(|e| e.name.as_str()).filter(|n| *n != "null" && *n != "halt");
-    crate::syntax::closest(name, events).map(String::from)
+    crate::syntax::closest_within(name, events, 3).map(String::from)
 }
 
 impl Default for ObserveOptions {

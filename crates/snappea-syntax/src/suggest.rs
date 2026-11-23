@@ -3,7 +3,16 @@
 /// The candidate closest to `name`, if it is close enough to be a likely misspelling of
 /// it: for "did you mean" hints on names, events, commands, options and lint rule IDs.
 pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
-    let limit = (name.chars().count() / 3).max(1);
+    closest_within(name, candidates, usize::MAX)
+}
+
+/// [`closest`], allowing at most `max_edits` edits however long `name` is.
+pub fn closest_within<'a>(
+    name: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+    max_edits: usize,
+) -> Option<&'a str> {
+    let limit = (name.chars().count() / 3).clamp(1, max_edits.max(1));
     candidates
         .into_iter()
         .filter(|c| *c != name)
@@ -53,5 +62,7 @@ mod tests {
         assert_eq!(closest("Stok", ["Stock"]), Some("Stock"));
         assert_eq!(closest("eA", ["eB"]), Some("eB"));
         assert_eq!(closest("x", ["y"]), None);
+        assert_eq!(closest("eCompletedTransfer", ["eCommittedTransferX"]), Some("eCommittedTransferX"));
+        assert_eq!(closest_within("eCompletedTransfer", ["eCommittedTransferX"], 3), None);
     }
 }

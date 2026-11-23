@@ -10,4 +10,4 @@ pub mod token;
 
 pub use parser::{parse, parse_tokens, ParseError, MAX_NESTING};
 pub use span::{FileId, LineCol, Location, SourceFile, SourceMap, Span};
-pub use suggest::closest;
+pub use suggest::{closest, closest_within};

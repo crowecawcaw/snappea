@@ -662,13 +662,17 @@ impl JsonLinesParser {
             };
             format!("missing event name: no string field '{}'{hint}", self.event)
         })?;
-        let ts = timestamp_of(lookup(&j, &self.timestamp), writer)?;
         let key = key_string(lookup(&j, &self.key));
         let payload = lookup(&j, &self.payload);
-        let id = spec.event_id(name);
-        match (writer, id) {
+        let timestamp = || timestamp_of(lookup(&j, &self.timestamp), writer);
+        match (writer, spec.event_id(name)) {
+            (Writer::Emitter, None) => Ok(ParsedEntry {
+                unknown_events: vec![name.to_string()],
+                unknown_keys: vec![key],
+                ..Default::default()
+            }),
             (Writer::Emitter, Some(id)) => {
-                // its payload is read only if a spec observes it, and must have the event's type
+                // read only if a spec observes it, and the payload must have the event's type
                 if !spec.observes_event(id) {
                     return Ok(ParsedEntry::default());
                 }
@@ -678,9 +682,10 @@ impl JsonLinesParser {
                     return Err(format!("{name} has no payload, so its payload must be null"));
                 }
                 let value = value_from_json(spec.prog, payload, ty)?;
-                Ok(ParsedEntry { events: vec![spec.event(key, ts, name, value, Some(entry))?], ..Default::default() })
+                let event = spec.event(key, timestamp()?, name, value, Some(entry))?;
+                Ok(ParsedEntry { events: vec![event], ..Default::default() })
             }
-            _ => parsed_from_json(spec, key, ts, name, payload, Some(entry)),
+            (Writer::Logs, _) => parsed_from_json(spec, key, timestamp()?, name, payload, Some(entry)),
         }
     }
 }
