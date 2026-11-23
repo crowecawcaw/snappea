@@ -36,20 +36,6 @@ class SetupError(Exception):
         self.output_dir = output_dir
 
 
-class StrictDefaultWarning(DeprecationWarning):
-    """Deprecated and no longer emitted; kept so existing references keep working.
-
-    It warned, for one release, that a check with named specs would fail under the new
-    ``strict`` default. That default is now in force: such a check raises
-    :class:`SetupError` with ``kind == "validation"``. Pass ``strict=False`` (or set
-    ``[tool.snappea] strict = false``) when a spec may rightly see no events.
-    """
-
-    def __init__(self, error: SetupError):
-        super().__init__(error.message)
-        self.error = error
-
-
 def warn(message: Any, category: Any = None) -> None:
     """`warnings.warn`, attributed to the first caller outside this package."""
     pkg = os.path.dirname(os.path.abspath(__file__))

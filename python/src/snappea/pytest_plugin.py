@@ -7,6 +7,7 @@ Configured under ``[tool.snappea]`` in pyproject.toml::
     spec_files = ["specs/*.p"]
     exclude = ["DraftSpec"]   # optional: specs not checked anywhere yet
     mode = "auto"             # optional: "auto" (every test) | "marked" | "off"
+    coverage = "cov.json"     # optional: suite coverage JSON, or "off"
 
 Per test: ``@pytest.mark.snappea(skip=True)``, ``@pytest.mark.snappea(skip=["DraftSpec"])``,
 ``@pytest.mark.snappea(check_hot=True)``, ``@pytest.mark.snappea(strict=True)``.
@@ -43,7 +44,7 @@ _COVERAGE_DEFAULT = pytest.StashKey[bool]()
 #: How xdist workers hand their reports to the controller.
 _WORKER_KEY = "snappea_coverage_reports"
 
-MARK_KEYS = {"skip", "check_hot", "liveness", "strict"}
+MARK_KEYS = {"skip", "check_hot", "strict"}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -51,8 +52,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--snappea-strict", action="store_true", default=False,
                     help="Require relevant events for every selected P spec in each checked test.")
     group.addoption("--snappea-coverage", metavar="PATH", default=None,
-                    help="Merge suite monitor coverage as JSON into PATH (or set SNAPPEA_COVERAGE). Without it the "
-                         "summary is still printed; 'off' turns it off.")
+                    help="Merge suite monitor coverage as JSON into PATH. Overrides SNAPPEA_COVERAGE and "
+                         "[tool.snappea] coverage. Without any, the summary is still printed; 'off' turns it off.")
     group.addoption(
         "--snappea",
         dest="snappea_mode",
@@ -71,14 +72,17 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.stash[_COVERAGE] = []
     config.stash[_ERROR] = None
-    path = _coverage_path(config)
-    config.stash[_COVERAGE_DEFAULT] = path is None and not _coverage_off(config)
-    config.stash[_COVERAGE_PATH] = path
     try:
-        cfg = _config.load(str(config.rootpath))
+        cfg: Optional[_config.Config] = _config.load(str(config.rootpath))
     except SetupError as e:
-        config.stash[_CONFIG] = None
+        cfg = None
         config.stash[_ERROR] = str(e)
+    setting = _coverage_setting(config, cfg)
+    path = None if setting == "off" else setting
+    config.stash[_COVERAGE_DEFAULT] = setting is None
+    config.stash[_COVERAGE_PATH] = path
+    if cfg is None:
+        config.stash[_CONFIG] = None
         return
     explicit = config.getoption("snappea_mode") or os.environ.get(_config.MODE_ENV)
     if not cfg.spec_files and cfg.path is None and not explicit:
@@ -88,23 +92,19 @@ def pytest_configure(config: pytest.Config) -> None:
     config.stash[_CONFIG] = cfg
 
 
-def _coverage_off(config: pytest.Config) -> bool:
-    """`--snappea-coverage=off`, else `SNAPPEA_COVERAGE=off`."""
-    option = config.getoption("snappea_coverage")
-    return (option or os.environ.get(_config.COVERAGE_ENV)) == "off"
-
-
-def _coverage_path(config: pytest.Config) -> Optional[Path]:
-    """`--snappea-coverage` (relative to the rootdir), else `SNAPPEA_COVERAGE` (relative to the
-    working directory); None without one, or when it is `off`."""
-    if _coverage_off(config):
-        return None
+def _coverage_setting(config: pytest.Config, cfg: Optional[_config.Config]) -> Optional[Path | str]:
+    """The suite coverage path, "off", or None (print only): `--snappea-coverage` (relative to
+    the rootdir), else `SNAPPEA_COVERAGE` (relative to the working directory), else
+    `[tool.snappea] coverage` (already absolute)."""
     option = config.getoption("snappea_coverage")
     if option:
-        path = Path(option)
-        return path if path.is_absolute() else config.rootpath / path
+        return "off" if option == "off" else Path(option) if Path(option).is_absolute() else config.rootpath / option
     env = os.environ.get(_config.COVERAGE_ENV)
-    return Path(env).absolute() if env else None
+    if env:
+        return "off" if env == "off" else Path(env).absolute()
+    if cfg is not None and cfg.coverage:
+        return "off" if cfg.coverage == "off" else Path(cfg.coverage)
+    return None
 
 
 def pytest_report_header(config: pytest.Config) -> Optional[str]:
@@ -117,7 +117,7 @@ def pytest_report_header(config: pytest.Config) -> Optional[str]:
     return f"snappea: checking P specs from {', '.join(cfg.spec_files)} ({cfg.mode})"
 
 
-def _output_root(config: pytest.Config) -> Optional[str]:
+def _pytest_artifacts(config: pytest.Config) -> Optional[str]:
     """pytest's temporary folder for this run (kept for the last few runs), so snappea's
     output for a failed test is easy to find; None falls back to the system's."""
     factory = getattr(config, "_tmp_path_factory", None)
@@ -151,9 +151,6 @@ def _settings(item: pytest.Item) -> Optional[dict]:
             return None
         if s:
             skip.extend([s] if isinstance(s, str) else s)
-        if "liveness" in m.kwargs:
-            item.warn(pytest.PytestDeprecationWarning("@pytest.mark.snappea(liveness=...) is deprecated; use check_hot="))
-            check_hot = bool(m.kwargs["liveness"])
         if "check_hot" in m.kwargs:
             check_hot = bool(m.kwargs["check_hot"])
         if "strict" in m.kwargs:
@@ -194,7 +191,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         strict=True if item.config.getoption("snappea_strict") else settings["strict"] if settings else None,
     )
     rec._cfg = settings["config"] if settings else None
-    rec._default_artifacts = _output_root(item.config)
+    rec._default_artifacts = _pytest_artifacts(item.config)
     rec._plugin_checks = settings is not None  # type: ignore[attr-defined]
     item.stash[_RECORDER] = rec.start()
 

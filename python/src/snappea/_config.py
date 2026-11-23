@@ -24,7 +24,7 @@ COVERAGE_ENV = "SNAPPEA_COVERAGE"
 #: Seconds a check may take.
 DEFAULT_TIMEOUT = 30.0
 
-KEYS = ("spec_files", "specs", "exclude", "strict", "check_hot", "unknown_events", "timeout", "artifacts", "mode")
+KEYS = ("spec_files", "specs", "exclude", "strict", "check_hot", "unknown_events", "timeout", "artifacts", "coverage", "mode")
 
 
 class ConfigError(SetupError):
@@ -58,6 +58,8 @@ class Config:
     timeout: Optional[float] = None
     #: Folder to keep failed checks' events and output in (absolute). None: a temp folder.
     artifacts: Optional[str] = None
+    #: Suite coverage JSON path (absolute), or "off". None: print the summary only.
+    coverage: Optional[str] = None
 
     def files(self) -> List[str]:
         """The P files, expanded and sorted."""
@@ -120,6 +122,12 @@ def parse(table: dict, root: str, path: Optional[str]) -> Config:
         if not isinstance(artifacts, str):
             raise ConfigError("[tool.snappea] artifacts must be a path")
         artifacts = os.path.join(root, artifacts)
+    coverage = table.get("coverage")
+    if coverage is not None:
+        if not isinstance(coverage, str) or not coverage:
+            raise ConfigError('[tool.snappea] coverage must be a path or "off"')
+        if coverage != "off":
+            coverage = os.path.join(root, coverage)
     return Config(
         spec_files=str_list("spec_files"),
         specs=str_list("specs"),
@@ -132,6 +140,7 @@ def parse(table: dict, root: str, path: Optional[str]) -> Config:
         unknown_events=unknown_events,
         timeout=float(timeout) if timeout is not None else None,
         artifacts=artifacts,
+        coverage=coverage,
     )
 
 

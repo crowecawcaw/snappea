@@ -12,7 +12,6 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SuppressWarnings("deprecation")
 class TransportTest {
     @TempDir Path temporary;
 
@@ -40,11 +39,11 @@ class TransportTest {
                     + "printf '%s' '" + json + "' > \"$report\"\nexit 0\n");
             var events = recording(binary);
             events.emit("event", "key");
-            var failure = assertThrows(ObservationFailure.class, events::close, json);
+            var failure = assertThrows(SetupError.class, events::close, json);
             assertTrue(Files.exists(failure.artifacts().resolve("events.jsonl")));
         }
         var events = recording(executable("exit 0\n"));
-        assertThrows(ObservationFailure.class, events::close);
+        assertThrows(SetupError.class, events::close);
     }
 
     @Test @EnabledOnOs({OS.LINUX, OS.MAC})
@@ -120,7 +119,7 @@ class TransportTest {
             var events = SnappeaObserver.builder().config(SnappeaConfig.NONE).binary(binary.toString()).specFiles(ObserverTest.spec())
                     .specs(specs).artifacts(temporary.resolve("artifacts")).build().recording("malformed metrics");
             events.emit("event", "key");
-            var failure = assertThrows(ObservationFailure.class, events::close, mutation);
+            var failure = assertThrows(SetupError.class, events::close, mutation);
             assertTrue(failure.report().isEmpty(), "Invalid report must not be collected as coverage: " + mutation);
         }
     }

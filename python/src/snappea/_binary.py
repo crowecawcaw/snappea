@@ -9,11 +9,9 @@ import sys
 import sysconfig
 from functools import lru_cache
 
-from ._errors import SetupError, warn
+from ._errors import SetupError
 
 BINARY_ENV = "SNAPPEA_BIN"
-#: Deprecated spelling of `SNAPPEA_BIN`.
-OLD_BINARY_ENV = "SNAPPEA_BINARY"
 
 
 class SnappeaNotFound(SetupError, RuntimeError):
@@ -27,13 +25,10 @@ class SnappeaNotFound(SetupError, RuntimeError):
 def find_snappea() -> str:
     """Path of the `snappea` binary: `SNAPPEA_BIN`, the copy installed with this package, or
     `snappea` on PATH."""
-    name, override = BINARY_ENV, os.environ.get(BINARY_ENV)
-    if not override and os.environ.get(OLD_BINARY_ENV):
-        name, override = OLD_BINARY_ENV, os.environ[OLD_BINARY_ENV]
-        warn(f"{OLD_BINARY_ENV} is deprecated; set {BINARY_ENV} instead", DeprecationWarning)
+    override = os.environ.get(BINARY_ENV)
     if override:
         if not os.path.isfile(override):
-            raise SnappeaNotFound(f"{name}={override} is not a file")
+            raise SnappeaNotFound(f"{BINARY_ENV}={override} is not a file")
         return os.path.abspath(override)
     exe = "snappea" + (sysconfig.get_config_var("EXE") or "")
     # wheels install the binary next to the interpreter's scripts

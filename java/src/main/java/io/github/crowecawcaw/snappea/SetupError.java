@@ -1,13 +1,14 @@
 package io.github.crowecawcaw.snappea;
 
 import java.nio.file.Path;
+import java.util.Optional;
+import org.opentest4j.AssertionFailedError;
 
 /**
  * The check could not run or its input is unusable; not a spec violation. Assert on
  * {@link #kind()}, never on the message text.
  */
-@SuppressWarnings("deprecation")
-public final class SetupError extends ObservationFailure {
+public final class SetupError extends AssertionFailedError {
     private static final long serialVersionUID = 1L;
     /** No checker binary; the message says how to install one. */
     public static final String BINARY_MISSING = "binary_missing";
@@ -25,10 +26,14 @@ public final class SetupError extends ObservationFailure {
     public static final String TIMEOUT = "timeout";
 
     private final String kind;
+    private final transient Path artifacts;
+    private final transient ObservationReport report;
 
     SetupError(String kind, String message, Path artifacts, ObservationReport report, Throwable cause) {
-        super(message, artifacts, report, cause);
+        super(message, cause);
         this.kind = kind;
+        this.artifacts = artifacts;
+        this.report = report;
     }
 
     static SetupError config(String message) {
@@ -37,4 +42,10 @@ public final class SetupError extends ObservationFailure {
 
     /** One of the constants in this class, or another kind copied from the core report. */
     public String kind() { return kind; }
+
+    /** The folder holding the events, snappea's console output and its report; null when none was made. */
+    public Path artifacts() { return artifacts; }
+
+    /** The parsed JSON report, when snappea wrote a valid one. */
+    public Optional<ObservationReport> report() { return Optional.ofNullable(report); }
 }

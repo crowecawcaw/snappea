@@ -3,13 +3,14 @@ package io.github.crowecawcaw.snappea;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.opentest4j.AssertionFailedError;
 
 /**
  * A P spec was broken by the recorded events. An {@code AssertionFailedError}, so test
  * frameworks and property-test shrinkers treat it as an ordinary assertion failure.
  */
-@SuppressWarnings("deprecation")
-public final class SpecViolation extends ObservationFailure {
+public final class SpecViolation extends AssertionFailedError {
     private static final long serialVersionUID = 1L;
     /** Events shown in the failure message, counting back from the one that broke the spec. */
     static final int SHOWN = 20;
@@ -24,10 +25,14 @@ public final class SpecViolation extends ObservationFailure {
     private final transient List<Event> events;
     private final boolean liveness;
     private final transient List<SpecViolation> others;
+    private final transient Path artifacts;
+    private final transient ObservationReport report;
 
     SpecViolation(String spec, String key, String message, String location, List<Event> events, boolean liveness,
                   List<SpecViolation> others, Path artifacts, ObservationReport report) {
-        super(render(spec, key, message, location, events, liveness, others, artifacts), artifacts, report, null);
+        super(render(spec, key, message, location, events, liveness, others, artifacts));
+        this.artifacts = artifacts;
+        this.report = report;
         this.spec = spec;
         this.key = key;
         this.message = message;
@@ -55,6 +60,12 @@ public final class SpecViolation extends ObservationFailure {
     public boolean liveness() { return liveness; }
     /** Further violations found by the same check. */
     public List<SpecViolation> others() { return others; }
+
+    /** The folder holding the events, snappea's console output and its report; null when none was made. */
+    public Path artifacts() { return artifacts; }
+
+    /** The parsed JSON report, when snappea wrote a valid one. */
+    public Optional<ObservationReport> report() { return Optional.ofNullable(report); }
 
     private static String render(String spec, String key, String message, String location, List<Event> events,
                                  boolean liveness, List<SpecViolation> others, Path artifacts) {

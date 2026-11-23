@@ -286,7 +286,7 @@ def test_events_from_forked_processes():
 
 def test_strict_defaults_to_true_for_named_specs():
     with warnings.catch_warnings():
-        warnings.simplefilter("error")  # fails now: no StrictDefaultWarning grace period
+        warnings.simplefilter("error")  # the default fails; it does not warn
         with pytest.raises(SetupError, match="checked no relevant events") as info:
             with check_spec("MutualExclusion", spec_files=FILES):
                 pass
@@ -354,23 +354,9 @@ def test_unknown_events_warn_and_ignore():
         check_spec(spec_files=FILES, unknown_events="loud")
 
 
-def test_liveness_is_a_deprecated_alias_of_check_hot():
-    with pytest.warns(DeprecationWarning, match="liveness= is deprecated; use check_hot="):
-        spec = check_spec(spec_files=FILES, liveness=True)
-    assert spec.recorder.check_hot is True
-    with pytest.raises(SpecViolation) as info, pytest.warns(DeprecationWarning):
-        check_events([{"event": "eRequest", "client": "c1"}], spec_files=FILES, liveness=True)
-    assert info.value.liveness
-    with pytest.raises(TypeError):
-        Recorder(check_hot=True, liveness=True)
-
-
-def test_setup_error_kinds_and_old_names(monkeypatch, tmp_path):
+def test_setup_error_kinds(monkeypatch, tmp_path):
     from snappea import _binary
 
-    with pytest.warns(DeprecationWarning, match="snappea.SnappeaError is deprecated"):
-        from snappea import SnappeaError
-    assert SnappeaError is SetupError
     assert issubclass(_binary.SnappeaNotFound, SetupError)
     binary = _binary.find_snappea()
     try:
@@ -379,11 +365,9 @@ def test_setup_error_kinds_and_old_names(monkeypatch, tmp_path):
         with pytest.raises(SetupError, match="SNAPPEA_BIN=.*missing is not a file") as info:
             check_events([{"event": "eEnter", "client": "c1"}], spec_files=FILES)
         assert info.value.kind == "binary_missing"
-        monkeypatch.delenv("SNAPPEA_BIN")
-        monkeypatch.setenv("SNAPPEA_BINARY", binary)
+        monkeypatch.setenv("SNAPPEA_BIN", binary)
         _binary.find_snappea.cache_clear()
-        with pytest.warns(DeprecationWarning, match="SNAPPEA_BINARY is deprecated; set SNAPPEA_BIN"):
-            assert _binary.find_snappea() == binary
+        assert _binary.find_snappea() == binary
     finally:
         _binary.find_snappea.cache_clear()
 

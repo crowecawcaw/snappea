@@ -86,14 +86,6 @@ class ObserverTest {
         assertThrows(IllegalStateException.class, () -> recording.emit("eOther", "late"));
     }
 
-    @Test void deprecatedObservationFailureStillCatchesBoth() {
-        var recording = builder("Counter").build().recording("old API");
-        recording.emit("eTake", "sku", 1);
-        @SuppressWarnings("deprecation")
-        var failure = assertThrows(ObservationFailure.class, recording::close);
-        assertEquals("spec_violation", failure.report().orElseThrow().errors().get(0).kind());
-    }
-
     @Test void mutablePayloadIsSnapshottedAndEmissionErrorsStaySticky() {
         var payload = new HashMap<String, Object>(Map.of("units", 1));
         try (var events = builder("Snapshot").build().recording("snapshot")) {

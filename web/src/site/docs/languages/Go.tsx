@@ -314,8 +314,7 @@ if errors.As(err, &v) && v.Key == "coffee" { ... }
           Go has no config file: settings are <code>snappeatest.Config</code> fields, with paths relative to{" "}
           <code>WorkDir</code> (default: the package folder). Environment variables override fields, except{" "}
           <code>SNAPPEA_BIN</code>, which <code>Binary</code> overrides. <code>Strict</code> is a <code>*bool</code>: use{" "}
-          <code>snappeatest.Bool(false)</code>. <code>AllowUnobserved</code> and <code>ArtifactRoot</code> are deprecated
-          aliases for <code>Strict: snappeatest.Bool(false)</code> and <code>Artifacts</code>.
+          <code>snappeatest.Bool(false)</code>.
         </p>
         <SettingsTable lang="go" />
         <h3>Environment variables</h3>

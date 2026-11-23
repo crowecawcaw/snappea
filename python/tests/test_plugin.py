@@ -267,22 +267,6 @@ def test_snappea_mode_environment_variable(project, monkeypatch):
     run(project, "--snappea", "marked").assert_outcomes(passed=8, failed=2)
 
 
-def test_liveness_mark_is_a_deprecated_alias(project):
-    project.makepyfile(
-        test_old="""
-        import pytest
-        from snappea import emit
-
-        @pytest.mark.snappea(liveness=True)
-        def test_waiting():
-            emit("eRequest", key="L3", client="c3")
-        """
-    )
-    r = run(project, "test_old.py")
-    r.assert_outcomes(failed=1)
-    r.stdout.fnmatch_lines(["*liveness=...) is deprecated; use check_hot=*"])
-
-
 def test_misspelled_event_fails_the_test(project):
     project.makepyfile(
         test_typo="""
@@ -306,7 +290,6 @@ def test_named_specs_in_settings_do_not_make_plugin_checks_strict(project):
     r = run(project, "-k", "test_no_events or test_correct or test_waiting_forever_fails")
     # test_waiting_forever_fails emits only eRequest, which MutualExclusion ignores
     r.assert_outcomes(passed=3, deselected=7)
-    r.stdout.no_fnmatch_line("*StrictDefaultWarning*")
     # strict = true opts in, and fails tests whose named spec saw no relevant event
     project.makepyprojecttoml(
         '[tool.snappea]\nspec_files = ["specs/*.p"]\nspecs = ["MutualExclusion"]\nstrict = true\n'
@@ -396,6 +379,20 @@ def test_default_coverage_report_can_be_turned_off(project, monkeypatch):
     monkeypatch.setenv("SNAPPEA_COVERAGE", "off")
     result = run(project, "-k", "test_correct")
     result.stdout.no_fnmatch_line("*Spec coverage*")
+
+
+def test_coverage_setting_and_its_overrides(project, monkeypatch):
+    project.makepyprojecttoml('[tool.snappea]\nspec_files = ["specs/*.p"]\ncoverage = "from-config.json"\n')
+    run(project, "-k", "test_correct").assert_outcomes(passed=1, deselected=9)
+    assert (project.path / "from-config.json").is_file()
+    monkeypatch.setenv("SNAPPEA_COVERAGE", "from-env.json")
+    run(project, "-k", "test_correct").assert_outcomes(passed=1, deselected=9)
+    assert (project.path / "from-env.json").is_file()
+    run(project, "-k", "test_correct", "--snappea-coverage=from-option.json").assert_outcomes(passed=1, deselected=9)
+    assert (project.path / "from-option.json").is_file()
+    monkeypatch.delenv("SNAPPEA_COVERAGE")
+    project.makepyprojecttoml('[tool.snappea]\nspec_files = ["specs/*.p"]\ncoverage = "off"\n')
+    run(project, "-k", "test_correct").stdout.no_fnmatch_line("*Spec coverage*")
 
 
 def test_default_coverage_report_with_xdist(project):

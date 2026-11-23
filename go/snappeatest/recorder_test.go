@@ -425,10 +425,6 @@ func TestConfiguration(t *testing.T) {
 	if s.strict {
 		t.Fatal("Strict: Bool(false) ignored")
 	}
-	s, _ = resolve(Config{SpecFiles: []string{"a.p"}, Specs: []string{"S"}, AllowUnobserved: true, ArtifactRoot: "art"})
-	if s.strict || len(s.deprecated) != 2 || !strings.HasSuffix(s.artifacts, "art") {
-		t.Fatalf("deprecated fields: %+v", s)
-	}
 
 	t.Setenv("SNAPPEA_SPEC_FILES", "x.p"+string(os.PathListSeparator)+"y.p")
 	t.Setenv("SNAPPEA_ARTIFACTS", "artifacts")

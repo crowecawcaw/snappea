@@ -9,6 +9,10 @@ use crate::test::{ErrorKind, SetupError};
 
 const TABLE: &str = "package.metadata.snappea";
 const KEYS: &[&str] = &["spec_files", "specs", "exclude", "strict", "check_hot", "unknown_events", "coverage", "mode"];
+/// Concepts of docs/language-support.md that are not Rust config keys: the check runs in
+/// process, so there is no `timeout`; the artifacts folder is set only by `SNAPPEA_ARTIFACTS`.
+#[cfg(test)]
+const NOT_KEYS: &[&str] = &["timeout", "artifacts"];
 
 /// L3 mode (`SNAPPEA_MODE`): `off` makes [`Model::check`](crate::test::Model::check) run the body
 /// without checking. Rust has no global test hook, so `auto` and `marked` both mean
@@ -44,6 +48,8 @@ pub(crate) struct FileConfig {
     pub strict: Option<bool>,
     pub check_hot: Option<bool>,
     pub unknown_events: Option<UnknownEvents>,
+    /// The suite coverage file; `off` and no setting are both `None`, as Rust prints no
+    /// suite summary.
     pub coverage: Option<PathBuf>,
     pub mode: Option<Mode>,
 }
@@ -84,7 +90,7 @@ pub(crate) fn read(manifest: &Path) -> Result<FileConfig, SetupError> {
             "strict" => cfg.strict = Some(boolean(value)?),
             "check_hot" => cfg.check_hot = Some(boolean(value)?),
             "unknown_events" => cfg.unknown_events = Some(string(value)?.parse().map_err(at)?),
-            "coverage" => cfg.coverage = Some(cfg.dir.join(string(value)?)),
+            "coverage" => cfg.coverage = Some(string(value)?).filter(|s| s != "off").map(|s| cfg.dir.join(s)),
             "mode" => cfg.mode = Some(Mode::parse(&string(value)?, &manifest.display().to_string())?),
             _ => return Err(at(format!("unknown key '{key}'; expected one of {}", KEYS.join(", ")))),
         }
@@ -275,5 +281,35 @@ specs = 3
         assert!(table("[package]\nname = 'x'\n").unwrap().is_empty());
         assert!(table("[package.metadata.snappea]\nspecs = [1]\n").is_err());
         assert!(table("[package.metadata.snappea]\nspecs = ['a'] strict = true\n").is_err());
+    }
+
+    #[test]
+    fn keys_match_the_concepts_table() {
+        let doc =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/language-support.md")).unwrap();
+        let section = doc.split("### Concepts").nth(1).unwrap().split("\n#").next().unwrap();
+        let rows: Vec<(&str, &str)> =
+            section.lines().filter_map(|l| l.strip_prefix("| `")?.split_once("` |")).collect();
+        let mut concepts: Vec<&str> = rows.iter().map(|(k, _)| *k).collect();
+        let mut keys: Vec<&str> = KEYS.iter().chain(NOT_KEYS).copied().collect();
+        concepts.sort();
+        keys.sort();
+        assert_eq!(keys, concepts);
+        for name in NOT_KEYS {
+            let (_, row) = rows.iter().find(|(k, _)| k == name).unwrap();
+            assert!(row.contains("Rust"), "the {name} row must state that Rust has no such key");
+        }
+    }
+
+    #[test]
+    fn coverage_off_is_no_file() {
+        let dir = std::env::temp_dir().join(format!("snappea-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = dir.join("Cargo.toml");
+        std::fs::write(&manifest, "[package.metadata.snappea]\ncoverage = \"off\"\n").unwrap();
+        assert_eq!(read(&manifest).unwrap().coverage, None);
+        std::fs::write(&manifest, "[package.metadata.snappea]\ncoverage = \"cov.json\"\n").unwrap();
+        assert_eq!(read(&manifest).unwrap().coverage, Some(dir.join("cov.json")));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

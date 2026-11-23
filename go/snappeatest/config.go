@@ -59,11 +59,6 @@ type Config struct {
 	WorkDir string
 	// Suite collects the check's coverage for Suite.WriteCoverage.
 	Suite *Suite
-
-	// Deprecated: use Strict: Bool(false).
-	AllowUnobserved bool
-	// Deprecated: use Artifacts.
-	ArtifactRoot string
 }
 
 // Bool returns a pointer to v, for Config.Strict.
@@ -85,7 +80,6 @@ type settings struct {
 	binary        string
 	workDir       string
 	suite         *Suite
-	deprecated    []string
 }
 
 func resolve(cfg Config) (settings, error) {
@@ -154,10 +148,6 @@ func resolve(cfg Config) (settings, error) {
 	s.exclude = append([]string(nil), cfg.Exclude...)
 
 	s.strict = len(s.specs) > 0
-	if cfg.AllowUnobserved {
-		s.strict = false
-		s.deprecated = append(s.deprecated, "Config.AllowUnobserved is deprecated: use Strict: snappeatest.Bool(false)")
-	}
 	if cfg.Strict != nil {
 		s.strict = *cfg.Strict
 	}
@@ -179,15 +169,10 @@ func resolve(cfg Config) (settings, error) {
 		s.timeout = 30 * time.Second
 	}
 
-	if cfg.ArtifactRoot != "" {
-		s.deprecated = append(s.deprecated, "Config.ArtifactRoot is deprecated: use Artifacts")
-	}
 	if env := os.Getenv("SNAPPEA_ARTIFACTS"); env != "" {
 		s.artifacts = abs(cwd, env)
-	} else if cfg.Artifacts != "" {
-		s.artifacts = abs(s.workDir, cfg.Artifacts)
 	} else {
-		s.artifacts = abs(s.workDir, cfg.ArtifactRoot)
+		s.artifacts = abs(s.workDir, cfg.Artifacts)
 	}
 	if env := os.Getenv("SNAPPEA_COVERAGE"); env == "off" {
 		s.coverageOff = true

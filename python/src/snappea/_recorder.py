@@ -22,20 +22,6 @@ REPORT_EVENTS = 20
 LogParser = Callable[[str], Optional[dict]]
 
 
-def _deprecated(old: str, new: str) -> None:
-    warn(f"{old} is deprecated; use {new}", DeprecationWarning)
-
-
-def check_hot_arg(check_hot: Optional[bool], liveness: Optional[bool]) -> Optional[bool]:
-    """`check_hot`, or the deprecated `liveness=` spelling of it."""
-    if liveness is None:
-        return check_hot
-    if check_hot is not None:
-        raise TypeError("pass check_hot=, not both check_hot= and liveness=")
-    _deprecated("liveness=", "check_hot=")
-    return liveness
-
-
 class SpecViolation(AssertionError):
     """A P spec was broken by the recorded events."""
 
@@ -137,8 +123,7 @@ class Recorder:
     * ``spec_files``: the P files: paths, globs, or folders meaning every ``.p`` in
       them. Relative to the working directory here; to the pyproject.toml in config.
     * ``strict``: require a relevant event for every selected spec. Default: true when
-      ``specs`` are named, false for every spec. When this named-spec default applies,
-      missing relevant events currently warn; set ``strict=True`` explicitly to fail.
+      ``specs`` are named, false for every spec.
     * ``check_hot``: also fail on a spec left in a hot state. Default: false.
     * ``unknown_events``: an event name no P file declares is an ``"error"`` (default),
       a ``"warn"``\\ ing, or ``"ignore"``\\ d.
@@ -161,23 +146,18 @@ class Recorder:
         unknown_events: Optional[str] = None,
         timeout: Optional[float] = None,
         artifacts: Optional[str] = None,
-        liveness: Optional[bool] = None,
-        output_root: Optional[str] = None,
     ):
         if isinstance(specs, str):
             specs = [specs]
         self.specs: List[str] = list(specs)
         self.spec_files = [os.fspath(f) for f in spec_files] if spec_files is not None else None
         self.exclude: Optional[List[str]] = list(exclude) if exclude is not None else None
-        self.check_hot = check_hot_arg(check_hot, liveness)
+        self.check_hot = check_hot
         self.strict = strict
         if unknown_events is not None:
             _config.check_unknown_events(unknown_events, "unknown_events")
         self.unknown_events = unknown_events
         self.timeout = timeout
-        if output_root is not None:
-            _deprecated("output_root=", "artifacts=")
-            artifacts = artifacts or output_root
         self.artifacts = os.fspath(artifacts) if artifacts is not None else None
         #: snappea's JSON result of the last check that ran (``specs[].coverage`` holds
         #: each spec's monitor coverage); None before, or if snappea wrote none.
@@ -195,12 +175,6 @@ class Recorder:
         # set by the pytest plugin: its configuration, and pytest's temp folder
         self._cfg: Optional[_config.Config] = None
         self._default_artifacts: Optional[str] = None
-
-    @property
-    def liveness(self) -> Optional[bool]:
-        """Deprecated: use :attr:`check_hot`."""
-        _deprecated("Recorder.liveness", "Recorder.check_hot")
-        return self.check_hot
 
     # ---- collecting ----------------------------------------------------------------
 
