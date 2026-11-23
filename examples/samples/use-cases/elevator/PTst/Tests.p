@@ -129,6 +129,15 @@ machine CallWhilePassing {
   }
 }
 
+// The car is at floor 2 and is called to floor 0. The other passenger presses floor 2
+// again at any moment: once the car has left it, the car is heading down with requests
+// both behind it and ahead, and must keep going down before it turns.
+machine CallBehind {
+  start state Init {
+    entry { StartElevator(2, Floors1(0), Floors1(2), 0); }
+  }
+}
+
 // The doors are blocked twice before they close. The car must not move meanwhile, and
 // must still serve the other floor.
 machine ObstructedDoor {
@@ -188,6 +197,9 @@ test tcCallWhileClosing [main=CallWhileClosing]:
 
 test tcCallWhilePassing [main=CallWhilePassing]:
   assert DoorsAndMotion, RequestsServed in { CallWhilePassing, Controller, Motor, Door, Passenger };
+
+test tcCallBehind [main=CallBehind]:
+  assert DoorsAndMotion, RequestsServed in { CallBehind, Controller, Motor, Door, Passenger };
 
 test tcObstructedDoor [main=ObstructedDoor]:
   assert DoorsAndMotion, RequestsServed in { ObstructedDoor, Controller, Motor, Door, Passenger };
