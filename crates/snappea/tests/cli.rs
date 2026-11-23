@@ -426,6 +426,7 @@ fn live_observe_rejects_incompatible_inputs_before_loading_project() {
         (&["observe", "--spec", "Inventory", "a.log", "--record", "r"], "apply to live input"),
         (&["observe", "--spec", "Inventory"], "no logs given"),
         (&["observe", "--spec", "A", "--all-specs", "a.log"], "cannot be combined"),
+        (&["observe", "--spec", "A", "--exclude-spec", "B", "a.log"], "'--exclude-spec' needs '--all-specs'"),
     ] {
         assert_eq!(snappea(&mut h, args), 2, "{:?}", args);
         assert!(h.stderr.contains(err), "{:?}: {}", args, h.stderr);

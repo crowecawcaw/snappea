@@ -231,6 +231,9 @@ fn command_line_errors() {
     let usage = |h: &MemHost| h.stdout.contains("Usage: p observe [options]");
     let cases: &[(&[&str], &str)] = &[
         (&["-l", "run.log"], "The following option is required: [--spec]"),
+        // JCommander's required option comes first
+        (&["-l", "run.log", "--socket-mode"], "The following option is required: [--spec]"),
+        (&["--spec", "NeverOverdrawn", "--socket-mode"], "Socket mode (--socket-mode) is not supported by p observe."),
         (
             &["--spec", "NeverOverdrawn", "--jars", "x.jar"],
             "Was passed main parameter '--jars' but no main parameter was defined in your arg class",
@@ -416,7 +419,7 @@ fn clean_runs_write_an_empty_json_report() {
 fn spec_selection_errors() {
     let mut h = lock_host(&[]);
     let cases: &[(&[&str], &str)] = &[
-        (&["--spec", "MutualExclusion", "--all-specs"], "--spec and --all-specs cannot be combined."),
+        (&["--spec", "MutualExclusion", "--all-specs"], "'--spec' and '--all-specs' cannot be combined"),
         (&["--spec", "MutualExclusion", "--exclude-specs", "X"], "--exclude-specs needs --all-specs."),
         (&["--all-specs", "--exclude-specs", "Nope"], "--exclude-specs: there is no spec named Nope."),
     ];
@@ -712,7 +715,7 @@ fn live_inputs_merge_by_sequence_and_record_the_checked_order() {
     assert_eq!(recorded, [1, 2, 3]);
 
     assert_eq!(live(&mut h, &[]), 1);
-    assert!(h.stdout.contains("Several live inputs need --sequence"), "{}", h.stdout);
+    assert!(h.stdout.contains("several live inputs need --sequence"), "{}", h.stdout);
 
     // entries are located by their own input and line, not by check order
     h.add_file("b", &format!("{}\n{}", ev(1, "eDeposit", 10), r#"{"seq": 4, "key": "x", "event": "eDepost"}"#));
@@ -741,9 +744,10 @@ fn live_option_errors() {
     let cases: &[(&[&str], &str)] = &[
         (&["--stdin", "--live", "-", "--fail-fast"], "stdin can be read only once"),
         (&["--live", "a"], "requires both --stdin and --fail-fast"),
-        (&["-l", "run.log", "--sequence", "seq"], "--sequence and --record apply to live input"),
-        (&["-l", "run.log", "--record", "out.jsonl"], "--sequence and --record apply to live input"),
+        (&["-l", "run.log", "--sequence", "seq"], "'--sequence' and '--record' apply to live input"),
+        (&["-l", "run.log", "--record", "out.jsonl"], "'--sequence' and '--record' apply to live input"),
         (&["--live", "a", "-l", "run.log", "--fail-fast"], "cannot be combined with --logs"),
+        (&["--live", "a", "-ik", "json", "--fail-fast"], "requires TEXT input"),
     ];
     for (args, message) in cases {
         let args: Vec<&str> = ["--spec", "NeverOverdrawn"].into_iter().chain(args.iter().copied()).collect();
