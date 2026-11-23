@@ -9,7 +9,7 @@
 //!
 //! A request is JSON: `{"args": ["check", "m.p", "tcMain"], "files": {"path": "text"},
 //! "cwd": "/work", "seed": 42}`. The command runs against an in-memory file system holding
-//! `files` and runs [`snappea::cli::run`]; the response carries the exit code, console output and the complete file
+//! `files` and runs `snappea::cli::run` (the `snappea` command line); the response carries the exit code, console output and the complete file
 //! system afterwards (so a following request can pass it back in, e.g. to replay a
 //! schedule). `js/snappea.mjs` wraps this for JavaScript.
 //!

@@ -56,7 +56,7 @@ clones share a destination. `Emitter::callback(f)` calls `f` with each `Event` o
 emitting thread, under the emitter's lock, so `f` must be quick; the other production
 sinks write from a background thread.
 
-Emitting never panics, returns an error, or blocks on I/O. Production writers queue up
+In production, emitting never panics, returns an error, or blocks on I/O. Writers queue up
 to 16,384 lines and drop events when the queue is full or a write fails;
 `snappea::emit::dropped()` (or `Emitter::dropped()`) counts them. When off, `emit` costs a few atomic loads, but the
 payload is still built: guard costly payloads with `is_on()`. The events folder writer

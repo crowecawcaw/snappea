@@ -167,12 +167,11 @@ fn at(i: usize) -> Time {
 /// Whether `snappea::test` reports a violation for `ops`.
 fn test_fails(ops: &[Op]) -> Result<bool, String> {
     let recording = model().recording();
-    let sink = recording.sink();
     for (i, op) in ops.iter().enumerate() {
         let (event, payload) = op.event();
-        sink.emit_at(at(i), event, op.id(), payload).map_err(|e| e.to_string())?;
+        recording.emit_at(at(i), event, op.id(), payload);
     }
-    match recording.check() {
+    match recording.verify() {
         Ok(_) => Ok(false),
         Err(e) if e.violation().is_some() => Ok(true),
         Err(e) => Err(e.to_string()),

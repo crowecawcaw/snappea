@@ -1434,7 +1434,7 @@ fn driver_limits_show_what_the_driver_never_did() {
 
     h.add_file("lock.p", &lock_model("send server, eRelease, this;"));
     assert_eq!(
-        snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-facts", "--format", "text", "-v"]),
+        snappea(&mut h, &["check", "lock.p", "--no-mutation", "--no-driver-limits", "--format", "text", "-v"]),
         0
     );
     assert!(!h.stdout.contains("Driver limits"), "{}", h.stdout);

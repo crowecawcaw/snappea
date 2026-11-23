@@ -28,7 +28,8 @@ with the SKU as key, loads the spec once with `Model::load()` (from
 ## 1. Explicit checks for selected tests
 
 [tests/explicit.rs](tests/explicit.rs) creates `model().recording()`, builds the
-inventory on its sink, seeds stock, runs operations, and unwraps `recorder.check()`.
+inventory on its `recorder.emitter()`, seeds stock, runs operations, and unwraps
+`recorder.verify()`.
 It also asserts that rejected requests emit nothing, and has the negative control:
 `recorder.expect_violation("InventoryCorrect", "exceeds available stock")` returns the
 structured violation (`key`, `events`, ...) for further assertions. The last test

@@ -405,7 +405,7 @@ func (r *Recorder) run(ctx context.Context, trace []byte, count int, dirs []stri
 	} else {
 		args = append(args, "--all-specs")
 		if len(s.exclude) > 0 {
-			args = append(args, "--exclude-specs", strings.Join(s.exclude, ","))
+			args = append(args, "--exclude-spec", strings.Join(s.exclude, ","))
 		}
 	}
 	report := filepath.Join(r.dir, "report.json")

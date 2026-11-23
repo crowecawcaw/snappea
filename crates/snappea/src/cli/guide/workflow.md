@@ -63,8 +63,9 @@ a fixed variant only after the group is tried (`snappea guide modeling`).
   stop the search; bugs come first.
 - Each undetected mutant usually means a missing assertion: add it, or suppress an
   equivalent one with a reason.
-- Do not finish with `--no-mutation` or `--warn coverage`. Mutants not tested in
-  time: `snappea check mutation`, which allows longer.
+- Do not finish with `--no-mutation` or `--warn coverage`. For the final check, pass
+  `--deny mutation`, which also fails on mutants not tested in time; then run
+  `snappea check mutation`, which allows longer.
 - Without a hot spec state the check is safety only: a lock stuck forever passes.
   Keep a spec hot until each liveness risk from step 1 resolves, and give each
   timeout, lease or retry a test where it is the only way forward.

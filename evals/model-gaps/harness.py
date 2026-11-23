@@ -256,7 +256,7 @@ def write_model(dst: Path, task: str, bugs: list[str], tests: Path):
 def run_tests(model: Path, timeout: str = GRADE_TIMEOUT) -> dict:
     """Each test case's result with the snappea checker: ok, bug, or an error for the project."""
     r = subprocess.run([str(ROOT / "target/release/snappea"), "check", "Model.pproj", "--json", "--no-mutation",
-                        "--warn", "all", "--no-driver-facts", "--timeout", timeout, "--seed", "1", "--max-bugs", "1"],
+                        "--warn", "all", "--no-driver-limits", "--timeout", timeout, "--seed", "1", "--max-bugs", "1"],
                        cwd=model, text=True, capture_output=True)
     try:
         out = json.loads(r.stdout)

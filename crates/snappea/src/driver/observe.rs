@@ -441,7 +441,9 @@ fn select_specs(prog: &Program, cfg: &ObserveConfig, package: &str) -> Result<Ve
     }
     let is_spec = |m: &&crate::sema::MachineDecl| m.kind == MachineKind::Spec;
     for x in &cfg.exclude_specs {
-        if !prog.machines.iter().filter(is_spec).any(|m| &m.name == x) {
+        if cfg.lookup == Lookup::Exact {
+            select_spec(prog, x, package, Lookup::Exact).map_err(|e| format!("'--exclude-spec': {}", e))?;
+        } else if !prog.machines.iter().filter(is_spec).any(|m| &m.name == x) {
             return Err(format!("--exclude-specs: there is no spec named {}.", x));
         }
     }

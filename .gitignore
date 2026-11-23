@@ -41,3 +41,6 @@ crates/snappea/src/cli/guide/examples/**/PCheckerOutput/
 benchmarks/checker/results/
 benchmark-results/
 examples/samples/**/PCheckerOutput/
+
+# Checker output of a project with no name (`project::DEFAULT_NAME`), e.g. from a test
+generatedOutput*

@@ -153,7 +153,7 @@ P spec InventoryCorrect was broken: reservation exceeds available stock
         <h2 id="test-setup">Test setup</h2>
         <h3>A checked fixture</h3>
         <p>
-          <code>model.check(|recording| ...)</code> records while the closure runs, then checks and panics with the
+          <code>model.check(|recording| ...)</code> records while the closure runs, then verifies and panics with the
           failure output. Cargo has no global per-test hook, so each test opts in by calling it; put it in your existing
           fixture factory.
         </p>
@@ -179,12 +179,12 @@ P spec InventoryCorrect was broken: reservation exceeds available stock
         <p>The explicit form returns the result instead of panicking:</p>
         <Code lang="rust">{`
 let recording = MODEL.recording();
-let mut app = App::new(recording.sink());
+let mut app = App::new(recording.emitter());
 app.reserve("coffee", "o1", 2)?;
-recording.check()?; // Result<CheckReport, CheckError>
+recording.verify()?; // Result<CheckReport, CheckError>
 `}</Code>
         <p>
-          <code>check</code> consumes the recording; join worker threads and finish cleanup first.
+          <code>verify</code> consumes the recording; join worker threads and finish cleanup first.
         </p>
 
         <h3>Negative controls</h3>
@@ -206,7 +206,7 @@ proptest! {
     fn ops(commands in commands()) {
         let recording = MODEL.recording();
         // ... run commands against a fresh application ...
-        let checked = recording.check();
+        let checked = recording.verify();
         prop_assert!(checked.is_ok(), "{}", checked.unwrap_err());
     }
 }
@@ -240,20 +240,23 @@ emit_at(row.commit_time, "eReserved", sku, json!({"order": order, "units": units
             The call site is recorded with <code>#[track_caller]</code> and shown in failure reports.
           </li>
         </ul>
-        <p>Three ways to connect application code to a recording:</p>
+        <p>Three ways to get events into a recording:</p>
         <ul>
           <li>
-            The global <code>snappea::emit::emit</code>: a recording binds the thread that creates it. Bind threads the
-            test spawns with <code>let _guard = recording.sink().bind();</code>. With several recordings open and an
-            unbound thread, the emit fails them all, so bind or inject.
+            <code>recording.emit(...)</code> in the test body, for setup and events the test itself knows. A payload
+            that cannot be serialized fails <code>verify()</code>.
           </li>
           <li>
-            <code>recording.sink()</code>: a cloneable <code>EventSink</code> to inject, as in the explicit check
-            above. Its <code>emit</code> returns an error after the check.
+            <code>recording.emitter()</code>: a cloneable <code>snappea::emit::Emitter</code> to inject into application
+            code or move into threads, as in the explicit check above. It panics if used after{" "}
+            <code>verify()</code>.
           </li>
           <li>
-            <code>recording.emitter()</code>: a <code>snappea::emit::Emitter</code>, for code that takes one and gets a
-            production <code>Emitter</code> otherwise.
+            The global <code>snappea::emit::emit</code>: a recording binds the thread that creates it. Bind the scoped
+            threads the test spawns with <code>let _guard = recording.bind();</code>. For{" "}
+            <code>thread::spawn</code> threads, thread pools or async workers, move a{" "}
+            <code>recording.binder()</code> in and call <code>binder.bind()</code> there. With several recordings open and an unbound thread, the emit fails them all, so
+            bind or inject.
           </li>
         </ul>
 
@@ -270,7 +273,7 @@ snappea::emit::close(); // writes what is queued
 snappea observe specs/inventory.p '/var/log/app/events/*.jsonl' --spec InventoryCorrect
 `}</Code>
         <p>
-          Emitting never panics, returns an error, or blocks on I/O. Writers queue up to 16,384 lines and drop events
+          In production, emitting never panics, returns an error, or blocks on I/O. Writers queue up to 16,384 lines and drop events
           when the queue is full or a write fails; <code>snappea::emit::dropped()</code> counts them. With no sink,{" "}
           <code>emit</code> costs a few atomic loads, but the payload is still built; code holding an{" "}
           <code>Emitter</code> can skip a costly one with <code>is_on()</code>.
@@ -285,12 +288,12 @@ Command::new(server_bin).envs(recording.env()).status()?;   // sets SNAPPEA_EVEN
 recording.add_events_dir("/shared/events");                  // a folder the test did not create
 recording.add_log("logs/events.jsonl");                      // JSON event lines
 recording.add_log_with("logs/app.log", |line| parse(line));  // -> Option<Value>
-recording.check()?;
+recording.verify()?;
 `}</Code>
         <p>
           A child process that calls <code>snappea::emit::emit</code> writes to <code>recording.events_dir()</code>{" "}
           through <code>SNAPPEA_EVENTS_DIR</code>; anything else can write the same JSON lines there. Stop or join
-          children before the check. A failed check keeps the folder and names it.
+          children before <code>verify()</code>. A failed check keeps the folder and names it.
         </p>
       </section>
 
@@ -298,12 +301,12 @@ recording.check()?;
         <h2 id="failures">Failures</h2>
         <p>
           A failure shows the spec's assert message, the events of the key that broke it (the last 20) with where each
-          was emitted, and the assert in the P file. <code>Model::check</code> panics with it; <code>check()</code>{" "}
+          was emitted, and the assert in the P file. <code>Model::check</code> panics with it; <code>verify()</code>{" "}
           returns <code>CheckError::Violation(SpecViolation)</code> or <code>CheckError::Setup(SetupError)</code>.
           Assert on fields, not text:
         </p>
         <Code lang="rust">{`
-let Err(CheckError::Violation(v)) = recording.check() else { panic!() };
+let Err(CheckError::Violation(v)) = recording.verify() else { panic!() };
 assert_eq!((v.spec.as_str(), v.key.as_str()), ("InventoryCorrect", "coffee"));
 // v.message, v.location (P assert file:line), v.events (last 20, with src),
 // v.liveness (hot state under check_hot), v.others (more violations)

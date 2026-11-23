@@ -419,7 +419,7 @@ class Recorder:
         else:
             cmd += ["--all-specs"]
             if s.exclude:
-                cmd += ["--exclude-specs", ",".join(s.exclude)]
+                cmd += ["--exclude-spec", ",".join(s.exclude)]
         cmd += ["--json-report", report_path, "--unknown-events", s.unknown_events]
         if s.check_hot:
             cmd.append("--check-hot")

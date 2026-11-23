@@ -160,7 +160,7 @@ fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
     assert_eq!(result["warnings"]["lint"], 1, "{}", result);
     assert!(result["warnings"]["coverage"].as_u64().unwrap() > 0, "{}", result);
     h.env.remove("SNAPPEA_FORMAT");
-    // other checks keep their defaults, and a single check overrides `all`
+    // other checks keep their defaults, and a later single check overrides `all`
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint"]), 1, "{}{}", h.stdout, h.stderr);
     assert!(h.stdout.contains("Coverage requirements were not met"), "{}", h.stdout);
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "all", "--deny", "lint"]), 2);
@@ -176,7 +176,7 @@ fn warn_lint_reports_findings_as_warnings_and_checks_anyway() {
 }
 
 #[test]
-fn warn_and_deny_reject_unknown_and_conflicting_checks() {
+fn warn_and_deny_reject_unknown_checks_and_apply_in_order() {
     let mut h = MemHost::new("/w");
     h.add_file("model.p", MODEL);
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lints"]), 2);
@@ -185,10 +185,17 @@ fn warn_and_deny_reject_unknown_and_conflicting_checks() {
         "{}",
         h.stderr
     );
+    // the last flag naming a check wins
     assert_eq!(run(&mut h, &["check", "model.p", "--warn", "lint", "--deny", "lint"]), 2);
-    assert!(h.stderr.contains("'--warn lint' and '--deny lint' conflict: use one"), "{}", h.stderr);
+    assert!(h.stderr.contains("error[permissive-monitor]"), "{}", h.stderr);
+    assert_eq!(run(&mut h, &["check", "model.p", "--deny", "lint", "--warn", "all"]), 0, "{}{}", h.stdout, h.stderr);
     assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation", "--deny", "mutation"]), 2);
     assert!(h.stderr.contains("use only one of '--no-mutation' and '--deny mutation'"), "{}", h.stderr);
+    // only the final gate counts, and `all` does not conflict
+    let args = ["check", "model.p", "--no-mutation", "--deny", "mutation", "--warn", "all"];
+    assert_eq!(run(&mut h, &args), 0, "{}{}", h.stdout, h.stderr);
+    run(&mut h, &["check", "model.p", "--no-mutation", "--deny", "all"]);
+    assert!(h.stderr.contains("error[permissive-monitor]") && !h.stderr.contains("use only one"), "{}", h.stderr);
     assert_eq!(run(&mut h, &["check", "model.p", "--allow-incomplete-coverage"]), 2);
     assert!(
         h.stderr.contains("unknown option '--allow-incomplete-coverage': it was renamed, use '--warn coverage'"),

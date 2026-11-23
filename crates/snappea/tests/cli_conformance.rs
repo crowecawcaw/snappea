@@ -124,7 +124,7 @@ fn run_case(case: &Path, expect: &Value) -> Result<(), String> {
     if specs.is_empty() {
         args.push("--all-specs".into());
         if !exclude.is_empty() {
-            args.push("--exclude-specs".into());
+            args.push("--exclude-spec".into());
             args.push(exclude.join(","));
         }
     } else {

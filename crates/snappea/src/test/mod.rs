@@ -11,7 +11,7 @@ pub use crate::checker::observe_report::ObserveCoverageReport;
 pub use crate::emit::{json, Emitter, Event, Time, Value, EVENTS_DIR_ENV};
 use config::Mode;
 pub use errors::{CheckError, ErrorKind, SetupError, SpecViolation};
-pub use routing::BindGuard;
+pub use routing::{BindGuard, Binder};
 
 use std::ffi::OsString;
 use std::fmt::Display;
@@ -130,13 +130,9 @@ impl Model {
             map.add(*name, *source);
         }
         let analysis = crate::sema::compile(&map, &Default::default()).map_err(|e| {
-            config(match e {
-                crate::sema::CompileError::Parse { file, message, .. } => format!("{}: {message}", map.file(file).name),
-                crate::sema::CompileError::NotSupported { file, line, col, keyword } => {
-                    format!("{}:{line}:{col}: unsupported syntax '{keyword}'", map.file(file).name)
-                }
-                crate::sema::CompileError::Analysis(error) => error.messages(&map).join("\n"),
-            })
+            let errors: Vec<String> =
+                crate::project::render_errors(&map, &e).iter().map(|e| e.trim_end().to_string()).collect();
+            config(errors.join("\n\n"))
         })?;
         // the spec rules `snappea observe` enforces
         let findings = snappea_lint::lint_observation(&map).map_err(|e| config(e.message))?;
@@ -201,14 +197,16 @@ impl Model {
 
     /// A new recording. Every recording starts with fresh spec instances.
     /// It binds the current thread: global [`snappea::emit::emit`](crate::emit::emit) calls made on it go to this
-    /// recording until it is checked or dropped.
+    /// recording until it is verified or dropped. Emit from the test body with
+    /// [`Recording::emit`], inject [`Recording::emitter`] into application code, or bind
+    /// other threads with [`Recording::bind`].
     pub fn recording(&self) -> Recording {
-        let sink = EventSink::default();
-        routing::open(&sink.state);
-        Recording { model: self.clone(), sink, inputs: Mutex::default(), root: OnceLock::new(), done: false }
+        let state = Arc::default();
+        routing::open(&state);
+        Recording { model: self.clone(), state, inputs: Mutex::default(), root: OnceLock::new(), done: false }
     }
 
-    /// Runs `body` with a new recording, then checks it, panicking with the failure
+    /// Runs `body` with a new recording, then verifies it, panicking with the failure
     /// output if the check fails. Put setup and cleanup inside `body`. A panic in `body`
     /// propagates unchanged, without a check. With `SNAPPEA_MODE=off`, nothing is checked.
     #[track_caller]
@@ -217,7 +215,7 @@ impl Model {
         let recording = self.recording();
         let value = body(&recording);
         if mode != Mode::Off {
-            if let Err(e) = recording.check() {
+            if let Err(e) = recording.verify() {
                 panic!("{e}");
             }
         }
@@ -337,86 +335,12 @@ struct Buffer {
     errors: Vec<(ErrorKind, String)>,
 }
 
-/// A recording's in-process event sink: cloneable, `Send` and `Sync`. Clones share one
-/// ordered recording. Emit after the operation commits.
-#[derive(Debug, Clone, Default)]
-pub struct EventSink {
-    state: Arc<Mutex<Buffer>>,
-}
-
 fn closed_error() -> SetupError {
-    config("emitted into a recording that was already checked: join producer threads before check()")
+    config("emitted into a recording that was already verified or dropped: join producer threads before verify()")
 }
 
-impl EventSink {
-    /// Records `event` on stream `key` now. `payload` is any `Serialize` value whose JSON
-    /// matches the P payload type (`json!({...})`, a struct, a scalar, or `()`). Fails
-    /// after the recording was checked.
-    #[track_caller]
-    pub fn emit(&self, event: &str, key: impl Display, payload: impl serde::Serialize) -> Result<(), SetupError> {
-        self.push(None, event, key, payload)
-    }
-
-    /// [`emit`](Self::emit) at a given time: a `SystemTime`, or `i64` epoch nanoseconds
-    /// (any increasing counter). Events are checked in time order per key.
-    #[track_caller]
-    pub fn emit_at(
-        &self,
-        at: impl Into<Time>,
-        event: &str,
-        key: impl Display,
-        payload: impl serde::Serialize,
-    ) -> Result<(), SetupError> {
-        self.push(Some(at.into()), event, key, payload)
-    }
-
-    #[track_caller]
-    fn push(
-        &self,
-        at: Option<Time>,
-        event: &str,
-        key: impl Display,
-        payload: impl serde::Serialize,
-    ) -> Result<(), SetupError> {
-        let payload = serde_json::to_value(payload).map_err(|e| SetupError {
-            kind: ErrorKind::Parser,
-            message: format!("the payload of {event} cannot be serialized: {e}"),
-            artifacts: None,
-        })?;
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if state.closed {
-            return Err(closed_error());
-        }
-        // Stamped under the lock, so recording order and time order agree.
-        state.events.push(Event::new(at, event, key, payload));
-        Ok(())
-    }
-
-    /// An [`Emitter`] (from [`snappea::emit`](crate::emit)) that records into this sink, for application
-    /// code instrumented with `snappea::emit`. Emitting through it after the check panics.
-    pub fn emitter(&self) -> Emitter {
-        let weak: Weak<Mutex<Buffer>> = Arc::downgrade(&self.state);
-        let emitter = Emitter::callback(move |event| {
-            let Some(state) = weak.upgrade() else { panic!("{}", closed_error()) };
-            let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
-            if state.closed {
-                drop(state);
-                panic!("{}", closed_error());
-            }
-            state.events.push(event);
-        });
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).emitters.push(emitter.clone());
-        emitter
-    }
-
-    /// Events received so far.
-    pub fn len(&self) -> usize {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).events.len()
-    }
-    /// No events received yet.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+fn lock(state: &Mutex<Buffer>) -> std::sync::MutexGuard<'_, Buffer> {
+    state.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 type LogParse = Box<dyn Fn(&str) -> Option<Value> + Send + Sync>;
@@ -427,11 +351,11 @@ enum Input {
 }
 
 /// Events recorded for one check: in-process events, the recording's events folder,
-/// and any folders or logs added. Check it after cleanup, with producers joined.
-/// Nothing is checked on drop.
+/// and any folders or logs added. [`verify`](Self::verify) it after cleanup, with
+/// producers joined. Nothing is checked on drop.
 pub struct Recording {
     model: Model,
-    sink: EventSink,
+    state: Arc<Mutex<Buffer>>,
     inputs: Mutex<Vec<Input>>,
     root: OnceLock<PathBuf>,
     done: bool,
@@ -439,46 +363,73 @@ pub struct Recording {
 
 impl std::fmt::Debug for Recording {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Recording").field("events", &self.sink.len()).field("folder", &self.root.get()).finish()
+        f.debug_struct("Recording").field("events", &self.len()).field("folder", &self.root.get()).finish()
     }
 }
 
 impl Recording {
-    /// A handle for application code; clones share this recording.
-    pub fn sink(&self) -> EventSink {
-        self.sink.clone()
+    /// Records `event` on stream `key` now, from the test body. `payload` is any
+    /// `Serialize` value whose JSON matches the P payload type (`json!({...})`, a struct,
+    /// a scalar, or `()`). A payload that cannot be serialized fails [`verify`](Self::verify).
+    ///
+    /// ```ignore
+    /// recording.emit("eStocked", "coffee", json!({"units": 3}));
+    /// ```
+    #[track_caller]
+    pub fn emit(&self, event: &str, key: impl Display, payload: impl serde::Serialize) {
+        self.push(None, event, key, payload)
     }
 
-    /// An [`Emitter`] recording into this recording (see [`EventSink::emitter`]).
+    /// [`emit`](Self::emit) at a given time: a `SystemTime`, or `i64` epoch nanoseconds
+    /// (any increasing counter). Events are checked in time order per key.
+    #[track_caller]
+    pub fn emit_at(&self, at: impl Into<Time>, event: &str, key: impl Display, payload: impl serde::Serialize) {
+        self.push(Some(at.into()), event, key, payload)
+    }
+
+    #[track_caller]
+    fn push(&self, at: Option<Time>, event: &str, key: impl Display, payload: impl serde::Serialize) {
+        let mut state = lock(&self.state);
+        match serde_json::to_value(payload) {
+            // Stamped under the lock, so recording order and time order agree.
+            Ok(payload) => state.events.push(Event::new(at, event, key, payload)),
+            Err(e) => {
+                let at = std::panic::Location::caller();
+                let message = format!("the payload of {event} ({}:{}) cannot be serialized: {e}", at.file(), at.line());
+                state.errors.push((ErrorKind::Parser, message));
+            }
+        }
+    }
+
+    /// An [`Emitter`] (from [`snappea::emit`](crate::emit)) that records into this
+    /// recording. Inject it into application code that takes one, or move it into
+    /// threads. Emitting through it after [`verify`](Self::verify) panics.
+    ///
+    /// ```ignore
+    /// let mut app = App::new(recording.emitter());
+    /// ```
     pub fn emitter(&self) -> Emitter {
-        self.sink.emitter()
-    }
-
-    /// [`EventSink::emit`].
-    #[track_caller]
-    pub fn emit(&self, event: &str, key: impl Display, payload: impl serde::Serialize) -> Result<(), SetupError> {
-        self.sink.push(None, event, key, payload)
-    }
-
-    /// [`EventSink::emit_at`].
-    #[track_caller]
-    pub fn emit_at(
-        &self,
-        at: impl Into<Time>,
-        event: &str,
-        key: impl Display,
-        payload: impl serde::Serialize,
-    ) -> Result<(), SetupError> {
-        self.sink.push(Some(at.into()), event, key, payload)
+        let weak: Weak<Mutex<Buffer>> = Arc::downgrade(&self.state);
+        let emitter = Emitter::callback(move |event| {
+            let Some(state) = weak.upgrade() else { panic!("{}", closed_error()) };
+            let mut state = lock(&state);
+            if state.closed {
+                drop(state);
+                panic!("{}", closed_error());
+            }
+            state.events.push(event);
+        });
+        lock(&self.state).emitters.push(emitter.clone());
+        emitter
     }
 
     /// In-process events so far.
     pub fn len(&self) -> usize {
-        self.sink.len()
+        lock(&self.state).events.len()
     }
     /// No in-process events yet.
     pub fn is_empty(&self) -> bool {
-        self.sink.is_empty()
+        self.len() == 0
     }
 
     fn root(&self) -> &Path {
@@ -541,21 +492,21 @@ impl Recording {
         self
     }
 
-    /// Checks everything recorded. Fails with a [`SpecViolation`] or a [`SetupError`];
-    /// a failure keeps the recording's folder and names it.
-    pub fn check(mut self) -> Result<CheckReport, CheckError> {
+    /// Checks everything recorded against the specs. Fails with a [`SpecViolation`] or
+    /// a [`SetupError`]; a failure keeps the recording's folder and names it.
+    pub fn verify(mut self) -> Result<CheckReport, CheckError> {
         self.finish(true)
     }
 
-    /// Requires the check to break `spec` with a message matching the regular
+    /// Verifies, requiring the events to break `spec` with a message matching the regular
     /// expression `pattern` (searched), and no other spec. Returns the violation;
     /// panics otherwise. A negative control: shows the spec catches a known bug.
     #[track_caller]
     pub fn expect_violation(mut self, spec: &str, pattern: &str) -> SpecViolation {
         let re = regex::Regex::new(pattern).unwrap_or_else(|e| panic!("expect_violation: bad pattern: {e}"));
         let violation = match self.finish(false) {
-            Ok(_) => panic!("expected P spec {spec} to be violated (matching {pattern:?}), but the check passed"),
-            Err(CheckError::Setup(e)) => panic!("expected P spec {spec} to be violated, but the check failed:\n{e}"),
+            Ok(_) => panic!("expected P spec {spec} to be violated (matching {pattern:?}), but verification passed"),
+            Err(CheckError::Setup(e)) => panic!("expected P spec {spec} to be violated, but verification failed:\n{e}"),
             Err(CheckError::Violation(v)) => *v,
         };
         let mut all = vec![violation.clone()];
@@ -574,10 +525,9 @@ impl Recording {
 
     fn finish(&mut self, keep_artifacts: bool) -> Result<CheckReport, CheckError> {
         self.done = true;
-        routing::close(&self.sink.state);
+        routing::close(&self.state);
         let (events, failed) = {
-            let mut state = self.sink.state.lock().unwrap_or_else(|e| e.into_inner());
-            state.closed = true;
+            let mut state = lock(&self.state);
             let dropped: u64 = state.emitters.iter().map(Emitter::dropped).sum();
             let failed = if let Some(&(kind, _)) = state.errors.first() {
                 let message = state.errors.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>().join("\n");
@@ -729,7 +679,7 @@ impl Recording {
 impl Drop for Recording {
     fn drop(&mut self) {
         if !self.done {
-            routing::close(&self.sink.state);
+            routing::close(&self.state);
             if let Some(root) = self.root.get() {
                 let _ = std::fs::remove_dir_all(root);
             }

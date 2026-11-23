@@ -48,10 +48,10 @@ fn payload_forms() {
     let model = model();
     for pair in [json!({"order":"a","units":1}), json!(["a", 1])] {
         let recording = model.recording();
-        recording.emit("Stock", "coffee", 2).unwrap();
-        recording.emit("Pair", "coffee", pair).unwrap();
-        recording.emit("Done", "coffee", ()).unwrap();
-        let checked = recording.check().unwrap();
+        recording.emit("Stock", "coffee", 2);
+        recording.emit("Pair", "coffee", pair);
+        recording.emit("Done", "coffee", ());
+        let checked = recording.verify().unwrap();
         assert_eq!(checked.specs(), ["Inventory", "Finishes"]);
         assert_eq!(checked.verified_events(), 5);
     }
@@ -61,17 +61,17 @@ fn payload_forms() {
         units: i64,
     }
     let recording = model.clone().specs(["Inventory"]).recording();
-    recording.emit("Stock", "tea", 1).unwrap();
-    recording.emit("Pair", "tea", Pair { order: "o".into(), units: 1 }).unwrap();
-    assert_eq!(recording.check().unwrap().verified_events(), 2);
+    recording.emit("Stock", "tea", 1);
+    recording.emit("Pair", "tea", Pair { order: "o".into(), units: 1 });
+    assert_eq!(recording.verify().unwrap().verified_events(), 2);
 }
 
 #[test]
 fn invalid_payloads_are_parser_errors_naming_the_emit() {
     for (name, payload) in [("Stock", json!("wrong")), ("Stock", json!(null)), ("Done", json!(1))] {
         let recording = model().recording();
-        recording.emit(name, "coffee", payload).unwrap();
-        let e = setup_error(recording.check());
+        recording.emit(name, "coffee", payload);
+        let e = setup_error(recording.verify());
         assert_eq!(e.kind, ErrorKind::Parser);
         assert!(e.message.contains(name) && e.message.contains("tests/test_integration.rs:"), "{e}");
     }
@@ -80,24 +80,24 @@ fn invalid_payloads_are_parser_errors_naming_the_emit() {
 #[test]
 fn unknown_events_error_by_default_and_point_at_the_emit() {
     let recording = model().recording();
-    recording.emit("Stock", "coffee", 1).unwrap();
-    recording.emit("Stok", "coffee", 1).unwrap();
-    let e = setup_error(recording.check());
+    recording.emit("Stock", "coffee", 1);
+    recording.emit("Stok", "coffee", 1);
+    let e = setup_error(recording.verify());
     assert_eq!(e.kind, ErrorKind::UnknownEvent);
     assert!(e.message.contains("'Stok'") && e.message.contains("did you mean Stock?"), "{e}");
     assert!(e.message.contains("first at crates/snappea/tests/test_integration.rs:"), "{e}");
 
     // Declared but unobserved events are always ignored.
     let recording = model().recording();
-    recording.emit("Stock", "coffee", 1).unwrap();
-    recording.emit("Unobserved", "coffee", json!({"any": "thing"})).unwrap();
-    recording.check().unwrap();
+    recording.emit("Stock", "coffee", 1);
+    recording.emit("Unobserved", "coffee", json!({"any": "thing"}));
+    recording.verify().unwrap();
 
     for policy in [UnknownEvents::Warn, UnknownEvents::Ignore] {
         let recording = model().unknown_events(policy).recording();
-        recording.emit("Stock", "coffee", 1).unwrap();
-        recording.emit("Stok", "coffee", 1).unwrap();
-        let report = recording.check().unwrap();
+        recording.emit("Stock", "coffee", 1);
+        recording.emit("Stok", "coffee", 1);
+        let report = recording.verify().unwrap();
         assert_eq!(report.warnings().len(), usize::from(policy == UnknownEvents::Warn));
     }
 }
@@ -105,20 +105,20 @@ fn unknown_events_error_by_default_and_point_at_the_emit() {
 #[test]
 fn spec_selection_and_strict_defaults() {
     // All specs, not strict: an empty recording passes without checking.
-    assert!(model().recording().check().unwrap().specs().is_empty());
+    assert!(model().recording().verify().unwrap().specs().is_empty());
     // Named specs are strict.
-    let e = setup_error(model().specs(["Inventory"]).recording().check());
+    let e = setup_error(model().specs(["Inventory"]).recording().verify());
     assert_eq!(e.kind, ErrorKind::Validation);
     assert!(e.message.contains("Inventory"));
-    model().specs(["Inventory"]).strict(false).recording().check().unwrap();
+    model().specs(["Inventory"]).strict(false).recording().verify().unwrap();
     // exclude, and unknown names.
     let recording = model().exclude(["Finishes"]).check_hot(true).recording();
-    recording.emit("Stock", "k", 1).unwrap();
-    assert_eq!(recording.check().unwrap().specs(), ["Inventory"]);
+    recording.emit("Stock", "k", 1);
+    assert_eq!(recording.verify().unwrap().specs(), ["Inventory"]);
     for m in [model().specs(["Missing"]), model().exclude(["Missing"])] {
         let recording = m.recording();
-        recording.emit("Stock", "k", 1).unwrap();
-        let e = setup_error(recording.check());
+        recording.emit("Stock", "k", 1);
+        let e = setup_error(recording.verify());
         assert_eq!(e.kind, ErrorKind::Config);
         assert!(e.message.contains("Missing") && e.message.contains("Inventory, Finishes"), "{e}");
     }
@@ -127,10 +127,10 @@ fn spec_selection_and_strict_defaults() {
 #[test]
 fn violations_are_structured_and_formatted_like_python() {
     let recording = model().recording();
-    recording.emit("Stock", "coffee", 1).unwrap();
-    recording.emit("Stock", "tea", 1).unwrap();
-    recording.emit_at(snappea::test::Time::now(), "Pair", "coffee", json!({"order": "o1", "units": 2})).unwrap();
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    recording.emit("Stock", "coffee", 1);
+    recording.emit("Stock", "tea", 1);
+    recording.emit_at(snappea::test::Time::now(), "Pair", "coffee", json!({"order": "o1", "units": 2}));
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     assert_eq!((v.spec.as_str(), v.key.as_str(), v.message.as_str()), ("Inventory", "coffee", "oversold"));
     assert_eq!(v.location.as_deref(), Some("inventory.p:12"));
     assert!(!v.liveness && v.others.is_empty());
@@ -148,9 +148,9 @@ fn violations_are_structured_and_formatted_like_python() {
 #[test]
 fn liveness_and_further_violations() {
     let recording = model().check_hot(true).recording();
-    recording.emit("Stock", "a", 1).unwrap();
-    recording.emit("Stock", "b", -1).unwrap();
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    recording.emit("Stock", "a", 1);
+    recording.emit("Stock", "b", -1);
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     let all: Vec<_> = std::iter::once(&*v).chain(&v.others).collect();
     assert_eq!(all.len(), 3, "{v}");
     let hot = all.iter().find(|v| v.liveness).unwrap();
@@ -162,41 +162,53 @@ fn liveness_and_further_violations() {
 #[test]
 fn expect_violation() {
     let recording = model().specs(["Inventory"]).recording();
-    recording.emit("Pair", "coffee", json!(["o1", 1])).unwrap();
+    recording.emit("Pair", "coffee", json!(["o1", 1]));
     let v = recording.expect_violation("Inventory", "over.old");
     assert_eq!(v.key, "coffee");
 
     let passes = model().recording();
-    passes.emit("Stock", "coffee", 1).unwrap();
+    passes.emit("Stock", "coffee", 1);
     let panic = std::panic::catch_unwind(|| passes.expect_violation("Inventory", "oversold")).unwrap_err();
-    assert!(panic.downcast_ref::<String>().unwrap().contains("but the check passed"));
+    assert!(panic.downcast_ref::<String>().unwrap().contains("but verification passed"));
 
     let other = model().recording();
-    other.emit("Pair", "coffee", json!(["o1", 1])).unwrap();
+    other.emit("Pair", "coffee", json!(["o1", 1]));
     let panic = std::panic::catch_unwind(|| other.expect_violation("Inventory", "negative")).unwrap_err();
     assert!(panic.downcast_ref::<String>().unwrap().contains("no message matches"));
 }
 
 #[test]
-fn late_events_fail_and_sinks_work_across_threads() {
+fn late_events_panic_and_emitters_work_across_threads() {
     fn require_send_sync<T: Send + Sync>() {}
-    require_send_sync::<snappea::test::EventSink>();
+    require_send_sync::<snappea::test::Emitter>();
     require_send_sync::<snappea::test::Recording>();
     let recording = model().specs(["Inventory"]).recording();
     let handles: Vec<_> = (0..4)
         .map(|i| {
-            let sink = recording.sink();
-            std::thread::spawn(move || sink.emit("Stock", format!("product-{i}"), 1).unwrap())
+            let emitter = recording.emitter();
+            std::thread::spawn(move || emitter.emit("Stock", format!("product-{i}"), 1))
         })
         .collect();
     for h in handles {
         h.join().unwrap();
     }
-    let late = recording.sink();
+    std::thread::scope(|s| {
+        s.spawn(|| recording.emit("Stock", "scoped", 1));
+    });
     let emitter = recording.emitter();
-    assert_eq!(recording.check().unwrap().verified_events(), 4);
-    assert_eq!(late.emit("Stock", "coffee", 1).unwrap_err().kind, ErrorKind::Config);
+    assert_eq!(recording.verify().unwrap().verified_events(), 5);
     assert!(std::panic::catch_unwind(|| emitter.emit("Stock", "coffee", 1)).is_err());
+}
+
+#[test]
+fn unserializable_payloads_fail_verify_naming_the_emit() {
+    let recording = model().recording();
+    let mut bad = std::collections::HashMap::new();
+    bad.insert((1, 2), 3);
+    recording.emit("Stock", "coffee", bad);
+    let e = setup_error(recording.verify());
+    assert_eq!(e.kind, ErrorKind::Parser);
+    assert!(e.message.contains("Stock") && e.message.contains("tests/test_integration.rs:"), "{e}");
 }
 
 #[test]
@@ -205,7 +217,7 @@ fn emitter_records_in_process() {
     let emitter = recording.emitter();
     emitter.emit("Stock", "coffee", 1);
     emitter.emit("Pair", "coffee", json!({"order": "o", "units": 2}));
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     assert!(v.events[1].src.as_deref().unwrap().contains("integration.rs"));
 }
 
@@ -216,7 +228,7 @@ fn unrecordable_events_keep_the_folder_like_other_failures() {
     let mut bad = std::collections::HashMap::new();
     bad.insert((1, 2), 3);
     recording.emitter().emit("Stock", "coffee", bad);
-    let e = setup_error(recording.check());
+    let e = setup_error(recording.verify());
     assert_eq!(e.kind, ErrorKind::Parser);
     let artifacts = e.artifacts.expect("a failed check keeps its folder");
     assert_eq!(artifacts.join("events"), dir);
@@ -227,9 +239,9 @@ fn unrecordable_events_keep_the_folder_like_other_failures() {
 #[test]
 fn explicit_times_order_events() {
     let recording = model().specs(["Inventory"]).recording();
-    recording.emit_at(20, "Pair", "coffee", json!(["o", 1])).unwrap();
-    recording.emit_at(10, "Stock", "coffee", 1).unwrap();
-    recording.check().unwrap();
+    recording.emit_at(20, "Pair", "coffee", json!(["o", 1]));
+    recording.emit_at(10, "Stock", "coffee", 1);
+    recording.verify().unwrap();
 }
 
 #[test]
@@ -242,11 +254,11 @@ fn coverage_merges_into_one_file_from_many_threads() {
             let model = model.clone();
             std::thread::spawn(move || {
                 let recording = model.recording();
-                recording.emit("Stock", "k", 1).unwrap();
+                recording.emit("Stock", "k", 1);
                 if i % 2 == 0 {
-                    recording.emit("Done", "k", ()).unwrap();
+                    recording.emit("Done", "k", ());
                 }
-                recording.check().unwrap();
+                recording.verify().unwrap();
             })
         })
         .collect();
@@ -265,27 +277,30 @@ fn coverage_merges_into_one_file_from_many_threads() {
 fn closure_checks_after_the_body_and_preserves_panics() {
     let model = model();
     let answer = model.check(|r| {
-        r.emit("Stock", "coffee", 1).unwrap();
+        r.emit("Stock", "coffee", 1);
         42
     });
     assert_eq!(answer, 42);
     let panic = std::panic::catch_unwind(|| model.check(|_| panic!("primary failure"))).unwrap_err();
     assert_eq!(panic.downcast_ref::<&str>(), Some(&"primary failure"));
     let panic = std::panic::catch_unwind(|| {
-        model.check(|r| r.emit("Stock", "coffee", -1).unwrap());
+        model.check(|r| r.emit("Stock", "coffee", -1));
     })
     .unwrap_err();
     assert!(panic.downcast_ref::<String>().unwrap().starts_with("P spec Inventory was broken: negative stock"));
 }
 
 #[test]
-fn compile_errors_name_the_file() {
-    let e = Model::compile(&[("broken.p", "spec {")]).unwrap_err();
+fn compile_errors_show_the_source_and_a_fix() {
+    let e = Model::compile(&[("broken.p", "event E;\nspec {")]).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Config);
-    assert!(e.message.contains("broken.p"), "{e}");
-    let e = Model::compile(&[("types.p", "event E; spec S observes E { start state A { entry { absent = 1; } } }")])
-        .unwrap_err();
-    assert!(e.message.contains("types.p") && e.message.contains("absent"), "{e}");
+    assert!(e.message.contains("--> broken.p:2:"), "{e}");
+    assert!(e.message.contains("2 | spec {") && e.message.contains("= help: "), "{e}");
+    let e =
+        Model::compile(&[("types.p", "event E;\nspec S observes E {\n  start state A { entry { absent = 1; } }\n}")])
+            .unwrap_err();
+    assert!(e.message.contains("--> types.p:3:") && e.message.contains("absent"), "{e}");
+    assert!(e.message.contains("^^^^^^") && e.message.contains("= help: "), "{e}");
 }
 
 #[test]
@@ -297,8 +312,8 @@ fn files_folders_globs_and_cargo_metadata() {
     for path in ["specs", "specs/*", "specs/inventory.p"] {
         let model = Model::from_files([dir.join(path)]).unwrap();
         let recording = model.recording();
-        recording.emit("Stock", "k", 1).unwrap();
-        assert_eq!(recording.check().unwrap().specs().len(), 2, "{path}");
+        recording.emit("Stock", "k", 1);
+        assert_eq!(recording.verify().unwrap().specs().len(), 2, "{path}");
     }
     assert_eq!(Model::from_files([dir.join("missing.p")]).unwrap_err().kind, ErrorKind::Config);
 
@@ -311,12 +326,12 @@ fn files_folders_globs_and_cargo_metadata() {
     .unwrap();
     let model = Model::load_manifest(&manifest).unwrap();
     // Named specs: strict. mode = "off": the fixture does not check.
-    setup_error(model.recording().check());
+    setup_error(model.recording().verify());
     model.check(|_| {});
     // The coverage path is relative to Cargo.toml.
     let recording = model.recording();
-    recording.emit("Stock", "k", 1).unwrap();
-    recording.check().unwrap();
+    recording.emit("Stock", "k", 1);
+    recording.verify().unwrap();
     assert!(dir.join("target/cov.json").is_file());
 
     std::fs::write(&manifest, "[package.metadata.snappea]\nspec_files = [\"specs\"]\nspecz = []\n").unwrap();
@@ -350,11 +365,11 @@ fn child_writer() {
 #[test]
 fn events_from_a_child_process() {
     let recording = model().specs(["Inventory"]).recording();
-    recording.emit("Stock", "tea", 1).unwrap();
+    recording.emit("Stock", "tea", 1);
     run_child("child_writer", recording.env());
     let files: Vec<_> = std::fs::read_dir(recording.events_dir()).unwrap().collect();
     assert_eq!(files.len(), 1);
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     assert_eq!(v.key, "coffee");
     assert_eq!(v.events[1].payload["order"], "child");
     assert!(v.events[1].src.as_deref().unwrap().contains("integration.rs"));
@@ -369,7 +384,7 @@ fn spec_files_and_mode_from_the_environment() {
     if std::env::var("SNAPPEA_TEST_CHILD").as_deref() == Ok("spec_files_and_mode_from_the_environment") {
         let model = Model::load_manifest(std::env::var("MANIFEST").unwrap()).unwrap();
         // SNAPPEA_MODE=off overrides the file's mode = "auto".
-        model.check(|r| r.emit("Stock", "k", -1).unwrap());
+        model.check(|r| r.emit("Stock", "k", -1));
         return;
     }
     let dir = temp("env");
@@ -401,14 +416,14 @@ fn added_folders_and_logs() {
     std::fs::write(dir.join("app.log"), "INFO boot\nINFO reserved k 5\n").unwrap();
     let recording = model().specs(["Inventory"]).recording();
     recording.add_events_dir(dir.join("service")).add_log(dir.join("events.log"));
-    recording.check().unwrap();
+    recording.verify().unwrap();
 
     let recording = model().specs(["Inventory"]).recording();
     recording.add_events_dir(dir.join("service")).add_log_with(dir.join("app.log"), |line| {
         let units: i64 = line.strip_prefix("INFO reserved k ")?.parse().ok()?;
         Some(json!({"event": "Pair", "key": "k", "timestamp": "2026-01-01T00:00:00.000000005Z", "payload": ["o", units]}))
     });
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     assert!(v.events[1].src.as_deref().unwrap().ends_with("app.log:2"), "{v}");
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -417,16 +432,45 @@ fn added_folders_and_logs() {
 fn global_emit_reaches_the_recording_bound_to_the_thread() {
     let recording = model().specs(["Inventory"]).recording();
     snappea::emit::emit("Stock", "k", 1);
-    let sink = recording.sink();
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let _bound = recording.bind();
+            snappea::emit::emit("Pair", "k", json!(["o", 2]));
+        });
+    });
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
+    assert_eq!(v.events.len(), 2);
+    assert!(v.events[0].src.as_deref().unwrap().contains("integration.rs"));
+}
+
+#[test]
+fn a_binder_routes_spawned_threads_and_is_inert_after_verify() {
+    // In a child process: the emit after verify could reach a recording open in this one.
+    let name = "a_binder_routes_spawned_threads_and_is_inert_after_verify";
+    if std::env::var("SNAPPEA_TEST_CHILD").as_deref() != Ok(name) {
+        return run_child(name, std::env::vars_os());
+    }
+    fn require_static<T: Clone + Send + Sync + 'static>(_: &T) {}
+    let recording = model().specs(["Inventory"]).recording();
+    let binder = recording.binder();
+    require_static(&binder);
+    snappea::emit::emit("Stock", "k", 1);
+    let spawned = binder.clone();
     std::thread::spawn(move || {
-        let _bound = sink.bind();
+        let _bound = spawned.bind();
         snappea::emit::emit("Pair", "k", json!(["o", 2]));
     })
     .join()
     .unwrap();
-    let Err(CheckError::Violation(v)) = recording.check() else { panic!("expected a violation") };
+    let Err(CheckError::Violation(v)) = recording.verify() else { panic!("expected a violation") };
     assert_eq!(v.events.len(), 2);
-    assert!(v.events[0].src.as_deref().unwrap().contains("integration.rs"));
+    // after verify: binding does not panic, and the emit goes where an unbound one would
+    std::thread::spawn(move || {
+        let _bound = binder.bind();
+        snappea::emit::emit("Stock", "k", 1);
+    })
+    .join()
+    .unwrap();
 }
 
 #[test]
@@ -439,7 +483,7 @@ fn global_emit_on_an_unbound_thread_with_several_recordings_fails_them() {
     let (a, b) = (model().recording(), model().recording());
     std::thread::spawn(|| snappea::emit::emit("Stock", "k", 1)).join().unwrap();
     for recording in [a, b] {
-        let e = setup_error(recording.check());
+        let e = setup_error(recording.verify());
         assert_eq!(e.kind, ErrorKind::Config);
         assert!(e.message.contains("not bound to a recording") && e.message.contains(".bind()"), "{e}");
     }
@@ -452,7 +496,7 @@ fn global_emit_on_an_unbound_thread_goes_to_the_only_recording() {
     {
         let recording = model().specs(["Inventory"]).recording();
         std::thread::spawn(|| snappea::emit::emit("Stock", "k", 1)).join().unwrap();
-        assert_eq!(recording.check().unwrap().verified_events(), 1);
+        assert_eq!(recording.verify().unwrap().verified_events(), 1);
         return;
     }
     run_child("global_emit_on_an_unbound_thread_goes_to_the_only_recording", std::env::vars_os());

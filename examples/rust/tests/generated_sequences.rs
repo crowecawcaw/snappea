@@ -24,7 +24,7 @@ proptest! {
     fn generated_stateful_operations(commands in prop::collection::vec(command(), 1..41)) {
         // Runs once per case and shrink attempt: never share inventory or recorder.
         let recorder = model().recording();
-        let mut inventory = inventory(recorder.sink());
+        let mut inventory = inventory(recorder.emitter());
         inventory.stock("coffee", 3).unwrap();
         inventory.stock("tea", 2).unwrap();
         for command in &commands {
@@ -40,7 +40,7 @@ proptest! {
                 "unexpected result for {:?}: {:?}", command, result);
         }
         // prop_assert! (not unwrap) lets proptest shrink the command sequence.
-        let checked = recorder.check();
+        let checked = recorder.verify();
         prop_assert!(checked.is_ok(), "{}", checked.unwrap_err());
         for sku in ["coffee", "tea"] {
             prop_assert!(inventory.available(sku).unwrap() >= 0);

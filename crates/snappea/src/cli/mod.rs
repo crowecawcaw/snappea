@@ -1,12 +1,9 @@
-//! The `snappea` command line ([`run`]), and the host it runs on natively. It runs the
-//! commands of [`crate::driver`]; `snappea-compat`, upstream's `p`, is in [`crate::compat`].
+//! The `snappea` command line ([`run`]). It runs the commands of [`crate::driver`] on a
+//! [`Host`](crate::host::Host), natively [`NativeHost`](crate::host::NativeHost);
+//! `snappea-compat`, upstream's `p`, is in [`crate::compat`].
 
 mod command;
 mod guide;
-#[cfg(not(target_arch = "wasm32"))]
-mod native;
 mod observe;
 
 pub use command::run;
-#[cfg(not(target_arch = "wasm32"))]
-pub use native::{run_threads, NativeHost};

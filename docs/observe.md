@@ -70,7 +70,7 @@ that PObserve doesn't have (`--all-specs`, `--check-hot`, `--strict`,
 | --- | --- |
 | `--spec NAME` | The spec to check. Repeat it or separate names with commas to check several in one run. |
 | `--all-specs` | Check every spec in the P sources (instead of `--spec`). |
-| `--exclude-specs NAME` | A spec `--all-specs` leaves out; repeat or use commas. |
+| `--exclude-spec NAME` | A spec `--all-specs` leaves out. Repeat it or separate names with commas. |
 | `-l PATH` | A LOG, as an option (one value per `-l`). All logs, folders and patterns form one input set ([below](#several-logs-and-glob-patterns)). |
 | `--live PATH` | Check a live stream (a pipe, named pipe or file; `-` is stdin) until it ends, stopping at the first error. Repeatable with `--sequence`. |
 | `--stdin` | The same as `--live -`. |

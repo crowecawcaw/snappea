@@ -139,7 +139,11 @@ What fails the check:
                             coverage, mutation or all. Repeatable. Use it to explore,
                             not to pass: fix or suppress findings before relying on
                             the result.
-      --deny <CHECK>        Fail on CHECK's findings (the default)
+      --deny <CHECK>        Fail on CHECK's findings, as by default. --deny mutation
+                            (or all) also fails on mutants left untested, e.g. at
+                            the time limit: use it for a final check. When --warn
+                            and --deny name the same check (or all), the last one
+                            wins.
       --strict              Also run the mutants that change only a value, and report
                             advisory lint rules; fail on both. Use it for a model
                             that guards a critical design, not while iterating.
@@ -150,7 +154,7 @@ Mutation testing:
       --no-mutation         Skip mutation testing
 
 Driver limits:
-      --no-driver-facts     Do not work out the limits each test's driver kept
+      --no-driver-limits    Do not work out the limits each test's driver kept
                             (-v prints them; --json lists them)
 
 Inputs:
@@ -235,7 +239,7 @@ Options:
                             mutants always stop at their first failure
       --latency <FILE>[:<PROFILE>], --timed
       --warn <CHECK>, --deny <CHECK>, --strict, --list-suppressions,
-      --no-driver-facts, --ignore-foreign-files, --inspect-trace
+      --no-driver-limits, --ignore-foreign-files, --inspect-trace
                             As for `snappea check`
   -o, --out <DIR>           Output folder (default: PCheckerOutput)
   -v, --verbose             Show progress and statistics
@@ -901,7 +905,7 @@ const CHECK_OPTS: &[Opt] = &[
     flag("no-mutation", None),
     value("warn", None),
     value("deny", None),
-    flag("no-driver-facts", None),
+    flag("no-driver-limits", None),
     flag("strict", None),
     flag("ignore-foreign-files", None),
     value("progress", None),
@@ -956,7 +960,7 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
         return usage_error(host, "'--no-mutation' does not apply to `check mutation`", CMD);
     }
     let mut cfg = snappea_config();
-    cfg.gates.mutation = Gate::Deny;
+    cfg.gates.set("mutation", Gate::Deny).expect("a known check");
     let patterns = match check_config(&parsed, &mut cfg) {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, CMD),
@@ -1038,7 +1042,7 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     }
     cfg.verbose = a.has("verbose");
     cfg.list_suppressions = a.has("list-suppressions");
-    cfg.driver_facts = !a.has("no-driver-facts");
+    cfg.driver_limits = !a.has("no-driver-limits");
     cfg.gates.strict = a.has("strict");
     cfg.ignore_foreign_files = a.has("ignore-foreign-files");
     cfg.progress = (progress_mode(a)? != ProgressMode::Off).then(Position::default);
@@ -1047,32 +1051,30 @@ fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> 
     Ok(patterns)
 }
 
-/// Applies `--warn` and `--deny` (each repeatable, or a comma list) to `gates`: `all`
-/// first, then single checks, so `--warn all --deny mutation` warns on all but mutation.
+/// Applies `--warn` and `--deny` (each repeatable, or a comma list) to `gates` in the
+/// order given; the last one naming a check (or `all`) wins, so `--warn all --deny
+/// mutation` warns on all but mutation.
 fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
-    let mut named: Vec<(&str, Gate)> = Vec::new();
-    for (option, gate) in [("warn", Gate::Warn), ("deny", Gate::Deny)] {
-        for name in a.all(option).into_iter().flat_map(|v| v.split(',')).map(str::trim) {
+    // the last flag that set the mutation gate: `--deny mutation` there conflicts with
+    // `--no-mutation`, but `--deny all` does not
+    let mut last_mutation = None;
+    for (option, value) in a.options.iter().filter(|(l, _)| matches!(*l, "warn" | "deny")) {
+        let gate = if *option == "warn" { Gate::Warn } else { Gate::Deny };
+        for name in value.split(',').map(str::trim) {
             if name != "all" && !check::Gates::CHECKS.contains(&name) {
                 return Err(format!(
                     "unknown check '{}' for '--{}': use lint, coverage, mutation or all",
                     name, option
                 ));
             }
-            named.push((name, gate));
+            gates.set(name, gate)?;
+            if name == "mutation" || name == "all" {
+                last_mutation = Some((name, gate));
+            }
         }
     }
-    for (name, gate) in &named {
-        if named.iter().any(|(n, g)| n == name && g != gate) {
-            return Err(format!("'--warn {0}' and '--deny {0}' conflict: use one", name));
-        }
-    }
-    if a.has("no-mutation") && named.iter().any(|&(n, g)| n == "mutation" && g == Gate::Deny) {
+    if a.has("no-mutation") && last_mutation == Some(("mutation", Gate::Deny)) {
         return Err("use only one of '--no-mutation' and '--deny mutation'".into());
-    }
-    named.sort_by_key(|(n, _)| *n != "all");
-    for (name, gate) in named {
-        gates.set(name, gate)?;
     }
     Ok(())
 }
@@ -1113,7 +1115,7 @@ fn snappea_config() -> CheckConfig {
     let mut cfg = CheckConfig {
         style: Style::Snappea,
         code_coverage: true,
-        driver_facts: true,
+        driver_limits: true,
         strategy: StrategyKind::Auto,
         iterations: 0,
         timeout: Some(10),
@@ -1661,11 +1663,10 @@ fn run_check(
     let seconds = con.inner.now() - start;
     let (elapsed, memory) = (duration(seconds), memory(con.inner));
     let mutation_time_limit_reached = mutation.get("time_limit_reached").and_then(Value::as_bool).unwrap_or(false);
-    // a gate that denies undetected mutants does not pass with mutants it did not test
-    // and mutation testing that is the whole check (`check mutation`, `--strict`) does not
-    // pass with mutants it did not test
-    let mutation_failed =
-        (undetected > 0 || (untested.any() && (only || gates.strict))) && gates.mutation == Gate::Deny;
+    // `--deny mutation`, `check mutation` and `--strict` do not pass with mutants they
+    // did not test
+    let mutation_failed = (undetected > 0 || (untested.any() && (gates.mutation_complete || gates.strict)))
+        && gates.mutation == Gate::Deny;
     let mut summary = check_summary(
         failed,
         n,
@@ -1977,7 +1978,7 @@ impl Untested {
 }
 
 /// A concise top-level outcome. Mutation time limits change it only when `--deny mutation`
-/// (or `check mutation`) requires every mutant to be tested; they never change whether the
+/// (or `check mutation`, `--strict`) requires every mutant to be tested; they never change whether the
 /// test search or required-coverage gate passed.
 #[allow(clippy::too_many_arguments)]
 fn check_summary(
@@ -2052,7 +2053,7 @@ fn check_summary(
             "The test cases pass with changes to the model that a spec or assertion should detect".to_string(),
         )
     } else if mutation_failed {
-        ("mutation_incomplete", format!("Mutation testing incomplete: {} (--deny mutation)", untested.describe()))
+        ("mutation_incomplete", format!("Mutation testing incomplete: {}", untested.describe()))
     } else if incomplete > 0 {
         (
             "search_incomplete",
