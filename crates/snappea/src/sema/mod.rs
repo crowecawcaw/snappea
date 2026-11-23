@@ -121,7 +121,7 @@ pub fn compile(sm: &SourceMap, opts: &Options) -> Result<Analysis, CompileError>
                 });
             }
         }
-        let p = crate::syntax::parse(id, &f.text).map_err(|e| {
+        let p = crate::syntax::parse_tokens(&f.text, tokens).map_err(|e| {
             let lc = f.line_col(e.span.start);
             CompileError::Parse {
                 file: id,
