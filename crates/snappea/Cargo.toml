@@ -21,10 +21,14 @@ default = ["cli", "test"]
 # checker; depends only on serde and serde_json. Production code uses only this.
 emit = ["dep:serde", "dep:serde_json"]
 # `snappea::test`: check recorded events against P specs, in process. Also enables the
-# library (`snappea::syntax`, `snappea::sema`, `snappea::checker`, `snappea::project`, `snappea::driver`).
-test = ["dep:snappea-syntax", "dep:snappea-lint", "emit", "dep:regex", "dep:roxmltree", "dep:rustc-hash", "dep:sha2"]
-# The `snappea` and `snappea-compat` binaries, and the library they run on.
-cli = ["dep:mimalloc", "dep:snappea-syntax", "dep:snappea-lint", "serde_json/preserve_order", "dep:roxmltree", "dep:rustc-hash", "dep:serde_json", "dep:sha2"]
+# checker library.
+test = ["checker", "emit", "dep:regex"]
+# The `snappea` and `snappea-compat` binaries, and the checker library they run on.
+cli = ["checker", "dep:mimalloc"]
+# Internal: the checker library (`snappea::syntax`, `snappea::sema`, `snappea::checker`,
+# `snappea::host`, `snappea::project`, `snappea::driver`), which `test` and `cli` both need.
+# JSON objects keep their key order, so payloads read and reports print alike in both.
+checker = ["dep:snappea-syntax", "dep:snappea-lint", "dep:roxmltree", "dep:rustc-hash", "dep:serde_json", "serde_json/preserve_order", "dep:sha2"]
 
 [[bin]]
 name = "snappea"
@@ -42,7 +46,7 @@ snappea-lint = { workspace = true, optional = true }
 regex = { version = "1", default-features = false, features = ["std", "unicode"], optional = true }
 roxmltree = { workspace = true, optional = true }
 rustc-hash = { workspace = true, optional = true }
-serde = { version = "1", optional = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { version = "0.11", optional = true }
 

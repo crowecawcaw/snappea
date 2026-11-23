@@ -36,22 +36,22 @@ pub mod emit;
 #[cfg(feature = "test")]
 pub mod test;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub use snappea_syntax as syntax;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub mod sema;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub mod checker;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub mod host;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub mod project;
 
-#[cfg(any(feature = "test", feature = "cli"))]
+#[cfg(feature = "checker")]
 pub mod driver;
 
 #[cfg(feature = "cli")]

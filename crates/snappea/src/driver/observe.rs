@@ -593,6 +593,7 @@ pub(crate) enum Writer {
     /// snappea's emitter: every line has a timestamp, events no spec observes are
     /// skipped unread, and the payload must have the event's type (`null` only for an
     /// event without one).
+    #[cfg_attr(not(feature = "test"), allow(dead_code))]
     Emitter,
 }
 
