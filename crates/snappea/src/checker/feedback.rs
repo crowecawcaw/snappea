@@ -11,39 +11,6 @@ use crate::checker::random::DotNetRandom;
 use crate::checker::runtime::SchedKind;
 use crate::checker::strategy::{OpInfo, SharedRandom, Strategy};
 
-/// A failure site, independent of formatted values and machine instance numbers.
-pub(crate) fn failure_class(bug: &str) -> String {
-    if let Some(rest) = bug.strip_prefix("Assertion Failed: ") {
-        let end = rest
-            .char_indices()
-            .find_map(|(end, c)| {
-                if !c.is_whitespace() {
-                    return None;
-                }
-                let mut location = rest[..end].rsplitn(3, ':');
-                location.next()?.parse::<usize>().ok()?;
-                location.next()?.parse::<usize>().ok()?;
-                Some(end)
-            })
-            .unwrap_or(rest.len());
-        return format!("assertion:{}", &rest[..end]);
-    }
-    let mut key = String::new();
-    let mut number = false;
-    for c in bug.chars() {
-        if c.is_ascii_digit() {
-            if !number {
-                key.push('#');
-            }
-            number = true;
-        } else {
-            key.push(c);
-            number = false;
-        }
-    }
-    key
-}
-
 // ---- random sources ----------------------------------------------------------------
 
 /// `RandomChoices<T>`: a replayable, mutable list of random values drawn on demand.
@@ -1036,7 +1003,9 @@ impl Strategy for FeedbackGuidedStrategy {
         if !self.code_guidance {
             return;
         }
-        let new_failure = bug.is_some_and(|bug| self.failures.len() < 64 && self.failures.insert(failure_class(bug)));
+        let new_failure = bug.is_some_and(|bug| {
+            self.failures.len() < 64 && self.failures.insert(crate::checker::engine::failure_site(bug))
+        });
         // Reuse failing data prefixes to vary inputs near a failure site. Pure
         // interleavings already use the branch/event corpus; repeatedly replaying a
         // failed interleaving can crowd out other delivery orders.

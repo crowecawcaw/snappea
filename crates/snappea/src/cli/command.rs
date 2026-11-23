@@ -506,9 +506,6 @@ impl Args {
     }
 }
 
-/// Options that were removed in favor of another spelling, and that spelling.
-const RENAMED: &[(&str, &str)] = &[("--time", "--timeout"), ("--allow-incomplete-coverage", "--warn coverage")];
-
 pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> {
     let mut out = Args::default();
     let mut it = args.iter();
@@ -543,15 +540,10 @@ pub(super) fn parse_args(args: &[String], spec: &[Opt]) -> Result<Args, String> 
         };
         let Some(opt) = opt else {
             let name = a.split('=').next().unwrap_or(a);
-            return Err(match RENAMED.iter().find(|(old, _)| *old == name) {
-                Some((_, new)) => format!("unknown option '{}': it was renamed, use '{}'", name, new),
-                None => {
-                    let longs = spec.iter().chain(OUTPUT_OPTS).map(|o| o.long).filter(|l| !l.is_empty());
-                    match crate::syntax::closest(name.trim_start_matches('-'), longs) {
-                        Some(l) => format!("unknown option '{}'; did you mean '--{}'?", a, l),
-                        None => format!("unknown option '{}'", a),
-                    }
-                }
+            let longs = spec.iter().chain(OUTPUT_OPTS).map(|o| o.long).filter(|l| !l.is_empty());
+            return Err(match crate::syntax::closest(name.trim_start_matches('-'), longs) {
+                Some(l) => format!("unknown option '{}'; did you mean '--{}'?", a, l),
+                None => format!("unknown option '{}'", a),
             });
         };
         let v = match (opt.takes_value, inline) {
@@ -1833,21 +1825,6 @@ fn run_check(
     if let Some(note) = summary["note"].as_str() {
         con.inner.out_line(note);
     }
-    if only {
-        let result = json!({
-            "summary": summary,
-            "project": cfg.project_name,
-            "test_cases": cases,
-            "failed": failed,
-            "seconds": round_ms(seconds),
-            "output": format!("{}/", out),
-            "mutation": mutation,
-            "warnings": warnings,
-            "expected_bug_seed_checks": seed_checks,
-        });
-        let code = if failed > 0 || mutation_failed { BUG } else { OK };
-        return Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()));
-    }
     let mut coverage = suite.to_json(false);
     coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
     coverage["uncovered_suppressed"] = uncovered_suppressed.iter().map(|u| u.to_json()).collect();
@@ -1866,24 +1843,22 @@ fn run_check(
     if lint_failed.is_some() {
         coverage = json!({"skipped": LINT_SKIP});
     }
-    let result = json!({
+    let mut result = json!({
         "summary": summary,
         "project": cfg.project_name,
         "test_cases": cases,
-        "failed": failed,
-        "incomplete": incomplete,
         "seconds": round_ms(seconds),
         "output": format!("{}/", out),
-        "coverage": coverage,
-        "coverage_failed": coverage_failed,
-        "safety": {"status": if failed > 0 { "failed" } else if incomplete > 0 { "incomplete" } else { "passed" }},
-        "behavioral_coverage": behavioral,
-        "coverage_exemptions": broad_exemptions,
         "mutation": mutation,
         "warnings": warnings,
         "expected_bug_seed_checks": seed_checks,
-        "scenarios": scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect::<Vec<_>>(),
     });
+    if !only {
+        result["coverage"] = coverage;
+        result["behavioral_coverage"] = behavioral;
+        result["coverage_exemptions"] = json!(broad_exemptions);
+        result["scenarios"] = scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect();
+    }
     let code = if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK };
     Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()))
 }

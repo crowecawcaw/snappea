@@ -730,7 +730,7 @@ scenario-monitors` for checking that the history distinguishes the intended race
 
 Native `snappea check` reports safety, behavioral coverage, raw structural
 coverage, required structural coverage after exemptions, and broad exemptions
-separately. JSON exposes `safety`, `behavioral_coverage`, `coverage`, and
+separately. JSON exposes `summary.safety`, `behavioral_coverage`, `coverage`, and
 `coverage_exemptions`. Compatibility output and artifact schemas are unchanged.
 
 A named scenario is required by default. A scoped `allow coverage -- reason`

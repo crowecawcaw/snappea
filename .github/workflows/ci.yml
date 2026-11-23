@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check Markdown links and the docs' release version pins
-        run: python3 -m unittest -v scripts/test_markdown_links.py scripts/test_release.py
+        run: python3 -m unittest -v scripts/test_markdown_links.py scripts/test_doc_front_matter.py scripts/test_release.py
 
   lint:
     name: fmt + clippy
@@ -68,7 +68,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked
       - name: Clippy, each snappea feature alone
         run: |
-          for feature in emit test cli; do
+          for feature in emit test cli bin; do
             cargo clippy -p snappea --no-default-features --features "$feature" --locked
           done
 
@@ -95,6 +95,12 @@ jobs:
           deps=$(cargo tree -p snappea --no-default-features --features emit -e normal --prefix none)
           if echo "$deps" | grep -E '^(regex|roxmltree|rustc-hash|sha2) '; then
             echo "::error::snappea with only the emit feature pulls in checker dependencies" >&2
+            exit 1
+          fi
+      - name: Only the binaries link mimalloc
+        run: |
+          if cargo tree -p snappea --no-default-features --features cli,test -e normal --prefix none | grep '^mimalloc '; then
+            echo "::error::snappea's library features pull in mimalloc; only the bin feature should" >&2
             exit 1
           fi
       - name: Check the published crate package

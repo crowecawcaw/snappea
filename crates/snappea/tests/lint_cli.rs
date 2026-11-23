@@ -97,7 +97,7 @@ fn lint_failure_still_reports_bugs_first_and_exits_with_1() {
     assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
     assert_eq!(result["exit_code"], 1);
-    assert_eq!(result["failed"], 1);
+    assert_eq!(result["summary"]["failed"], 1);
     assert_eq!(result["test_cases"][0]["result"], "bug", "{}", result);
     assert!(result["test_cases"][0]["bug"]["replay"].as_str().is_some(), "{}", result);
     assert_eq!(result["lint"]["failed"], true);
@@ -120,7 +120,7 @@ fn lint_failure_without_a_bug_exits_with_2_and_reports_the_skipped_stages() {
         assert_eq!(run(&mut h, &[command, &["model.p"]].concat()), 2, "{}{}", h.stdout, h.stderr);
         let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
         assert_eq!(result["exit_code"], 2);
-        assert_eq!(result["failed"], 0);
+        assert_eq!(result["summary"]["failed"], 0);
         assert_eq!(result["test_cases"][0]["result"], "ok", "{}", result);
         assert_eq!(result["lint"]["findings"][0]["rule"], "permissive-monitor", "{}", result);
         assert_eq!(result["summary"]["status"], "lint_failed");
@@ -196,12 +196,6 @@ fn warn_and_deny_reject_unknown_checks_and_apply_in_order() {
     assert_eq!(run(&mut h, &args), 0, "{}{}", h.stdout, h.stderr);
     run(&mut h, &["check", "model.p", "--no-mutation", "--deny", "all"]);
     assert!(h.stderr.contains("error[permissive-monitor]") && !h.stderr.contains("use only one"), "{}", h.stderr);
-    assert_eq!(run(&mut h, &["check", "model.p", "--allow-incomplete-coverage"]), 2);
-    assert!(
-        h.stderr.contains("unknown option '--allow-incomplete-coverage': it was renamed, use '--warn coverage'"),
-        "{}",
-        h.stderr
-    );
 }
 
 #[test]

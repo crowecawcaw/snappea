@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Rust service against a P spec in cargo test?"
+  - "How do I combine snappea::test with proptest?"
+---
+
 # Rust: inventory reservations
 
 Three Cargo integration-test targets check one [inventory service](src/lib.rs)

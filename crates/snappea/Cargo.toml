@@ -16,15 +16,17 @@ include = ["Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE", "src/**/*
 name = "snappea"
 
 [features]
-default = ["cli", "test"]
+default = ["bin", "test"]
 # `snappea::emit`: emit application events (tests, SNAPPEA_EVENTS_DIR, production logs). No
 # checker; depends only on serde and serde_json. Production code uses only this.
 emit = ["dep:serde", "dep:serde_json"]
 # `snappea::test`: check recorded events against P specs, in process. Also enables the
 # checker library.
 test = ["checker", "emit", "dep:regex"]
-# The `snappea` and `snappea-compat` binaries, and the checker library they run on.
-cli = ["checker", "dep:mimalloc"]
+# The `snappea` and `snappea-compat` binaries.
+bin = ["cli", "dep:mimalloc"]
+# `snappea::cli` and `snappea::compat`: run the CLIs in process (the playground, fuzzing).
+cli = ["checker"]
 # Internal: the checker library (`snappea::syntax`, `snappea::sema`, `snappea::checker`,
 # `snappea::host`, `snappea::project`, `snappea::driver`), which `test` and `cli` both need.
 # JSON objects keep their key order, so payloads read and reports print alike in both.
@@ -33,12 +35,12 @@ checker = ["dep:snappea-syntax", "dep:snappea-lint", "dep:roxmltree", "dep:rustc
 [[bin]]
 name = "snappea"
 path = "src/bin/snappea.rs"
-required-features = ["cli"]
+required-features = ["bin"]
 
 [[bin]]
 name = "snappea-compat"
 path = "src/bin/snappea-compat.rs"
-required-features = ["cli"]
+required-features = ["bin"]
 
 [dependencies]
 snappea-syntax = { workspace = true, optional = true }

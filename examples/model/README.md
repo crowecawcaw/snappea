@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent",  "p-user"]
+questions:
+  - "How do I model a service in P and check its design with snappea check?"
+  - "How do I run the model checks in CI?"
+---
+
 # P model: inventory reservations
 
 A P model of the inventory service that the [language examples](../README.md)

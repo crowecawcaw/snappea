@@ -720,7 +720,7 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--json-report", "r.json"]), 1);
     let json = read(&h, "r.json");
     let result: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(result["coverage_failed"], true);
+    assert_eq!(result["summary"]["coverage_failed"], true);
     assert_eq!(result["coverage"]["statements"], serde_json::json!({"covered": 1, "total": 2}));
     assert_eq!(result["coverage"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["required"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
@@ -801,7 +801,7 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     );
     assert_eq!(snappea(&mut h, &["check", "helper.p", "--no-mutation", "--json"]), 1);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["coverage_failed"], true);
+    assert_eq!(result["summary"]["coverage_failed"], true);
     assert!(result["coverage"]["uncovered_required"].as_array().unwrap().iter().any(|p| p["context"] == "Main.Helper"));
 
     h.add_file("coverage.p", "event ePing;\n// snappea-lint: allow coverage:nope -- typo\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\

@@ -106,7 +106,7 @@ fn negative_only_driver_gaps_are_reported_without_failing_coverage() {
     "#;
     let (code, report, _) = run(source, &["--deny", "coverage"]);
     assert_eq!(code, 0, "{report}");
-    assert_eq!(report["coverage_failed"], false);
+    assert_eq!(report["summary"]["coverage_failed"], false);
     assert!(report["coverage"]["uncovered_required"].as_array().unwrap().is_empty(), "{report}");
     let separate = &report["coverage"]["expected_bug_driver_only"];
     assert_eq!(separate["required"], false);
@@ -392,7 +392,7 @@ fn every_seed_must_match_even_when_comparing_failures() {
         let src = format!("machine Main {{ start state S {{ entry {{ {body} }} }} }}\n// snappea: expect-bug \"known flaw\"\ntest tcNegative [main=Main]: {{ Main }};");
         let (code, report, _) = run(&src, &["--expect-bug-seeds", "1,2"]);
         assert_eq!(code, 1, "{report}");
-        assert_eq!(report["failed"], 2);
+        assert_eq!(report["summary"]["failed"], 2);
         assert_eq!(report["expected_bug_seed_checks"][0]["all_matched"], false);
         assert_eq!(report["expected_bug_seed_checks"][0]["status"], "incomplete");
     }

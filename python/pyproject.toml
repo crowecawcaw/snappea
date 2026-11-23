@@ -34,7 +34,7 @@ snappea = "snappea.pytest_plugin"
 [tool.maturin]
 bindings = "bin"                                 # ships the executable, no bindings
 manifest-path = "../crates/snappea/Cargo.toml"
-features = ["cli"]                               # the binaries only, not snappea::test
+features = ["bin"]                               # the binaries only, not snappea::test
 no-default-features = true
 python-source = "src"
 module-name = "snappea"

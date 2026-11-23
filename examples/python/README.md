@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Python service against a P spec in pytest?"
+  - "Which recording style (fixture, marker, explicit) fits my tests?"
+---
+
 # Python: inventory reservations
 
 Three pytest projects run the same [application](inventory_app/__init__.py) against

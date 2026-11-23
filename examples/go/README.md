@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Go service against a P spec in go test?"
+  - "How do I write a negative control for a spec in Go?"
+---
+
 # Go: inventory reservations
 
 Four test packages check one [inventory service](inventory/inventory.go) against

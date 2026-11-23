@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Java service against a P spec in JUnit?"
+  - "How do I write a negative control for a spec in Java?"
+---
+
 # Java: inventory reservations
 
 Three JUnit test classes check one [inventory service](src/main/java/example/Inventory.java)

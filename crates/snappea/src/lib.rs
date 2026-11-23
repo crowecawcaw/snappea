@@ -12,7 +12,8 @@
 //! | --- | --- |
 //! | `emit` | [`emit`] only: no checker, depends only on `serde` and `serde_json`. For production code. |
 //! | `test` (default) | [`test`](mod@test), plus `emit` and the checker library |
-//! | `cli` (default) | the `snappea` and `snappea-compat` binaries, and the checker library |
+//! | `bin` (default) | the `snappea` and `snappea-compat` binaries, plus `cli` |
+//! | `cli` | `cli` and `compat`: the CLIs as functions, plus the checker library |
 //!
 //! Production code that only emits:
 //!

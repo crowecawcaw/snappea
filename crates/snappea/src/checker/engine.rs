@@ -411,8 +411,20 @@ fn percent(v: f64) -> String {
 /// without formatted values. Other errors ignore numeric machine instance suffixes,
 /// preserving event/type names such as `e1` and `e2` as distinct issues.
 pub fn failure_site(bug: &str) -> String {
-    if bug.starts_with("Assertion Failed: ") {
-        return crate::checker::feedback::failure_class(bug);
+    if let Some(rest) = bug.strip_prefix("Assertion Failed: ") {
+        let end = rest
+            .char_indices()
+            .find_map(|(end, c)| {
+                if !c.is_whitespace() {
+                    return None;
+                }
+                let mut location = rest[..end].rsplitn(3, ':');
+                location.next()?.parse::<usize>().ok()?;
+                location.next()?.parse::<usize>().ok()?;
+                Some(end)
+            })
+            .unwrap_or(rest.len());
+        return format!("assertion:{}", &rest[..end]);
     }
     let mut key = String::new();
     for part in bug.split_inclusive(')') {

@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check services in containers live with snappea observe?"
+  - "How does a supervisor stop the system when observation fails?"
+---
+
 # Two inventory workers in Docker, one live observer
 
 Run two long-lived inventory workers in separate containers. Both modify the

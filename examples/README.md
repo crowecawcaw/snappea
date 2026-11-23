@@ -1,3 +1,11 @@
+---
+diataxis: explanation
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do the examples check one service against a P spec, in design and in tests?"
+  - "Which example should I start from for my language?"
+---
+
 # Application integration examples
 
 Every example checks one inventory service against one P spec,

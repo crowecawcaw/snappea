@@ -326,7 +326,7 @@ impl Strategy for Portfolio {
     }
     fn observe_progress(&mut self, coverage: usize, bug: Option<&str>) {
         if let Some(bug) = bug {
-            self.new_failure |= self.failures.len() < 64 && self.failures.insert(super::feedback::failure_class(bug));
+            self.new_failure |= self.failures.len() < 64 && self.failures.insert(super::engine::failure_site(bug));
         }
         self.current_mut().observe_progress(coverage, bug);
     }
