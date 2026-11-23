@@ -65,6 +65,8 @@ def test_competing_spend_between_load_and_swap():
   store (the memo must live in the store).
 - Each limit just below, at and just above. Each precondition false on its own.
 - Check real calls against the P spec: `snappea guide python`.
+  Go, Java, Rust: https://snappea.dev/docs/go.html, https://snappea.dev/docs/java.html,
+  https://snappea.dev/docs/rust.html.
 
 ## Prove the tests can fail
 

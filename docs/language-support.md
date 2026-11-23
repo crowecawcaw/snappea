@@ -345,6 +345,8 @@ same thing in the same place.
 | 7 | Failures | The failure output, the `SpecViolation` fields and the `SetupError` kinds, in the language's spelling |
 | 8 | Reference | The [concepts](#concepts) table in the language's spelling with where each is set, the environment variables, suite coverage, and a link to the generated API reference |
 
+- The section ids are listed once in `web/src/site/docs/languages/outline.ts`;
+  `npm run test:html` fails when a built page's `<h2 id>` sequence differs.
 - The quick start uses the inventory spec every example shares (`examples/*/specs/inventory.p`),
   imported from the repository so the pages cannot drift from it. Failure output is
   pasted from a real run.

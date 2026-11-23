@@ -181,5 +181,8 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Check the built pages (readable HTML, language outline, #anchors)
+        working-directory: web
+        run: npm run test:html
       - name: Smoke-test the wasm module in Node
         run: node crates/snappea-wasm/js/smoke.mjs target/wasm32-unknown-unknown/wasm/snappea_wasm.wasm

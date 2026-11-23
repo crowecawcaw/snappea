@@ -9,7 +9,7 @@
     "build": "npm run wasm && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test:html": "node --test scripts/check-static-pages.mjs",
+    "test:html": "node --experimental-strip-types --test scripts/check-static-pages.mjs",
     "test:replay": "node --experimental-strip-types --test scripts/replay.test.ts",
     "test:diagrams": "node --experimental-strip-types --test scripts/diagrams.test.ts"
   },

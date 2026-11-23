@@ -21,4 +21,4 @@ Section links: [install](https://snappea.dev/docs/python.html#install),
 The source is in [`python/`](../python); `pip install ./python` in a checkout builds the
 binary with cargo. The page's source is `web/src/site/docs/languages/Python.tsx`.
 
-For saved model-to-test projects, see the [runnable examples](https://snappea.dev/docs/python.html#runnable-examples) section.
+For saved model-to-test projects, see the [runnable examples](https://snappea.dev/docs/agents.html#runnable-examples) section.
