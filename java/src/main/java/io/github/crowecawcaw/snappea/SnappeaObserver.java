@@ -247,7 +247,7 @@ public final class SnappeaObserver {
             for (var spec : specs) args.addAll(List.of("--spec", spec));
         } else {
             args.add("--all-specs");
-            for (var spec : exclude) args.addAll(List.of("--exclude-specs", spec));
+            for (var spec : exclude) args.addAll(List.of("--exclude-spec", spec));
         }
         // One -l per log, so a log path is never taken for a source (.p/.pproj) or an option.
         logs.forEach(p -> args.addAll(List.of("-l", p.toString())));

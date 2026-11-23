@@ -35,7 +35,8 @@ without log files: `from snappea import check_events, check_spec`.
 Specs:
       --spec <NAME>           Spec monitor to check; repeat or separate with commas
       --all-specs             Check every spec monitor. Use in test suites.
-      --exclude-specs <NAME>  A spec --all-specs leaves out; repeat or use commas
+      --exclude-spec <NAME>   A spec --all-specs leaves out; repeat or separate with
+                              commas
 
 Input:
   -l, --logs <PATH>           A LOG, as an option
@@ -78,7 +79,7 @@ Exit status: 0 no violation found, 1 violation found, 2 any other error.
 pub(super) const OPTS: &[Opt] = &[
     value("spec", None),
     flag("all-specs", None),
-    value("exclude-specs", None),
+    value("exclude-spec", None),
     value("logs", Some('l')),
     value("live", None),
     flag("stdin", None),
@@ -157,7 +158,7 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
     let mut cfg = ObserveConfig {
         specs: names(a, "spec"),
         all_specs: a.has("all-specs"),
-        exclude_specs: names(a, "exclude-specs"),
+        exclude_specs: names(a, "exclude-spec"),
         check_hot: a.has("check-hot"),
         strict: a.has("strict"),
         unknown_events: match a.get("unknown-events") {
@@ -196,7 +197,7 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         return Err("'--spec' and '--all-specs' cannot be combined".into());
     }
     if !cfg.exclude_specs.is_empty() && !cfg.all_specs {
-        return Err("'--exclude-specs' needs '--all-specs'".into());
+        return Err("'--exclude-spec' needs '--all-specs'".into());
     }
     if !live.is_empty() && !logs.is_empty() {
         return Err("live input (--live, --stdin) cannot be combined with log files".into());

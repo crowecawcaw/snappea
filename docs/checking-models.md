@@ -307,12 +307,16 @@ total invites working the number down. JSON keeps the counts.
 The source comment is the way to accept an intended finding: it names one rule, covers
 one declaration or statement, and carries its reason into code review. To change what
 fails for a single run, use `--warn <check>` or `--deny <check>` (repeatable; `all`
-names every check; a single check overrides `all`):
+names every check). They apply in order, and the last one naming a check wins, so
+`--warn all --deny mutation` warns on all but mutation. Every check fails by default;
+`--deny mutation` also fails on mutants left untested, such as those the time limit
+stopped, so use it for a final check:
 
 ```sh
 snappea check --warn lint        # run coverage and mutation testing before addressing lints
 snappea check --warn coverage    # explore while the test suite is still being built
 snappea check --warn mutation    # list undetected mutants without failing
+snappea check --deny mutation    # also fail on mutants left untested
 snappea check --strict           # also run low-priority mutants and advisory lints
 ```
 
@@ -1070,7 +1074,7 @@ gap, so its mutants are listed but change nothing. A mutant the checker cannot r
 (a snappea bug) is listed with its error under `mutation.failed_to_run`; it is neither
 detected nor undetected. Mutation testing is skipped when a test case fails: fix the bug
 first. Undetected mutants fail the check (exit 1) unless `--warn mutation` is given;
-untested ones fail only `snappea check mutation` and `--strict`. The JSON result has every undetected mutant under `mutation.undetected`, with
+untested ones fail only `--deny mutation`, `snappea check mutation` and `--strict`. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
 `search_complete`, `changes_a_value`, `unchecked_variable` and, for a coarse mutant, the undetected mutants inside it
 (`undetected_inside`); `undetected_inside_undetected` counts those. `unreached` counts
@@ -1180,7 +1184,7 @@ and only `bool`, `int`, enum and `string` payload values. A search that stops be
 the end says "explored schedules": the limits held in what it ran. When the search
 found a cycle or hit the step bound, the driver may repeat without limit: no counts or
 orders are listed then, and `driver.repeats` is true. Driver limits are not listed for a
-test case that failed, and never change the exit status. `--no-driver-facts` turns them
+test case that failed, and never change the exit status. `--no-driver-limits` turns them
 off.
 
 A passing test case whose search explored every schedule, and whose schedules reach

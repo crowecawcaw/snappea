@@ -98,7 +98,7 @@ Relative paths in environment variables resolve against the process working dire
   configuration or compile error gives `{"exit_code": 2, "error": "..."}`. Classify
   errors by their `kind`.
 - Spec selection: `--spec <name>` for each name when `specs` is set, else `--all-specs`
-  with `--exclude-specs <name>` for each excluded spec. `strict` → `--strict`;
+  with `--exclude-spec <name>` for each excluded spec. `strict` → `--strict`;
   `check_hot` → `--check-hot`; `unknown_events` → `--unknown-events` ([#47](https://github.com/crowecawcaw/snappea/issues/47)).
   Every report has coverage.
 - Events go to the core in the [events folder format](observe.md#events-folder-format),

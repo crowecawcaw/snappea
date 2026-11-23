@@ -139,7 +139,7 @@ pub struct CheckConfig {
     /// Record which statements, branches and handlers run ([`CaseOutcome::code_coverage`]).
     pub code_coverage: bool,
     /// Report what the driver did in every schedule ([`CaseOutcome::driver`]).
-    pub driver_facts: bool,
+    pub driver_limits: bool,
     /// Send progress snapshots to [`Host::progress`] while checking, for the test case at
     /// this position of the run (and during mutation testing). `None` sends none.
     pub progress: Option<Position>,
@@ -174,6 +174,9 @@ pub struct Gates {
     pub coverage: Gate,
     /// Undetected mutants whose change a spec or another machine could see (default: deny).
     pub mutation: Gate,
+    /// Also fail on mutants that mutation testing left untested, e.g. at its time limit
+    /// (default: off). [`Gates::set`] turns it on with [`Gate::Deny`] for `mutation`.
+    pub mutation_complete: bool,
     /// Also run the other mutants and report advisory lint findings, and fail on them
     /// (`--strict`; default: off, so they are neither run nor shown).
     pub strict: bool,
@@ -181,7 +184,7 @@ pub struct Gates {
 
 impl Default for Gates {
     fn default() -> Gates {
-        Gates { lint: Gate::Deny, coverage: Gate::Deny, mutation: Gate::Deny, strict: false }
+        Gates { lint: Gate::Deny, coverage: Gate::Deny, mutation: Gate::Deny, mutation_complete: false, strict: false }
     }
 }
 
@@ -189,14 +192,18 @@ impl Gates {
     /// The check names [`Gates::set`] accepts, besides `all`.
     pub const CHECKS: [&'static str; 3] = ["lint", "coverage", "mutation"];
 
-    /// Sets the gate of the check called `name`, or of every check for `all`.
+    /// Sets the gate of the check called `name`, or of every check for `all`. Denying
+    /// `mutation` this way also fails on untested mutants ([`Gates::mutation_complete`]).
     pub fn set(&mut self, name: &str, gate: Gate) -> Result<(), String> {
         match name {
             "lint" => self.lint = gate,
             "coverage" => self.coverage = gate,
             "mutation" => self.mutation = gate,
-            "all" => *self = Gates { lint: gate, coverage: gate, mutation: gate, strict: self.strict },
+            "all" => (self.lint, self.coverage, self.mutation) = (gate, gate, gate),
             _ => return Err(format!("unknown check '{}': use lint, coverage, mutation or all", name)),
+        }
+        if name == "mutation" || name == "all" {
+            self.mutation_complete = gate == Gate::Deny;
         }
         Ok(())
     }
@@ -244,7 +251,7 @@ impl Default for CheckConfig {
             latency_profile: None,
             timed: false,
             code_coverage: false,
-            driver_facts: false,
+            driver_limits: false,
             progress: None,
             gates: Gates::default(),
         }
@@ -947,7 +954,7 @@ pub struct CaseOutcome {
     pub code_coverage: Option<(crate::checker::code_coverage::Scope, crate::checker::code_coverage::Hits)>,
     /// Scenario results, also written to the per-test artifact for cross-run merging.
     pub scenario_coverage: crate::driver::scenario::Artifact,
-    /// What the driver did in every schedule, with `cfg.driver_facts`.
+    /// What the driver did in every schedule, with `cfg.driver_limits`.
     pub driver: Option<DriverReport>,
 }
 
@@ -993,7 +1000,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     if cfg.style == Style::Snappea {
         opts.verbose_trace_schedules = VERBOSE_TRACE_SCHEDULES;
     }
-    if cfg.driver_facts {
+    if cfg.driver_limits {
         let sources = loaded.sources.source_map();
         let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
         opts.driver_machines =

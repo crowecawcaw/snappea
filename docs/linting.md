@@ -18,7 +18,8 @@ An unsuppressed blocking lint finding fails the command, but the test cases stil
 so any bug is reported first, then the findings; coverage and mutation testing are
 skipped. The exit status is 1 when a test case failed, else **2**.
 `snappea check --warn lint` reports the findings as warnings and runs the full check,
-including coverage and mutation testing
+including coverage and mutation testing; `--warn all --deny lint` warns on the other
+checks but still fails on lint findings
 (see [what fails a check](checking-models.md#what-fails-a-check)).
 
 To run linting alone:

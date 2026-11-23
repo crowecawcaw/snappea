@@ -488,3 +488,26 @@ test watched [main=Main]: assert Watch in { Main, Server };
         }
     }
 }
+
+#[test]
+fn deny_mutation_fails_on_mutants_the_time_limit_left_untested() {
+    // a clock that runs a second per reading, so mutation testing reaches its limit
+    fn clock() -> f64 {
+        static SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        SECONDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64
+    }
+    let mut h = MemHost::new("/w");
+    h.clock = clock;
+    h.add_file("g.p", OPTIONAL_ANSWER);
+    let args = ["check", "g.p", "--timeout", "1h", "--mutation-timeout", "2s", "--json"];
+    for (extra, code, status) in [
+        (&[][..], 0, "passed"),
+        (&["--deny", "mutation"][..], 1, "mutation_incomplete"),
+        (&["--deny", "mutation", "--warn", "all"][..], 0, "passed"),
+    ] {
+        assert_eq!(snappea(&mut h, &[&args[..], extra].concat()), code, "{extra:?}: {}", h.stdout);
+        let summary = &json(&h)["summary"];
+        assert_eq!(summary["status"], status, "{extra:?}: {summary}");
+        assert!(summary["mutants_not_tested"].as_u64().unwrap() > 0, "{extra:?}: {summary}");
+    }
+}
