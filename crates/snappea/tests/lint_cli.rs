@@ -732,10 +732,15 @@ fn companion_reads_cannot_leak_across_tests_or_selections() {
         &format!("{COMPLEMENTARY_PAYLOAD_SPECS}\ntest alone [main=Main]: assert RequestKnown in {{ Main, Sensor }};"),
     );
     assert_eq!(run(&mut h, &["check", "model.p", "together", "--no-mutation"]), 0, "{}{}", h.stdout, h.stderr);
-    for args in [vec!["check", "lint", "model.p"], vec!["check", "model.p", "alone"], vec!["check", "model.p"]] {
+    for args in [vec!["check", "lint", "model.p"], vec!["check", "model.p", "alone"]] {
         assert_eq!(run(&mut h, &args), 2, "{args:?}: {}{}", h.stdout, h.stderr);
         assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("test(s) alone"), "{}", h.stderr);
     }
+    // with every test case, mutation testing judges the field: `ValueValid` checks only
+    // `value > 0`, so a value one too large passes
+    assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
+    assert!(h.stdout.contains("payload field `value` sent as `2 + 1`"), "{}", h.stdout);
 }
 
 #[test]
@@ -755,6 +760,37 @@ fn diagnostic_only_companions_and_other_events_do_not_validate_payloads() {
         assert_eq!(run(&mut h, &["check", "lint", "model.p"]), 2, "{}{}", h.stdout, h.stderr);
         assert!(h.stderr.contains("error[unused-payload-field]") && h.stderr.contains("p.value"), "{}", h.stderr);
     }
+}
+
+const ECHOED_AMOUNT: &str = "event eReq: (id: int, amount: int, client: machine);\n\
+    event eResp: (id: int, amount: int);\n\
+    spec Safety observes eReq, eResp {\n\
+      var open: int;\n\
+      start state Idle { on eReq goto Waiting with (p: (id: int, amount: int, client: machine)) { assert p.amount > 0; open = p.id; } }\n\
+      hot state Waiting { on eResp goto Idle with (p: (id: int, amount: int)) { assert p.id == open; } }\n\
+    }\n\
+    machine Server { start state S { on eReq do (p: (id: int, amount: int, client: machine)) { send p.client, eResp, (id = p.id, amount = p.amount); } } }\n\
+    machine Main { start state S { entry { send new Server(), eReq, (id = 1, amount = 2, client = this); } on eResp do (r: (id: int, amount: int)) { CHECK } } }\n\
+    test tc [main=Main]: assert Safety in { Main, Server };\n";
+
+#[test]
+fn mutation_testing_judges_a_payload_field_no_spec_reads() {
+    let mut h = MemHost::new("/w");
+    // nothing notices a wrong amount: an undetected mutant at the send, not a lint error
+    h.add_file("model.p", &ECHOED_AMOUNT.replace("CHECK", ""));
+    assert_eq!(run(&mut h, &["check", "model.p"]), 1, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
+    assert!(h.stdout.contains("error[undetected-mutant]: model.p:8:"), "{}", h.stdout);
+    assert!(h.stdout.contains("payload field `amount` sent as `p.amount + 1`"), "{}", h.stdout);
+    assert!(h.stdout.contains("spec 'Safety' never reads payload field 'p.amount' of event 'eResp'"), "{}", h.stdout);
+    assert!(h.stdout.contains("outside diagnostic output (model.p:6). If a wrong value"), "{}", h.stdout);
+    // without mutation testing, the lint finding stands
+    assert_eq!(run(&mut h, &["check", "model.p", "--no-mutation"]), 2, "{}{}", h.stdout, h.stderr);
+    assert!(h.stderr.contains("error[unused-payload-field]"), "{}", h.stderr);
+    // something else checks the amount: nothing is reported
+    h.add_file("model.p", &ECHOED_AMOUNT.replace("CHECK", "assert r.amount == 2;"));
+    assert_eq!(run(&mut h, &["check", "model.p"]), 0, "{}{}", h.stdout, h.stderr);
+    assert!(!h.stdout.contains("amount") && !h.stderr.contains("amount"), "{}{}", h.stdout, h.stderr);
 }
 
 #[test]

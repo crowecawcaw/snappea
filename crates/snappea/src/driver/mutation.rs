@@ -414,7 +414,9 @@ impl Report {
                 {
                     out.push(format!("      {}  {}", location(c), c.description));
                 }
-                let why = if let Some(event) = &m.unobserved_announcement {
+                let why = if let Some(finding) = &m.unread_field {
+                    format!("{finding}. If a wrong value would be a bug, make that spec check it against what the spec knows: that a reply carries what its request asked for, or answers a request that is still open. If any value is correct there, suppress `unused-payload-field` at that handler and say why")
+                } else if let Some(event) = &m.unobserved_announcement {
                     format!("no selected spec observes {event}")
                 } else if let Some(v) = &m.unchecked {
                     format!("it only writes '{}', which no check depends on: see the unchecked-state lint", v)
@@ -436,7 +438,7 @@ impl Report {
             }
             if list.iter().any(|(_, (m, ..))| !m.announces) {
                 out.push(
-                    "  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`"
+                    "  help: a model with each change above passes every test case. Unless the changed model would still be correct in the real system, a check is missing: add it. Suppress one only with that argument: `// snappea-lint: allow mutation -- <why the changed behavior is still correct>`"
                         .into(),
                 );
                 if list.iter().any(|(i, _)| self.inside(*i) > 0) {
@@ -732,6 +734,7 @@ pub fn run(
     suppressed: &[snappea_lint::MutationSuppression],
     coverage_allowed: &[(crate::syntax::Span, String)],
     drivers: &[bool],
+    unread: &[mutation::UnreadField],
     time_limit: f64,
     deepen: bool,
     strict: bool,
@@ -742,7 +745,7 @@ pub fn run(
     let base = Checker::with_code_coverage(prog);
     let funs = mutation::mutable_funs(prog, &tests, drivers);
     // only mutants of code a passing test case ran: coverage reports the rest
-    let mut all_mutants = mutation::mutants_with_observers(prog, &funs, &base.code.probes, &tests);
+    let mut all_mutants = mutation::mutants_with_observers(prog, &funs, &base.code.probes, &tests, unread);
     all_mutants.extend(mutation::queue_mutants(prog, &tests, drivers));
     let stale_suppressions = suppressed
         .iter()

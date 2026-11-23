@@ -101,11 +101,19 @@ pub struct Finding {
     /// The likely fix for this finding, when it is more specific than the rule's general
     /// one (for example a suggested name).
     pub help: Option<String>,
+    /// For `unused-payload-field`: the event and the field no spec reads.
+    pub field: Option<(String, String)>,
 }
 
 impl Finding {
     pub fn new(rule: &'static str, span: Span, message: impl Into<String>) -> Self {
-        Self { rule, span, message: message.into(), help: None }
+        Self { rule, span, message: message.into(), help: None, field: None }
+    }
+
+    /// This finding about payload field `field` of `event` (see [`Finding::field`]).
+    pub fn with_field(mut self, event: &str, field: &str) -> Self {
+        self.field = Some((event.to_string(), field.to_string()));
+        self
     }
 
     /// This finding with a specific likely fix (see [`Finding::help`]).

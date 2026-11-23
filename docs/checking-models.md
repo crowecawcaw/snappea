@@ -808,7 +808,7 @@ error[undetected-mutant]: PSrc/Inventory.p:35: Inventory.Serving, on eReserveReq
 error[undetected-mutant]: PSrc/Inventory.p:49: Inventory.Serving, on eReleaseReq: the test cases still pass with this change: removed the whole `if (req.order in reservations)` (and more undetected inside it:)
       PSrc/Inventory.p:53  removed `announce eReleased, (order = req.order, units = units);`
   help: no test case notices this code removed: add a spec or assertion on its effect
-  help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`
+  help: a model with each change above passes every test case. Unless the changed model would still be correct in the real system, a check is missing: add it. Suppress one only with that argument: `// snappea-lint: allow mutation -- <why the changed behavior is still correct>`
   help: `allow mutation` covers only the statement after it; `allow mutation-nested` also covers the code inside it
 No bugs found in 2.1s, but mutation testing failed: ...
 ```
@@ -847,11 +847,23 @@ A mutant changes one place in the code of the machines under test:
 | `swap-operator` | `<` and `<=`, `>` and `>=`, `==` and `!=`, `+` and `-`, `&&` and `\|\|` |
 | `drop-conjunct` | `a && b` becomes `a` or `b`, in separate mutants |
 | `drop-disjunct` | `a \|\| b` becomes `a` or `b`, in separate mutants |
+| `change-field` | sends `v + 1` (an `int`) or `!v` (a `bool`) in a payload field no selected spec reads; see below |
 | `remove-defer` | removes one event from a state's `defer` declaration |
 | `defer-to-ignore` | discards one deferred event instead of retaining it for a later state |
 | `remove-ignore` | removes one event from a state's `ignore` declaration |
 | `remove-not` | `!e` becomes `e` |
 | `flip-boolean` | `true` becomes `false` and back |
+
+`change-field` mutants exist only for the fields the
+[`unused-payload-field`](linting.md#rules) lint reports, and only when the field's value is
+written in a named-tuple literal in a `send` or `announce` of a machine under test. Rather
+than guess whether a field matters, mutation testing sends a wrong value. When a test case
+fails on it (a driver's assertion, or a spec that reads the field in another test), the
+field is checked and nothing is reported. When none does, the mutant is undetected, and
+its help names the spec handler that could check the field. Such a lint finding does not
+fail the lint step of `snappea check`; it fails as an undetected mutant instead. With
+`--no-mutation`, `snappea check lint`, or a field no mutant can change, it stays a lint
+finding.
 
 Queue-policy mutants run only when a passing test examined that policy for an
 actual pending event (or matched it while handling a raised event). Merely entering
@@ -1128,13 +1140,15 @@ before the statement (or, with `mutation-nested`, the handler, function or machi
 around the code):
 
 ```p
-// snappea-lint: allow mutation:swap-operator -- units never equals stock in any test
+// snappea-lint: allow mutation:swap-operator -- an order of exactly the stock may be refused: the contract only forbids overselling
 if (req.units <= stock && !(req.order in reservations)) {
 ```
 
 `mutation` allows every kind of mutant in the code it covers; `mutation:<kind>` allows
 one kind (the IDs in the table above), and `mutation:<kind>,<kind>` several, as in
-`allow mutation:remove-statement,condition-false -- reason`.
+`allow mutation:remove-statement,condition-false -- reason`. The reason is required, and
+it says why the changed model would still be correct in the real system, not that the
+tests do not notice the change: mutation testing already showed that.
 
 Suppression is the right answer for best-effort operations: cancelling a timer, warming
 a cache, sending a hint. The design must be correct with or without them, so no test

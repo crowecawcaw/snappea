@@ -65,6 +65,9 @@ pub enum Change {
     DropConjunct { left: bool },
     /// Drop the left (true) or right (false) clause of a disjunction.
     DropDisjunct { left: bool },
+    /// A payload field no selected spec reads is sent wrong: `+ 1` on an `int`, `!` on a
+    /// `bool` (see [`UnreadField`]).
+    ChangeField,
 }
 
 impl Change {
@@ -84,6 +87,7 @@ impl Change {
             Change::EmptyBody => "empty-body",
             Change::DropConjunct { .. } => "drop-conjunct",
             Change::DropDisjunct { .. } => "drop-disjunct",
+            Change::ChangeField => "change-field",
         }
     }
 }
@@ -141,6 +145,19 @@ pub struct Mutant {
     pub emitted: Option<(String, Vec<String>)>,
     /// The mutant removes an `announce`, which only specs can see.
     pub announces: bool,
+    /// For a [`Change::ChangeField`] mutant: the lint finding that no spec reads the field.
+    pub unread_field: Option<String>,
+}
+
+/// A payload field the `unused-payload-field` lint found no selected spec reads. Rather
+/// than guess whether a wrong value matters, mutation testing sends a wrong one: when no
+/// test case notices, nothing in the model checks the field.
+#[derive(Debug, Clone)]
+pub struct UnreadField {
+    pub event: String,
+    pub field: String,
+    /// The finding, with where the spec's handler is.
+    pub finding: String,
 }
 
 impl Mutant {
@@ -151,6 +168,7 @@ impl Mutant {
     /// fail only with `--strict`.
     pub fn blocking(&self) -> bool {
         match self.change {
+            Change::ChangeField => true,
             Change::EmptyBody | Change::Force(_) => !self.updates_only,
             Change::Remove => (self.coarse && !self.updates_only) || self.emits,
             _ => false,
@@ -271,7 +289,7 @@ pub fn mutable_funs(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec
 /// coverage probes of the program's code
 /// ([`compile_program_with_probes`](crate::checker::compile::compile_program_with_probes)).
 pub fn mutants(prog: &Program, funs: &[bool], probes: &[Probe]) -> Vec<Mutant> {
-    mutants_with_observers(prog, funs, probes, &prog.test_cases())
+    mutants_with_observers(prog, funs, probes, &prog.test_cases(), &[])
 }
 
 pub(crate) fn mutants_with_observers(
@@ -279,6 +297,7 @@ pub(crate) fn mutants_with_observers(
     funs: &[bool],
     probes: &[Probe],
     tests: &[TestCase],
+    unread: &[UnreadField],
 ) -> Vec<Mutant> {
     let mut observed = vec![false; prog.events.len()];
     let mut observers: Vec<Vec<String>> = vec![Vec::new(); prog.events.len()];
@@ -354,6 +373,7 @@ pub(crate) fn mutants_with_observers(
                     emits: false,
                     emitted: None,
                     announces: false,
+                    unread_field: None,
                 });
             }
         }
@@ -375,6 +395,19 @@ pub(crate) fn mutants_with_observers(
         let mut remove_if = None;
         walk(prog, &mut body, &mut |stmt, target| {
             let mut this = site;
+            let unread_field = match &target {
+                Target::Field { event, field, .. } => {
+                    let event = &prog.event(*event).name;
+                    match unread.iter().find(|u| &u.event == event && &u.field == field) {
+                        Some(u) => Some(u.finding.clone()),
+                        None => {
+                            site += 1;
+                            return;
+                        }
+                    }
+                }
+                _ => None,
+            };
             match &target {
                 Target::Stmt(s, Change::Remove) if matches!(s.kind, StmtKind::If { .. }) => {
                     remove_if = Some((s.span, site));
@@ -496,6 +529,7 @@ pub(crate) fn mutants_with_observers(
                 emits,
                 emitted,
                 announces,
+                unread_field,
             });
         });
     }
@@ -629,6 +663,7 @@ pub fn queue_mutants(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Ve
                         emits: false,
                         emitted: None,
                         announces: false,
+                        unread_field: None,
                     });
                 }
             }
@@ -793,6 +828,12 @@ fn apply_into(prog: &Program, out: &mut Program, m: &Mutant) {
 enum Target<'a> {
     Stmt(&'a mut Stmt, Change),
     Expr(&'a mut Expr, Change),
+    /// The value of payload field `field` of a sent or announced `event` ([`Change::ChangeField`]).
+    Field {
+        value: &'a mut Expr,
+        event: EventId,
+        field: String,
+    },
 }
 
 fn change(target: Target<'_>) {
@@ -824,6 +865,17 @@ fn change(target: Target<'_>) {
             if let ExprKind::BoolLit(b) = &mut e.kind {
                 *b = !*b;
             }
+        }
+        Target::Field { value: e, .. } => {
+            let (ty, span) = (e.ty.clone(), e.span);
+            let old = Box::new(std::mem::replace(e, Expr { kind: ExprKind::NullLit, ty: PType::Null, span }));
+            let kind = if ty == PType::Bool {
+                ExprKind::Unary { op: UnOp::Not, operand: old }
+            } else {
+                let one = Box::new(Expr { kind: ExprKind::IntLit(1), ty: PType::Int, span });
+                ExprKind::Binary { op: BinOp::Add, lhs: old, rhs: one }
+            };
+            *e = Expr { kind, ty, span };
         }
         _ => unreachable!("no such mutant"),
     }
@@ -859,6 +911,7 @@ fn walk_stmt(prog: &Program, s: &mut Stmt, visit: &mut dyn FnMut(Span, Target<'_
         visit(span, Target::Stmt(s, Change::Force(true)));
         visit(span, Target::Stmt(s, Change::Force(false)));
     }
+    let fields = changeable_fields(prog, s);
     macro_rules! exprs {
         ($($e:expr),*) => {{ $(walk_expr(prog, $e, span, visit);)* }};
     }
@@ -900,6 +953,53 @@ fn walk_stmt(prog: &Program, s: &mut Stmt, visit: &mut dyn FnMut(Span, Target<'_
         // receive cases are functions of their own
         StmtKind::Receive { .. } | StmtKind::Break | StmtKind::Continue | StmtKind::Nop => {}
     }
+    if let Some((event, fields)) = fields {
+        if let StmtKind::Send { payload: Some(p), .. } | StmtKind::Announce { payload: Some(p), .. } = &mut s.kind {
+            if let ExprKind::NamedTuple(values) = &mut p.kind {
+                for (i, field) in fields {
+                    visit(span, Target::Field { value: &mut values[i], event, field });
+                }
+            }
+        }
+    }
+}
+
+/// The payload fields of `send` or `announce` statement `s` that a [`Change::ChangeField`]
+/// mutant can change: the event, and each `int` or `bool` field of a named-tuple literal
+/// with its position, unless its value makes a choice.
+fn changeable_fields(prog: &Program, s: &Stmt) -> Option<(EventId, Vec<(usize, String)>)> {
+    let (StmtKind::Send { event, payload: Some(p), .. } | StmtKind::Announce { event, payload: Some(p) }) = &s.kind
+    else {
+        return None;
+    };
+    let ExprKind::EventRef(id) = event.kind else { return None };
+    let (ExprKind::NamedTuple(values), PType::NamedTuple(fields)) = (&p.kind, p.ty.canonicalize(prog)) else {
+        return None;
+    };
+    let fields = fields
+        .into_iter()
+        .zip(values)
+        .enumerate()
+        .filter(|(_, ((_, ty), value))| matches!(ty, PType::Int | PType::Bool) && !has_choice(value))
+        .map(|(i, ((name, _), _))| (i, name))
+        .collect();
+    Some((id, fields))
+}
+
+/// Whether a [`Change::ChangeField`] mutant of the functions `funs` (see [`mutable_funs`])
+/// can change payload field `field` of `event`.
+pub fn field_can_change(prog: &Program, funs: &[bool], event: &str, field: &str) -> bool {
+    prog.funs.iter().enumerate().filter(|(i, _)| funs.get(*i).copied().unwrap_or(false)).any(|(_, f)| {
+        let mut found = false;
+        if let Some(body) = &f.body {
+            crate::checker::checked::visit_stmts(body, &mut |s| {
+                if let Some((id, fields)) = changeable_fields(prog, s) {
+                    found |= prog.event(id).name == event && fields.iter().any(|(_, name)| name == field);
+                }
+            });
+        }
+        found
+    })
 }
 
 fn empty_statement(s: &Stmt) -> bool {
@@ -1118,6 +1218,11 @@ fn describe(sm: &SourceMap, target: &Target<'_>) -> (Change, Span, String) {
             let ExprKind::BoolLit(b) = e.kind else { unreachable!() };
             (*c, e.span, format!("`{}` → `{}`", b, !b))
         }
+        Target::Field { value, field, .. } => {
+            let old = code(sm, value.span);
+            let new = if value.ty == PType::Bool { format!("!({old})") } else { format!("{old} + 1") };
+            (Change::ChangeField, value.span, format!("payload field `{field}` sent as `{new}`"))
+        }
         _ => unreachable!("no such mutant"),
     }
 }
@@ -1284,6 +1389,7 @@ mod tests {
             Change::EmptyBody,
             Change::DropConjunct { left: true },
             Change::DropDisjunct { left: true },
+            Change::ChangeField,
             Change::RemoveDefer,
             Change::DeferToIgnore,
             Change::RemoveIgnore,

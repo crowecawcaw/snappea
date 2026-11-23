@@ -1137,8 +1137,8 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(
         h.stdout.contains(
             "\nNo bugs found in 0.00s, but mutation testing failed: the test cases pass with each change listed as \
-             error[undetected-mutant] above. For each, add what its help names, or suppress it with a reason. \
-             Output: PCheckerOutput/\n"
+             error[undetected-mutant] above. For each, add what its help names; suppress one only if the changed \
+             model would still be correct, and say why. Output: PCheckerOutput/\n"
         ),
         "{}",
         h.stdout
