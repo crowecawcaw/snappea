@@ -2,7 +2,12 @@
 //!
 //! Commands never touch `std::fs`, `std::time` or `std::process` directly so that the crate
 //! also runs in a browser. [`MemHost`] is an in-memory implementation for tests and wasm;
-//! `snappea::cli` supplies a native one.
+//! [`NativeHost`] is the real machine.
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::NativeHost;
 
 use std::collections::BTreeMap;
 use std::io;

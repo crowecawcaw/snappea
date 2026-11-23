@@ -201,3 +201,22 @@ fn an_unreached_monitor_state_is_reported_once() {
     assert!(!missed.contains(&"Door.Shut: state never reached".to_string()), "{missed:?}");
     assert_eq!((c.summary().states.covered, c.summary().states.total), (1, 2));
 }
+
+#[test]
+fn driver_on_the_native_host() {
+    use snappea::driver::check::{self, CheckConfig};
+    let dir = std::env::temp_dir().join(format!("snappea-native-host-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("model.p");
+    std::fs::write(&model, MODEL).unwrap();
+
+    let mut host = snappea::host::NativeHost::new();
+    let mut cfg = CheckConfig { output_path: dir.join("out").to_string_lossy().into_owned(), ..Default::default() };
+    cfg.input.pfiles = vec![model.to_string_lossy().into_owned()];
+    check::resolve_sources(&mut host, &mut cfg).expect("reported on stderr");
+    let loaded = check::load(&mut host, &cfg).expect("reported on stderr");
+    cfg.test_case_name = "tcMain".into();
+    let outcome = check::testing_process(&mut host, &loaded, &cfg).expect("reported on stderr");
+    assert_eq!(outcome.bugs, 1);
+    std::fs::remove_dir_all(dir).unwrap();
+}

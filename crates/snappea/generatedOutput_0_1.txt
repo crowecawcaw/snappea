@@ -1,0 +1,14 @@
+<TestLog> Running test 'tcMain'.
+<CreateLog> Main(1) was created by task '1'.
+<StateLog> Main(1) enters state 'Init'.
+<SendLog> 'Main(1)' in state 'Init' sent event 'ePing' to 'Main(1)'.
+<DequeueLog> 'Main(1)' dequeued event 'ePing' in state 'Init'.
+<ErrorLog> Assertion Failed: ../../../../../tmp/snappea-native-host-24733/model.p:6:27 pinged
+<StrategyLog> Found bug using 'random' strategy.
+<StrategyLog> Checking statistics:
+<StrategyLog> Found 1 bug.
+<StrategyLog> Scheduling statistics:
+<StrategyLog> Explored 1 schedule
+<StrategyLog> Explored 1 timeline
+<StrategyLog> Found 100.00% buggy schedules.
+<StrategyLog> Number of scheduling points in terminating schedules: 4 (min), 4 (avg), 4 (max).

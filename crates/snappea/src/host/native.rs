@@ -7,6 +7,24 @@ use std::time::Instant;
 
 use crate::host::{Color, Host, Job, LiveInput, LiveRead, LiveSource, MemoryUse, Stream, Threads};
 
+/// The [`Host`] of a native process: the real file system, console, clock, environment
+/// and threads. The `snappea` binary runs on it. Use it to run [`crate::driver`] or
+/// [`crate::project`] functions on real files from Rust; tests and the browser use a
+/// [`MemHost`](crate::host::MemHost) instead.
+///
+/// ```no_run
+/// use snappea::driver::check::{self, CheckConfig};
+/// use snappea::host::NativeHost;
+///
+/// let mut host = NativeHost::new(); // paths are relative to the working directory
+/// let mut cfg = CheckConfig::default(); // bug traces go to PCheckerOutput/
+/// cfg.input.pfiles = vec!["model.p".into()];
+/// check::resolve_sources(&mut host, &mut cfg).expect("errors are printed to stderr");
+/// let loaded = check::load(&mut host, &cfg).expect("errors are printed to stderr");
+/// cfg.test_case_name = "tcMain".into();
+/// let outcome = check::testing_process(&mut host, &loaded, &cfg).expect("errors are printed to stderr");
+/// println!("{} bug(s) in {} schedules", outcome.bugs, outcome.schedules);
+/// ```
 pub struct NativeHost {
     start: Instant,
     color_out: bool,
@@ -217,7 +235,7 @@ fn peak_rss_bytes_macos() -> f64 {
 }
 
 /// [`Threads::run`] on OS threads.
-pub fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
+fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
     std::thread::scope(|s| {
         for job in jobs {
             s.spawn(job);
