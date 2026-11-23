@@ -166,7 +166,11 @@ impl<'p> Spec<'p> {
     }
 
     pub fn from_decl(prog: &'p Program, decl: MachineId) -> Spec<'p> {
-        let config = Config { logging: false, max_work_per_step: 0, ..Config::default() };
+        let config = Config {
+            logging: false,
+            limits: crate::checker::runtime::RunLimits { max_work_per_step: 0, ..Default::default() },
+            ..Config::default()
+        };
         let code = compile_program_with_probes(prog);
         let map = CodeMap::new(prog, &code.probes, &Scope::machine(prog, decl));
         Spec {

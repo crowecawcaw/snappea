@@ -110,8 +110,11 @@ fn main() {
                         feedback_frontier_guidance: frontier_guidance,
                         seed,
                         iterations: budget,
-                        max_fair_steps: steps,
-                        max_unfair_steps: steps,
+                        steps: snappea::checker::runtime::StepBounds {
+                            unfair: steps,
+                            fair: steps,
+                            fair_explicit: false,
+                        },
                         full_exploration: true,
                         activity_coverage: true,
                         ..Default::default()

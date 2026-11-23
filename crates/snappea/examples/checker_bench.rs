@@ -124,8 +124,11 @@ fn main() {
                             strategy_bound: depth,
                             seed: seed as u32,
                             iterations: budget,
-                            max_unfair_steps: run["steps"].as_u64().unwrap() as usize,
-                            max_fair_steps: run["steps"].as_u64().unwrap() as usize,
+                            steps: snappea::checker::runtime::StepBounds {
+                                unfair: run["steps"].as_u64().unwrap() as usize,
+                                fair: run["steps"].as_u64().unwrap() as usize,
+                                fair_explicit: false,
+                            },
                             full_exploration: true,
                             activity_coverage: true,
                             ..Default::default()

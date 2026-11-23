@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use crate::checker::runtime::StepBounds;
 use crate::checker::strategy::StrategyKind;
 use crate::compat::argparse::{ArgParser, DataType, ParseError};
 use crate::driver::check::{
@@ -287,15 +288,10 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
                 if vals.len() > 2 {
                     return Err(checker_report_and_exit(host, "Invalid number of options supplied via '--max-steps'."));
                 }
-                let i = vals[0];
-                let j = if vals.len() == 2 {
-                    cfg.user_set_max_fair_steps = true;
-                    vals[1]
-                } else {
-                    i.wrapping_mul(10)
-                };
-                cfg.max_unfair_steps = i as usize;
-                cfg.max_fair_steps = j as usize;
+                cfg.steps = StepBounds::from_unfair(vals[0] as usize);
+                if let [_, fair] = vals[..] {
+                    cfg.steps = cfg.steps.with_fair(fair as usize);
+                }
             }
             "fail-on-maxsteps" => cfg.fail_on_max_steps = true,
             // also `--liveness-temperature-threshold`: upstream parses it but has no case for it
@@ -304,7 +300,7 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
     }
     resolve_sources(host, &mut cfg)?;
     finish_options(&mut cfg);
-    if cfg.max_fair_steps < cfg.max_unfair_steps {
+    if cfg.steps.fair < cfg.steps.unfair {
         return Err(checker_report_and_exit(host, "For the option '--max-steps N[,M]', please make sure that M >= N."));
     }
     set_output_directory(host, &mut cfg)?;

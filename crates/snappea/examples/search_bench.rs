@@ -115,8 +115,11 @@ fn main() {
                             feedback_frontier_guidance: label != "feedback-plain",
                             seed,
                             iterations: budget,
-                            max_fair_steps: 1000,
-                            max_unfair_steps: 1000,
+                            steps: snappea::checker::runtime::StepBounds {
+                                unfair: 1000,
+                                fair: 1000,
+                                fair_explicit: false,
+                            },
                             full_exploration: true,
                             activity_coverage: true,
                             ..Default::default()

@@ -108,9 +108,7 @@ pub struct CheckConfig {
     /// [`CheckerOptions::max_bugs`]). [`Style::Snappea`] only: upstream's output stops at
     /// the first bug.
     pub max_bugs: usize,
-    pub max_unfair_steps: usize,
-    pub max_fair_steps: usize,
-    pub user_set_max_fair_steps: bool,
+    pub steps: crate::checker::runtime::StepBounds,
     pub fail_on_max_steps: bool,
     /// Steps a spec may stay hot before it is a liveness bug; `None` is half of
     /// `max_fair_steps`. A replay takes it from the schedule.
@@ -235,9 +233,7 @@ impl Default for CheckConfig {
             seed_artifact: None,
             full_exploration: false,
             max_bugs: 1,
-            max_unfair_steps: 10000,
-            max_fair_steps: 100000,
-            user_set_max_fair_steps: false,
+            steps: Default::default(),
             fail_on_max_steps: false,
             liveness_threshold: None,
             timeout: None,
@@ -547,9 +543,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         strategy: cfg.strategy,
         seed,
         iterations: cfg.iterations,
-        max_unfair_steps: cfg.max_unfair_steps,
-        max_fair_steps: cfg.max_fair_steps,
-        user_set_max_fair_steps: cfg.user_set_max_fair_steps,
+        steps: cfg.steps,
         liveness_temperature_threshold: cfg.liveness_threshold,
         fail_on_max_steps: cfg.fail_on_max_steps,
         strategy_bound: cfg.strategy_bound,
@@ -1120,7 +1114,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     host.out_line(&res.report.text(&opts, "..."));
     if let Some(x) = &res.exhaustive {
         let schedules = res.report.explored_fair_schedules + res.report.explored_unfair_schedules;
-        host.out_line(&x.text(schedules, opts.max_unfair_steps, "....."));
+        host.out_line(&x.text(schedules, opts.steps.unfair, "....."));
     }
     if !snappea {
         let summary_path = path(format!("{}_pchecker_summary.txt", file), "summary.txt");

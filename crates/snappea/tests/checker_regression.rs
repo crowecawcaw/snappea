@@ -55,9 +55,7 @@ fn check_dir(dir: &Path, expect_bug: bool) -> Option<String> {
     };
     let opts = CheckerOptions {
         iterations: 100,
-        max_unfair_steps: 1000,
-        max_fair_steps: 1000,
-        user_set_max_fair_steps: true,
+        steps: snappea::checker::runtime::StepBounds { unfair: 1000, fair: 1000, fair_explicit: true },
         ..Default::default()
     };
     match Checker::new(&a.program).check(tc, &opts, &mut Quiet) {

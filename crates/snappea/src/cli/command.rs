@@ -12,6 +12,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::checker::code_coverage::{uncovered_lines, CodeMap, Hits, Scope, SHOWN_UNCOVERED};
+use crate::checker::runtime::StepBounds;
 use crate::checker::strategy::StrategyKind;
 use crate::driver::check::{self, CheckConfig, Gate, Style};
 use crate::driver::progress::Position;
@@ -1070,17 +1071,15 @@ fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
 /// step bounds it was found with.
 fn step_options(a: &Args, cfg: &mut CheckConfig) -> Result<(), String> {
     if let Some(n) = uint(a, "max-steps")? {
-        cfg.max_unfair_steps = n;
-        cfg.max_fair_steps = n.saturating_mul(10);
+        cfg.steps = StepBounds::from_unfair(n);
     }
     if let Some(n) = uint(a, "fair-max-steps")? {
-        cfg.max_fair_steps = n;
-        cfg.user_set_max_fair_steps = true;
+        cfg.steps = cfg.steps.with_fair(n);
     }
-    if cfg.max_fair_steps < cfg.max_unfair_steps {
+    if cfg.steps.fair < cfg.steps.unfair {
         return Err(format!(
             "'--fair-max-steps' ({}) must be at least '--max-steps' ({}); raise it, or leave it out to use 10 x '--max-steps'",
-            cfg.max_fair_steps, cfg.max_unfair_steps
+            cfg.steps.fair, cfg.steps.unfair
         ));
     }
     cfg.fail_on_max_steps = a.has("fail-on-max-steps");

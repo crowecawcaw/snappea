@@ -498,7 +498,7 @@ impl<'p> Runtime<'p> {
         }
     }
 
-    /// The bug reported when an action runs longer than `max_work_per_step` allows.
+    /// The bug reported when an action runs longer than `RunLimits::max_work_per_step` allows.
     #[cold]
     #[inline(never)]
     fn work_bound_exceeded(&mut self, actor: Actor) -> Fault {
@@ -506,7 +506,7 @@ impl<'p> Runtime<'p> {
             "{} in state {} exceeded the work bound of {} without reaching a scheduling point (possible infinite loop).",
             self.actor_name(actor),
             self.actor_state_name(actor),
-            self.config.max_work_per_step
+            self.config.limits.max_work_per_step
         );
         self.report_bug(msg).into()
     }
@@ -904,7 +904,7 @@ impl<'p> Runtime<'p> {
     /// The counter value at which an instruction must check the work bound or poll for
     /// cancellation (see [`Runtime::run_frame`]).
     fn work_threshold(&self, next_poll: u64) -> u64 {
-        let limit = self.config.max_work_per_step;
+        let limit = self.config.limits.max_work_per_step;
         if limit > 0 {
             next_poll.min(limit + 1)
         } else {
@@ -914,7 +914,7 @@ impl<'p> Runtime<'p> {
 
     #[inline(always)]
     fn run_ops(&mut self, actor: Actor, exec: &mut Exec, left: &mut i64, stop_at: &mut u64) -> Result<Flow, Fault> {
-        let limit = self.config.max_work_per_step;
+        let limit = self.config.limits.max_work_per_step;
         let prog = self.prog;
         let java = self.java_semantics();
         let inspecting = self.config.inspection_trace && self.json_enabled();
@@ -1401,7 +1401,7 @@ impl<'p> Runtime<'p> {
             Op::CallEmpty { nargs } => {
                 // the callee's `PushNull; Return`, counted as `charge!` would
                 self.step_work += 2;
-                let limit = self.config.max_work_per_step;
+                let limit = self.config.limits.max_work_per_step;
                 if limit > 0 && self.step_work > limit {
                     self.step_work = (self.step_work - 1).max(limit + 1);
                     return Err(self.work_bound_exceeded(actor));
@@ -2170,7 +2170,11 @@ mod tests {
     ) -> ((Option<String>, Vec<String>, u64), crate::checker::coverage::ProbeSet) {
         let tc = prog.test_cases().into_iter().next().expect("a test case");
         let (module, main) = prog.test_case_module(&tc);
-        let config = Config { max_work_per_step, logging, ..Config::default() };
+        let config = Config {
+            limits: crate::checker::runtime::RunLimits { max_work_per_step, ..Default::default() },
+            logging,
+            ..Config::default()
+        };
         let rng = Rc::new(std::cell::RefCell::new(crate::checker::random::RandomValueGenerator::new(0)));
         let mut strategy = crate::checker::strategy::RandomStrategy::new(1000, rng);
         let formatter = crate::checker::javafmt::JavaFormatter::new(prog);
@@ -2310,9 +2314,9 @@ mod tests {
         );
         let code = compile_program(&a.program);
         let start = std::time::Instant::now();
-        let (bug, _, work) = run(&a.program, &code, crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP);
+        let (bug, _, work) = run(&a.program, &code, crate::checker::runtime::RunLimits::default().max_work_per_step);
         assert!(bug.is_some_and(|b| b.contains("possible infinite loop")));
-        assert!(work > crate::checker::runtime::DEFAULT_MAX_WORK_PER_STEP);
+        assert!(work > crate::checker::runtime::RunLimits::default().max_work_per_step);
         // without counting the shifts this would take hours
         assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
         // removing shifts the elements after it too

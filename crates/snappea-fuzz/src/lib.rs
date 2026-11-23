@@ -103,15 +103,11 @@ fn bounded(strategy: StrategyKind) -> CheckerOptions {
         strategy,
         seed: 1,
         iterations: 4,
-        max_unfair_steps: 200,
-        max_fair_steps: 200,
-        user_set_max_fair_steps: true,
+        steps: snappea::checker::runtime::StepBounds { unfair: 200, fair: 200, fair_explicit: true },
         strategy_bound: 2,
         max_bugs: 1,
         // keep each input fast: a long loop in the model becomes a bug report sooner
-        max_work_per_step: 100_000,
-        max_machines: 64,
-        max_inbox: 256,
+        limits: snappea::checker::runtime::RunLimits { max_work_per_step: 100_000, max_machines: 64, max_inbox: 256 },
         json_trace: true,
         ..Default::default()
     }
