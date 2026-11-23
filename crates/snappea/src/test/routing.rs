@@ -1,6 +1,6 @@
 //! Routes events from the global [`snappea::emit::emit`](crate::emit::emit) into in-process recordings.
 //!
-//! A recording binds the thread that creates it (the test's thread); [`EventSink::bind`]
+//! A recording binds the thread that creates it (the test's thread); [`Recording::bind`]
 //! binds others. An emit on a bound thread goes to that thread's newest open recording.
 //! On an unbound thread it goes to the only open recording, or, when several are open
 //! (Cargo runs tests in parallel), fails all of them: the event cannot be attributed.
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use crate::emit::Event;
 
-use crate::test::{Buffer, ErrorKind, EventSink};
+use crate::test::{Buffer, ErrorKind, Recording};
 
 type Shared = Weak<Mutex<Buffer>>;
 
@@ -57,7 +57,7 @@ fn unbind(state: &Arc<Mutex<Buffer>>) {
     });
 }
 
-/// Keeps a thread bound to a recording until dropped. See [`EventSink::bind`].
+/// Keeps a thread bound to a recording until dropped. See [`Recording::bind`].
 #[must_use = "the thread is bound only while the guard lives"]
 pub struct BindGuard {
     state: Arc<Mutex<Buffer>>,
@@ -70,10 +70,21 @@ impl Drop for BindGuard {
     }
 }
 
-impl EventSink {
-    /// Sends the global [`snappea::emit::emit`](crate::emit::emit) calls made on this thread to this recording
-    /// until the guard drops. The test's own thread is bound already; bind threads it
-    /// spawns: `let sink = recording.sink(); spawn(move || { let _g = sink.bind(); ... })`.
+impl Recording {
+    /// Sends the global [`snappea::emit::emit`](crate::emit::emit) calls made on this
+    /// thread to this recording until the guard drops. The test's own thread is bound
+    /// already; bind the scoped threads it spawns. A `'static` thread (`thread::spawn`)
+    /// cannot borrow the recording: use a scoped thread, or inject
+    /// [`emitter`](Self::emitter) into the code it runs.
+    ///
+    /// ```ignore
+    /// std::thread::scope(|s| {
+    ///     s.spawn(|| {
+    ///         let _guard = recording.bind();
+    ///         app.reserve("coffee", "o1", 2); // calls snappea::emit::emit
+    ///     });
+    /// });
+    /// ```
     pub fn bind(&self) -> BindGuard {
         bind(&self.state);
         BindGuard { state: self.state.clone(), _not_send: PhantomData }
@@ -105,7 +116,7 @@ fn route(event: Result<Event, String>) -> Option<Event> {
                     let message = format!(
                         "snappea::emit::emit of {what} ran on a thread not bound to a recording while {} recordings \
                          were open, so it could not be attributed. Bind the thread \
-                         (`let _guard = recording.sink().bind();`) or pass `recording.sink()` / \
+                         (`let _guard = recording.bind();` in a scoped thread) or pass \
                          `recording.emitter()` to the code that emits.",
                         several.len()
                     );

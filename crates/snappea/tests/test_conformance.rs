@@ -67,9 +67,7 @@ fn run_case(case: &Path, expect: &Value) -> Result<(), String> {
         let e: Value = serde_json::from_str(line).unwrap();
         let ts = snappea::checker::observe_json::parse_instant(e["timestamp"].as_str().unwrap()).unwrap();
         let at = Time::from_nanos(ts.secs * 1_000_000_000 + i64::from(ts.nanos));
-        recording
-            .emit_at(at, e["event"].as_str().unwrap(), e["key"].as_str().unwrap(), &e["payload"])
-            .map_err(|e| e.to_string())?;
+        recording.emit_at(at, e["event"].as_str().unwrap(), e["key"].as_str().unwrap(), &e["payload"]);
     }
     if let Ok(children) = std::fs::read_dir(case.join("children")) {
         let dir = recording.events_dir();
@@ -84,7 +82,7 @@ fn run_case(case: &Path, expect: &Value) -> Result<(), String> {
         Some(w) if !got.contains(w) => Err(format!("{field}: expected to contain {w:?}, got {got:?}")),
         _ => Ok(()),
     };
-    match (want["outcome"].as_str().unwrap(), recording.check()) {
+    match (want["outcome"].as_str().unwrap(), recording.verify()) {
         ("pass", Ok(report)) => {
             let Some(coverage) = want["coverage"].as_object() else { return Ok(()) };
             let got = report.coverage().map_err(|e| e.to_string())?;

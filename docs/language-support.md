@@ -411,8 +411,13 @@ failing; then the default flips. `[tool.snappea] strict` and `--snappea-strict` 
   explicit setup.
 - `.specs([...])`, `.exclude([...])`, `.strict(..)`, `.check_hot(..)`,
   `.unknown_events(..)` as builders; `specs` defaults to every spec.
-- `EventSink::emit(event, key, payload)`: the argument order changes to match L1.
-  The crate is pre-1.0, so no alias.
+- `Recording::emit(event, key, payload)`: the argument order matches L1, and it returns
+  nothing, like Go's and Java's `emit`; a payload that cannot be serialized fails
+  `verify()`.
+- No `EventSink`: application code takes a `snappea::emit::Emitter`, and tests inject
+  `recording.emitter()`. Threads using the global emit bind with `recording.bind()`.
+- `Recording::verify()` checks a recording, as Go's `Verify()`; `Model::check(|r| ..)`
+  keeps its name. The crate is pre-1.0, so no aliases.
 
 ### Smaller decisions
 
