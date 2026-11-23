@@ -38,6 +38,13 @@ For compatibility details, see [Compatibility](docs/compatibility.md).
 CLI help and doc strings say what a thing does, when to use it, and give an example.
 Plain and short.
 
+In documentation and website copy:
+
+* Avoid first person (`we`, `our`). Name the project or the thing that acts.
+* Avoid catchy taglines. Say what the thing does in direct language:
+  "`snappea check --json` prints structured results", not "Results an agent can act on";
+  "One command runs lint, search, coverage and mutation testing", not "One command, no tuning".
+
 ## Documentation
 
 Use Diátaxis. Give each page one primary type: `tutorial`, `how-to`,

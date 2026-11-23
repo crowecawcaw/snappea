@@ -184,3 +184,12 @@
 }
 .home-comparison + p { margin-top: 14px; }
 .home-p > .home-sample-label { margin-bottom: 8px; }
+
+/* How it compares: paired options and short notes on other tools. */
+.home-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 20px 0 24px; }
+.home-options article { border-left: 3px solid var(--accent); padding-left: 16px; }
+.home-options h4 { font-size: 17px; line-height: 1.35; margin: 0 0 8px; }
+.home-options h3 { margin-top: 0; }
+.home-options p { margin: 0; font-size: 15px; }
+.home-others { margin-top: 36px; margin-bottom: 0; }
+@media (max-width: 700px) { .home-options { grid-template-columns: 1fr; gap: 20px; } }
