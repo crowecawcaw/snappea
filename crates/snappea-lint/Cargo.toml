@@ -10,3 +10,6 @@ description = "Model quality lint rules for P/Snappea"
 [dependencies]
 serde_json = { workspace = true }
 snappea-syntax = { workspace = true }
+
+[lints]
+workspace = true

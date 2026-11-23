@@ -31,14 +31,14 @@ use crate::checker::value::Value;
 /// A 64-bit hash that mixes a word per step (a folded 128-bit multiply, as in wyhash).
 /// The state hash is most of what an exhaustive search does besides running the model,
 /// and a byte-at-a-time hash made eight multiplications of every integer.
-pub struct StableHasher(u64);
+pub(crate) struct StableHasher(u64);
 
 /// Odd constants from the fractional digits of pi.
 const SEED: u64 = 0x243f_6a88_85a3_08d3;
 const MULTIPLIER: u64 = 0x1319_8a2e_0370_7345;
 
 impl StableHasher {
-    pub fn new() -> StableHasher {
+    pub(crate) fn new() -> StableHasher {
         StableHasher(SEED)
     }
 
@@ -95,7 +95,7 @@ impl Hasher for StableHasher {
 }
 
 /// Hash of the program state of `rt` (see the module documentation).
-pub fn program_state(rt: &Runtime) -> u64 {
+pub(crate) fn program_state(rt: &Runtime) -> u64 {
     let u = &rt.code.unhashed;
     let mut h = StableHasher::new();
     values(&rt.globals, &mut h);
@@ -342,7 +342,7 @@ fn values(vs: &[Value], h: &mut StableHasher) {
 
 /// Deep, order-sensitive hash of a value. Sets and maps hash their slot layout, since
 /// it decides the order in which they are enumerated later.
-pub fn value(v: &Value, h: &mut StableHasher) {
+pub(crate) fn value(v: &Value, h: &mut StableHasher) {
     match v {
         Value::Null => h.write_u8(0),
         Value::Bool(b) => {

@@ -37,3 +37,10 @@ strip = true
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+# `pub` items no other crate can reach read as API; say pub(crate) instead.
+[workspace.lints.rust]
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+unused_self = "warn"

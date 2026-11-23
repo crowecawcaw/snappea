@@ -10,7 +10,7 @@ use crate::syntax::{SourceMap, Span};
 
 /// Where a function's body comes from.
 #[derive(Clone, Copy)]
-pub enum FunSrc<'a> {
+pub(crate) enum FunSrc<'a> {
     Named(&'a ast::FunDecl),
     Anon(&'a ast::AnonHandler),
     /// Receive-case handlers are populated when the enclosing statement is checked.
@@ -18,7 +18,7 @@ pub enum FunSrc<'a> {
     None,
 }
 
-pub struct Analyzer<'a> {
+pub(crate) struct Analyzer<'a> {
     pub sm: &'a SourceMap,
     pub e: Errors<'a>,
     pub prog: Program,
@@ -43,7 +43,7 @@ pub struct Analyzer<'a> {
 }
 
 impl<'a> Analyzer<'a> {
-    pub fn new(sm: &'a SourceMap, continue_on_error: bool) -> Analyzer<'a> {
+    pub(crate) fn new(sm: &'a SourceMap, continue_on_error: bool) -> Analyzer<'a> {
         let mut prog = Program::default();
         // built-in events
         prog.events.push(EventDecl { name: "null".into(), payload: PType::Null, span: Span::dummy() });
@@ -51,7 +51,7 @@ impl<'a> Analyzer<'a> {
         prog.null_event = EventId(0);
         prog.halt_event = EventId(1);
         let mut scopes = Scopes::new();
-        let g = scopes.global();
+        let g = crate::sema::scope::Scopes::GLOBAL;
         scopes.get_mut(g).events.insert("null".into(), EventId(0));
         scopes.get_mut(g).events.insert("halt".into(), EventId(1));
         Analyzer {
@@ -77,16 +77,16 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    pub fn report(&mut self, d: Fatal) -> Result<(), Fatal> {
+    pub(crate) fn report(&mut self, d: Fatal) -> Result<(), Fatal> {
         self.diags.report(d)
     }
 
-    pub fn new_var(&mut self, name: &str, role: VarRole, ty: PType, slot: u32, span: Span) -> VarId {
+    pub(crate) fn new_var(&mut self, name: &str, role: VarRole, ty: PType, slot: u32, span: Span) -> VarId {
         self.prog.var_decls.push(VarDecl { name: name.to_string(), role, ty, slot, span });
         VarId(self.prog.var_decls.len() as u32 - 1)
     }
 
-    pub fn new_fun(
+    pub(crate) fn new_fun(
         &mut self,
         name: &str,
         owner: Option<MachineId>,
@@ -124,18 +124,18 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Allocates a frame slot in the root frame of `fun`.
-    pub fn alloc_slot(&mut self, fun: FunId) -> u32 {
+    pub(crate) fn alloc_slot(&mut self, fun: FunId) -> u32 {
         let root = self.fun_root[fun.idx()];
         let s = self.fun_next_slot[root.idx()];
         self.fun_next_slot[root.idx()] = s + 1;
         s
     }
 
-    pub fn fun_name(&self, id: FunId) -> String {
+    pub(crate) fn fun_name(&self, id: FunId) -> String {
         self.prog.fun_display_name(id, self.sm)
     }
 
-    pub fn add_callee(&mut self, caller: FunId, callee: FunId) {
+    pub(crate) fn add_callee(&mut self, caller: FunId, callee: FunId) {
         let f = &mut self.prog.funs[caller.idx()];
         if !f.callees.contains(&callee) {
             f.callees.push(callee);

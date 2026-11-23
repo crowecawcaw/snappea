@@ -9,7 +9,7 @@ fn source(sm: &SourceMap, span: Span) -> Value {
 }
 
 /// The machines, events and tests of the `.p` files in `files`, named relative to `cwd`.
-pub fn inspect(files: &BTreeMap<String, String>, cwd: &str) -> Result<Value, String> {
+pub(crate) fn inspect(files: &BTreeMap<String, String>, cwd: &str) -> Result<Value, String> {
     let mut sm = SourceMap::new();
     let mut programs = Vec::new();
     let prefix = format!("{}/", cwd.trim_end_matches('/'));

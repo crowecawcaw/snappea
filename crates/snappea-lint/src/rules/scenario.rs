@@ -6,7 +6,7 @@ fn scenarios<'a>(ctx: &'a Context<'_>) -> impl Iterator<Item = &'a MachineDecl> 
     ctx.machines().filter(|m| m.kind == MachineKind::Scenario)
 }
 
-pub struct ScenarioNeverAccepts;
+pub(crate) struct ScenarioNeverAccepts;
 
 impl Rule for ScenarioNeverAccepts {
     fn id(&self) -> &'static str {
@@ -33,7 +33,7 @@ impl Rule for ScenarioNeverAccepts {
     }
 }
 
-pub struct ScenarioColdStart;
+pub(crate) struct ScenarioColdStart;
 
 impl Rule for ScenarioColdStart {
     fn id(&self) -> &'static str {

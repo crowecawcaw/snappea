@@ -13,7 +13,7 @@ use crate::driver::check::{
 use crate::host::{report_and_exit, Color, Exit, Host, HostExt, Stream};
 
 /// `PCheckerOptions` parser definition.
-pub fn parser() -> ArgParser {
+pub(super) fn parser() -> ArgParser {
     let mut p = ArgParser::new(
         "p check",
         "The P checker enables systematic exploration of a specified P test case, it generates a reproducible bug-trace if a bug is found, and also allows replaying a bug-trace.",
@@ -171,7 +171,7 @@ pub fn parser() -> ArgParser {
 }
 
 /// Runs `p check`; returns the exit code.
-pub fn run(args: &[String], host: &mut dyn Host) -> i32 {
+pub(super) fn run(args: &[String], host: &mut dyn Host) -> i32 {
     let opts = match parse(args, host) {
         Ok(o) => o,
         Err(Exit(code)) => return code,
@@ -192,14 +192,14 @@ fn checker_report_and_exit(host: &mut dyn Host, msg: &str) -> Exit {
 }
 
 /// The parsed `p check` options.
-pub struct Options {
+pub(super) struct Options {
     pub cfg: CheckConfig,
     /// `--list-tests`: print the test cases instead of checking them.
     pub list_tests: bool,
 }
 
 /// `PCheckerOptions.Parse`.
-pub fn parse(args: &[String], host: &mut dyn Host) -> Result<Options, Exit> {
+pub(super) fn parse(args: &[String], host: &mut dyn Host) -> Result<Options, Exit> {
     let p = parser();
     let result = match p.parse(args) {
         Ok(r) => r,

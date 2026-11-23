@@ -1,7 +1,7 @@
 use crate::{Context, Finding, Rule};
 use snappea_syntax::ast::*;
 
-pub struct UnobservedHandler;
+pub(crate) struct UnobservedHandler;
 
 impl Rule for UnobservedHandler {
     fn id(&self) -> &'static str {

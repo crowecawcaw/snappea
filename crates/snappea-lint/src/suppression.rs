@@ -23,7 +23,7 @@ fn is_program_rule(id: &str) -> bool {
 }
 
 /// The `// snappea-lint: allow` suppressions of rules of [`crate::PROGRAM_RULES`].
-pub fn program_suppressions(ctx: &Context<'_>) -> Vec<LintSuppression> {
+pub(crate) fn program_suppressions(ctx: &Context<'_>) -> Vec<LintSuppression> {
     commented_directives(ctx, &|_| true)
         .0
         .into_iter()
@@ -34,7 +34,7 @@ pub fn program_suppressions(ctx: &Context<'_>) -> Vec<LintSuppression> {
 
 /// The `// snappea-lint: allow` suppressions of lint rules: `rules` and
 /// [`crate::PROGRAM_RULES`], not coverage or mutation testing.
-pub fn lint_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<LintSuppression> {
+pub(crate) fn lint_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<LintSuppression> {
     commented_directives(ctx, &|_| true)
         .0
         .into_iter()
@@ -45,7 +45,7 @@ pub fn lint_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<Lint
 
 /// [`UNUSED_SUPPRESSION`] advisories for `/* snappea-lint: ... */` and `/* snappea: ... */`
 /// block comments: only `//` line comments are read, so these do nothing.
-pub fn block_comment_suppressions(ctx: &Context<'_>) -> Vec<Finding> {
+pub(crate) fn block_comment_suppressions(ctx: &Context<'_>) -> Vec<Finding> {
     let mut out = Vec::new();
     for (i, file) in ctx.sources.files().iter().enumerate() {
         let id = FileId(i as u32);
@@ -115,7 +115,7 @@ fn is_mutation(id: &str) -> bool {
 
 /// Removes the findings a suppression covers and adds the malformed suppressions and
 /// directives. Returns the suppressions that removed a finding.
-pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) -> Vec<SuppressionUse> {
+pub(crate) fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Finding>) -> Vec<SuppressionUse> {
     let (allowed, invalid) = commented_directives(ctx, &|id| {
         rules.iter().any(|r| r.id() == id) || id == "coverage" || is_mutation(id) || is_program_rule(id)
     });
@@ -132,7 +132,7 @@ pub fn apply(ctx: &Context<'_>, rules: &[Box<dyn Rule>], findings: &mut Vec<Find
 
 /// The machines marked `// snappea: driver`: test code that drives the model, as the
 /// spans of their declarations. Malformed directives are reported by linting, not here.
-pub fn driver_machines(ctx: &Context<'_>) -> Vec<Span> {
+pub(crate) fn driver_machines(ctx: &Context<'_>) -> Vec<Span> {
     snappea_directives(ctx).0
 }
 
@@ -145,7 +145,7 @@ pub struct TestIntent {
     pub boundary: Option<String>,
 }
 
-pub fn test_intents(ctx: &Context<'_>) -> Vec<TestIntent> {
+pub(crate) fn test_intents(ctx: &Context<'_>) -> Vec<TestIntent> {
     snappea_directives(ctx).2
 }
 
@@ -283,7 +283,7 @@ impl MutationSuppression {
     }
 }
 
-pub fn mutation_suppression_details(ctx: &Context<'_>) -> Vec<MutationSuppression> {
+pub(crate) fn mutation_suppression_details(ctx: &Context<'_>) -> Vec<MutationSuppression> {
     let scopes = scopes(ctx);
     directives(ctx, &|_| true)
         .0
@@ -304,7 +304,7 @@ pub fn mutation_suppression_details(ctx: &Context<'_>) -> Vec<MutationSuppressio
 
 /// The source scopes intentionally omitted from `snappea check` coverage requirements,
 /// with the reason each suppression gives after `--`.
-pub fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<(Span, String)> {
+pub(crate) fn coverage_suppressions(ctx: &Context<'_>, rules: &[Box<dyn Rule>]) -> Vec<(Span, String)> {
     let (allowed, _) = directives(ctx, &|id| {
         id == "coverage" || rules.iter().any(|rule| rule.id() == id) || is_mutation(id) || is_program_rule(id)
     });

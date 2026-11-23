@@ -82,7 +82,7 @@ fn objects_hash<'a>(it: impl Iterator<Item = &'a Value>) -> i32 {
 /// bucket (`(h ^ h >>> 16) & (capacity - 1)`), keeping insertion order within a bucket.
 /// `keys` must be in insertion order. The table is assumed never to have held more
 /// entries than it does now.
-pub fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> Vec<(&'a Value, T)> {
+pub(crate) fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> Vec<(&'a Value, T)> {
     let items: Vec<(&'a Value, T)> = items.into_iter().collect();
     let mut cap: usize = 16;
     while items.len() > cap * 3 / 4 {
@@ -101,12 +101,12 @@ pub fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> 
 }
 
 /// The keys of a map in `HashMap` iteration order.
-pub fn map_keys_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
+pub(crate) fn map_keys_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
     hashmap_order(m.iter_insertion()).into_iter().map(|(k, _)| k.clone()).collect()
 }
 
 /// The values of a map in `HashMap` iteration order.
-pub fn map_values_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
+pub(crate) fn map_values_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
     hashmap_order(m.iter_insertion()).into_iter().map(|(_, v)| v.clone()).collect()
 }
 
@@ -150,7 +150,7 @@ fn abbreviate_tuple_name(name: &str) -> String {
 }
 
 /// The abbreviated class name of a named tuple type, before uniquification.
-pub fn tuple_class_name<'a>(names: impl Iterator<Item = &'a str>) -> String {
+pub(crate) fn tuple_class_name<'a>(names: impl Iterator<Item = &'a str>) -> String {
     let parts: Vec<String> = names.map(abbreviate_tuple_name).collect();
     format!("PTuple_{}", parts.join("_"))
 }
@@ -499,7 +499,7 @@ fn number_format_float(f: f32) -> String {
 
 /// `MessageFormat.format(pattern, args)` for P's `{N}` placeholders. `Err` carries the
 /// message of the `IllegalArgumentException` a malformed pattern throws.
-pub fn message_format(pattern: &str, args: &[String]) -> Result<String, String> {
+pub(crate) fn message_format(pattern: &str, args: &[String]) -> Result<String, String> {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
     let mut in_quote = false;
@@ -602,7 +602,7 @@ fn parse_java_int(s: &str) -> Option<i32> {
 // ---- Float.toString / Double.toString ----------------------------------------------------
 
 /// `Float.toString(f)`.
-pub fn float_to_string(f: f32) -> String {
+pub(crate) fn float_to_string(f: f32) -> String {
     if f.is_nan() {
         return "NaN".into();
     }
@@ -660,12 +660,12 @@ fn date_time(secs: i64) -> String {
 }
 
 /// An instant with `DateTimeFormatter`'s `appendInstant(9)`: always nine fraction digits.
-pub fn instant_nanos9(secs: i64, nanos: u32) -> String {
+pub(crate) fn instant_nanos9(secs: i64, nanos: u32) -> String {
     format!("{}.{:09}Z", date_time(secs), nanos)
 }
 
 /// `Instant.toString()`: the fraction in groups of three digits, omitted when zero.
-pub fn instant_to_string(secs: i64, nanos: u32) -> String {
+pub(crate) fn instant_to_string(secs: i64, nanos: u32) -> String {
     let frac = if nanos == 0 {
         String::new()
     } else if nanos.is_multiple_of(1_000_000) {

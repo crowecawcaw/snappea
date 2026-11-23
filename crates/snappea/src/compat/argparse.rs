@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 /// Value type of an argument (`DataType`); `None` only for positional arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DataType {
+pub(super) enum DataType {
     None,
     Str,
     UInt,
@@ -15,7 +15,7 @@ pub enum DataType {
 
 /// A parsed argument value.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Value {
+pub(super) enum Value {
     Str(String),
     UInt(u32),
     Double(f64),
@@ -25,26 +25,26 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_str(&self) -> &str {
+    pub(super) fn as_str(&self) -> &str {
         match self {
             Value::Str(s) => s,
             _ => "",
         }
     }
-    pub fn as_uint(&self) -> u32 {
+    pub(super) fn as_uint(&self) -> u32 {
         match self {
             Value::UInt(v) => *v,
             _ => 0,
         }
     }
-    pub fn as_str_list(&self) -> Vec<String> {
+    pub(super) fn as_str_list(&self) -> Vec<String> {
         match self {
             Value::StrList(v) => v.clone(),
             Value::Str(s) => vec![s.clone()],
             _ => Vec::new(),
         }
     }
-    pub fn as_uint_list(&self) -> Vec<u32> {
+    pub(super) fn as_uint_list(&self) -> Vec<u32> {
         match self {
             Value::UIntList(v) => v.clone(),
             Value::UInt(v) => vec![*v],
@@ -55,7 +55,7 @@ impl Value {
 
 /// One argument definition (`CommandLineArgument`).
 #[derive(Debug, Clone)]
-pub struct Argument {
+pub(super) struct Argument {
     pub long_name: String,
     pub short_name: Option<String>,
     pub data_type: DataType,
@@ -71,14 +71,14 @@ pub struct Argument {
 
 /// A parsed argument occurrence.
 #[derive(Debug, Clone)]
-pub struct Parsed {
+pub(super) struct Parsed {
     pub long_name: String,
     pub value: Option<Value>,
 }
 
 /// Why parsing stopped.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ParseError {
+pub(super) enum ParseError {
     /// `-h`/`--help`: upstream prints the help and exits with code 1.
     Help,
     /// A `CommandLineException` or argument value error; upstream prints the help followed
@@ -92,7 +92,7 @@ struct Group {
 }
 
 /// The parser (`CommandLineArgumentParser`).
-pub struct ArgParser {
+pub(super) struct ArgParser {
     app_name: String,
     app_description: String,
     groups: Vec<Group>,
@@ -103,7 +103,7 @@ pub struct ArgParser {
 }
 
 impl ArgParser {
-    pub fn new(app_name: &str, app_description: &str) -> ArgParser {
+    pub(super) fn new(app_name: &str, app_description: &str) -> ArgParser {
         let mut p = ArgParser {
             app_name: app_name.into(),
             app_description: app_description.into(),
@@ -117,14 +117,14 @@ impl ArgParser {
         p
     }
 
-    pub fn group(&mut self, name: &str, description: &str) {
+    pub(super) fn group(&mut self, name: &str, description: &str) {
         if !self.groups.iter().any(|g| g.name == name) {
             self.groups.push(Group { name: name.into(), description: description.into() });
         }
     }
 
     /// `AddArgument` (`group` = `None` for parser-level arguments).
-    pub fn add(
+    pub(super) fn add(
         &mut self,
         group: Option<&str>,
         long: &str,
@@ -151,7 +151,7 @@ impl ArgParser {
     }
 
     /// `AddPositionalArgument`.
-    pub fn add_positional(&mut self, group: Option<&str>, name: &str, description: &str) -> &mut Argument {
+    pub(super) fn add_positional(&mut self, group: Option<&str>, name: &str, description: &str) -> &mut Argument {
         self.args.push(Argument {
             long_name: name.into(),
             short_name: None,
@@ -174,7 +174,7 @@ impl ArgParser {
     }
 
     /// `ParseArguments`.
-    pub fn parse(&self, args: &[String]) -> Result<Vec<Parsed>, ParseError> {
+    pub(super) fn parse(&self, args: &[String]) -> Result<Vec<Parsed>, ParseError> {
         let mut result: Vec<Parsed> = Vec::new();
         let mut position = 0usize;
         // index into `result` of the switch currently accepting values
@@ -242,7 +242,7 @@ impl ArgParser {
     }
 
     /// `PrintHelp`.
-    pub fn help(&self) -> String {
+    pub(super) fn help(&self) -> String {
         const LINE: usize = 100;
         const INDENT: usize = 30;
         let mut out = String::new();
@@ -357,22 +357,22 @@ impl Argument {
         text
     }
 
-    pub fn hidden(&mut self) -> &mut Self {
+    pub(super) fn hidden(&mut self) -> &mut Self {
         self.hidden = true;
         self
     }
 
-    pub fn multi(&mut self) -> &mut Self {
+    pub(super) fn multi(&mut self) -> &mut Self {
         self.multi_value = true;
         self
     }
 
-    pub fn allowed(&mut self, values: &[&str]) -> &mut Self {
+    pub(super) fn allowed(&mut self, values: &[&str]) -> &mut Self {
         self.allowed_values = values.iter().map(|s| s.to_string()).collect();
         self
     }
 
-    pub fn optional(&mut self) -> &mut Self {
+    pub(super) fn optional(&mut self) -> &mut Self {
         self.required = false;
         self
     }

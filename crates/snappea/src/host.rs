@@ -244,12 +244,12 @@ pub(crate) struct Buffered<'a> {
 
 #[cfg(feature = "cli")]
 impl<'a> Buffered<'a> {
-    pub fn new(inner: &'a mut dyn Host) -> Self {
+    pub(crate) fn new(inner: &'a mut dyn Host) -> Self {
         Buffered { inner, out: Vec::new() }
     }
 
     /// The text written to stderr so far.
-    pub fn errors(&self) -> String {
+    pub(crate) fn errors(&self) -> String {
         self.out.iter().filter(|(s, ..)| *s == Stream::Err).map(|(_, t, _)| t.as_str()).collect()
     }
 }
@@ -396,7 +396,7 @@ const CLEAR_LINE: &str = "\r\x1b[2K";
 
 #[cfg(feature = "cli")]
 impl<'a> Quiet<'a> {
-    pub fn new(inner: &'a mut dyn Host, quiet: bool) -> Self {
+    pub(crate) fn new(inner: &'a mut dyn Host, quiet: bool) -> Self {
         Quiet {
             inner,
             quiet,
@@ -418,12 +418,12 @@ impl<'a> Quiet<'a> {
     }
 
     /// A host that shows everything, and keeps the stderr text in [`Quiet::captured_err`].
-    pub fn recording_errors(inner: &'a mut dyn Host) -> Self {
+    pub(crate) fn recording_errors(inner: &'a mut dyn Host) -> Self {
         Quiet { record_errors: true, ..Quiet::new(inner, false) }
     }
 
     /// A host that keeps all stdout text in [`Quiet::captured`].
-    pub fn capturing(inner: &'a mut dyn Host) -> Self {
+    pub(crate) fn capturing(inner: &'a mut dyn Host) -> Self {
         Quiet { captured: Some(String::new()), record_errors: true, ..Quiet::new(inner, true) }
     }
 }

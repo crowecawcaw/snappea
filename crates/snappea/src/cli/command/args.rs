@@ -26,15 +26,15 @@ pub(in crate::cli) struct Args {
 }
 
 impl Args {
-    pub fn has(&self, long: &str) -> bool {
+    pub(crate) fn has(&self, long: &str) -> bool {
         self.options.iter().any(|(l, _)| *l == long)
     }
     /// The last value given for `long`.
-    pub fn get(&self, long: &str) -> Option<&str> {
+    pub(crate) fn get(&self, long: &str) -> Option<&str> {
         self.options.iter().rev().find(|(l, _)| *l == long).map(|(_, v)| v.as_str())
     }
     /// Every value given for `long`, in order.
-    pub fn all(&self, long: &str) -> Vec<&str> {
+    pub(crate) fn all(&self, long: &str) -> Vec<&str> {
         self.options.iter().filter(|(l, _)| *l == long).map(|(_, v)| v.as_str()).collect()
     }
 }

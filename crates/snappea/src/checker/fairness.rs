@@ -43,10 +43,10 @@ use crate::checker::strategy::ScheduleStep;
 
 /// States and transitions the record of one search keeps, over all its workers, before
 /// it gives up on deciding liveness (about 100 MB).
-pub const RECORD_BUDGET: usize = 3_000_000;
+pub(crate) const RECORD_BUDGET: usize = 3_000_000;
 
 /// A nondeterministic choice: its code site, how many values it had, the value taken.
-pub type ChoiceTaken = (u64, u32, u32);
+pub(crate) type ChoiceTaken = (u64, u32, u32);
 
 /// What the runtime knows about a transition and the state it reached, for the record.
 #[derive(Debug, Clone, Default)]

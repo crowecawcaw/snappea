@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 /// The result of type-checking one test directory.
-pub struct Outcome {
+pub(crate) struct Outcome {
     pub dir: PathBuf,
     pub category: String,
     /// Whether the outcome matches the category.
@@ -21,7 +21,7 @@ pub struct Outcome {
 }
 
 /// Type-checks every test directory under `root`, in sorted order.
-pub fn run(root: &Path) -> Vec<Outcome> {
+pub(crate) fn run(root: &Path) -> Vec<Outcome> {
     let mut out = Vec::new();
     find_tests(root, &mut out);
     out

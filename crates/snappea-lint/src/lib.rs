@@ -322,7 +322,7 @@ impl Registry {
         let mut findings = Vec::new();
         for rule in &self.rules {
             if rule.id() == "unused-payload-field" && selections.is_some() {
-                UnusedPayloadField.check_selected(context, selections, &mut findings);
+                UnusedPayloadField::check_selected(context, selections, &mut findings);
             } else {
                 rule.check(context, &mut findings);
             }

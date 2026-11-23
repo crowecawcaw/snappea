@@ -111,7 +111,7 @@ fn sample_geometric_upstream(p: f64, random: f64) -> i32 {
 
 /// `ControlledRandom`: random ints and doubles recorded so a schedule can be mutated.
 #[derive(Clone)]
-pub struct ControlledRandom {
+pub(crate) struct ControlledRandom {
     ints: RandomChoices<i32>,
     doubles: RandomChoices<f64>,
     legacy_mutations: bool,
@@ -120,7 +120,7 @@ pub struct ControlledRandom {
 
 impl ControlledRandom {
     /// `new ControlledRandom(new System.Random(seed))`.
-    pub fn new(seed: u32) -> ControlledRandom {
+    pub(crate) fn new(seed: u32) -> ControlledRandom {
         ControlledRandom::from_random(Rc::new(RefCell::new(DotNetRandom::new(seed as i32))))
     }
 
@@ -133,7 +133,7 @@ impl ControlledRandom {
         }
     }
 
-    pub fn next_below(&mut self, max: i32) -> i32 {
+    pub(crate) fn next_below(&mut self, max: i32) -> i32 {
         if max == 0 {
             return 0;
         }
@@ -141,14 +141,14 @@ impl ControlledRandom {
     }
 
     /// Fresh choices drawing from the same underlying generator.
-    pub fn new_like(&self) -> ControlledRandom {
+    pub(crate) fn new_like(&self) -> ControlledRandom {
         let mut out =
             ControlledRandom::from_random(self.ints.random.clone()).with_legacy_mutations(self.legacy_mutations);
         out.local_mutations = self.local_mutations;
         out
     }
 
-    pub fn mutate(&self) -> ControlledRandom {
+    pub(crate) fn mutate(&self) -> ControlledRandom {
         ControlledRandom {
             ints: self.ints.mutate(
                 if self.local_mutations { 1 } else { 5 },
@@ -188,7 +188,7 @@ impl ControlledRandom {
     }
 
     /// Preserve upstream's zero-length mutations for seed compatibility.
-    pub fn with_legacy_mutations(mut self, legacy: bool) -> Self {
+    pub(crate) fn with_legacy_mutations(mut self, legacy: bool) -> Self {
         self.legacy_mutations = legacy;
         self
     }
@@ -197,7 +197,7 @@ impl ControlledRandom {
 /// The random source of a scheduler: the engine's generator (`pos`) or controlled choices
 /// (feedback strategies).
 #[derive(Clone)]
-pub enum Source {
+pub(crate) enum Source {
     Shared(SharedRandom),
     Controlled(ControlledRandom),
 }
@@ -228,7 +228,7 @@ impl Source {
 // ---- schedulers ---------------------------------------------------------------------
 
 /// `IScheduler`.
-pub trait Scheduler {
+pub(crate) trait Scheduler {
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64>;
     fn prepare_next_iteration(&mut self) -> bool;
     /// Whether a complete schedule from this scheduler supports temperature checks.
@@ -256,12 +256,12 @@ fn highest_priority(prioritized: &[u64], choices: &[&OpInfo]) -> Option<u64> {
 }
 
 /// `RandomScheduler`.
-pub struct RandomScheduler {
+pub(crate) struct RandomScheduler {
     rng: Source,
 }
 
 impl RandomScheduler {
-    pub fn new(rng: Source) -> RandomScheduler {
+    pub(crate) fn new(rng: Source) -> RandomScheduler {
         RandomScheduler { rng }
     }
 }
@@ -429,13 +429,13 @@ impl Scheduler for DelayScheduler {
 
 /// `POSScheduler`: partial order sampling; sends to the same receiver race, everything
 /// else is preferred.
-pub struct PosScheduler {
+pub(crate) struct PosScheduler {
     rng: Source,
     prioritized: Vec<u64>,
 }
 
 impl PosScheduler {
-    pub fn new(rng: Source) -> PosScheduler {
+    pub(crate) fn new(rng: Source) -> PosScheduler {
         PosScheduler { rng, prioritized: Vec::new() }
     }
 
@@ -494,7 +494,7 @@ impl Scheduler for PosScheduler {
 }
 
 /// `PCTScheduler` (the feedback variant of PCT).
-pub struct PctScheduler {
+pub(crate) struct PctScheduler {
     rng: Source,
     steps: i64,
     max_switch_points: usize,
@@ -504,7 +504,7 @@ pub struct PctScheduler {
 }
 
 impl PctScheduler {
-    pub fn new(max_switch_points: usize, schedule_length: i64, rng: Source) -> PctScheduler {
+    pub(crate) fn new(max_switch_points: usize, schedule_length: i64, rng: Source) -> PctScheduler {
         let mut s = PctScheduler {
             rng,
             steps: 0,
@@ -589,7 +589,7 @@ impl Scheduler for PctScheduler {
 
 /// `ScheduleAndInputStrategy` (the `pos` strategy): a scheduler for interleavings, the
 /// engine's generator for data choices.
-pub struct ScheduleAndInputStrategy {
+pub(crate) struct ScheduleAndInputStrategy {
     rng: SharedRandom,
     max_steps: usize,
     steps: usize,
@@ -597,7 +597,7 @@ pub struct ScheduleAndInputStrategy {
 }
 
 impl ScheduleAndInputStrategy {
-    pub fn new(max_steps: usize, rng: SharedRandom, scheduler: Box<dyn Scheduler>) -> Self {
+    pub(crate) fn new(max_steps: usize, rng: SharedRandom, scheduler: Box<dyn Scheduler>) -> Self {
         ScheduleAndInputStrategy { rng, max_steps, steps: 0, scheduler }
     }
 }
@@ -678,7 +678,7 @@ const DEFAULT_MUTATION_BUDGET: i32 = 50;
 
 /// `FeedbackGuidedStrategy`: keeps the generators of schedules with new timelines and
 /// mutates them, prioritizing the most diverse.
-pub struct FeedbackGuidedStrategy {
+pub(crate) struct FeedbackGuidedStrategy {
     generator: Generator,
     max_steps: usize,
     steps: usize,
@@ -705,7 +705,7 @@ pub struct FeedbackGuidedStrategy {
 impl FeedbackGuidedStrategy {
     /// `max_steps` is the step bound; `seed` seeds the input generator, the
     /// scheduler's generator and the explore/exploit choices independently.
-    pub fn new(max_steps: usize, seed: u32, scheduler: Box<dyn Scheduler>) -> Self {
+    pub(crate) fn new(max_steps: usize, seed: u32, scheduler: Box<dyn Scheduler>) -> Self {
         FeedbackGuidedStrategy {
             generator: Rc::new(RefCell::new(GeneratorState { input: ControlledRandom::new(seed), scheduler })),
             max_steps,
@@ -732,20 +732,20 @@ impl FeedbackGuidedStrategy {
     }
 
     /// Match the input generator's mutation semantics to the scheduler's source.
-    pub fn with_legacy_mutations(self, legacy: bool) -> Self {
+    pub(crate) fn with_legacy_mutations(self, legacy: bool) -> Self {
         self.generator.borrow_mut().input.legacy_mutations = legacy;
         self
     }
 
     /// Reserve a fraction of schedules for fresh choices, retaining the learned corpus
     /// and mutation budget between them. Zero preserves the original exploration policy.
-    pub fn with_fresh_exploration(mut self, percent: u8) -> Self {
+    pub(crate) fn with_fresh_exploration(mut self, percent: u8) -> Self {
         self.fresh_percent = percent.min(100);
         self
     }
 
     /// Use coverage novelty instead of timeline MinHash; retain upstream behavior by default.
-    pub fn with_code_guidance(mut self, enabled: bool) -> Self {
+    pub(crate) fn with_code_guidance(mut self, enabled: bool) -> Self {
         self.code_guidance = enabled;
         self.generator.borrow_mut().input.local_mutations = enabled;
         self
@@ -753,7 +753,7 @@ impl FeedbackGuidedStrategy {
 
     /// Preserve input/schedule prefixes at increasing delivery counts, then sample
     /// fresh continuations. Requires a scheduler that supports checkpoints.
-    pub fn with_frontier_guidance(mut self) -> Self {
+    pub(crate) fn with_frontier_guidance(mut self) -> Self {
         self.frontiers = Some(Frontiers::default());
         self
     }
@@ -1098,7 +1098,7 @@ impl Strategy for FeedbackGuidedStrategy {
 }
 
 /// `TimelineObserver.GetTimelineMinhash` over a set of timeline tokens.
-pub fn timeline_minhash<'a>(tokens: impl Iterator<Item = &'a str>) -> Vec<i32> {
+pub(crate) fn timeline_minhash<'a>(tokens: impl Iterator<Item = &'a str>) -> Vec<i32> {
     thread_local! {
         static COEFFICIENTS: Vec<(i32, i32)> = {
             let mut r = DotNetRandom::new(0);
@@ -1114,7 +1114,7 @@ pub fn timeline_minhash<'a>(tokens: impl Iterator<Item = &'a str>) -> Vec<i32> {
 }
 
 /// FNV-1a over UTF-8 (`TimelineObserver.StableHash`).
-pub fn stable_hash(token: &str) -> i32 {
+pub(crate) fn stable_hash(token: &str) -> i32 {
     let mut h: u32 = 2166136261;
     for b in token.bytes() {
         h = (h ^ b as u32).wrapping_mul(16777619);

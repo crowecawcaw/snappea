@@ -3,7 +3,7 @@
 use std::path::Path;
 
 mod common {
-    pub mod corpus;
+    pub(crate) mod corpus;
 }
 
 #[test]

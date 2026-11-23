@@ -2,7 +2,7 @@ use crate::{visit, Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::HashSet;
 
-pub struct AnnounceAndSend;
+pub(crate) struct AnnounceAndSend;
 
 impl Rule for AnnounceAndSend {
     fn id(&self) -> &'static str {

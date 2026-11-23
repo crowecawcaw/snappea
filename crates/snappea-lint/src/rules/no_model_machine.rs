@@ -2,7 +2,7 @@ use crate::{Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
 
-pub struct NoModelMachine;
+pub(crate) struct NoModelMachine;
 
 impl Rule for NoModelMachine {
     fn id(&self) -> &'static str {

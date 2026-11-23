@@ -6,3 +6,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Parser and source locations for the P modeling language"
+
+[lints]
+workspace = true
