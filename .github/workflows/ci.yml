@@ -39,6 +39,14 @@ jobs:
           shellcheck --version
           "${RUNNER_TEMP}/actionlint" -color
 
+  docs:
+    name: doc links + version pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Markdown links and the docs' release version pins
+        run: python3 -m unittest -v scripts/test_markdown_links.py scripts/test_release.py
+
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest

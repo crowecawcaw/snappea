@@ -8,7 +8,7 @@ questions:
 # Using Snap Pea from Rust
 
 The checker is part of the [`snappea` crate](../crates/snappea/README.md) (library name `snappea`;
-`snappea = "0.1"` with default features): `snappea::syntax`, `snappea::sema`, `snappea::checker`,
+`snappea = "0.2"` with default features): `snappea::syntax`, `snappea::sema`, `snappea::checker`,
 `snappea::project` and `snappea::driver`. To check application events from Rust tests, use `snappea::test` instead; see
 the [Rust examples](../examples/rust/README.md).
 

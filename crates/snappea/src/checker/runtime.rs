@@ -613,7 +613,8 @@ pub(super) const MAX_PREFIX: usize = 512;
 /// Finished actions kept for reuse between schedules (see [`Buffers`]).
 const MAX_SPARE_EXECS: usize = 64;
 
-/// One untimed schedule boundary, private to a single mutation turn and checker.
+/// A saved untimed schedule boundary, owned by one checker, that a later schedule
+/// resumes from instead of re-running the test from the start.
 #[derive(Default)]
 pub(super) struct Prefix {
     pub(super) touched: Vec<bool>,
@@ -859,8 +860,6 @@ impl<'p> Runtime<'p> {
         }
     }
 
-    /// Whether the schedule ran until nothing could run: not stopped by a bug, the step
-    /// bound, cancellation, or the search cutting it at an explored state.
     /// Empties the run's lists, keeping their memory for the next run (see [`Buffers`]).
     /// Call it once the run's results have been read: it clears the machines, the
     /// schedule trace and the timeline.
@@ -889,6 +888,8 @@ impl<'p> Runtime<'p> {
         }
     }
 
+    /// Whether the schedule ran until nothing could run: not stopped by a bug, the step
+    /// bound, cancellation, or the search cutting it at an explored state.
     pub fn ran_to_end(&self) -> bool {
         self.fully_explored && self.bug.is_none()
     }

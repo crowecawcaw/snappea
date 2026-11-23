@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::host::{Host, HostExt, Stream};
 
-use super::command::{error, parse_args, usage_error, value, ERROR, OK};
+use super::command::{error, parse_args, usage_error, value, Opt, ERROR, OK};
 
 const TOPICS: &[(&str, &str, &str)] = &[
     (
@@ -175,6 +175,8 @@ pub(super) const EXAMPLES: &[Example] = &[
     },
 ];
 
+pub(super) const OPTS: &[Opt] = &[value("out", None)];
+
 const HELP_HEAD: &str = "\
 Usage: snappea guide [TOPIC]
        snappea guide examples
@@ -220,7 +222,7 @@ fn page(text: &str) -> &str {
 /// `snappea guide ...`. Guides are Markdown whatever the output format, so the output
 /// options are accepted and ignored.
 pub(super) fn guide(args: &[String], host: &mut dyn Host) -> i32 {
-    let parsed = match parse_args(args, &[value("out", None)]) {
+    let parsed = match parse_args(args, OPTS) {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, Some("guide")),
     };

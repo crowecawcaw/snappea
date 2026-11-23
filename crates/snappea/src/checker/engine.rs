@@ -534,7 +534,7 @@ pub struct CheckResult {
     /// `verbose`), the log of the last schedule explored.
     pub last_log: Vec<String>,
     pub strategy_description: String,
-    /// Automatic scheduler allocation and novelty diagnostics.
+    /// Automatic scheduler allocation and rarity diagnostics.
     pub scheduler_stats: Vec<super::strategy::SchedulerStats>,
     /// Set when a replay could not follow its trace.
     pub replay_error: Option<String>,
@@ -551,7 +551,7 @@ pub struct CheckResult {
     pub coverage: Option<crate::checker::coverage::CoverageInfo>,
     /// What the test's driver did over all schedules (see `driver_machines`).
     pub driver_facts: Option<crate::checker::driver_facts::DriverFacts>,
-    /// Statistics of an exhaustive search (`dfs`, `random-dfs`).
+    /// Statistics of an exhaustive search (`dfs`, `random-dfs`, or auto's).
     pub exhaustive: Option<crate::checker::exhaustive::SearchStats>,
     /// The test tracked time (see `design/time/PROPOSAL.md`).
     pub time_tracked: bool,
@@ -1106,10 +1106,10 @@ impl<'p> Checker<'p> {
         let searchable = self.foreign.as_ref().is_none_or(|f| f.searchable());
         let split = (pool.count > 1)
             .then(|| crate::checker::exhaustive::Split::new(pool.count, index, run_seed, pool.shared.clone()));
-        // auto mode skips exhaustive search when it could not prove anything; with time
-        // tracking the state hash covers the clocks (see `statehash`)
         // a step's footprint does not record clocks or foreign state
         let local_steps = opts.partial_order && time.is_none() && self.foreign.is_none();
+        // auto mode skips exhaustive search when it could not prove anything; with time
+        // tracking the state hash covers the clocks (see `statehash`)
         let mut strategy = build_strategy(opts, &rng, has_hot, searchable, split, local_steps)?;
         let is_replay = opts.strategy == StrategyKind::Replay;
 
@@ -1750,7 +1750,7 @@ fn merge(parts: Vec<Exploration>) -> Exploration {
 const SAVE_INTERVAL: usize = 4;
 
 #[cfg(test)]
-mod mutation_prefix_tests {
+mod prefix_resume_tests {
     use super::*;
 
     #[test]

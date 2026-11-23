@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install snappea
-        run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.1.0
+        run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
 
       - name: Check the model
         run: snappea check --timeout 2m
@@ -67,7 +67,9 @@ jobs:
           </li>
           <li>
             <b>Check.</b> <code>snappea check</code> with no arguments finds the sources and checks every test case.
-            The job fails on exit status 1 (a bug) or 2 (an error, such as a type error).
+            The job fails whenever the check does;{" "}
+            <a href={`${BLOB}/docs/checking-models.md#what-fails-a-check`}>what fails a check</a> lists the reasons
+            and exit statuses.
           </li>
           <li>
             <b>Output.</b> On a failure, the artifact has the failing schedule's log (<code>bug.txt</code>) and a{" "}
@@ -86,18 +88,11 @@ jobs:
       <section>
         <h2 id="budget">How long to explore</h2>
         <p>
-          Search strategies are selected automatically. The default is ten seconds per test; choose a larger timeout for CI when needed. Exhaustive completion ends a check early:
+          Search strategies are selected automatically. Without <code>--timeout</code>, the test cases share a short
+          budget meant for the edit loop; in CI, give each test case its own limit, such as{" "}
+          <code>--timeout 2m</code>. A test case whose search finishes is proved and stops early. Read each passing
+          test case's verdict: one still finding new behavior needs more time or a smaller test.
         </p>
-        <table className="compare ref">
-          <tbody>
-            <tr>
-              <th>
-                <code>--timeout 2m</code>
-              </th>
-              <td>Explore for a fixed time per test case. The simplest choice for CI.</td>
-            </tr>
-          </tbody>
-        </table>
         <p>
           The checker uses every CPU core by default. A slower nightly job with a larger budget (
           <code>on: schedule</code>) is a good complement to a quick check on each pull request.
@@ -134,7 +129,7 @@ jobs:
       tests: \${{ steps.list.outputs.tests }}
     steps:
       - uses: actions/checkout@v7
-      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.1.0
+      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
       - id: list
         working-directory: model
         run: echo "tests=$(snappea tests | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
@@ -148,7 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.1.0
+      - run: curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0
       - working-directory: model
         run: snappea check "\${{ matrix.test }}" --timeout 5m
 `}</Code>
@@ -164,7 +159,7 @@ jobs:
       - name: Install snappea
         shell: pwsh
         env:
-          SNAPPEA_VERSION: 0.1.0
+          SNAPPEA_VERSION: 0.2.0
         run: irm ${INSTALL_PS1} | iex
 `}</Code>
       </section>
@@ -182,7 +177,8 @@ jobs:
       <section className="next">
         <h2>More</h2>
         <p>
-          Every command and option is on the <a href={l.cli}>command line</a> page.
+          The <a href={l.cli}>command line</a> page says what each command is for; <code>snappea check --help</code>{" "}
+          lists every option and default.
         </p>
       </section>
     </>

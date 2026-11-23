@@ -117,7 +117,7 @@ statements and 3/3 handlers; there are no conditional branches. Handlers startin
 with `assert false` are excluded because they must never run. Faulty runs cover
 8/12 statements and 2/3 handlers in the consumed prefix, with
 `input_complete: false` and `stop_reason: "error"`. This measures executed P
-monitor code rather than exhaustive P model paths. See [the coverage format](../../../docs/observe.md#observed-monitor-coverage).
+monitor code rather than exhaustive P model paths. See [the coverage format](../../../docs/observe.md#coverage).
 
 The [native workflow](../../../.github/workflows/native-multiprocess.yml) builds
 this checkout's checker, executes both scenarios, and uploads reports even on a

@@ -515,7 +515,7 @@ fn select_parser(cfg: &ObserveConfig, parsers: &mut Vec<Box<dyn Parser>>) -> Res
             1 => Ok(0),
             _ if pobserve => Err(format!("Found multiple PARSERs in the jar({})", names(&parsers[..registered]))),
             _ => Err(format!(
-                "several parsers are registered ({}); pick one with --parser",
+                "several parsers are registered ({}); pick one by name with `ObserveConfig::parser`",
                 names(&parsers[..registered])
             )),
         },

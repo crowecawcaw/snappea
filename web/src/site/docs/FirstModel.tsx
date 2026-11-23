@@ -1,6 +1,6 @@
 import lostUpdateSource from "../../../demos/hello/LostUpdate.p?raw";
 import { Island } from "../Island";
-import { links } from "../SiteHeader";
+import { REPO, links } from "../SiteHeader";
 import { Code } from "./Code";
 import { Trace } from "./diagrams/Trace";
 
@@ -35,14 +35,16 @@ assert finalValue == 2, format("expected 2 increments, counter is {0}", finalVal
 
 test tcTwoClients [main=Main]: { Main, Counter, Client };
 `}</Code>
-        <p>If you have installed the CLI and saved the Playground file as <code>LostUpdate.p</code>, the equivalent check looks like this (timings and schedule counts vary):</p>
+        <p>
+          If you have installed the CLI and saved the Playground file as <code>LostUpdate.p</code>, the equivalent check
+          reports the same failure, among other lines (a{" "}
+          <a href={`${REPO}/blob/main/docs/checking-models.md#errors-and-output`}>full sample</a> is in the reference):
+        </p>
         <Code lang="shell">{`
 $ snappea check LostUpdate.p tcTwoClients
-Checking generatedOutput: 1 test case
-FAIL  tcTwoClients (bug found after 9 schedules, 8 workers, 0.00s)
+FAIL  tcTwoClients (bug found after ...)
       Assertion Failed: LostUpdate.p:85:7 expected 2 increments, counter is 1
       Replay: snappea replay PCheckerOutput/tcTwoClients/bug.schedule LostUpdate.p
-1 of 1 test case failed in 0.01s, peak memory 9 MB. Output: PCheckerOutput/
 `}</Code>
         <p>The trace shows exactly how the update was lost:</p>
         <Island name="trace"><Trace /></Island>

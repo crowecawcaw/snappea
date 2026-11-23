@@ -137,7 +137,7 @@ pub struct SchedulerStats {
     pub name: String,
     pub schedules: usize,
     pub work: u64,
-    /// Decayed, capped novelty score at the end of the run (summed across workers).
+    /// Decayed, capped rarity score at the end of the run (summed across workers).
     pub reward: f64,
 }
 

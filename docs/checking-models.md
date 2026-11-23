@@ -39,11 +39,14 @@ is projected to finish within another 4,096 choices. If none applies, it release
 the exhaustive search and continues with an adaptive scheduling portfolio. Narrow frontiers
 (up to 256 untried alternatives) get the bounded probe to reach deeper recovery stages. The 16,384-choice stall budget renews while cache pruning keeps up with new states;
 workers share renewals and unused budget, since they share the state cache.
-Memory is limited to 1,000,000 cached states and 1,000,000 retained choice
-alternatives; hitting a step bound also starts the portfolio.
+Memory is bounded per worker: once a worker has added a million states to the shared
+state cache, or retains a million choice alternatives (`MAX_STATES` and
+`MAX_ALTERNATIVES` in `checker/auto.rs`), auto hands off to the portfolio; hitting a
+step bound does too.
 
 The portfolio keeps separate guided-random and deliberate-delay corpora,
-plus PCT trials with 0, 2, and 10 priority-change points. Delays temporarily hold
+plus PCT trials with no, a few and many priority-change points (`PCT_DEPTHS` in
+`checker/portfolio.rs`). Delays temporarily hold
 one runnable actor while others execute; they release it if nothing else can run.
 Their checkpoints distinguish the delayed actor, starting point, duration, ordering,
 and whether the delay has ended. Delayed schedules and PCT schedules are unfair;
@@ -53,8 +56,9 @@ checks cycles instead; see below).
 After actor contention, a bounded early pilot also explores these schedulers before
 resuming a converging exhaustive search. Tiny finite searches finish before this
 pilot starts. Several senders targeting one receiver favor priority ordering and a
-larger pilot, capped at 512 schedules. Bounded coverage/event-progress novelty and
-new failure sites adjust later allocation, with execution work charged to each arm.
+larger pilot, capped at 512 schedules. Schedules that reach rarely reached points (a
+machine handling an event in a state, a given number of times) and new failure sites
+adjust later allocation, with execution work charged to each arm.
 Every arm retains an exploration floor when those signals are uninformative.
 Selection samples among scores instead of giving all exploitation work to one
 slightly higher score; the initial send-target hint fades with experience.
@@ -229,8 +233,8 @@ A passing test case that did not cover every schedule says why, with
 - `exhaustive_search_unfinished`: the exhaustive search was still running when time
   ran out (`untried_alternatives` counts those left on its current path). How much
   more time would finish it cannot be projected reliably: the state cache makes later
-  branches much cheaper than earlier ones, and the search hands off to sampling at
-  1,000,000 states per worker.
+  branches much cheaper than earlier ones, and the search hands off to sampling at its
+  memory bound (see above).
 - `sampled`: auto handed off to sampling, or a sampling strategy was selected.
 - `timed_model_sampled`: as above, for a timed model.
 - `memory_limit`: the process neared its memory limit, so the search stopped
@@ -253,9 +257,9 @@ most schedules reach the same few states (`distinct_states` in JSON). Reduce the
 modeling`. A timeout or early stop means the search is
 incomplete, even if it found no bugs. A missing required coverage
 point also fails the check, with the same status as a model bug; the report says when
-coverage was not reached within the run budget. Exit status is 0 when no bug or
-required coverage gap was found, 1 for a bug or coverage gap, and 2 on an error. The
-result distinguishes exhaustive completion from an incomplete search.
+coverage was not reached within the run budget. [What fails a check](#what-fails-a-check)
+lists every exit status. The result distinguishes exhaustive completion from an
+incomplete search.
 
 With `-v`, text also lists the five largest observed top-level collection fields
 (maps, sets and sequences), including spec/scenario fields. Per-test JSON `collection_sizes` lists all nonempty fields
@@ -273,6 +277,10 @@ history; do not remove spec bookkeeping merely to make a search finish. Collecti
 these statistics does not change state hashing, scheduling choices, or search limits.
 
 ### What fails a check
+
+Exit status: 0 nothing failed; 1 a bug, a required coverage gap, an undetected
+mutant or, with --strict, an untested one; 2 an error, or blocking lint findings
+with no bug.
 
 Besides bugs, `snappea check` reports three kinds of findings. Each one either fails
 the check or is reported as a warning:
@@ -363,11 +371,13 @@ scenario monitors, `scenario_coverage.json`. A failure includes its report and a
 The native CLI no longer accepts schedule counts, strategy selection, exhaustive
 mode selection, step bounds, or feedback-tuning options. `snappea-compat` retains
 upstream's CLI, defaults, step bounds, and seeded streams, including the original
-feedback mutation behavior. Existing compatibility traces still replay; the native
-`replay` command accepts step options needed by older traces.
+feedback mutation behavior. Its schedules replay with `snappea replay`, given the
+step options that `snappea-compat check` was run with.
 
 Time tracking (`--latency <file>[:<profile>]`, `--timed`) checks timeouts and latency
 budgets; see [design/time](../design/time/RetryBudget/README.md).
+
+### Errors and output
 
 `snappea check` type-checks the sources itself. Each error shows its location, the
 source lines around it and a suggested fix:
@@ -391,20 +401,27 @@ error: got type: string, expected: int
 ```
 $ snappea check
 Checking Inventory: 2 test cases
-ok    tcAtomicReserve (no bug found, search settled, 0.07s)
-      Coverage: 41/49 statements, 6/10 branches, 6/9 event handlers
-FAIL  tcCheckThenReserve (bug found after 4 schedules; 13881 searched, 4 workers, 1.01s)
+ok    tcAtomicReserve (proved, 1.22s)
+      Coverage: 4/4 states, 46/54 statements, 8/12 branches, 9/17 event handlers, 13/18 condition outcomes, 1/4 transition pairs
+FAIL  tcCheckThenReserve (bug found after 1 schedule; 15098 searched, 4 workers, 1.03s)
       Assertion Failed: PSpec/inventory.p:27:7 reservation exceeds available stock
       also hot at this point (context; these specs have not failed): OrdersAnswered in 'Waiting'
       Replay: snappea replay PCheckerOutput/tcCheckThenReserve/bug.schedule
-      Coverage: 43/49 statements, 5/10 branches, 8/9 event handlers (partial: stopped after the bugs)
-Coverage of all test cases: 49/50 statements, 8/10 branches, 9/9 event handlers
-Not covered by any test case:
-  PSrc/Inventory.p:46  Inventory.Serving, on eReleaseReq: if (req.order in reservations) never false
-  PSrc/Inventory.p:85  OrderClient.Checking, on eAvailableResp: if (resp.units < units) never true
+      Coverage: 4/4 states, 49/54 statements, 8/12 branches, 14/17 event handlers, 11/18 condition outcomes, 3/4 transition pairs (partial: stopped after the bugs)
+Coverage of all test cases: 4/4 states, 55/55 statements, 11/12 branches, 17/17 event handlers, 16/18 condition outcomes, 4/4 transition pairs
+Informational condition coverage (does not fail the check):
+  PSrc/Inventory.p:32  Inventory.Serving, on eReserveReq: condition req.order in reservations never true
+Not covered, suppressed:
+  PSrc/Inventory.p:49  Inventory.Serving, on eReleaseReq: condition req.order in reservations never false (suppressed: clients release only successful reservations)
+  PSrc/Inventory.p:49  Inventory.Serving, on eReleaseReq: if (req.order in reservations) never false (suppressed: clients release only successful reservations)
 Coverage includes partial results from test cases stopped by their bugs.
+Safety: test expectations failed.
+Behavioral coverage contract: passed.
+Code coverage (raw): 4/4 states, 55/55 statements, 11/12 branches, 17/17 event handlers, 16/18 condition outcomes, 4/4 transition pairs
+Code coverage (required after exemptions): 41/41 statements, 6/6 branches, 9/9 event handlers
+A clean required coverage gate with exemptions does not establish complete code or behavioral coverage.
 Mutation testing skipped: a test case failed.
-1 of 2 test cases failed in 0.08s, peak memory 10 MB. Output: PCheckerOutput/
+1 of 2 test cases failed in 2.26s, peak memory 77 MB. Output: PCheckerOutput/
 ```
 
 A test case that finds a bug writes its files to `PCheckerOutput/<test>/`, replacing
@@ -1052,8 +1069,8 @@ the first turns, the budget is still the one the run would have used (JSON
 gap, so its mutants are listed but change nothing. A mutant the checker cannot run
 (a snappea bug) is listed with its error under `mutation.failed_to_run`; it is neither
 detected nor undetected. Mutation testing is skipped when a test case fails: fix the bug
-first. Undetected and untested mutants do not change the exit status unless
-`--deny mutation` is given. The JSON result has every undetected mutant under `mutation.undetected`, with
+first. Undetected mutants fail the check (exit 1) unless `--warn mutation` is given;
+untested ones fail only `snappea check mutation` and `--strict`. The JSON result has every undetected mutant under `mutation.undetected`, with
 its `file`, `line`, `context`, `mutation`, `change`, `test_cases`, `schedules`,
 `search_complete`, `changes_a_value`, `unchecked_variable` and, for a coarse mutant, the undetected mutants inside it
 (`undetected_inside`); `undetected_inside_undetected` counts those. `unreached` counts

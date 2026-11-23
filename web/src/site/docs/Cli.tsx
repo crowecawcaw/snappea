@@ -1,64 +1,11 @@
-// Docs: installing the snappea command line tool, and its commands and options.
+// Docs: installing the snappea command line tool, and what each command is for. Exact
+// options, defaults and exit statuses live in `--help` and docs/checking-models.md.
 import { REPO, links } from "../SiteHeader";
 import { Code } from "./Code";
 
 const BLOB = `${REPO}/blob/main`;
 export const INSTALL_SH = "https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.sh";
 export const INSTALL_PS1 = "https://raw.githubusercontent.com/crowecawcaw/snappea/main/scripts/install.ps1";
-
-type Option = [flag: string, meaning: string];
-
-function Options({ rows }: { rows: Option[] }) {
-  return (
-    <table className="compare ref opts">
-      <tbody>
-        {rows.map(([flag, meaning]) => (
-          <tr key={flag}>
-            <th>
-              <code>{flag}</code>
-            </th>
-            <td>{meaning}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-const CHECK_EXPLORATION: Option[] = [
-  ["--timeout <DURATION>", "Time limit per test case. Default 10s; accepts seconds or units (90s, 5m, 1h)."],
-  ["-j, --workers <N>", "Worker limit. Default: one per CPU core."],
-  ["--seed <N>", "Seed for reproducible choices. Not needed to reproduce a bug: its .schedule replays exactly."],
-];
-
-const CHECK_OTHER: Option[] = [
-  ["--latency <FILE>[:<PROFILE>]", "Latency profiles (TOML), and the profile to use."],
-  ["--timed", "Time-aware scheduling: never run a step that is certainly later than another."],
-  ["-o, --out <DIR>", "Output folder. Default PCheckerOutput."],
-  ["-v, --verbose", "Show progress and statistics, and log every schedule."],
-];
-
-const CHECK_MUTATION: Option[] = [
-  ["--mutation-timeout <DURATION>", "Time limit for mutation testing. Default 30s."],
-  ["--no-mutation", "Skip mutation testing."],
-];
-
-const OBSERVE: Option[] = [
-  ["--spec <NAME>", "Spec monitor to check; repeat or separate with commas."],
-  ["--all-specs", "Check every spec monitor (--exclude-specs to leave some out)."],
-  ["--live <PATH>, --stdin", "Read a live stream of lines until it ends, stopping at the first error."],
-  ["--p-trace", "The logs are P JSON traces (bug.trace.json from snappea check)."],
-  ["--parser-config <JSON>", 'Where the JsonLines parser finds its fields, e.g. {"event": "msg.type", "key": "msg.id"}.'],
-  ["--key <KEY>", "Check only this key; repeat for several."],
-  ["--check-hot", "Report a key whose spec is still in a hot state after its last event."],
-  ["--strict", "Fail a spec that checked no relevant event."],
-];
-
-const OUTPUT: Option[] = [
-  ["--format text|json", "Text or the JSON result. Default: text."],
-  ["--json", "The same as --format json."],
-  ["--json-report <FILE>", "Also write the JSON result to FILE."],
-];
 
 export function Cli({ root }: { root: string }) {
   const l = links(root);
@@ -92,7 +39,7 @@ irm ${INSTALL_PS1} | iex
         </p>
         <p>To pin a version or pick the folder:</p>
         <Code lang="shell">{`
-curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.1.0 --to /usr/local/bin
+curl -fsSL ${INSTALL_SH} | sh -s -- --version 0.2.0 --to /usr/local/bin
 `}</Code>
         <p>
           The same settings work as environment variables, <code>SNAPPEA_VERSION</code> and{" "}
@@ -150,16 +97,14 @@ snappea check tcCheckThenReserve
           fails within a few schedules, with exit status 1:
         </p>
         <Code lang="text">{`
-Checking Inventory: 1 test case
-ok    tcAtomicReserve (proved, 0.58s)
-The test case passed in 0.58s, peak memory 6 MB. Output: PCheckerOutput/
-
-Checking Inventory: 1 test case
-FAIL  tcCheckThenReserve (bug found after 3 schedules, 4 workers, 0.00s)
+ok    tcAtomicReserve (proved, ...)
+FAIL  tcCheckThenReserve (bug found after ...)
       Assertion Failed: PSpec/inventory.p:27:7 reservation exceeds available stock
-      Replay: snappea replay PCheckerOutput/tcCheckThenReserve/bug.schedule
-1 of 1 test case failed in 0.00s, peak memory 6 MB. Output: PCheckerOutput/
 `}</Code>
+        <p>
+          The reference has the <a href={`${BLOB}/docs/checking-models.md#errors-and-output`}>whole output</a>, with
+          coverage and the replay command.
+        </p>
         <p>
           <code>PCheckerOutput/tcCheckThenReserve/bug.txt</code> shows the two orders both reading 3 units of stock
           before either reserves.
@@ -180,33 +125,18 @@ FAIL  tcCheckThenReserve (bug found after 3 schedules, 4 workers, 0.00s)
       </section>
 
       <section>
-        <h2 id="exit-status">Exit status</h2>
-        <table className="compare ref">
-          <tbody>
-            <tr>
-              <th>0</th>
-              <td>No bug found.</td>
-            </tr>
-            <tr>
-              <th>1</th>
-              <td>A bug (or, for observe, a spec violation) was found.</td>
-            </tr>
-            <tr>
-              <th>2</th>
-              <td>Any other error: a type error in the sources, a missing file, a bad option.</td>
-            </tr>
-          </tbody>
-        </table>
-        <p>This makes every command usable as a CI step or a pre-commit hook as it is.</p>
-        <h3 id="output">Text and JSON</h3>
+        <h2 id="exit-status">Exit status and output</h2>
         <p>
-          Every command prints text by default, for people and agents alike. <code>SNAPPEA_FORMAT=json</code> makes
-          the JSON result the default; these options choose per run:
+          Every command exits with 0 when nothing failed and non-zero otherwise, so it works as a CI step or a
+          pre-commit hook as it is. <a href={`${BLOB}/docs/checking-models.md#what-fails-a-check`}>What fails a
+          check</a> lists the exit statuses of <code>check</code>; the <code>--help</code> of <code>check</code>,{" "}
+          <code>check mutation</code>, <code>check lint</code>, <code>replay</code> and <code>observe</code> states
+          theirs.
         </p>
-        <Options rows={OUTPUT} />
         <p>
-          Output options work before or after the command. Unknown options and missing values also produce a JSON
-          error result and write <code>--json-report</code> when requested. JSON keys retain insertion order.
+          Every command prints text by default, for people and agents alike. <code>--json</code> or{" "}
+          <code>SNAPPEA_FORMAT=json</code> prints the JSON result instead, and <code>--json-report FILE</code> also
+          writes it to a file.
         </p>
       </section>
 
@@ -230,38 +160,28 @@ snappea check [SOURCE...] [TEST...] [options]
           transition pairs, and components excluded from the selected tests.
         </p>
         <p>
-          Search is automatic: small exhaustive searches can finish early; larger searches also try guided
-          scheduling, deliberate actor delays, and priority scheduling. Competing sends and behavioral progress
-          guide the allocation, while each scheduler keeps an exploration share. A timeout or coverage plateau
-          does not establish that the model is correct. The default timeout is fixed at ten seconds per test.
+          Search is automatic: small models are searched exhaustively and can be proved; larger ones are sampled with
+          several schedulers. Each passing test case gets a verdict: <code>proved</code>, <code>search settled</code>,
+          or <code>still finding new behavior</code>, which means it needs more time or a smaller test. Without{" "}
+          <code>--timeout</code> the test cases share a short time budget; set <code>--timeout</code> before trusting a
+          pass on a large model.
         </p>
         <p>
           When every test case passes, <code>check</code> then runs them against mutants: copies of the model with
-          one small change, such as a removed statement, an <code>if</code> forced one way, or <code>&lt;</code>{" "}
-          swapped for <code>&lt;=</code>. A change no test case detects is listed with its line: the code ran, but no
-          spec or assertion depends on what it does. Add a spec, an assertion or a test case that would fail with the
-          change, or suppress it with <code>// snappea-lint: allow mutation[:kind] -- reason</code> on the line before.
-          Specs and test drivers are not mutated, and undetected mutants do not change the exit status. JSON results
-          list them under <code>mutation.undetected</code>. Changes share the time limit round robin, so a run cut
-          short gives each about the same number of schedules.
+          one small change, such as a removed <code>send</code> or an <code>if</code> forced one way. A change no test
+          case detects fails the check and is listed with its line: the code ran, but no spec or assertion depends on
+          what it does. Add a spec, an assertion or a test case that would fail with the change, or suppress it with a
+          reason. See <a href={`${BLOB}/docs/checking-models.md#mutation-testing`}>mutation testing</a>.
         </p>
         <p>
-          <code>snappea check lint [SOURCE...]</code> runs only the model lints, without exploring schedules.{" "}
-          <code>snappea check mutation [SOURCE...] [TEST...]</code> runs only mutation testing, with a 5 minute
-          limit by default, and exits with 1 when a change goes undetected, so CI can require every change to be
-          detected or suppressed.
+          <code>snappea check lint</code> runs only the model lints, without exploring schedules.{" "}
+          <code>snappea check mutation</code> runs only mutation testing, with more time, e.g. as a CI gate.
         </p>
-        <h3>How much to explore</h3>
-        <Options rows={CHECK_EXPLORATION} />
-        <h3>Mutation testing</h3>
-        <Options rows={CHECK_MUTATION} />
-        <h3>Time and output</h3>
-        <Options rows={CHECK_OTHER} />
-        <h3>Output files</h3>
         <p>
-          A test case that finds a bug writes to <code>&lt;DIR&gt;/&lt;TEST&gt;/</code>, replacing the previous
-          run's files: <code>bug.txt</code> (the log of the failing schedule), <code>bug.schedule</code> and{" "}
-          <code>bug.trace.json</code>. Scenario monitors also write <code>scenario_coverage.json</code> there.
+          A failing test case writes its <code>bug.txt</code> (read this first), <code>bug.schedule</code> for{" "}
+          <code>snappea replay</code> and <code>bug.trace.json</code> to <code>PCheckerOutput/&lt;TEST&gt;/</code>.{" "}
+          <code>snappea check --help</code> lists every option and default; the{" "}
+          <a href={`${BLOB}/docs/checking-models.md`}>checking reference</a> states the exact behavior.
         </p>
       </section>
 
@@ -271,10 +191,9 @@ snappea check [SOURCE...] [TEST...] [options]
 snappea replay <FILE.schedule> [SOURCE...] [--test <NAME>] [-v]
 `}</Code>
         <p>
-          Runs a schedule written by <code>snappea check</code> again, so you can fix the model or the design and
-          confirm the bug is gone. Exit status 1 means the bug was reproduced. If the schedule was found with step
-          options (<code>--max-steps</code> and the others), pass the same ones; the replay line that{" "}
-          <code>check</code> prints includes them.
+          Runs a schedule written by <code>snappea check</code> again, so you can debug it (<code>-v</code> logs
+          each step) and, after fixing the model or the design, confirm the bug is gone. Exit status 1 means the bug
+          was reproduced. Copy the command from the <code>Replay:</code> line that <code>check</code> prints.
         </p>
       </section>
 
@@ -295,9 +214,9 @@ snappea observe [SOURCE...] [LOG...] --spec <NAME> [options]
           Checks logs of a running system against P spec monitors. A <code>LOG</code> is a file, a folder of logs, or a
           quoted glob (<code>"logs/**/*.jsonl"</code>). By default each line is one JSON event. It prints one line per
           spec with its coverage (the spec's handlers, statements and branches the events ran), and lists the spec code
-          no event ran. The <a href={`${BLOB}/docs/observe.md`}>observe guide</a> covers log formats and live streams.
+          no event ran. The <a href={`${BLOB}/docs/observe.md`}>observe reference</a> covers its options, log formats
+          and live streams.
         </p>
-        <Options rows={OBSERVE} />
       </section>
 
       <section>
