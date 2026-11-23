@@ -805,9 +805,11 @@ $ snappea check
 Mutation testing (1.8s)
 error[undetected-mutant]: PSrc/Inventory.p:35: Inventory.Serving, on eReserveReq: the test cases still pass with this change: removed `send req.client, eReserveResp, ...`
   help: 'OrdersAnswered' observes eReserveResp but passes without it here: make a spec expect eReserveResp at this point (after the event that leads to it), or add one that does
-error[undetected-mutant]: PSrc/Inventory.p:49: Inventory.Serving, on eReleaseReq: the test cases still pass with this change: removed the whole `if (req.order in reservations)` (and more undetected inside it; -v lists them)
+error[undetected-mutant]: PSrc/Inventory.p:49: Inventory.Serving, on eReleaseReq: the test cases still pass with this change: removed the whole `if (req.order in reservations)` (and more undetected inside it:)
+      PSrc/Inventory.p:53  removed `announce eReleased, (order = req.order, units = units);`
   help: no test case notices this code removed: add a spec or assertion on its effect
   help: if the contract does not require a behavior, say so where it is: `// snappea-lint: allow mutation -- <reason>`
+  help: `allow mutation` covers only the statement after it; `allow mutation-nested` also covers the code inside it
 No bugs found in 2.1s, but mutation testing failed: ...
 ```
 
@@ -910,8 +912,8 @@ turns with the others, but the rest of its budget only after every mutant outsid
 undetected coarse mutant had its own. When no test case detects the coarse mutant, no
 test case notices that code removed at all, which is the gap to close first, so the
 undetected mutants inside it are listed with it: the console shows
-`removed the whole body (3 statements) (and more undetected inside it; -v lists them)`,
-`-v` lists them under it, and JSON lists them under the coarse mutant's
+`removed the whole body (3 statements) (and more undetected inside it:)` with each
+one on its own line under it, and JSON lists them under the coarse mutant's
 `undetected_inside`, each with its `file` and `line`. A mutant that only re-assigns the
 value already there fails the check only with `--strict`. Given the time, every mutant
 gets its full budget; when the time limit stops the run, what it cut first is the

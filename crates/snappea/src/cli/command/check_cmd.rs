@@ -795,7 +795,7 @@ pub(in crate::cli) fn run_check(
         format!("{} of {} test case{} failed in {}{}. Output: {}/", failed, n, plural(n), elapsed, memory, out)
     });
     if let Some(note) = summary["note"].as_str() {
-        con.inner.out_line(note);
+        con.inner.out_line(&format!("warning: {}{}", note[..1].to_lowercase(), &note[1..]));
     }
     let mut coverage = all_cases.to_json(false);
     coverage["uncovered"] = uncovered.iter().map(|u| u.to_json()).collect();
@@ -832,7 +832,12 @@ pub(in crate::cli) fn run_check(
         result["scenarios"] = scenarios.iter().map(|a| serde_json::from_str::<Value>(&a.to_json()).unwrap()).collect();
     }
     let code = if failed > 0 || coverage_failed || mutation_failed { BUG } else { OK };
-    Ok(with_lint_failure(code, result, failed, lint_failed.as_deref()))
+    let (code, result) = with_lint_failure(code, result, failed, lint_failed.as_deref());
+    // Last, so `tail` and `grep ^error` keep it.
+    if let Some(recap) = failure_recap(code, &result, mutation_failed) {
+        con.inner.out_line(&recap);
+    }
+    Ok((code, result))
 }
 
 /// One check of a selected test case: an expected-bug test runs once per
@@ -1154,7 +1159,7 @@ pub(in crate::cli) fn mutation_phase(
                 only,
                 suite.gates.strict,
             );
-            for l in report.lines(SHOWN_UNCOVERED, cfg.verbose) {
+            for l in report.lines(SHOWN_UNCOVERED) {
                 con.inner.out_line(&l);
             }
             if report.blanket_suppressions > 0 {

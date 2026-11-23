@@ -105,7 +105,6 @@ fails for one run.
 Examples:
   snappea check                       # all test cases, sharing 10s
   snappea check 'tcRetry*' --timeout 1m   # more search time on a few
-  snappea check --no-mutation         # faster iteration while editing
   snappea check --warn lint           # explore with lint findings as warnings
   snappea check --strict              # also fail on low-priority mutants and lints
 
@@ -160,7 +159,8 @@ What fails the check:
 Mutation testing:
       --mutation-timeout <DURATION>
                             Time limit for mutation testing (default: 30s)
-      --no-mutation         Skip mutation testing
+      --no-mutation         Skip mutation testing. The run is then not a pass: check
+                            again without it before finishing.
 
 Driver limits:
       --no-driver-limits    Do not work out the limits each test's driver kept
@@ -911,7 +911,10 @@ mod tests {
             &["mutation testing (--no-mutation)"],
         );
         assert_eq!(partial["status"], "passed");
-        assert!(partial["note"].as_str().unwrap().starts_with("Not checked: mutation testing (--no-mutation)."));
+        assert!(partial["note"]
+            .as_str()
+            .unwrap()
+            .starts_with("Not a full check: skipped mutation testing (--no-mutation)."));
 
         let denied = check_summary(0, 1, 0, false, 0, &[], false, (2, true), Untested::default(), &[]);
         assert_eq!(denied["status"], "mutation_failed");

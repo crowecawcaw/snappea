@@ -82,7 +82,7 @@ pub(in crate::cli) fn check_summary(
     let mut notes = Vec::new();
     if !skipped.is_empty() {
         notes.push(format!(
-            "Not checked: {}. Run without these options before relying on the result.",
+            "Not a full check: skipped {}. Check again without these options before finishing.",
             skipped.join(", ")
         ));
     }
@@ -721,4 +721,58 @@ pub(in crate::cli) fn memory(host: &dyn Host) -> String {
     } else {
         String::new()
     }
+}
+
+/// One line naming what fails a check whose test cases passed, printed last: agents
+/// filter long reports with `tail` and `grep`, and the summary above names only the
+/// first failure. A failed test case already ends the report with its bug.
+pub(in crate::cli) fn failure_recap(code: i32, result: &Value, mutation_failed: bool) -> Option<String> {
+    if code == OK || result["summary"]["failed"].as_u64() != Some(0) {
+        return None;
+    }
+    // `what` at the first few distinct `sites`, of `total`
+    let part = |what: &str, mut sites: Vec<String>, total: usize| {
+        sites.dedup();
+        let shown: Vec<_> = sites.iter().take(3).cloned().collect();
+        let more = sites.len().max(total).saturating_sub(shown.len());
+        let more = if more > 0 { format!(" and {more} more") } else { String::new() };
+        format!("{what} at {}{more}", shown.join(", "))
+    };
+    let at = |v: &Value| format!("{}:{}", v["file"].as_str().unwrap_or_default(), v["line"]);
+    let mut parts = Vec::new();
+    let mut rules: Vec<(&str, Vec<String>)> = Vec::new();
+    for f in result["lint"]["findings"].as_array().into_iter().flatten().filter(|f| f["severity"] == "error") {
+        let rule = f["rule"].as_str().unwrap_or_default();
+        match rules.iter_mut().find(|(r, _)| *r == rule) {
+            Some((_, sites)) => sites.push(at(f)),
+            None => rules.push((rule, vec![at(f)])),
+        }
+    }
+    parts.extend(rules.into_iter().map(|(rule, sites)| part(&format!("lint {rule}"), sites, 0)));
+    let summary = &result["summary"];
+    if summary["coverage_failed"] == true {
+        let sites = summary["uncovered"].as_array().into_iter().flatten().map(at).collect();
+        parts.push(part("required coverage", sites, summary["coverage_gaps"].as_u64().unwrap_or(0) as usize));
+    }
+    if mutation_failed {
+        let sites: Vec<String> = result["mutation"]["undetected"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|m| std::iter::once(m).chain(m["undetected_inside"].as_array().into_iter().flatten()))
+            .map(at)
+            .collect();
+        parts.push(if sites.is_empty() {
+            "mutants not tested in time".to_string()
+        } else {
+            part("undetected mutants", sites, 0)
+        });
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "error: check failed (exit {code}): {}. Fix or suppress each finding above, then check again.",
+        parts.join("; ")
+    ))
 }

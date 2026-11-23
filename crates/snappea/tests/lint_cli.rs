@@ -61,7 +61,10 @@ fn lint_and_check_fail_with_same_findings_and_check_still_runs_the_tests() {
     assert_eq!(h.stderr, lint);
     assert!(h.stdout.contains("Checking ") && h.stdout.contains("ok    t "), "{}", h.stdout);
     assert!(
-        h.stdout.ends_with("but lint failed; coverage skipped. Fix or suppress each finding above, then check again. Output: PCheckerOutput/\n"),
+        h.stdout.ends_with(
+            "but lint failed; coverage skipped. Fix or suppress each finding above, then check again. Output: PCheckerOutput/\n\
+             error: check failed (exit 2): lint permissive-monitor at model.p:2. Fix or suppress each finding above, then check again.\n"
+        ),
         "{}",
         h.stdout
     );

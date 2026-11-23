@@ -82,8 +82,8 @@ fn check_finds_a_bug_that_replays() {
     assert!(
         h.stdout.ends_with(
             "\n🫛 The test case passed in 0.00s. Output: PCheckerOutput/\n\
-             Not checked: mutation testing (only some test cases were selected). \
-             Run without these options before relying on the result.\n"
+             warning: not a full check: skipped mutation testing (only some test cases were selected). \
+             Check again without these options before finishing.\n"
         ),
         "{}",
         h.stdout
@@ -1126,7 +1126,8 @@ fn check_reports_mutants_no_test_case_detects() {
     assert!(
         h.stdout.contains(
             "\nerror[undetected-mutant]: counter.p:6: Counter.S, on eAdd: the test cases still pass with this change: \
-             removed the whole body (2 statements) (and more undetected inside it; -v lists them)\n  \
+             removed the whole body (2 statements) (and more undetected inside it:)\n      \
+             counter.p:8  removed `announce eTotal, total;`\n  \
              help: no test case notices what this code does: add a spec or assertion on its effect\n"
         ),
         "{}",
@@ -1143,13 +1144,6 @@ fn check_reports_mutants_no_test_case_detects() {
         h.stdout
     );
     assert!(!h.stdout.contains("with warnings") && !h.stdout.contains("informational"), "{}", h.stdout);
-    // `-v` lists the ones inside it, and JSON names their file
-    assert_eq!(snappea(&mut h, &["check", "counter.p", "--format", "text", "-v"]), 1);
-    assert!(
-        h.stdout.contains("(and more undetected inside it:)\n  help: no test case notices what this code does: add a spec or assertion on its effect\n      counter.p:8  removed `announce eTotal, total;`\n"),
-        "{}",
-        h.stdout
-    );
     assert_eq!(snappea(&mut h, &["check", "counter.p", "--strict", "--format", "text", "-v"]), 1);
     assert!(
         h.stdout.contains(
@@ -1348,7 +1342,7 @@ fn mutants_that_never_finish_are_stopped_and_counted_as_detected_by_the_step_bou
     // does); a mutant detected that way is not listed as undetected
     assert_eq!(snappea(&mut h, &["check", "mutation", "loop.p", "--warn", "mutation", "--format", "text"]), 0);
     assert!(h.stdout.contains("error[undetected-mutant]: loop.p:6: Worker.S entry: "), "{}", h.stdout);
-    assert!(!h.stdout.contains("count < 3"), "{}", h.stdout);
+    assert!(!h.stdout.contains("`count < 3` replaced by"), "{}", h.stdout);
 }
 
 /// A lock server whose release frees the lock even when it hands it to a waiting client;
