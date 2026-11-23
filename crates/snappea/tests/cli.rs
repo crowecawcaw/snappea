@@ -1,17 +1,11 @@
 //! End-to-end tests of the `snappea` command line on an in-memory host.
+mod common;
+
+use common::{compat, run_threads, snappea};
 
 use std::path::Path;
 
-use snappea::host::{Host, Job, MemHost, Threads};
-
-fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
-    std::thread::scope(|s| {
-        for job in jobs {
-            s.spawn(job);
-        }
-        main();
-    });
-}
+use snappea::host::{Host, MemHost, Threads};
 
 const COINS: &str = "machine M {\n\
        start state S {\n\
@@ -37,20 +31,6 @@ fn host() -> MemHost {
     h.threads = Some(Threads { available: 4, run: run_threads });
     h.add_file("coins.p", COINS);
     h
-}
-
-fn snappea(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::cli::run(&args, host)
-}
-
-fn compat(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::compat::run(&args, host)
 }
 
 fn read(h: &MemHost, path: &str) -> String {

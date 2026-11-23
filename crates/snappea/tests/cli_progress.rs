@@ -1,10 +1,13 @@
 //! Progress reporting of `snappea check` (`--progress`) on an in-memory host.
+mod common;
+
+use common::{run_threads, snappea};
 
 use std::cell::{Cell, RefCell};
 
 use serde_json::Value;
 use snappea::driver::progress::{Phase, Progress};
-use snappea::host::{Job, MemHost, Threads};
+use snappea::host::{MemHost, Threads};
 
 const MODEL: &str = "machine Flips {\n\
        start state S {\n\
@@ -57,15 +60,6 @@ fn seen() -> Vec<Progress> {
     SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
-fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
-    std::thread::scope(|s| {
-        for job in jobs {
-            s.spawn(job);
-        }
-        main();
-    });
-}
-
 fn host(threads: bool) -> MemHost {
     let mut h = MemHost::new("/w");
     h.clock = clock;
@@ -76,13 +70,6 @@ fn host(threads: bool) -> MemHost {
     h.add_file("m.p", MODEL);
     seen();
     h
-}
-
-fn snappea(h: &mut MemHost, args: &[&str]) -> i32 {
-    h.stdout.clear();
-    h.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::cli::run(&args, h)
 }
 
 /// The JSON progress lines on stderr.

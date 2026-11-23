@@ -1,6 +1,9 @@
 //! Mutation testing must not hide real gaps or claim more than it tested: regressions
 //! for likely-equivalent judgements, equivalent mutants spelled differently, untested
 //! mutants and suppressions that match nothing.
+mod common;
+
+use common::snappea;
 
 use serde_json::Value;
 use snappea::host::MemHost;
@@ -21,13 +24,6 @@ fn mutation_verdicts_do_not_depend_on_the_lint_gate() {
     }
     assert_eq!(results[0], results[1]);
     assert_eq!(results[0], results[2]);
-}
-
-fn snappea(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::cli::run(&args, host)
 }
 
 fn json(host: &MemHost) -> Value {

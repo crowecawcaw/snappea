@@ -1,13 +1,11 @@
 //! Lint/check parity over real parsed and type-checked P models. A failing lint fails
 //! `check` but does not hide its bugs. Upstream compatibility remains independent of
 //! lint policy.
+mod common;
+
+use common::snappea as run;
 use snappea::host::MemHost;
 
-fn run(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    snappea::cli::run(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), host)
-}
 const MODEL: &str = "event E;\nspec Passive observes E { start state S { on E goto S; } }\nmachine Main { start state S {} } machine Worker { start state S {} }\ntest t [main=Main]: assert Passive in { Main, Worker };";
 
 #[test]

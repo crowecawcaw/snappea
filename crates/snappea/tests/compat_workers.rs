@@ -1,15 +1,9 @@
 //! `p check` explores schedules on one worker, as upstream does, even on a host with threads.
+mod common;
 
-use snappea::host::{Job, MemHost, Threads};
+use common::run_threads;
 
-fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
-    std::thread::scope(|s| {
-        for job in jobs {
-            s.spawn(job);
-        }
-        main();
-    });
-}
+use snappea::host::{MemHost, Threads};
 
 fn host(threads: bool) -> MemHost {
     let mut h = MemHost::new("/w");
