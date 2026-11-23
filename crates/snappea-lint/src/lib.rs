@@ -329,10 +329,6 @@ pub fn mutation_suppression_details(sources: &SourceMap) -> Result<Vec<MutationS
     Ok(suppression::mutation_suppression_details(&Context::parse(sources)?))
 }
 
-pub fn mutation_suppressions(sources: &SourceMap) -> Result<Vec<(Span, String)>, ParseError> {
-    Ok(suppression::mutation_suppressions(&Context::parse(sources)?))
-}
-
 /// The machines marked `// snappea: driver` (test code that drives the model), as the
 /// spans of their declarations.
 pub fn driver_machines(sources: &SourceMap) -> Result<Vec<Span>, ParseError> {

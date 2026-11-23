@@ -1,16 +1,10 @@
 //! What `snappea` and `snappea-compat` print for model errors: syntax and type errors,
 //! runtime errors during a check, and liveness and deadlock reports.
+mod common;
 
-use snappea::host::{Job, MemHost, Threads};
+use common::{compat, run_threads, snappea};
 
-fn run_threads<'a>(jobs: Vec<Job<'a>>, main: &mut (dyn FnMut() + 'a)) {
-    std::thread::scope(|s| {
-        for job in jobs {
-            s.spawn(job);
-        }
-        main();
-    });
-}
+use snappea::host::{MemHost, Threads};
 
 /// A host with `a.p` holding `src`.
 fn host(src: &str) -> MemHost {
@@ -18,20 +12,6 @@ fn host(src: &str) -> MemHost {
     h.threads = Some(Threads { available: 2, run: run_threads });
     h.add_file("a.p", src);
     h
-}
-
-fn snappea(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::cli::run(&args, host)
-}
-
-fn compat(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::compat::run(&args, host)
 }
 
 /// `snappea check` output (stdout and stderr) for a model.

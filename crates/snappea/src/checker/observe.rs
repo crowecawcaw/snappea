@@ -483,36 +483,11 @@ fn entry_location(opts: &ObserveOptions, parser: &dyn Parser, input: usize, entr
     }
 }
 
-/// The declared event closest to `name`, if it is close enough to be a likely misspelling.
+/// The declared event closest to `name`, if it is close enough to be a likely misspelling:
+/// at most three edits, since a log's event names are often long and alike.
 pub fn suggest_event(prog: &Program, name: &str) -> Option<String> {
-    let lower = name.to_lowercase();
-    let limit = (name.chars().count() / 3).clamp(1, 3);
-    prog.events
-        .iter()
-        .map(|e| e.name.as_str())
-        .filter(|n| *n != "null" && *n != "halt")
-        .map(|n| (edit_distance(&lower, &n.to_lowercase()), n))
-        .filter(|(d, _)| *d <= limit)
-        .min_by_key(|(d, _)| *d)
-        .map(|(_, n)| n.to_string())
-}
-
-/// Levenshtein distance, counting an adjacent transposition as one edit.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let mut d: Vec<Vec<usize>> =
-        (0..=a.len()).map(|i| (0..=b.len()).map(|j| if i == 0 { j } else { i }).collect()).collect();
-    for i in 1..=a.len() {
-        for j in 1..=b.len() {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
-            }
-        }
-    }
-    d[a.len()][b.len()]
+    let events = prog.events.iter().map(|e| e.name.as_str()).filter(|n| *n != "null" && *n != "halt");
+    crate::syntax::closest_within(name, events, 3).map(String::from)
 }
 
 impl Default for ObserveOptions {

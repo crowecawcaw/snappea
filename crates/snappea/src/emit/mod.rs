@@ -493,8 +493,8 @@ pub fn close() {
     set_sink(Emitter::off())
 }
 
-/// Records `event` on stream `key` now: into an in-process test recording while a test
-/// helper routes events (see [`test_hook`]), else to `SNAPPEA_EVENTS_DIR` when a test started
+/// Records `event` on stream `key` now: into an in-process `snappea::test` recording
+/// while one is open, else to `SNAPPEA_EVENTS_DIR` when a test started
 /// this process, else to the sink set with [`set_sink`], else nowhere.
 #[track_caller]
 pub fn emit(event: &str, key: impl fmt::Display, payload: impl serde::Serialize) {
@@ -517,22 +517,23 @@ pub fn emit_at(at: impl Into<Time>, event: &str, key: impl fmt::Display, payload
     }
 }
 
-/// For test helpers such as `snappea::test`: lets in-process recordings receive the events
-/// application code emits through the global [`emit`]. Not for application code.
-pub mod test_hook {
+/// Lets `snappea::test` recordings receive the events application code emits through the
+/// global [`emit`].
+pub(crate) mod test_hook {
     use super::*;
 
     /// Receives each global event (`Err` names an event whose payload could not be
     /// serialized). Returns the event back when no recording takes it; it then goes where
     /// [`emit`] would send it.
-    pub type Router = fn(Result<Event, String>) -> Option<Event>;
+    pub(crate) type Router = fn(Result<Event, String>) -> Option<Event>;
 
     pub(crate) static ROUTING: AtomicBool = AtomicBool::new(false);
     static ROUTER: OnceLock<Router> = OnceLock::new();
 
     /// Installs `router` (the first call wins) and turns routing on or off. While off,
     /// [`emit`] costs one more atomic load.
-    pub fn set_routing(router: Router, on: bool) {
+    #[cfg(feature = "test")]
+    pub(crate) fn set_routing(router: Router, on: bool) {
         let _ = ROUTER.set(router);
         ROUTING.store(on, Ordering::Relaxed);
     }

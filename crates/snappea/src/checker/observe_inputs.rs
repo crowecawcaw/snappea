@@ -4,7 +4,7 @@
 //! These are shared by `snappea observe` and by in-process test helpers. File access goes
 //! through [`LogFiles`], so the same code runs on the real file system ([`StdFiles`]) and on
 //! the command line's virtual hosts. Live inputs come from a [`LiveSource`] that the caller
-//! supplies; [`observe_live`] feeds them to [`ObserveSession`]s.
+//! supplies; `observe_live` feeds them to [`ObserveSession`]s.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value as Json;
 
-use crate::checker::observe::{split_entries, ObserveSession, Parser};
+use crate::checker::observe::{ObserveSession, Parser};
 
 /// The file system operations input expansion needs.
 pub trait LogFiles {
@@ -20,7 +20,6 @@ pub trait LogFiles {
     fn is_dir(&self, path: &Path) -> bool;
     /// Entries (full paths) of a directory, in any order.
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
-    fn read_to_string(&self, path: &Path) -> io::Result<String>;
 }
 
 /// [`LogFiles`] on the real file system.
@@ -36,9 +35,6 @@ impl LogFiles for StdFiles {
     }
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
         std::fs::read_dir(path)?.map(|e| e.map(|e| e.path())).collect()
-    }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        std::fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 }
 
@@ -91,24 +87,6 @@ pub fn log_paths(fs: &dyn LogFiles, cwd: &Path, values: &[impl AsRef<str>]) -> R
         add_log_paths(fs, cwd, v.as_ref(), &mut files)?;
     }
     Ok(files)
-}
-
-/// Reads the log files `values` name (see [`add_log_paths`]) and splits each into entries
-/// with `delimiter` ([`Parser::log_delimiter`]). The result is the `inputs` argument of
-/// [`Spec::observe`](crate::checker::observe::Spec::observe), which combines them into one stream:
-/// each key's events sorted by timestamp, equal timestamps keeping file order.
-pub fn read_logs(
-    fs: &dyn LogFiles,
-    cwd: &Path,
-    values: &[impl AsRef<str>],
-    delimiter: &str,
-) -> Result<Vec<Vec<String>>, String> {
-    let mut inputs = Vec::new();
-    for f in log_paths(fs, cwd, values)? {
-        let text = fs.read_to_string(&f).map_err(|e| format!("{} ({})", f.display(), e))?;
-        inputs.push(split_entries(&text, delimiter));
-    }
-    Ok(inputs)
 }
 
 /// `cwd.join(p)` with `.` and `..` resolved lexically.
@@ -173,13 +151,12 @@ fn walk(fs: &dyn LogFiles, dir: &Path, parts: &[String], depth: usize, out: &mut
             walk(fs, &child, rest, depth + 1, out);
         }
     } else {
-        let pattern: Vec<char> = part.chars().collect();
         for child in fs.read_dir(dir).unwrap_or_default() {
             let Some(name) = child.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
             if name.starts_with('.') && !part.starts_with('.') {
                 continue;
             }
-            if wildcard(&pattern, &name.chars().collect::<Vec<_>>()) {
+            if glob_match(part, &name) {
                 walk(fs, &child, rest, depth + 1, out);
             }
         }
@@ -190,18 +167,42 @@ fn hidden(p: &Path) -> bool {
     p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
 }
 
-/// Matches one path component against a pattern of `*`, `?` and `[...]`.
-fn wildcard(p: &[char], s: &[char]) -> bool {
-    match p.first() {
-        None => s.is_empty(),
-        Some('*') => (0..=s.len()).any(|i| wildcard(&p[1..], &s[i..])),
-        Some('?') => !s.is_empty() && wildcard(&p[1..], &s[1..]),
-        Some('[') => match class(&p[1..]) {
-            Some((matches, len)) => s.first().is_some_and(|&c| matches(c)) && wildcard(&p[1 + len..], &s[1..]),
-            None => s.first() == Some(&'[') && wildcard(&p[1..], &s[1..]),
-        },
-        Some(&c) => s.first() == Some(&c) && wildcard(&p[1..], &s[1..]),
+/// Whether `name` matches the glob `pattern`: `*` any characters, `?` one, `[...]` one
+/// of a class (`[a-c]`, `[!x]`). Matches one path component, or a test case name.
+pub(crate) fn glob_match(pattern: &str, name: &str) -> bool {
+    let (p, s): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
+    // every token but `*` matches one character: on a mismatch, the last `*` takes one more
+    let (mut pi, mut si) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while si < s.len() {
+        let step = match p.get(pi) {
+            Some('*') => {
+                star = Some((pi, si));
+                pi += 1;
+                continue;
+            }
+            Some('?') => Some(1),
+            Some('[') => match class(&p[pi + 1..]) {
+                Some((matches, len)) => matches(s[si]).then_some(1 + len),
+                None => (s[si] == '[').then_some(1),
+            },
+            Some(&c) => (s[si] == c).then_some(1),
+            None => None,
+        };
+        match (step, star) {
+            (Some(n), _) => {
+                pi += n;
+                si += 1;
+            }
+            (None, Some((sp, ss))) => {
+                pi = sp + 1;
+                si = ss + 1;
+                star = Some((sp, ss + 1));
+            }
+            (None, None) => return false,
+        }
     }
+    p[pi..].iter().all(|&c| c == '*')
 }
 
 /// A `[...]` class (after the `[`): its predicate and length including the `]`.
@@ -258,7 +259,7 @@ pub trait LiveSource {
 /// open when every input has ended are errors. Each line carries a `T` through the
 /// merge, such as where it came from.
 #[derive(Debug, Clone)]
-pub struct SequenceMerger<T = ()> {
+pub(crate) struct SequenceMerger<T = ()> {
     field: String,
     next: u64,
     pending: BTreeMap<u64, (String, T)>,
@@ -268,14 +269,14 @@ pub struct SequenceMerger<T = ()> {
 
 impl<T> SequenceMerger<T> {
     /// Lines held back by default before a missing number fails the run.
-    pub const DEFAULT_LIMIT: usize = 10_000;
+    pub(crate) const DEFAULT_LIMIT: usize = 10_000;
 
-    pub fn new(field: &str) -> SequenceMerger<T> {
+    pub(crate) fn new(field: &str) -> SequenceMerger<T> {
         SequenceMerger { field: field.to_string(), next: 1, pending: BTreeMap::new(), limit: Self::DEFAULT_LIMIT }
     }
 
     /// Adds a line, from where `name` says; returns the lines now ready, in sequence order.
-    pub fn push(&mut self, name: &str, line: &str, tag: T) -> Result<Vec<(String, T)>, String> {
+    pub(crate) fn push(&mut self, name: &str, line: &str, tag: T) -> Result<Vec<(String, T)>, String> {
         let entry = line.trim();
         if entry.is_empty() {
             return Ok(Vec::new());
@@ -305,7 +306,7 @@ impl<T> SequenceMerger<T> {
     }
 
     /// Checks that nothing is left waiting once every input has ended.
-    pub fn finish(&self) -> Result<(), String> {
+    pub(crate) fn finish(&self) -> Result<(), String> {
         match self.pending.keys().next() {
             None => Ok(()),
             Some(first) => Err(format!(
@@ -320,7 +321,7 @@ impl<T> SequenceMerger<T> {
 
 /// How [`observe_live`] ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LiveOutcome {
+pub(crate) struct LiveOutcome {
     /// Every input reached EOF and nothing was left unchecked; sessions can be finished
     /// with `finish(true, ..)`. Otherwise use `finish_after_failure`.
     pub complete: bool,
@@ -334,7 +335,7 @@ pub struct LiveOutcome {
 /// `sequence` lines are checked as they arrive (meant for a single input); with it, in
 /// sequence order. Each checked line is passed to `record`. Read errors and sequence
 /// errors are reported to every session with [`ObserveSession::input_error`].
-pub fn observe_live(
+pub(crate) fn observe_live(
     sessions: &mut [ObserveSession<'_>],
     parser: &dyn Parser,
     source: &mut dyn LiveSource,
@@ -399,12 +400,9 @@ pub fn observe_live(
 mod tests {
     use super::*;
 
-    fn wc(p: &str, s: &str) -> bool {
-        wildcard(&p.chars().collect::<Vec<_>>(), &s.chars().collect::<Vec<_>>())
-    }
-
     #[test]
     fn wildcards() {
+        let wc = glob_match;
         assert!(wc("*.log", "a.log"));
         assert!(!wc("*.log", "a.log.1"));
         assert!(wc("a?c", "abc"));
@@ -413,6 +411,18 @@ mod tests {
         assert!(wc("[a-c][0-9]", "b7"));
         assert!(wc("[]]", "]"));
         assert!(wc("[x", "[x"));
+        assert!(wc("*[0-9]", "run12"));
+        assert!(!wc("*[0-9]", "run1x"));
+        assert!(wc("tc*", "tcA"));
+        assert!(wc("*B", "tcB"));
+        assert!(wc("t?A", "tcA"));
+        assert!(wc("tcA", "tcA"));
+        assert!(!wc("tc", "tcA"));
+        assert!(wc("*a*b*", "xxaYYbzz"));
+        assert!(!wc("*a*b", "xxaYYbzz"));
+        assert!(wc("", ""));
+        assert!(!wc("", "a"));
+        assert!(wc("**", ""));
     }
 
     #[test]

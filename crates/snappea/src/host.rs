@@ -249,64 +249,78 @@ impl<'a> Buffered<'a> {
     }
 }
 
+/// The [`Host`] methods a wrapper host passes to its `inner` host unchanged: all but
+/// `write`, `shows_hints` and `progress`, which each wrapper defines.
+#[cfg(feature = "cli")]
+macro_rules! forward_host {
+    () => {
+        fn read_stdin_line(&self) -> io::Result<Option<String>> {
+            self.inner.read_stdin_line()
+        }
+        fn cwd(&self) -> PathBuf {
+            self.inner.cwd()
+        }
+        fn read_to_string(&self, path: &Path) -> io::Result<String> {
+            self.inner.read_to_string(path)
+        }
+        fn write_file(&mut self, path: &Path, contents: &str) -> io::Result<()> {
+            self.inner.write_file(path, contents)
+        }
+        fn is_file(&self, path: &Path) -> bool {
+            self.inner.is_file(path)
+        }
+        fn is_dir(&self, path: &Path) -> bool {
+            self.inner.is_dir(path)
+        }
+        fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+            self.inner.read_dir(path)
+        }
+        fn create_dir_all(&mut self, path: &Path) -> io::Result<()> {
+            self.inner.create_dir_all(path)
+        }
+        fn remove_dir_all(&mut self, path: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all(path)
+        }
+        fn remove_file(&mut self, path: &Path) -> io::Result<()> {
+            self.inner.remove_file(path)
+        }
+        fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+            self.inner.rename(from, to)
+        }
+        fn now(&self) -> f64 {
+            self.inner.now()
+        }
+        fn max_memory_gb(&self) -> f64 {
+            self.inner.max_memory_gb()
+        }
+        fn memory(&self) -> Option<MemoryUse> {
+            self.inner.memory()
+        }
+        fn random_seed(&mut self) -> u32 {
+            self.inner.random_seed()
+        }
+        fn unix_time(&self) -> f64 {
+            self.inner.unix_time()
+        }
+        fn threads(&self) -> Option<Threads> {
+            self.inner.threads()
+        }
+        fn stderr_is_terminal(&self) -> bool {
+            self.inner.stderr_is_terminal()
+        }
+        fn env_var(&self, name: &str) -> Option<String> {
+            self.inner.env_var(name)
+        }
+        fn open_live(&self, inputs: &[LiveInput]) -> Box<dyn LiveSource + '_> {
+            self.inner.open_live(inputs)
+        }
+    };
+}
+
 #[cfg(feature = "cli")]
 impl Host for Buffered<'_> {
     fn write(&mut self, stream: Stream, text: &str, color: Option<Color>) {
         self.out.push((stream, text.to_string(), color));
-    }
-    fn cwd(&self) -> PathBuf {
-        self.inner.cwd()
-    }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        self.inner.read_to_string(path)
-    }
-    fn write_file(&mut self, path: &Path, contents: &str) -> io::Result<()> {
-        self.inner.write_file(path, contents)
-    }
-    fn is_file(&self, path: &Path) -> bool {
-        self.inner.is_file(path)
-    }
-    fn is_dir(&self, path: &Path) -> bool {
-        self.inner.is_dir(path)
-    }
-    fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
-        self.inner.read_dir(path)
-    }
-    fn create_dir_all(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.create_dir_all(path)
-    }
-    fn remove_dir_all(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.remove_dir_all(path)
-    }
-    fn remove_file(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.remove_file(path)
-    }
-    fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
-        self.inner.rename(from, to)
-    }
-    fn now(&self) -> f64 {
-        self.inner.now()
-    }
-    fn max_memory_gb(&self) -> f64 {
-        self.inner.max_memory_gb()
-    }
-    fn memory(&self) -> Option<MemoryUse> {
-        self.inner.memory()
-    }
-    fn random_seed(&mut self) -> u32 {
-        self.inner.random_seed()
-    }
-    fn unix_time(&self) -> f64 {
-        self.inner.unix_time()
-    }
-    fn threads(&self) -> Option<Threads> {
-        self.inner.threads()
-    }
-    fn stderr_is_terminal(&self) -> bool {
-        self.inner.stderr_is_terminal()
-    }
-    fn env_var(&self, name: &str) -> Option<String> {
-        self.inner.env_var(name)
     }
     fn shows_hints(&self) -> bool {
         self.inner.shows_hints()
@@ -314,6 +328,7 @@ impl Host for Buffered<'_> {
     fn progress(&mut self, p: &crate::driver::progress::Progress) {
         self.inner.progress(p)
     }
+    forward_host!();
 }
 
 /// A host that shows only warnings and errors: stderr, and the stdout text the commands
@@ -432,63 +447,6 @@ impl Host for Quiet<'_> {
             self.shown = false;
         }
     }
-    fn read_stdin_line(&self) -> io::Result<Option<String>> {
-        self.inner.read_stdin_line()
-    }
-    fn cwd(&self) -> PathBuf {
-        self.inner.cwd()
-    }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        self.inner.read_to_string(path)
-    }
-    fn write_file(&mut self, path: &Path, contents: &str) -> io::Result<()> {
-        self.inner.write_file(path, contents)
-    }
-    fn is_file(&self, path: &Path) -> bool {
-        self.inner.is_file(path)
-    }
-    fn is_dir(&self, path: &Path) -> bool {
-        self.inner.is_dir(path)
-    }
-    fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
-        self.inner.read_dir(path)
-    }
-    fn create_dir_all(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.create_dir_all(path)
-    }
-    fn remove_dir_all(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.remove_dir_all(path)
-    }
-    fn remove_file(&mut self, path: &Path) -> io::Result<()> {
-        self.inner.remove_file(path)
-    }
-    fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
-        self.inner.rename(from, to)
-    }
-    fn now(&self) -> f64 {
-        self.inner.now()
-    }
-    fn max_memory_gb(&self) -> f64 {
-        self.inner.max_memory_gb()
-    }
-    fn memory(&self) -> Option<MemoryUse> {
-        self.inner.memory()
-    }
-    fn random_seed(&mut self) -> u32 {
-        self.inner.random_seed()
-    }
-    fn unix_time(&self) -> f64 {
-        self.inner.unix_time()
-    }
-    fn threads(&self) -> Option<Threads> {
-        self.inner.threads()
-    }
-    fn env_var(&self, name: &str) -> Option<String> {
-        self.inner.env_var(name)
-    }
-    fn stderr_is_terminal(&self) -> bool {
-        self.inner.stderr_is_terminal()
-    }
     /// `Quiet` wraps the host of every `snappea` command, so its errors carry hints.
     fn shows_hints(&self) -> bool {
         true
@@ -523,9 +481,7 @@ impl Host for Quiet<'_> {
             }
         }
     }
-    fn open_live(&self, inputs: &[LiveInput]) -> Box<dyn LiveSource + '_> {
-        self.inner.open_live(inputs)
-    }
+    forward_host!();
 }
 
 /// A host's file system, for expanding log paths and globs.
@@ -543,9 +499,6 @@ impl crate::checker::observe_inputs::LogFiles for HostFiles<'_> {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
         self.0.read_dir(path)
     }
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        self.0.read_to_string(path)
-    }
 }
 
 /// `Path.GetFullPath`: makes `p` absolute against `cwd` and resolves `.`/`..` lexically.
@@ -555,7 +508,7 @@ pub fn full_path(cwd: &Path, p: &Path) -> PathBuf {
 }
 
 /// Lexically resolves `.` and `..` components.
-pub fn normalize(p: &Path) -> PathBuf {
+pub(crate) fn normalize(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {

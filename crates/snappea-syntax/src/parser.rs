@@ -27,8 +27,12 @@ pub const MAX_NESTING: usize = 128;
 /// Parses one file into a [`Program`].
 pub fn parse(file: FileId, text: &str) -> PResult<Program> {
     let tokens = crate::lexer::lex(file, text).map_err(|e| ParseError { span: e.span, message: e.message })?;
-    let mut p = Parser { text, tokens, pos: 0, depth: 0, too_deep: false };
-    p.program()
+    parse_tokens(text, tokens)
+}
+
+/// [`parse`] for a file already lexed: `tokens` are [`crate::lexer::lex`]'s for `text`.
+pub fn parse_tokens(text: &str, tokens: Vec<crate::token::Token>) -> PResult<Program> {
+    Parser { text, tokens, pos: 0, depth: 0, too_deep: false }.program()
 }
 
 /// Tokens that can start a statement (`statement` in `PParser.g4`).

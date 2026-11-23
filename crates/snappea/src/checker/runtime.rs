@@ -606,9 +606,20 @@ pub struct Buffers {
     /// The reference to each machine a run created, by `(is main, type, interface,
     /// id)`. Machine ids restart with every run, so later runs create the same ones.
     machine_refs: rustc_hash::FxHashMap<(bool, MachineId, InterfaceId, u64), Rc<MachineRef>>,
+    /// Prefixes the search no longer needs, whose memory the next saved ones reuse.
+    pub(super) spare_prefixes: Vec<Prefix>,
 }
 
 pub(super) const MAX_PREFIX: usize = 512;
+
+/// Where a run saves the prefixes a later schedule resumes from (see [`Prefix`]).
+#[derive(Clone, Copy)]
+pub(super) enum SavePolicy {
+    /// Every this many decisions after the last saved prefix.
+    Every(usize),
+    /// At these depths, one prefix each.
+    AtDepths(&'static [usize]),
+}
 
 /// Finished actions kept for reuse between schedules (see [`Buffers`]).
 const MAX_SPARE_EXECS: usize = 64;
@@ -670,13 +681,10 @@ impl Prefix {
 
 pub struct Runtime<'p> {
     pub(super) touched: Vec<bool>,
-    pub(super) fork_depths: &'static [usize],
-    /// Save a prefix every this many decisions instead of at `fork_depths`; 0 to use those.
-    pub(super) save_interval: usize,
     /// What the running step did beyond its machine's own state (see [`Footprint`]).
     pub(crate) footprint: crate::checker::strategy::Footprint,
-    /// Prefixes the search no longer needs, whose memory the next saved ones reuse.
-    pub(super) spare_prefixes: Vec<Prefix>,
+    /// See [`Buffers::spare_prefixes`].
+    spare_prefixes: Vec<Prefix>,
     /// The machines of the run before this one: a schedule that resumes at a prefix
     /// copies the prefix's machines over them, reusing their memory.
     stale_machines: Vec<Machine>,
@@ -782,7 +790,17 @@ impl<'p> Runtime<'p> {
             java_semantics,
             buffers,
         } = setup;
-        let Buffers { machines, monitors, ops, op_infos, spare_execs, trace_steps, timeline, machine_refs } = buffers;
+        let Buffers {
+            machines,
+            monitors,
+            ops,
+            op_infos,
+            spare_execs,
+            trace_steps,
+            timeline,
+            machine_refs,
+            spare_prefixes,
+        } = buffers;
         let timeline = match timeline {
             Some(mut t) => {
                 t.reset(config.timeline);
@@ -805,10 +823,8 @@ impl<'p> Runtime<'p> {
         }
         Runtime {
             touched: vec![],
-            fork_depths: &[16, 64, 256],
-            save_interval: 0,
             footprint: Default::default(),
-            spare_prefixes: Vec::new(),
+            spare_prefixes,
             stale_machines: machines,
             checkpoint_rng: None,
             prog,
@@ -885,6 +901,7 @@ impl<'p> Runtime<'p> {
             trace_steps: std::mem::take(&mut self.trace.steps),
             timeline: Some(std::mem::take(&mut self.timeline)),
             machine_refs: std::mem::take(&mut self.machine_refs),
+            spare_prefixes: std::mem::take(&mut self.spare_prefixes),
         }
     }
 
@@ -1525,12 +1542,11 @@ impl<'p> Runtime<'p> {
         }
         if self.strategy.wants_state_hash() {
             let hash = crate::checker::statehash::program_state(self);
-            let live = self.liveness_pending();
             if let Some(from) = self.strategy.live_graph_step() {
                 let facts = self.live_facts(from, infos);
                 self.strategy.note_live_facts(facts);
             }
-            if !self.strategy.observe_state(hash, live) {
+            if !self.strategy.observe_state(hash) {
                 self.check_lasso()?;
                 self.pruned = true;
                 self.stopped = true;
@@ -1744,7 +1760,13 @@ impl<'p> Runtime<'p> {
         self.run_test_saving(main, test_name, None);
     }
 
-    pub(super) fn run_test_saving(&mut self, main: MachineId, test_name: &str, save: Option<&mut Vec<Prefix>>) {
+    /// Runs one schedule, saving prefixes into `save` where its [`SavePolicy`] says.
+    pub(super) fn run_test_saving(
+        &mut self,
+        main: MachineId,
+        test_name: &str,
+        save: Option<(&mut Vec<Prefix>, SavePolicy)>,
+    ) {
         // start from no machines, with the memory and the actions of the last run's
         let mut stale = std::mem::take(&mut self.stale_machines);
         for mut m in stale.drain(..) {
@@ -1793,15 +1815,15 @@ impl<'p> Runtime<'p> {
     }
 
     /// Resumes at the last of `saved`, the prefixes of the path the strategy is about to
-    /// replay, and saves the boundaries the schedule passes after it. `false`, having done
+    /// replay, and saves the boundaries the schedule passes after it where `policy` says. `false`, having done
     /// nothing, when there is none or the strategy cannot resume there.
-    pub(super) fn resume_last_prefix(&mut self, saved: &mut Vec<Prefix>) -> bool {
+    pub(super) fn resume_last_prefix(&mut self, saved: &mut Vec<Prefix>, policy: SavePolicy) -> bool {
         let Some(prefix) = saved.last() else { return false };
         if !self.strategy.resume_initial_prefix(&prefix.steps) {
             return false;
         }
         self.restore_prefix(prefix);
-        let _ = self.run_loop(Some(saved));
+        let _ = self.run_loop(Some((saved, policy)));
         true
     }
 
@@ -1838,18 +1860,18 @@ impl<'p> Runtime<'p> {
         self.footprint = Default::default();
     }
 
-    fn run_loop(&mut self, mut save: Option<&mut Vec<Prefix>>) -> Result<(), Stop> {
+    fn run_loop(&mut self, mut save: Option<(&mut Vec<Prefix>, SavePolicy)>) -> Result<(), Stop> {
         loop {
             if self.stopped {
                 return Err(Stop);
             }
             // At this boundary no interpreter frame is on the Rust stack. The last
             // scheduling decision reset step_work and the cancellation checkpoint.
-            if let Some(saved) = &mut save {
+            if let Some((saved, policy)) = &mut save {
                 let depth = self.trace.steps.len();
-                let target = match self.save_interval {
-                    0 => self.fork_depths.get(saved.len()).copied().unwrap_or(usize::MAX),
-                    interval => saved.last().map_or(interval, |p| p.depth() + interval),
+                let target = match *policy {
+                    SavePolicy::AtDepths(depths) => depths.get(saved.len()).copied().unwrap_or(usize::MAX),
+                    SavePolicy::Every(interval) => saved.last().map_or(interval, |p| p.depth() + interval),
                 };
                 if depth >= target && depth <= MAX_PREFIX && self.machines.len() <= 32 {
                     // a prefix the search discarded keeps its memory for this one

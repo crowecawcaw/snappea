@@ -20,7 +20,8 @@ snappea-syntax = { path = "crates/snappea-syntax", version = "0.2.0" }
 snappea-lint = { path = "crates/snappea-lint", version = "0.2.0" }
 snappea = { path = "crates/snappea", default-features = false }
 indexmap = "2"
-serde = { version = "1", features = ["derive"] }
+# no `derive` here: the `emit` build stays free of proc macros; crates that derive add it
+serde = "1"
 serde_json = "1"
 roxmltree = "0.21"
 rustc-hash = "2"

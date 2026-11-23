@@ -1,4 +1,7 @@
 //! End-to-end tests of `p check` on an in-memory host.
+mod common;
+
+use common::compat as run;
 
 use std::path::Path;
 
@@ -7,13 +10,6 @@ use snappea::host::{Host, MemHost};
 fn upstream(rel: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/upstream").join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {}", p.display(), e))
-}
-
-fn run(host: &mut MemHost, args: &[&str]) -> i32 {
-    host.stdout.clear();
-    host.stderr.clear();
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    snappea::compat::run(&args, host)
 }
 
 /// `IsSubset` from upstream's `PCheckerLogGeneratorTests`.

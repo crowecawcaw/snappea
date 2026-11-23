@@ -26,7 +26,7 @@ Where `emit` sends events:
 
 | Process | Events go to |
 | --- | --- |
-| A test with a `snappea::test` recording | that recording (`snappea::emit::test_hook`) |
+| A test with a `snappea::test` recording | that recording |
 | Started by a test (`SNAPPEA_EVENTS_DIR` set) | its own `<name>-<pid>-<random>.jsonl` in that folder |
 | After `snappea::emit::set_sink(...)` | the sink: JSON lines `snappea observe` reads |
 | Otherwise | nowhere: a few atomic loads, no lock |

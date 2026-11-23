@@ -40,6 +40,11 @@ enum Skew {
 /// about four times as long at the median, and PCT with 2 alone did not find them.
 const PCT_DEPTHS: [usize; 3] = [0, 10, 20];
 const NAMES: [&str; 5] = ["feedback", "delay", "pct-0", "pct-10", "pct-20"];
+/// The arm a run without contention uses throughout.
+const FEEDBACK: usize = 0;
+/// The arm a probe of a receiver with several senders starts with.
+const PCT_0: usize = 2;
+const _: () = assert!(matches!(NAMES[FEEDBACK].as_bytes(), b"feedback") && matches!(NAMES[PCT_0].as_bytes(), b"pct-0"));
 /// A point is rare while fewer than one schedule in this many reached it.
 const RARE: u64 = 100;
 /// Rare points of one schedule that count: a long loop cannot buy an unlimited allocation.
@@ -90,7 +95,7 @@ impl Portfolio {
         }
         Self {
             arms: strategies.into_iter().map(|strategy| Arm { strategy, work: 0, reward: 0.0, runs: 0 }).collect(),
-            active: 0,
+            active: FEEDBACK,
             iterations: 0,
             contention: false,
             fan_in: 0,
@@ -107,7 +112,7 @@ impl Portfolio {
     }
     pub(crate) fn with_frontier_guidance(mut self, enabled: bool) -> Self {
         if enabled {
-            for arm in self.arms.iter_mut().take(2) {
+            for arm in &mut self.arms {
                 arm.strategy.enable_frontier_guidance();
             }
         }
@@ -162,6 +167,10 @@ impl Portfolio {
         }
     }
 
+    /// Whether some scheduling point so far offered more than one operation.
+    pub(crate) fn contention(&self) -> bool {
+        self.contention
+    }
     pub(crate) fn probe_budget(&self) -> usize {
         // A receiver with n senders can see n! orders. Bound the pilot allocation
         // rather than assuming that a slowly closing DFS frontier is cheap.
@@ -169,7 +178,7 @@ impl Portfolio {
     }
     pub(crate) fn begin_probe(&mut self) {
         if self.fan_in >= 2 && self.iterations == 0 {
-            self.active = 2;
+            self.active = PCT_0;
         }
     }
     /// Points of the schedule that just ran which fewer than one schedule in [`RARE`]
@@ -260,7 +269,7 @@ impl Strategy for Portfolio {
         self.skew = None;
         self.model_choice = false;
         self.active = if !self.contention {
-            0
+            FEEDBACK
         } else if let Some(i) = self.arms.iter().position(|a| a.runs == 0) {
             i
         } else if self.iterations.is_multiple_of(4) {
@@ -276,7 +285,8 @@ impl Strategy for Portfolio {
                 .enumerate()
                 .map(|(i, a)| {
                     let cost = a.work as f64 / a.runs.max(1) as f64;
-                    let hint = if self.fan_in >= 2 && i == 2 { 1.0 + 3.0 / (a.runs.max(1) as f64).sqrt() } else { 1.0 };
+                    let hint =
+                        if self.fan_in >= 2 && i == PCT_0 { 1.0 + 3.0 / (a.runs.max(1) as f64).sqrt() } else { 1.0 };
                     ((0.05 + a.reward * a.reward) * hint / cost.sqrt()).max(0.001)
                 })
                 .collect();

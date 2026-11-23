@@ -7,9 +7,12 @@ use std::rc::Rc;
 use super::compile::{compile_program_plain, compile_random_variant, Code};
 use super::engine::{run_config, CheckerOptions};
 use super::random::RandomValueGenerator;
-use super::runtime::{Prefix, Runtime, Setup};
+use super::runtime::{Prefix, Runtime, SavePolicy, Setup};
 use super::strategy::RandomStrategy;
 use crate::sema::{FunId, Program, TestCase};
+
+/// Where a screened sample saves prefixes: densely, so mutants fork close to their first effect.
+const FORK_DEPTHS: SavePolicy = SavePolicy::AtDepths(&[4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]);
 
 struct Sample {
     seed: u32,
@@ -68,9 +71,8 @@ impl MutationScreen {
                 let mut rt = Runtime::new(original, &self.base, module, &config, &mut strategy, setup());
                 rt.touched.resize(original.funs.len(), false);
                 rt.checkpoint_rng = Some(rng);
-                rt.fork_depths = &[4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512];
                 let mut prefixes = Vec::new();
-                rt.run_test_saving(main, &tc.name, Some(&mut prefixes));
+                rt.run_test_saving(main, &tc.name, Some((&mut prefixes, FORK_DEPTHS)));
                 rt.check_hot_monitors_at_termination();
                 if rt.bug.is_none() && !cancelled() {
                     samples.push(Sample { seed, touched: rt.touched, prefixes });

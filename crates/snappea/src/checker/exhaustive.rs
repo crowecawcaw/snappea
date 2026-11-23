@@ -24,7 +24,7 @@
 //!   This finds a simple livelock on the first schedule that closes it.
 //! - Every other cycle is pruned, so the verdict comes from the fair-cycle analysis
 //!   ([`crate::checker::fairness`]): with hot monitor states, the search records the graph
-//!   of states where a liveness monitor is not cold ([`ExhaustiveStrategy::with_live_graph`])
+//!   of states where a liveness monitor is not cold (`ExhaustiveStrategy::with_live_graph`)
 //!   and, once it has explored every state, looks for a fair cycle in it that keeps a
 //!   monitor hot, possibly made of several loops. Pruning by the state cache loses no
 //!   transition: each one leaves a state the search explores, so it is recorded when a
@@ -136,6 +136,17 @@ struct Choice {
     reducible: bool,
 }
 
+impl Choice {
+    /// The step of the alternative being explored is not local: offers the withheld
+    /// operations again, counting them in `retained`.
+    fn reveal(&mut self, retained: &mut usize, stats: &mut SearchStats) {
+        self.visible = true;
+        *retained += self.withheld.len();
+        stats.branching_choices += usize::from(self.options.len() == 1 && !self.withheld.is_empty());
+        self.options.append(&mut self.withheld);
+    }
+}
+
 /// The reduction of [`ExhaustiveStrategy::with_local_steps`].
 #[derive(Default)]
 struct LocalSteps {
@@ -196,16 +207,23 @@ impl Shared {
     /// worker reached it before), `None` when it was reached at the same or a smaller depth.
     fn visit(&self, hash: u64, depth: usize) -> Option<bool> {
         let mut shard = self.shards[(hash >> 58) as usize].lock().unwrap_or_else(|e| e.into_inner());
-        match shard.get_mut(&hash) {
-            Some(d) if *d <= depth => None,
-            Some(d) => {
-                *d = depth;
-                Some(false)
-            }
-            None => {
-                shard.insert(hash, depth);
-                Some(true)
-            }
+        visit_at(&mut shard, hash, depth)
+    }
+}
+
+/// Records in `depths` that `hash` was reached at `depth`: `Some(new)` to explore it
+/// (`new` when it is not in `depths` yet), `None` when it was reached at the same or a
+/// smaller depth.
+fn visit_at(depths: &mut FxHashMap<u64, usize>, hash: u64, depth: usize) -> Option<bool> {
+    match depths.get_mut(&hash) {
+        Some(d) if *d <= depth => None,
+        Some(d) => {
+            *d = depth;
+            Some(false)
+        }
+        None => {
+            depths.insert(hash, depth);
+            Some(true)
         }
     }
 }
@@ -232,7 +250,7 @@ impl Split {
     pub const TARGET_PER_WORKER: u64 = 8;
 
     /// Worker `index` of `workers`; `seed` and `shared` must be the same for every worker.
-    pub fn new(workers: usize, index: usize, seed: u32, shared: std::sync::Arc<Shared>) -> Split {
+    pub(crate) fn new(workers: usize, index: usize, seed: u32, shared: std::sync::Arc<Shared>) -> Split {
         Split {
             workers: workers as u64,
             index: index as u64,
@@ -273,7 +291,7 @@ impl Split {
 /// Depth-first search with visited-state caching (`--sch-pex dfs`); with a random
 /// generator the alternatives at each new choice point are tried in random order
 /// (`--sch-pex random`, the default).
-pub struct ExhaustiveStrategy {
+pub(crate) struct ExhaustiveStrategy {
     max_steps: usize,
     rng: Option<SharedRandom>,
     split: Option<Split>,
@@ -301,7 +319,7 @@ pub struct ExhaustiveStrategy {
 }
 
 impl ExhaustiveStrategy {
-    pub fn new(max_steps: usize, rng: Option<SharedRandom>) -> Self {
+    pub(crate) fn new(max_steps: usize, rng: Option<SharedRandom>) -> Self {
         ExhaustiveStrategy {
             max_steps,
             rng,
@@ -365,7 +383,7 @@ impl ExhaustiveStrategy {
     /// Monitors see the same events in the same order, so assertions, deadlocks and
     /// liveness verdicts are unchanged: local steps are invisible to monitors, and a run
     /// of local steps always ends, since each consumes an event and none sends one.
-    pub fn with_local_steps(mut self) -> Self {
+    pub(crate) fn with_local_steps(mut self) -> Self {
         self.local = Some(LocalSteps::default());
         self
     }
@@ -373,7 +391,7 @@ impl ExhaustiveStrategy {
     /// Tries one value of each group of `choose(n)` values the model cannot tell apart
     /// (see [`crate::checker::symmetry`]). The schedules left out differ from one tried
     /// only in values the model never looks at, so the verdicts are unchanged.
-    pub fn with_value_classes(mut self) -> Self {
+    pub(crate) fn with_value_classes(mut self) -> Self {
         self.value_classes = true;
         self
     }
@@ -381,7 +399,7 @@ impl ExhaustiveStrategy {
     /// Records the graph of states where a liveness monitor is not cold, up to `limit`
     /// states and transitions, for the fair-cycle analysis that decides liveness once the
     /// search is over (see [`crate::checker::fairness`]).
-    pub fn with_live_graph(mut self, limit: usize) -> Self {
+    pub(crate) fn with_live_graph(mut self, limit: usize) -> Self {
         self.graph = Some(LiveGraph::new(limit));
         self
     }
@@ -392,7 +410,7 @@ impl ExhaustiveStrategy {
     }
 
     /// Explores only this worker's part of a split search.
-    pub fn with_split(mut self, split: Split) -> Self {
+    pub(crate) fn with_split(mut self, split: Split) -> Self {
         self.split = Some(split);
         self
     }
@@ -433,17 +451,7 @@ impl ExhaustiveStrategy {
     /// explore it (`new` when it never reached it before), `None` when it reached it at
     /// the same or a smaller depth.
     fn visit_own(&mut self, hash: u64) -> Option<bool> {
-        match self.visited.get_mut(&hash) {
-            Some(d) if *d <= self.pos => None,
-            Some(d) => {
-                *d = self.pos;
-                Some(false)
-            }
-            None => {
-                self.visited.insert(hash, self.pos);
-                Some(true)
-            }
-        }
+        visit_at(&mut self.visited, hash, self.pos)
     }
 
     /// Allocated choice alternatives retained along the current DFS path.
@@ -530,10 +538,7 @@ impl Strategy for ExhaustiveStrategy {
         local.in_flight = false;
         let Some(c) = running.and_then(|p| self.path.get_mut(p)) else { return };
         if !step.is_local() {
-            c.visible = true;
-            self.retained += c.withheld.len();
-            self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
-            c.options.append(&mut c.withheld);
+            c.reveal(&mut self.retained, &mut self.stats);
         } else if c.reducible && !c.visible {
             // every run of the step so far was local: nothing else needs to go first
             self.retained -= c.options.len() - (c.taken + 1);
@@ -591,10 +596,7 @@ impl Strategy for ExhaustiveStrategy {
             let running = local.running.take().filter(|_| local.in_flight);
             local.in_flight = false;
             if let Some(c) = running.and_then(|p| self.path.get_mut(p)) {
-                c.visible = true;
-                self.retained += c.withheld.len();
-                self.stats.branching_choices += usize::from(c.options.len() == 1 && !c.withheld.is_empty());
-                c.options.append(&mut c.withheld);
+                c.reveal(&mut self.retained, &mut self.stats);
             }
         }
         self.stats.max_depth = self.stats.max_depth.max(self.pos);
@@ -663,7 +665,7 @@ impl Strategy for ExhaustiveStrategy {
         self.pos >= self.path.len()
     }
 
-    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
+    fn observe_state(&mut self, hash: u64) -> bool {
         let facts = self.pending.take();
         let cycle = self.path_states.contains(&hash);
         self.cycle = None;
@@ -748,12 +750,12 @@ impl SearchStats {
 
     /// The search closed a cycle while a liveness monitor was not cold and liveness was
     /// not verified: the model may repeat it without progress, which fair schedules check.
-    pub fn live_cycles_unchecked(&self) -> bool {
+    pub(crate) fn live_cycles_unchecked(&self) -> bool {
         self.liveness_unverified() && self.live_cycle_prunes > 0
     }
 
     /// Adds another worker's part of a split search: complete only when every part is.
-    pub fn combine(&mut self, other: &SearchStats) {
+    pub(crate) fn combine(&mut self, other: &SearchStats) {
         self.auto_handoffs.extend(other.auto_handoffs.iter().cloned());
         self.auto_handoffs.sort_by_key(|h| h.worker);
         self.distinct_states += other.distinct_states;

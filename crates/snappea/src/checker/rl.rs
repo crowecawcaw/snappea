@@ -47,7 +47,7 @@ impl QRow {
     }
 }
 
-pub struct QLearningStrategy {
+pub(crate) struct QLearningStrategy {
     max_steps: usize,
     steps: usize,
     rng: SharedRandom,
@@ -62,7 +62,7 @@ pub struct QLearningStrategy {
 }
 
 impl QLearningStrategy {
-    pub fn new(max_steps: usize, rng: SharedRandom) -> Self {
+    pub(crate) fn new(max_steps: usize, rng: SharedRandom) -> Self {
         QLearningStrategy {
             max_steps,
             steps: 0,
@@ -210,7 +210,7 @@ impl Strategy for QLearningStrategy {
         true
     }
 
-    fn observe_state(&mut self, hash: u64, _live: bool) -> bool {
+    fn observe_state(&mut self, hash: u64) -> bool {
         self.last_state = hash;
         self.choices_since = 0;
         true

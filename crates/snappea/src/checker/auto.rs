@@ -36,7 +36,6 @@ pub(crate) struct AutoStrategy {
     /// Operation choices made in the current exhaustive schedule.
     operations: usize,
     probing: bool,
-    contention: bool,
     probe_remaining: usize,
     probed: bool,
     /// Choices the exhaustive search executed since the last interleaved sample, not
@@ -100,7 +99,6 @@ impl AutoStrategy {
             path_observations: None,
             operations: 0,
             probing: false,
-            contention: false,
             probe_remaining: 0,
             probed: false,
             executed: 0,
@@ -245,7 +243,6 @@ impl Strategy for AutoStrategy {
         self.portfolio.scheduler_stats()
     }
     fn next_operation(&mut self, current: u64, ops: &[OpInfo]) -> Option<u64> {
-        self.contention |= ops.iter().filter(|o| o.enabled).count() > 1;
         if self.dfs.is_some() && !self.probing {
             // the path's observations up to a prefix that can be saved
             let index = self.operations;
@@ -379,7 +376,7 @@ impl Strategy for AutoStrategy {
             }
         }
         if self.dfs.is_some()
-            && self.contention
+            && self.portfolio.contention()
             && !self.complete
             && !self.probed
             && (self.work >= WINDOW || schedule_steps >= 64 || self.saw_bug)
@@ -467,7 +464,7 @@ impl Strategy for AutoStrategy {
     fn wants_state_hash(&self) -> bool {
         !self.interrupted && self.active().wants_state_hash()
     }
-    fn observe_state(&mut self, hash: u64, live: bool) -> bool {
+    fn observe_state(&mut self, hash: u64) -> bool {
         if self.probing {
             return true;
         }
@@ -479,7 +476,7 @@ impl Strategy for AutoStrategy {
             self.interruption_reason = Some("distinct state limit reached");
             return false;
         }
-        dfs.observe_state(hash, live)
+        dfs.observe_state(hash)
     }
     fn closed_cycle(&mut self) -> Option<super::exhaustive::Cycle> {
         if self.probing || self.interrupted {

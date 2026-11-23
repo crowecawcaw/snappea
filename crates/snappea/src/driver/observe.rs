@@ -17,8 +17,8 @@ use crate::checker::observe::{
     ParsedEntry, Parser, Report, Spec, Timestamp, UnknownEvents,
 };
 use crate::checker::observe_inputs::{observe_live, SequenceMerger};
-use crate::checker::observe_json::{event_from_json, json_int, parse_instant};
-use crate::sema::{MachineId, MachineKind, Program};
+use crate::checker::observe_json::{event_from_json, json_int, parse_instant, value_from_json};
+use crate::sema::{MachineId, MachineKind, PType, Program};
 use serde_json::Value as Json;
 
 use crate::driver::check::Style;
@@ -585,9 +585,22 @@ fn key_string(j: Option<&Json>) -> String {
 pub(crate) const TIMESTAMP_FORMS: &str =
     "use whole epoch milliseconds or an ISO-8601 instant, e.g. 1714564800000 or 2024-05-01T12:00:00Z";
 
-fn timestamp_of(j: Option<&Json>) -> Result<Timestamp, String> {
+/// What wrote a JSON line, which decides what it may leave out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Writer {
+    /// Application logs, perhaps written by hand: a missing timestamp reads as 0.
+    Logs,
+    /// snappea's emitter: every line has a timestamp, events no spec observes are
+    /// skipped unread, and the payload must have the event's type (`null` only for an
+    /// event without one).
+    #[cfg_attr(not(feature = "test"), allow(dead_code))]
+    Emitter,
+}
+
+fn timestamp_of(j: Option<&Json>, writer: Writer) -> Result<Timestamp, String> {
     match j {
-        None | Some(Json::Null) => Ok(Timestamp::default()),
+        None | Some(Json::Null) if writer == Writer::Logs => Ok(Timestamp::default()),
+        None | Some(Json::Null) => Err(format!("missing timestamp; {}", TIMESTAMP_FORMS)),
         Some(Json::String(s)) => match s.parse::<i64>() {
             Ok(ms) => Ok(Timestamp::from_millis(ms)),
             Err(_) => parse_instant(s).ok_or_else(|| format!("invalid timestamp '{}'; {}", s, TIMESTAMP_FORMS)),
@@ -630,19 +643,50 @@ impl Parser for JsonLinesParser {
     }
 
     fn parse_entry(&self, entry: &str, spec: &Spec) -> Result<ParsedEntry, String> {
-        if entry.is_empty() {
+        self.parse_line(entry, spec, Writer::Logs)
+    }
+}
+
+impl JsonLinesParser {
+    /// [`Parser::parse_entry`] for lines `writer` wrote: `snappea observe` reads logs, and
+    /// `snappea::test` its emitter's lines, with the default fields.
+    pub(crate) fn parse_line(&self, entry: &str, spec: &Spec, writer: Writer) -> Result<ParsedEntry, String> {
+        if entry.trim().is_empty() {
             return Ok(ParsedEntry::default());
         }
-        let j: Json = serde_json::from_str(entry).map_err(|e| e.to_string())?;
+        let j: Json = serde_json::from_str(entry).map_err(|e| format!("not a JSON line: {e}"))?;
         let name = lookup(&j, &self.event).and_then(|v| v.as_str()).ok_or_else(|| {
-            format!(
-                "missing event name: no string field '{}'; name the field with --parser-config '{{\"event\": \"<field>\"}}'",
-                self.event
-            )
+            let hint = match writer {
+                Writer::Logs => "; name the field with --parser-config '{\"event\": \"<field>\"}'",
+                Writer::Emitter => "",
+            };
+            format!("missing event name: no string field '{}'{hint}", self.event)
         })?;
-        let ts = timestamp_of(lookup(&j, &self.timestamp))?;
         let key = key_string(lookup(&j, &self.key));
-        parsed_from_json(spec, key, ts, name, lookup(&j, &self.payload), Some(entry))
+        let payload = lookup(&j, &self.payload);
+        let timestamp = || timestamp_of(lookup(&j, &self.timestamp), writer);
+        match (writer, spec.event_id(name)) {
+            (Writer::Emitter, None) => Ok(ParsedEntry {
+                unknown_events: vec![name.to_string()],
+                unknown_keys: vec![key],
+                ..Default::default()
+            }),
+            (Writer::Emitter, Some(id)) => {
+                // read only if a spec observes it, and the payload must have the event's type
+                if !spec.observes_event(id) {
+                    return Ok(ParsedEntry::default());
+                }
+                let payload = payload.unwrap_or(&Json::Null);
+                let ty = spec.payload_type(id);
+                if matches!(ty, PType::Null) && !payload.is_null() {
+                    return Err(format!("{name} has no payload, so its payload must be null"));
+                }
+                let value = value_from_json(spec.prog, payload, ty)?;
+                let event = spec.event(key, timestamp()?, name, value, Some(entry))?;
+                Ok(ParsedEntry { events: vec![event], ..Default::default() })
+            }
+            (Writer::Logs, _) => parsed_from_json(spec, key, timestamp()?, name, payload, Some(entry)),
+        }
     }
 }
 

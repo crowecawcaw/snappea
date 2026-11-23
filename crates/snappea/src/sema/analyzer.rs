@@ -56,7 +56,7 @@ impl<'a> Analyzer<'a> {
         scopes.get_mut(g).events.insert("halt".into(), EventId(1));
         Analyzer {
             sm,
-            e: Errors { sm },
+            e: Errors::new(sm),
             prog,
             scopes,
             diags: Diagnostics::new(continue_on_error),

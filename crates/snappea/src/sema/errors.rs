@@ -17,9 +17,15 @@ pub fn format_type(t: &PType, prog: &Program) -> String {
 
 pub struct Errors<'a> {
     pub sm: &'a SourceMap,
+    /// The identifiers of the sources, for "did you mean" hints: read at the first one.
+    identifiers: std::cell::OnceCell<Vec<&'a str>>,
 }
 
 impl<'a> Errors<'a> {
+    pub fn new(sm: &'a SourceMap) -> Self {
+        Errors { sm, identifiers: Default::default() }
+    }
+
     fn loc(&self, span: Span) -> String {
         self.sm.location(span).to_string()
     }
@@ -171,25 +177,17 @@ impl<'a> Errors<'a> {
     }
 
     /// The identifier in the sources closest to `name`, if one is a likely typo of it.
-    fn similar_name(&self, name: &str) -> Option<String> {
-        let limit = (name.chars().count() / 3).max(1);
-        let mut best: Option<(usize, String)> = None;
-        for (i, f) in self.sm.files().iter().enumerate() {
-            let Ok(tokens) = crate::syntax::lexer::lex(crate::syntax::FileId(i as u32), &f.text) else { continue };
-            for t in tokens.iter().filter(|t| t.kind == crate::syntax::token::TokenKind::Iden) {
-                let cand = f.slice(t.span);
-                if cand == name {
-                    continue;
-                }
-                let d = if cand.eq_ignore_ascii_case(name) { 0 } else { edit_distance(cand, name) };
-                // a short name is "close" to every other short name; require some overlap
-                let shorter = cand.chars().count().min(name.chars().count());
-                if d <= limit && d < shorter && best.as_ref().is_none_or(|(bd, b)| (d, cand) < (*bd, b.as_str())) {
-                    best = Some((d, cand.to_string()));
-                }
+    fn similar_name(&self, name: &str) -> Option<&'a str> {
+        let identifiers = self.identifiers.get_or_init(|| {
+            let mut all = Vec::new();
+            for (i, f) in self.sm.files().iter().enumerate() {
+                let Ok(tokens) = crate::syntax::lexer::lex(crate::syntax::FileId(i as u32), &f.text) else { continue };
+                let idents = tokens.iter().filter(|t| t.kind == crate::syntax::token::TokenKind::Iden);
+                all.extend(idents.map(|t| f.slice(t.span)));
             }
-        }
-        best.map(|(_, s)| s)
+            all
+        });
+        crate::syntax::closest(name, identifiers.iter().copied())
     }
 
     pub fn circular_typedef(&self, span: Span, name: &str) -> Diagnostic {
@@ -523,6 +521,3 @@ impl<'a> Errors<'a> {
         )
     }
 }
-
-pub use crate::syntax::closest;
-use crate::syntax::edit_distance;
