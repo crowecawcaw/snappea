@@ -106,7 +106,7 @@ fn negative_only_driver_gaps_are_reported_without_failing_coverage() {
     "#;
     let (code, report, _) = run(source, &["--deny", "coverage"]);
     assert_eq!(code, 0, "{report}");
-    assert_eq!(report["coverage_failed"], false);
+    assert_eq!(report["summary"]["coverage_failed"], false);
     assert!(report["coverage"]["uncovered_required"].as_array().unwrap().is_empty(), "{report}");
     let separate = &report["coverage"]["expected_bug_driver_only"];
     assert_eq!(separate["required"], false);
@@ -183,8 +183,8 @@ fn intent_directives_validate_values_and_bind_to_test_declarations() {
     let parse = |directives: &str| {
         let mut sources = SourceMap::new();
         sources.add("model.p", format!("machine M {{ start state S {{}} }}\n{directives}\ntest tc [main=M]: {{M}};"));
-        let findings = snappea_lint::lint(&sources).unwrap();
-        (snappea_lint::test_intents(&sources).unwrap(), findings)
+        let linter = snappea_lint::Linter::parse(&sources).unwrap();
+        (linter.test_intents(&sources), linter.lint(&sources, None).0)
     };
     let (intents, findings) =
         parse("// snappea: expect-bug \"text with -- and \\\"quotes\\\"\"\n// snappea: boundary -- deliberate");
@@ -392,7 +392,7 @@ fn every_seed_must_match_even_when_comparing_failures() {
         let src = format!("machine Main {{ start state S {{ entry {{ {body} }} }} }}\n// snappea: expect-bug \"known flaw\"\ntest tcNegative [main=Main]: {{ Main }};");
         let (code, report, _) = run(&src, &["--expect-bug-seeds", "1,2"]);
         assert_eq!(code, 1, "{report}");
-        assert_eq!(report["failed"], 2);
+        assert_eq!(report["summary"]["failed"], 2);
         assert_eq!(report["expected_bug_seed_checks"][0]["all_matched"], false);
         assert_eq!(report["expected_bug_seed_checks"][0]["status"], "incomplete");
     }

@@ -2,7 +2,7 @@ use crate::{visit, Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::HashSet;
 
-pub struct UnusedPayloadField;
+pub(crate) struct UnusedPayloadField;
 
 impl Rule for UnusedPayloadField {
     fn id(&self) -> &'static str {
@@ -12,7 +12,7 @@ impl Rule for UnusedPayloadField {
         "A spec handler omits a named event payload field that no companion spec reads in at least one selected test"
     }
     fn check(&self, ctx: &Context<'_>, out: &mut Vec<Finding>) {
-        self.check_selected(ctx, None, out);
+        Self::check_selected(ctx, None, out);
     }
 }
 
@@ -27,7 +27,6 @@ struct PayloadUse<'a> {
 
 impl UnusedPayloadField {
     pub(crate) fn check_selected(
-        &self,
         ctx: &Context<'_>,
         selections: Option<&[crate::SpecSelection]>,
         out: &mut Vec<Finding>,

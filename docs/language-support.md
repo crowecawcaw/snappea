@@ -40,8 +40,8 @@ Each helper implements all five.
 ## Uniform names
 
 Spell every name in the language's convention (`check_hot` / `CheckHot` / `checkHot`).
-Never use a synonym (`liveness`, `AllowUnobserved`, `SNAPPEA_BINARY`). A helper MAY keep an
-old name as a deprecated alias for one minor release, warning when it is used.
+Never use a synonym (`liveness`, `AllowUnobserved`, `SNAPPEA_BINARY`). A renamed option
+loses its old name at once: helpers keep no deprecated aliases.
 
 ### Environment variables
 
@@ -67,9 +67,14 @@ Relative paths in environment variables resolve against the process working dire
 | `strict` | bool | `true` when `specs` is given; `false` when `specs` defaults to all |
 | `check_hot` | bool | `false` |
 | `unknown_events` | `ignore` / `warn` / `error` | `error` |
-| `timeout` | duration | 30 s (helpers that start a process) |
-| `artifacts` | path | a temp folder, kept only when the check fails |
+| `timeout` | duration | 30 s (helpers that start a process; not Rust, which checks in process) |
+| `artifacts` | path | a temp folder, kept only when the check fails (Rust: `SNAPPEA_ARTIFACTS` only, not a config key) |
+| `coverage` | path, or `off` | no file; suite coverage is printed at the end where the framework has a suite hook ([L4](#l4-suite)) |
 | `mode` | `auto` / `marked` / `off` | `auto` where the framework allows it, else `marked` |
+
+Each helper's tests check that its config keys are the keys of this table, so add a row
+and the key in the same change. Go's `Config` also has `Binary`, `WorkDir` and `Suite`,
+which are Go API options, not concepts.
 
 ### API names
 
@@ -80,7 +85,7 @@ Relative paths in environment variables resolve against the process working dire
 | `file`, `stdout`, `writer`, `callback` | L1 | Production sink constructors |
 | `dropped`, `flush`, `close` | L1 | Events dropped so far; wait for queued events (with a timeout); write them and turn the sink off |
 | `check_spec` (or the language's scoped form) | L2 | Scoped recording that checks on exit |
-| `Recording` / `Recorder`, `start`, `stop`, `check` (Rust and Go: `verify`) | L2 | Manual form |
+| `Recording` / `Recorder`, `start`, `stop`, `check`, `verify` | L2 | Manual form. `check` fails the test (Rust: `Model::check(body)`, which panics; Go: `Recorder.Check(t)`). Rust and Go also have `verify`, which returns the result instead (`Recording::verify() -> Result`, `Recorder.Verify(ctx)`) |
 | `events_dir`, `env` | L2 | The recording's `SNAPPEA_EVENTS_DIR` folder, and an environment for children |
 | `add_events_dir`, `add_log` | L2 | Extra event inputs |
 | `SpecViolation`, `SetupError` | L2 | Error types |
@@ -209,7 +214,7 @@ the rest of the test, so the deliberate violation is not reported twice.
 
 Match Python's format: the spec's message; the violating key's last events (up to 20)
 with `src` and a marker on the failing event (or "events ended here" for liveness); the
-P assert location; the artifacts path. Example in the [Python guide](https://crowecawcaw.github.io/snappea/docs/python.html#failures).
+P assert location; the artifacts path. Example in the [Python guide](https://snappea.dev/docs/python.html#failures).
 
 ### Event inputs
 
@@ -340,6 +345,8 @@ same thing in the same place.
 | 7 | Failures | The failure output, the `SpecViolation` fields and the `SetupError` kinds, in the language's spelling |
 | 8 | Reference | The [concepts](#concepts) table in the language's spelling with where each is set, the environment variables, suite coverage, and a link to the generated API reference |
 
+- The section ids are listed once in `web/src/site/docs/languages/outline.ts`;
+  `npm run test:html` fails when a built page's `<h2 id>` sequence differs.
 - The quick start uses the inventory spec every example shares (`examples/*/specs/inventory.p`),
   imported from the repository so the pages cannot drift from it. Failure output is
   pasted from a real run.
@@ -397,9 +404,10 @@ selected (pytest `auto` mode) most tests exercise only some specs, so strict wou
 nearly every test.
 
 Python: `check_spec("Name")`, `check_events(events, "Name")` and `Recorder(specs=[...])`
-become strict by default. This is a behaviour change: for one minor release, a check
-that would newly fail emits a `DeprecationWarning` naming `strict=False` instead of
-failing; then the default flips. `[tool.snappea] strict` and `--snappea-strict` keep working.
+are strict by default; a named spec that sees no relevant event fails with a
+`SetupError` of kind `validation` naming `strict=False`. The pytest plugin checks every
+test, so it is not strict unless `[tool.snappea] strict`, `--snappea-strict` or the mark
+asks.
 
 ### Rust `Model`
 
@@ -450,12 +458,12 @@ The common items #45, #47, #48, #49 and #53 cover are linked.
 - [x] `auto` / `marked` / `off`; fixture setup inside, teardown outside
 - [x] `SNAPPEA_EVENTS_DIR`, `add_events_dir`, `add_log`
 - [x] Suite coverage with no boilerplate (`--snappea-coverage`)
-- [x] `SNAPPEA_BIN`; `SNAPPEA_BINARY` as deprecated alias (#53)
-- [x] `check_hot` everywhere `liveness` is used (`check_spec`, `Recorder`, mark); `liveness=` as deprecated alias. (`SpecViolation.liveness` stays.)
-- [x] `strict` default per [Strict default](#strict-default), with deprecation period
+- [x] `SNAPPEA_BIN` (#53)
+- [x] `check_hot` everywhere (`check_spec`, `Recorder`, mark). (`SpecViolation.liveness` is a result field.)
+- [x] `strict` default per [Strict default](#strict-default)
 - [x] `unknown_events` option, default `error` (#47)
-- [x] `SetupError` with `kind` (`SnappeaError`, `SnappeaNotFound` become aliases or subclasses)
-- [x] `SNAPPEA_COVERAGE`, `SNAPPEA_ARTIFACTS`, `SNAPPEA_MODE`, `timeout`
+- [x] `SetupError` with `kind` (`SnappeaNotFound` is a subclass)
+- [x] `SNAPPEA_COVERAGE`, `SNAPPEA_ARTIFACTS`, `SNAPPEA_MODE`, `timeout`, `coverage`
 - [x] `events_dir()` / `env()` on `Recorder`
 - [x] Events folder file name `<name>-<pid>-<random>.jsonl`
 - [x] Coverage file merge under a file lock (pytest-xdist)
@@ -470,7 +478,7 @@ The common items #45, #47, #48, #49 and #53 cover are linked.
 - [x] `timeout`, artifacts kept on failure
 - [x] Packaging per [Packaging and distribution](#packaging-and-distribution): module at the repo root, release binary downloaded and verified (#64)
 - [x] `Specs` optional (default all), `Exclude`
-- [x] Rename `AllowUnobserved` to `Strict` (`*bool` or option func); keep the old field deprecated
+- [x] `Strict` (`*bool`), replacing `AllowUnobserved`
 - [x] `*SpecViolation` / `*SetupError` for `errors.As` (#53)
 - [x] `ExpectViolation(t, spec, match)` (a `Recorder` method)
 - [x] Failure output in Python's format, with `src` from `runtime.Caller`
@@ -489,7 +497,7 @@ The common items #45, #47, #48, #49 and #53 cover are linked.
 - [x] Suite coverage via the extension, printed by default (no file); `SNAPPEA_COVERAGE` path or `off`; jqwik via `@AfterContainer`
 - [x] Packaging per [Packaging and distribution](#packaging-and-distribution): one `snappea` artifact with natives classifier jars, on Maven Central (#64)
 - [x] `specs` optional (default all), `exclude`
-- [x] `SpecViolation extends AssertionFailedError` with structured fields; `SetupError` with `kind` (`ObservationFailure` stays as their deprecated superclass)
+- [x] `SpecViolation extends AssertionFailedError` with structured fields; `SetupError` with `kind`
 - [x] `expectViolation(spec, match)`
 - [x] Failure output in Python's format, with `src` from `StackWalker`
 - [x] `auto` (extension autodetection) / `marked` / `off`; `@Snappea(skip=..., checkHot=...)`

@@ -403,7 +403,11 @@ fn timed_models_are_searched_exhaustively_when_they_end() {
         assert!(x.distinct_states > 10, "{:?}", x);
 
         // a model that never ends cannot be exhausted: its clocks never repeat
-        let opts = CheckerOptions { iterations: 300, max_unfair_steps: 50, max_fair_steps: 50, ..opts };
+        let opts = CheckerOptions {
+            iterations: 300,
+            steps: snappea::checker::runtime::StepBounds { unfair: 50, fair: 50, fair_explicit: false },
+            ..opts
+        };
         let r = check(&a, "tcTicker", &opts).unwrap();
         assert!(r.time_tracked);
         assert!(r.exhaustive.as_ref().is_none_or(|x| !x.complete()), "{:?}", r.exhaustive);

@@ -25,12 +25,9 @@ use crate::driver::check::Style;
 use crate::host::{full_path, relative_path, Host, LiveInput};
 use crate::project;
 
-/// `PObserveExitStatus`.
-pub const EXIT_SUCCESS: i32 = 0;
-pub const EXIT_CMDLINE_ERROR: i32 = 1;
-pub const EXIT_ASSERTION: i32 = 2;
-pub const EXIT_INTERNAL_ERROR: i32 = 3;
-pub const EXIT_PARSE_LOG_ERROR: i32 = 4;
+pub use crate::checker::observe::{
+    EXIT_ASSERTION, EXIT_CMDLINE_ERROR, EXIT_INTERNAL_ERROR, EXIT_PARSE_LOG_ERROR, EXIT_SUCCESS,
+};
 
 /// What the logs are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -75,8 +72,9 @@ pub struct ObserveConfig {
     pub live: Vec<String>,
     /// The JSON field ordering the lines of several live inputs.
     pub sequence: Option<String>,
-    /// Keep the checked live lines, in check order, in [`Observation::recorded`].
-    pub record: bool,
+    /// The file for the checked live lines. With it, [`Observer::run`] keeps them, in
+    /// check order, in [`Observation::recorded`]; the caller writes them.
+    pub record: Option<String>,
     /// The parser's name; without it, the single registered parser or the built-in one
     /// for `input_kind`.
     pub parser: Option<String>,
@@ -103,12 +101,79 @@ impl Default for ObserveConfig {
             input_kind: InputKind::Text,
             live: Vec::new(),
             sequence: None,
-            record: false,
+            record: None,
             parser: None,
             parser_configuration: None,
             replay_window: 100,
             assume_sorted: false,
             keys: Vec::new(),
+        }
+    }
+}
+
+/// A rule between [`ObserveConfig`] fields that a configuration breaks.
+///
+/// `Display` is the `snappea observe` text. `snappea-compat observe` matches every variant
+/// to print upstream's text where upstream has one, so a new rule must be rendered there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigError {
+    /// No `specs` and not `all_specs`.
+    NoSpecs,
+    /// Both `specs` and `all_specs`.
+    SpecsWithAllSpecs,
+    /// `exclude_specs` without `all_specs`.
+    ExcludeWithoutAllSpecs,
+    /// `-` (stdin) in `live` more than once.
+    StdinTwice,
+    /// Both `live` and `logs`.
+    LiveWithLogs,
+    /// `live` with [`InputKind::Json`].
+    LiveWithJson,
+    /// Several `live` inputs without `sequence`.
+    SeveralLiveWithoutSequence,
+    /// `sequence` or `record` without `live`.
+    SequenceOrRecordWithoutLive,
+    /// Neither `logs` nor `live`.
+    NoInput,
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ConfigError::NoSpecs => "name the specs to check with --spec, or use --all-specs",
+            ConfigError::SpecsWithAllSpecs => "'--spec' and '--all-specs' cannot be combined",
+            ConfigError::ExcludeWithoutAllSpecs => "'--exclude-spec' needs '--all-specs'",
+            ConfigError::StdinTwice => "stdin can be read only once (--stdin is --live -)",
+            ConfigError::LiveWithLogs => "live input (--live, --stdin) cannot be combined with log files",
+            ConfigError::LiveWithJson => "'--p-trace' cannot be combined with live input (--live, --stdin)",
+            ConfigError::SeveralLiveWithoutSequence => "several live inputs need --sequence to order their lines; name a whole-number field every line carries, e.g. `--sequence seq`",
+            ConfigError::SequenceOrRecordWithoutLive => "'--sequence' and '--record' apply to live input (--live, --stdin)",
+            ConfigError::NoInput => "no logs given: name log files or folders, or use --live",
+        })
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+impl ObserveConfig {
+    /// Checks the rules between fields; the error is the first one broken, in the order
+    /// of [`ConfigError`]'s variants.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        let live = !self.live.is_empty();
+        let rules = [
+            (self.specs.is_empty() && !self.all_specs, ConfigError::NoSpecs),
+            (!self.specs.is_empty() && self.all_specs, ConfigError::SpecsWithAllSpecs),
+            (!self.exclude_specs.is_empty() && !self.all_specs, ConfigError::ExcludeWithoutAllSpecs),
+            (self.live.iter().filter(|l| *l == "-").count() > 1, ConfigError::StdinTwice),
+            (live && !self.logs.is_empty(), ConfigError::LiveWithLogs),
+            (live && self.input_kind == InputKind::Json, ConfigError::LiveWithJson),
+            (self.live.len() > 1 && self.sequence.is_none(), ConfigError::SeveralLiveWithoutSequence),
+            (!live && (self.sequence.is_some() || self.record.is_some()), ConfigError::SequenceOrRecordWithoutLive),
+            (!live && self.logs.is_empty(), ConfigError::NoInput),
+        ];
+        match rules.into_iter().find(|(broken, _)| *broken) {
+            Some((_, e)) => Err(e),
+            None => Ok(()),
         }
     }
 }
@@ -132,15 +197,12 @@ pub fn compile(
     style: Style,
 ) -> Result<SpecProgram, String> {
     let art = project::read(host, project_name, files, root)?;
-    let sm = art.source_map();
-    let r = crate::sema::compile(&sm, &crate::sema::Options::default());
-    if !project::report_result(host, &art, &sm, &r, style == Style::Upstream) {
+    let r = crate::sema::compile(&art.map, &crate::sema::Options::default());
+    if !project::report_result(host, &art, &r, style == Style::Upstream) {
         return Err("The P specification does not type-check.".into());
     }
     // Observation enforces the spec rules of `snappea check lint`; upstream has no lint.
-    if style == Style::Snappea
-        && crate::driver::lint::run_observation(host, &sm).map_err(|_| "The P specification does not parse.")? > 0
-    {
+    if style == Style::Snappea && crate::driver::lint::run_observation(host, &art.map) > 0 {
         return Err("The P specification has lint findings. Fix them, or suppress an intended one with `// snappea-lint: allow <rule> -- reason`.".into());
     }
     let program = r.map(|a| a.program).map_err(|_| "The P specification does not type-check.".to_string())?;
@@ -274,7 +336,7 @@ impl Observer {
             let mut merger = cfg.sequence.as_deref().map(SequenceMerger::new);
             let mut recorded = String::new();
             let mut record = |line: &str| {
-                if cfg.record {
+                if cfg.record.is_some() {
                     recorded.push_str(line);
                     recorded.push('\n');
                 }

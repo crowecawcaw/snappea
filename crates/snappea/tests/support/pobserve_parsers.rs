@@ -12,7 +12,7 @@ use snappea::checker::observe::{java_trim, ObservedEvent, Parser, Spec, Timestam
 use snappea::checker::value::{SlotMap, Value};
 
 /// All six parsers, named like their Java classes.
-pub fn all() -> Vec<Box<dyn Parser>> {
+pub(crate) fn all() -> Vec<Box<dyn Parser>> {
     vec![
         Box::new(TestCase2Parser),
         Box::new(TestCase3Parser),
@@ -128,7 +128,7 @@ fn enum_or_null(spec: &Spec, ty: &str, elem: Option<&str>) -> Value {
     elem.and_then(|e| spec.enum_value(ty, e)).unwrap_or(Value::Null)
 }
 
-pub struct TestCase2Parser;
+pub(crate) struct TestCase2Parser;
 
 impl Parser for TestCase2Parser {
     fn name(&self) -> &str {
@@ -232,7 +232,7 @@ impl Parser for TestCase2Parser {
     }
 }
 
-pub struct TestCase3Parser;
+pub(crate) struct TestCase3Parser;
 
 impl Parser for TestCase3Parser {
     fn name(&self) -> &str {
@@ -315,7 +315,7 @@ fn int_line(spec: &Spec, line: &str, name: &str) -> Result<Vec<ObservedEvent>, S
     Ok(vec![event(spec, key.to_string(), ts, name, vec![Value::Int(ts), Value::Int(key), Value::Int(value)], line)?])
 }
 
-pub struct TestCase4Parser;
+pub(crate) struct TestCase4Parser;
 
 impl Parser for TestCase4Parser {
     fn name(&self) -> &str {
@@ -327,7 +327,7 @@ impl Parser for TestCase4Parser {
     }
 }
 
-pub struct TestCase5Parser;
+pub(crate) struct TestCase5Parser;
 
 impl Parser for TestCase5Parser {
     fn name(&self) -> &str {
@@ -339,7 +339,7 @@ impl Parser for TestCase5Parser {
     }
 }
 
-pub struct TestCase6Parser;
+pub(crate) struct TestCase6Parser;
 
 impl Parser for TestCase6Parser {
     fn name(&self) -> &str {
@@ -374,7 +374,7 @@ impl Parser for TestCase6Parser {
     }
 }
 
-pub struct TestCase7Parser;
+pub(crate) struct TestCase7Parser;
 
 impl Parser for TestCase7Parser {
     fn name(&self) -> &str {

@@ -173,9 +173,7 @@ fn find_tests(dir: &Path, stats: &mut Stats, args: &Args) {
     let opts = CheckerOptions {
         seed: args.seed,
         iterations: args.schedules,
-        max_unfair_steps: 1000,
-        max_fair_steps: 1000,
-        user_set_max_fair_steps: true,
+        steps: snappea::checker::runtime::StepBounds { unfair: 1000, fair: 1000, fair_explicit: true },
         strategy: args.strategy,
         strategy_bound: args.bound,
         ..Default::default()

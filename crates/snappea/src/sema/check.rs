@@ -11,7 +11,7 @@ use crate::syntax::ast;
 use crate::syntax::Span;
 
 #[derive(Clone, Copy)]
-pub struct Ctx {
+pub(crate) struct Ctx {
     pub fun: FunId,
     pub machine: Option<MachineId>,
     pub scope: ScopeId,
@@ -28,7 +28,7 @@ fn expr(kind: ExprKind, ty: PType, span: Span) -> Expr {
 /// `TypeCheckingUtils.PrintStmtNumArgs`: number of required arguments, or `None` when
 /// malformed. Like upstream, indices use wrapping 32-bit arithmetic: an overflowing index
 /// counts as the value it wraps to, and a negative one requires no arguments.
-pub fn format_num_args(message: &str) -> Option<usize> {
+pub(crate) fn format_num_args(message: &str) -> Option<usize> {
     let m: Vec<char> = message.chars().collect();
     let mut max = 0i32;
     let mut i = 0usize;
@@ -72,7 +72,7 @@ pub fn format_num_args(message: &str) -> Option<usize> {
 }
 
 /// Interprets C# escape sequences the way the generated C# source would.
-pub fn unescape_csharp(s: &str) -> String {
+pub(crate) fn unescape_csharp(s: &str) -> String {
     let mut out = String::new();
     let mut it = s.chars().peekable();
     while let Some(c) = it.next() {
@@ -160,7 +160,7 @@ impl<'a> Analyzer<'a> {
         Ok(())
     }
 
-    fn args_to_payload(&self, mut args: Vec<Expr>, span: Span) -> Option<Expr> {
+    fn args_to_payload(mut args: Vec<Expr>, span: Span) -> Option<Expr> {
         match args.len() {
             0 => None,
             1 => Some(args.pop().unwrap()),
@@ -183,7 +183,7 @@ impl<'a> Analyzer<'a> {
     // Expressions
     // ------------------------------------------------------------------
 
-    pub fn check_expr(&mut self, ctx: Ctx, e: &ast::Expr) -> Result<Expr, Fatal> {
+    pub(crate) fn check_expr(&mut self, ctx: Ctx, e: &ast::Expr) -> Result<Expr, Fatal> {
         let span = e.inner;
         match &e.kind {
             ast::ExprKind::Name(n) => self.check_name(ctx, n, span),
@@ -394,7 +394,7 @@ impl<'a> Analyzer<'a> {
                 let payload_ty = self.prog.interfaces[iface.idx()].payload.clone();
                 self.validate_payload_types(span, &payload_ty, &a)?;
                 self.prog.funs[ctx.fun.idx()].can_create = true;
-                let payload = self.args_to_payload(a, span).map(Box::new);
+                let payload = Self::args_to_payload(a, span).map(Box::new);
                 Ok(expr(
                     ExprKind::Ctor { interface: iface, payload },
                     PType::Permission(PermissionOrigin::Interface(iface)),
@@ -893,7 +893,7 @@ impl<'a> Analyzer<'a> {
     /// Checks a statement. Only the statements that contain statements are
     /// checked in this frame, one of which is on the stack per level of
     /// statement nesting; the others go to [`Self::check_simple_stmt`].
-    pub fn check_stmt(&mut self, ctx: Ctx, s: &'a ast::Stmt) -> Result<Stmt, Fatal> {
+    pub(crate) fn check_stmt(&mut self, ctx: Ctx, s: &'a ast::Stmt) -> Result<Stmt, Fatal> {
         let span = s.span;
         match &s.kind {
             ast::StmtKind::Compound(stmts) => {
@@ -1100,7 +1100,7 @@ impl<'a> Analyzer<'a> {
                 let pt = self.prog.interfaces[iface.idx()].payload.clone();
                 self.validate_payload_types(span, &pt, &a)?;
                 self.prog.funs[ctx.fun.idx()].can_create = true;
-                let payload = self.args_to_payload(a, span);
+                let payload = Self::args_to_payload(a, span);
                 Ok(Self::stmt(StmtKind::Ctor { interface: iface, payload }, span))
             }
             ast::StmtKind::FunCall { fun, args } => {
@@ -1150,7 +1150,7 @@ impl<'a> Analyzer<'a> {
                 if let Some(pt) = self.event_payload_type(&ev) {
                     self.validate_payload_types(span, &pt, &a)?;
                 }
-                let payload = self.args_to_payload(a, span);
+                let payload = Self::args_to_payload(a, span);
                 Ok(Self::stmt(StmtKind::Raise { event: ev, payload }, span))
             }
             ast::StmtKind::Send { target, event, args } => {
@@ -1173,7 +1173,7 @@ impl<'a> Analyzer<'a> {
                     self.validate_payload_types(span, &pt, &a)?;
                 }
                 self.prog.funs[ctx.fun.idx()].can_send = true;
-                let payload = self.args_to_payload(a, span);
+                let payload = Self::args_to_payload(a, span);
                 Ok(Self::stmt(StmtKind::Send { target: t, event: ev, payload }, span))
             }
             ast::StmtKind::Announce { event, args } => {
@@ -1190,7 +1190,7 @@ impl<'a> Analyzer<'a> {
                 if let Some(pt) = self.event_payload_type(&ev) {
                     self.validate_payload_types(span, &pt, &a)?;
                 }
-                let payload = self.args_to_payload(a, span);
+                let payload = Self::args_to_payload(a, span);
                 Ok(Self::stmt(StmtKind::Announce { event: ev, payload }, span))
             }
             ast::StmtKind::Goto { state, args } => {
@@ -1221,7 +1221,7 @@ impl<'a> Analyzer<'a> {
                     self.report(d)?;
                     return Ok(Self::stmt(StmtKind::Goto { state: st, payload: None }, span));
                 }
-                let payload = self.args_to_payload(a, span);
+                let payload = Self::args_to_payload(a, span);
                 let pt = payload.as_ref().map(|p| p.ty.clone()).unwrap_or(PType::Null);
                 self.check_assignable(span, &expected_ty, &pt)?;
                 self.prog.funs[ctx.fun.idx()].can_change_state = true;
@@ -1359,7 +1359,7 @@ impl<'a> Analyzer<'a> {
     }
 
     /// `FunctionBodyVisitor.PopulateMethod` for a function with a body.
-    pub fn populate_body(&mut self, fun: FunId, body: &'a ast::FunBody) -> Result<(), Fatal> {
+    pub(crate) fn populate_body(&mut self, fun: FunId, body: &'a ast::FunBody) -> Result<(), Fatal> {
         let fs = self.fun_scopes[fun.idx()];
         for v in &body.vars {
             let t = self.resolve_type(&v.ty, fs)?;
@@ -1384,7 +1384,7 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Populates the body of a named or anonymous function from its AST.
-    pub fn populate_fun(&mut self, fun: FunId) -> Result<(), Fatal> {
+    pub(crate) fn populate_fun(&mut self, fun: FunId) -> Result<(), Fatal> {
         match self.fun_src[fun.idx()] {
             FunSrc::Named(f) => match &f.body {
                 Some(b) => self.populate_body(fun, b),

@@ -507,15 +507,8 @@ pub fn roles(prog: &Program, tests: &[TestCase], drivers: &[bool]) -> Vec<Role> 
     roles
 }
 
-/// A finding of [`lints`]: its rule, where, and what.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Finding {
-    pub rule: &'static str,
-    pub span: Span,
-    pub message: String,
-    /// The likely fix, when more specific than the rule's general one.
-    pub help: Option<String>,
-}
+/// A finding of [`lints`]: the same type as the source rules' findings.
+pub use snappea_lint::Finding;
 
 /// The functions each machine runs: its methods and handlers, the functions they call,
 /// and their receive cases.

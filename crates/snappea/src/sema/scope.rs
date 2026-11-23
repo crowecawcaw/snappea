@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use crate::sema::program::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeId(pub u32);
+pub(crate) struct ScopeId(pub u32);
 
 #[derive(Debug, Default)]
-pub struct Scope {
+pub(crate) struct Scope {
     pub parent: Option<ScopeId>,
     pub enum_elems: HashMap<String, (EnumId, u32)>,
     pub enums: HashMap<String, EnumId>,
@@ -35,31 +35,30 @@ pub struct Scope {
 
 /// Arena of scopes.
 #[derive(Debug, Default)]
-pub struct Scopes {
+pub(crate) struct Scopes {
     pub scopes: Vec<Scope>,
 }
 
 impl Scopes {
-    pub fn new() -> Scopes {
+    pub(crate) fn new() -> Scopes {
         let mut s = Scopes::default();
         s.scopes.push(Scope::default());
         s
     }
 
-    pub fn global(&self) -> ScopeId {
-        ScopeId(0)
-    }
+    /// The scope of the top-level declarations, created first.
+    pub(crate) const GLOBAL: ScopeId = ScopeId(0);
 
-    pub fn child(&mut self, parent: ScopeId) -> ScopeId {
+    pub(crate) fn child(&mut self, parent: ScopeId) -> ScopeId {
         self.scopes.push(Scope { parent: Some(parent), ..Default::default() });
         ScopeId(self.scopes.len() as u32 - 1)
     }
 
-    pub fn get(&self, id: ScopeId) -> &Scope {
+    pub(crate) fn get(&self, id: ScopeId) -> &Scope {
         &self.scopes[id.0 as usize]
     }
 
-    pub fn get_mut(&mut self, id: ScopeId) -> &mut Scope {
+    pub(crate) fn get_mut(&mut self, id: ScopeId) -> &mut Scope {
         &mut self.scopes[id.0 as usize]
     }
 
@@ -72,44 +71,44 @@ impl Scopes {
         })
     }
 
-    pub fn lookup_var(&self, id: ScopeId, name: &str) -> Option<VarId> {
+    pub(crate) fn lookup_var(&self, id: ScopeId, name: &str) -> Option<VarId> {
         self.chain(id).find_map(|s| s.variables.get(name).copied())
     }
-    pub fn lookup_event(&self, id: ScopeId, name: &str) -> Option<EventId> {
+    pub(crate) fn lookup_event(&self, id: ScopeId, name: &str) -> Option<EventId> {
         self.chain(id).find_map(|s| s.events.get(name).copied())
     }
-    pub fn lookup_enum_elem(&self, id: ScopeId, name: &str) -> Option<(EnumId, u32)> {
+    pub(crate) fn lookup_enum_elem(&self, id: ScopeId, name: &str) -> Option<(EnumId, u32)> {
         self.chain(id).find_map(|s| s.enum_elems.get(name).copied())
     }
-    pub fn lookup_enum(&self, id: ScopeId, name: &str) -> Option<EnumId> {
+    pub(crate) fn lookup_enum(&self, id: ScopeId, name: &str) -> Option<EnumId> {
         self.chain(id).find_map(|s| s.enums.get(name).copied())
     }
-    pub fn lookup_event_set(&self, id: ScopeId, name: &str) -> Option<EventSetId> {
+    pub(crate) fn lookup_event_set(&self, id: ScopeId, name: &str) -> Option<EventSetId> {
         self.chain(id).find_map(|s| s.event_sets.get(name).copied())
     }
-    pub fn lookup_fun(&self, id: ScopeId, name: &str) -> Option<FunId> {
+    pub(crate) fn lookup_fun(&self, id: ScopeId, name: &str) -> Option<FunId> {
         self.chain(id).find_map(|s| s.functions.get(name).copied())
     }
-    pub fn lookup_interface(&self, id: ScopeId, name: &str) -> Option<InterfaceId> {
+    pub(crate) fn lookup_interface(&self, id: ScopeId, name: &str) -> Option<InterfaceId> {
         self.chain(id).find_map(|s| s.interfaces.get(name).copied())
     }
-    pub fn lookup_machine(&self, id: ScopeId, name: &str) -> Option<MachineId> {
+    pub(crate) fn lookup_machine(&self, id: ScopeId, name: &str) -> Option<MachineId> {
         self.chain(id).find_map(|s| s.machines.get(name).copied())
     }
-    pub fn lookup_typedef(&self, id: ScopeId, name: &str) -> Option<TypeDefId> {
+    pub(crate) fn lookup_typedef(&self, id: ScopeId, name: &str) -> Option<TypeDefId> {
         self.chain(id).find_map(|s| s.typedefs.get(name).copied())
     }
-    pub fn lookup_named_module(&self, id: ScopeId, name: &str) -> Option<u32> {
+    pub(crate) fn lookup_named_module(&self, id: ScopeId, name: &str) -> Option<u32> {
         self.chain(id).find_map(|s| s.named_modules.get(name).copied())
     }
-    pub fn lookup_pure(&self, id: ScopeId, name: &str) -> Option<u32> {
+    pub(crate) fn lookup_pure(&self, id: ScopeId, name: &str) -> Option<u32> {
         self.chain(id).find_map(|s| s.pures.get(name).copied())
     }
 }
 
 impl Scope {
     /// Checks `name` against the given namespaces; returns the existing declaration if any.
-    pub fn conflict(&self, name: &str, namespaces: &[Namespace]) -> Option<DeclRef> {
+    pub(crate) fn conflict(&self, name: &str, namespaces: &[Namespace]) -> Option<DeclRef> {
         for ns in namespaces {
             let hit = match ns {
                 Namespace::Typedefs => self.typedefs.get(name).map(|t| DeclRef::TypeDef(*t)),
@@ -139,7 +138,7 @@ impl Scope {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Namespace {
+pub(crate) enum Namespace {
     Typedefs,
     Enums,
     Interfaces,

@@ -3,16 +3,17 @@
 
 use std::path::Path;
 
+use crate::checker::runtime::StepBounds;
 use crate::checker::strategy::StrategyKind;
 use crate::compat::argparse::{ArgParser, DataType, ParseError};
 use crate::driver::check::{
-    finish_options, load, read_schedule, replay, resolve_sources, select_test_case, set_output_directory,
-    testing_process, CheckConfig, Loaded, Mode,
+    load, read_schedule, replay, resolve_sources, select_test_case, set_output_directory, testing_process, CheckConfig,
+    Loaded, Mode,
 };
 use crate::host::{report_and_exit, Color, Exit, Host, HostExt, Stream};
 
 /// `PCheckerOptions` parser definition.
-pub fn parser() -> ArgParser {
+pub(super) fn parser() -> ArgParser {
     let mut p = ArgParser::new(
         "p check",
         "The P checker enables systematic exploration of a specified P test case, it generates a reproducible bug-trace if a bug is found, and also allows replaying a bug-trace.",
@@ -170,12 +171,12 @@ pub fn parser() -> ArgParser {
 }
 
 /// Runs `p check`; returns the exit code.
-pub fn run(args: &[String], host: &mut dyn Host) -> i32 {
-    let cfg = match parse(args, host) {
-        Ok(c) => c,
+pub(super) fn run(args: &[String], host: &mut dyn Host) -> i32 {
+    let opts = match parse(args, host) {
+        Ok(o) => o,
         Err(Exit(code)) => return code,
     };
-    match run_checker(cfg, host) {
+    match run_checker(opts, host) {
         Ok(code) => code,
         Err(Exit(code)) => code,
     }
@@ -190,8 +191,15 @@ fn checker_report_and_exit(host: &mut dyn Host, msg: &str) -> Exit {
     report_and_exit(host, &format!("{} Run `p check --help` for usage help.", msg))
 }
 
+/// The parsed `p check` options.
+pub(super) struct Options {
+    pub cfg: CheckConfig,
+    /// `--list-tests`: print the test cases instead of checking them.
+    pub list_tests: bool,
+}
+
 /// `PCheckerOptions.Parse`.
-pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> {
+pub(super) fn parse(args: &[String], host: &mut dyn Host) -> Result<Options, Exit> {
     let p = parser();
     let result = match p.parse(args) {
         Ok(r) => r,
@@ -201,7 +209,10 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
         }
         Err(ParseError::Invalid(m)) => return Err(help_and_exit(&p, host, &m)),
     };
-    let mut cfg = CheckConfig::default();
+    let mut cfg = CheckConfig::upstream();
+    let mut list_tests = false;
+    // `--schedules` (or `--timeout`) was given
+    let mut user_set_iterations = false;
     for a in &result {
         let v = a.value.clone();
         let uint = || v.as_ref().map(|v| v.as_uint()).unwrap_or(0);
@@ -218,7 +229,7 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
             "timeout" => {
                 let t = uint();
                 cfg.timeout = (t > 0).then_some(t);
-                cfg.user_set_iterations = true;
+                user_set_iterations = true;
                 if cfg.iterations == 1 {
                     cfg.iterations = 0;
                 }
@@ -242,7 +253,7 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
             "projname" => cfg.input.project_name = Some(string()),
             "mode" => cfg.mode = if string().to_lowercase() == "pex" { Mode::PEx } else { Mode::BugFinding },
             "testcase" => cfg.test_case_name = string(),
-            "list-tests" => cfg.list_test_cases = true,
+            "list-tests" => list_tests = true,
             "seed" => cfg.seed = Some(uint()),
             "sch-random" => cfg.strategy = StrategyKind::Random,
             "sch-pos" => cfg.strategy = StrategyKind::Pos,
@@ -279,7 +290,7 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
             }
             "iterations" | "schedules" => {
                 cfg.iterations = uint() as usize;
-                cfg.user_set_iterations = true;
+                user_set_iterations = true;
             }
             "explore" => cfg.full_exploration = true,
             "max-steps" => {
@@ -287,15 +298,10 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
                 if vals.len() > 2 {
                     return Err(checker_report_and_exit(host, "Invalid number of options supplied via '--max-steps'."));
                 }
-                let i = vals[0];
-                let j = if vals.len() == 2 {
-                    cfg.user_set_max_fair_steps = true;
-                    vals[1]
-                } else {
-                    i.wrapping_mul(10)
-                };
-                cfg.max_unfair_steps = i as usize;
-                cfg.max_fair_steps = j as usize;
+                cfg.steps = StepBounds::from_unfair(vals[0] as usize);
+                if let [_, fair] = vals[..] {
+                    cfg.steps = cfg.steps.with_fair(fair as usize);
+                }
             }
             "fail-on-maxsteps" => cfg.fail_on_max_steps = true,
             // also `--liveness-temperature-threshold`: upstream parses it but has no case for it
@@ -303,16 +309,26 @@ pub fn parse(args: &[String], host: &mut dyn Host) -> Result<CheckConfig, Exit> 
         }
     }
     resolve_sources(host, &mut cfg)?;
-    finish_options(&mut cfg);
-    if cfg.max_fair_steps < cfg.max_unfair_steps {
+    // `SanitizeConfiguration`: PEx mode searches exhaustively, `--sch-pex dfs` in order,
+    // otherwise (`random`, the default) trying the alternatives at each choice point in a
+    // random order, with no schedule limit unless one is given
+    if cfg.mode == Mode::PEx && cfg.strategy != StrategyKind::Replay {
+        if cfg.strategy != StrategyKind::Dfs {
+            cfg.strategy = StrategyKind::RandomDfs;
+        }
+        if !user_set_iterations {
+            cfg.iterations = 0;
+        }
+    }
+    if cfg.steps.fair < cfg.steps.unfair {
         return Err(checker_report_and_exit(host, "For the option '--max-steps N[,M]', please make sure that M >= N."));
     }
     set_output_directory(host, &mut cfg)?;
-    Ok(cfg)
+    Ok(Options { cfg, list_tests })
 }
 
 /// `Checker.Run`.
-pub(crate) fn run_checker(mut cfg: CheckConfig, host: &mut dyn Host) -> Result<i32, Exit> {
+pub(crate) fn run_checker(Options { mut cfg, list_tests }: Options, host: &mut dyn Host) -> Result<i32, Exit> {
     if let Some(schedule_file) = cfg.schedule_file.clone() {
         host.out_line(&format!(
             "Replay option is used, checker is ignoring all other parameters and using the {} to replay the schedule",
@@ -330,8 +346,8 @@ pub(crate) fn run_checker(mut cfg: CheckConfig, host: &mut dyn Host) -> Result<i
     let mut exit_code = 0;
     // both modes run the same engine; PEx mode with an exhaustive search strategy
     let loaded = load(host, &cfg)?;
-    let cases = fetch_test_cases(host, &loaded, &cfg);
-    if !cfg.list_test_cases {
+    let cases = fetch_test_cases(host, &loaded, &cfg, list_tests);
+    if !list_tests {
         for tc in cases {
             cfg.test_case_name = tc;
             // as upstream, the last test case sets the exit code
@@ -343,9 +359,9 @@ pub(crate) fn run_checker(mut cfg: CheckConfig, host: &mut dyn Host) -> Result<i
 }
 
 /// `TestingProcess.FetchTestCases`.
-fn fetch_test_cases(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) -> Vec<String> {
+fn fetch_test_cases(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig, list: bool) -> Vec<String> {
     let names: Vec<String> = loaded.analysis.program.test_cases().into_iter().map(|t| t.name).collect();
-    if cfg.list_test_cases {
+    if list {
         host.out_line(&format!(".. List of test cases (total {})", names.len()));
     } else if cfg.test_case_name.is_empty() {
         return vec![String::new()];
@@ -354,7 +370,7 @@ fn fetch_test_cases(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) -> 
     }
     let mut out = Vec::new();
     for n in names {
-        if cfg.list_test_cases {
+        if list {
             host.out_line(&n);
         } else if n.starts_with(&cfg.test_case_name) {
             host.out_line(&n);

@@ -43,7 +43,7 @@ snappea::emit::close(); // writes what is queued; snappea::emit::flush(timeout) 
 ```
 
 ```sh
-snappea observe -pf specs/inventory.p --spec InventoryCorrect -l '/var/log/app/events/*.jsonl'
+snappea observe specs/inventory.p '/var/log/app/events/*.jsonl' --spec InventoryCorrect
 ```
 
 `set_sink` replaces the earlier sink (`Emitter::off()` turns it off) and does nothing

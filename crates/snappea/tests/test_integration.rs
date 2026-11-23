@@ -304,6 +304,14 @@ fn compile_errors_show_the_source_and_a_fix() {
 }
 
 #[test]
+fn wrong_time_declarations_are_config_errors() {
+    let e = Model::compile(&[("time.p", "event E;\nfun Now(): string;\nspec S observes E { start state A { } }")])
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Config);
+    assert!(e.message.contains("'Now' is a time function"), "{e}");
+}
+
+#[test]
 fn files_folders_globs_and_cargo_metadata() {
     let dir = temp("files");
     std::fs::create_dir_all(dir.join("specs")).unwrap();

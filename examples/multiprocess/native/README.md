@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check several local processes live with snappea observe?"
+  - "How do processes send events to one observer through pipes?"
+---
+
 # Observe two local inventory processes
 
 This integration test starts two independent Python application processes with

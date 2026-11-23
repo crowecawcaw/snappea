@@ -160,7 +160,7 @@ fn handlers_of(prog: &Program, m: MachineId, event: EventId) -> Vec<FunId> {
 /// The machines of test `t` that send a request and then wait for its reply: in a
 /// `receive`, or in a state whose only handlers are for replies. Each wait comes with the
 /// reply it waits for and where (the `receive` or the state).
-pub fn waiting_machines(
+pub(crate) fn waiting_machines(
     prog: &Program,
     t: &TestDecl,
     skip: &dyn Fn(MachineId) -> bool,
@@ -195,12 +195,13 @@ pub fn waiting_machines(
     out
 }
 
-/// See the module documentation.
-pub fn lints(prog: &Program, drivers: &[bool], out: &mut Vec<Finding>) {
-    lints_for_tests(prog, &prog.test_cases(), drivers, out);
-}
-
-pub fn lints_for_tests(prog: &Program, tests: &[crate::sema::TestCase], drivers: &[bool], out: &mut Vec<Finding>) {
+/// The findings of the module documentation, for the test cases `tests`.
+pub(crate) fn lints_for_tests(
+    prog: &Program,
+    tests: &[crate::sema::TestCase],
+    drivers: &[bool],
+    out: &mut Vec<Finding>,
+) {
     unplanned_driver_stage(prog, tests, drivers, out);
     unreachable_statements(prog, out);
 }

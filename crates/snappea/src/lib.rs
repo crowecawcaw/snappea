@@ -12,7 +12,8 @@
 //! | --- | --- |
 //! | `emit` | [`emit`] only: no checker, depends only on `serde` and `serde_json`. For production code. |
 //! | `test` (default) | [`test`](mod@test), plus `emit` and the checker library |
-//! | `cli` (default) | the `snappea` and `snappea-compat` binaries, and the checker library |
+//! | `bin` (default) | the `snappea` and `snappea-compat` binaries, plus `cli` |
+//! | `cli` | `cli` and `compat`: the CLIs as functions, plus the checker library |
 //!
 //! Production code that only emits:
 //!
@@ -24,7 +25,8 @@
 //! snappea = { version = "0.2", default-features = false, features = ["test"] }
 //! ```
 //!
-//! The checker library is [`syntax`] (parser), [`sema`] (type checker), [`checker`]
+//! The checker library is [`syntax`] (parser), [`sema`] (type checker), [`lint`] (model
+//! lint rules), [`checker`]
 //! (systematic testing and log checking), [`project`] (`.pproj` files and P sources),
 //! [`driver`] (the check and observe commands, over a [`host`]) and [`compat`] (upstream
 //! P's command line on top of [`driver`]).
@@ -38,6 +40,9 @@ pub mod test;
 
 #[cfg(feature = "checker")]
 pub use snappea_syntax as syntax;
+
+#[cfg(feature = "checker")]
+pub use snappea_lint as lint;
 
 #[cfg(feature = "checker")]
 pub mod sema;

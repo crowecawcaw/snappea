@@ -17,7 +17,7 @@ use crate::host::{Color, Host, Job, LiveInput, LiveRead, LiveSource, MemoryUse, 
 /// use snappea::host::NativeHost;
 ///
 /// let mut host = NativeHost::new(); // paths are relative to the working directory
-/// let mut cfg = CheckConfig::default(); // bug traces go to PCheckerOutput/
+/// let mut cfg = CheckConfig::snappea(); // as `snappea check`; CheckConfig::upstream() as `p check`
 /// cfg.input.pfiles = vec!["model.p".into()];
 /// check::resolve_sources(&mut host, &mut cfg).expect("errors are printed to stderr");
 /// let loaded = check::load(&mut host, &cfg).expect("errors are printed to stderr");

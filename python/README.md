@@ -31,5 +31,5 @@ def test_lease_expiry():
 
 In production, `snappea.set_sink("/var/log/app/events.jsonl")` sends the same events to a
 log that `snappea observe` checks. See
-the [Python guide](https://crowecawcaw.github.io/snappea/docs/python.html) and
+the [Python guide](https://snappea.dev/docs/python.html) and
 [Testing and production](https://github.com/crowecawcaw/snappea/blob/main/docs/production.md).

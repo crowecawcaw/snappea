@@ -3,19 +3,19 @@
 
 /// An XML trace being built.
 #[derive(Debug, Clone)]
-pub struct XmlLog {
+pub(crate) struct XmlLog {
     out: String,
     /// `Task.CurrentId` of the test task that creates the main machine.
     pub task_id: u64,
 }
 
 impl XmlLog {
-    pub fn new(task_id: u64) -> XmlLog {
+    pub(crate) fn new(task_id: u64) -> XmlLog {
         XmlLog { out: "<Log>".to_string(), task_id }
     }
 
     /// Writes `<name a="v" ... />`, or `<name ...>text</name>` when `text` is given.
-    pub fn element(&mut self, name: &str, attrs: &[(&str, &str)], text: Option<&str>) {
+    pub(crate) fn element(&mut self, name: &str, attrs: &[(&str, &str)], text: Option<&str>) {
         self.out.push_str("\n  <");
         self.out.push_str(name);
         for (k, v) in attrs {
@@ -38,7 +38,7 @@ impl XmlLog {
     }
 
     /// The document (closed `Log` element, no trailing newline).
-    pub fn finish(mut self) -> String {
+    pub(crate) fn finish(mut self) -> String {
         self.out.push_str("\n</Log>");
         self.out
     }

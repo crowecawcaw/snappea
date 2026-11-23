@@ -87,7 +87,7 @@ nanoseconds for a logical clock); each key's events are checked in time order.
 - `recording.emit(...)` in the test body, for setup and events the test itself knows.
   A payload that cannot be serialized fails `verify()`.
 - `recording.emitter()`: a cloneable `snappea::emit::Emitter` to inject into application
-  code or move into threads. It panics if used after `verify()`.
+  code or move into threads. It panics if used after `verify()` or after the recording is dropped.
 - `snappea::emit::emit(...)` (the global emitter) in application code: a recording binds
   the thread that creates it, so emits on that thread go to it. Bind the scoped threads
   the test spawns with `let _guard = recording.bind();`. For `thread::spawn` threads,
@@ -114,8 +114,8 @@ assert_eq!((v.spec.as_str(), v.key.as_str()), ("InventoryCorrect", "coffee"));
 // v.liveness (hot state under check_hot), v.others (more violations)
 ```
 
-`SetupError.kind` is `Config` (options, files, compile errors, unknown spec, emitting
-after `verify()`), `Parser` (a payload that does not match its P type, or an unreadable
+`SetupError.kind` is `Config` (options, files, compile errors, unknown spec, an
+ambiguous emit on an unbound thread), `Parser` (a payload that does not match its P type, or an unreadable
 line), `Validation` (strict: a spec checked no event), `UnknownEvent` or `OutOfOrder`.
 
 Displayed (and as the `Model::check` panic):

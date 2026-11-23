@@ -2,7 +2,7 @@ use crate::{visit, Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
 
-pub struct TautologicalAssert;
+pub(crate) struct TautologicalAssert;
 
 impl Rule for TautologicalAssert {
     fn id(&self) -> &'static str {

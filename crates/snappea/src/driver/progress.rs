@@ -136,17 +136,17 @@ pub(crate) struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(phase: Phase, start: f64, time_limit: Option<f64>) -> Tracker {
+    pub(crate) fn new(phase: Phase, start: f64, time_limit: Option<f64>) -> Tracker {
         Tracker { template: Progress { phase, elapsed: 0.0, time_limit, done: false }, start, last: None }
     }
 
     /// The snapshot as it stands.
-    pub fn progress(&self) -> &Progress {
+    pub(crate) fn progress(&self) -> &Progress {
         &self.template
     }
 
     /// Updates the counts with `update` and sends a snapshot if one is due.
-    pub fn tick(&mut self, host: &mut dyn Host, update: impl FnOnce(&mut Phase)) {
+    pub(crate) fn tick(&mut self, host: &mut dyn Host, update: impl FnOnce(&mut Phase)) {
         update(&mut self.template.phase);
         let now = host.now();
         if self.last.is_some_and(|t| now - t < INTERVAL) {
@@ -158,7 +158,7 @@ impl Tracker {
     }
 
     /// Sends the last snapshot, with the final counts set by `update`.
-    pub fn finish(&mut self, host: &mut dyn Host, update: impl FnOnce(&mut Phase)) {
+    pub(crate) fn finish(&mut self, host: &mut dyn Host, update: impl FnOnce(&mut Phase)) {
         update(&mut self.template.phase);
         self.template.elapsed = host.now() - self.start;
         self.template.done = true;

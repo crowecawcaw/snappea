@@ -16,11 +16,11 @@ from typing import Any, Optional, Sequence
 
 from ._binary import find_snappea
 from ._emit import Event, Sink, emit, set_sink
-from ._errors import SetupError, StrictDefaultWarning
-from ._recorder import Recorder, SpecViolation, _deprecated, check_hot_arg, events_from_dicts
+from ._errors import SetupError
+from ._recorder import Recorder, SpecViolation, events_from_dicts
 
 # show `snappea.SpecViolation` in tracebacks, not the private module
-for _cls in (Recorder, Event, SpecViolation, SetupError, StrictDefaultWarning, Sink):
+for _cls in (Recorder, Event, SpecViolation, SetupError, Sink):
     _cls.__module__ = "snappea"
 
 __all__ = [
@@ -34,16 +34,8 @@ __all__ = [
     "Event",
     "SpecViolation",
     "SetupError",
-    "StrictDefaultWarning",
     "find_snappea",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    if name == "SnappeaError":
-        _deprecated("snappea.SnappeaError", "snappea.SetupError")
-        return SetupError
-    raise AttributeError(f"module 'snappea' has no attribute {name!r}")
 
 
 class check_spec:
@@ -60,9 +52,7 @@ class check_spec:
     or :class:`SetupError` if the check cannot run. Options are those of
     :class:`Recorder`: ``check_hot=True`` also fails if a spec is left in a hot state;
     ``strict`` (default: true when specs are named) requires relevant events for every
-    selected spec. When this named-spec default applies, missing relevant events currently
-    warn; set ``strict=True`` explicitly to fail on them. ``unknown_events`` ("error" by
-    default) handles undeclared names.
+    selected spec. ``unknown_events`` ("error" by default) handles undeclared names.
     """
 
     def __init__(
@@ -74,12 +64,11 @@ class check_spec:
         unknown_events: Optional[str] = None,
         timeout: Optional[float] = None,
         artifacts: Optional[str] = None,
-        liveness: Optional[bool] = None,
     ):
         self.recorder = Recorder(
             specs,
             spec_files=spec_files,
-            check_hot=check_hot_arg(check_hot, liveness),
+            check_hot=check_hot,
             strict=strict,
             unknown_events=unknown_events,
             timeout=timeout,
@@ -122,14 +111,13 @@ class expect_violation:
         unknown_events: Optional[str] = None,
         timeout: Optional[float] = None,
         artifacts: Optional[str] = None,
-        liveness: Optional[bool] = None,
     ):
         self.spec = spec
         self.match = match
         self.recorder = Recorder(
             [spec],
             spec_files=spec_files,
-            check_hot=check_hot_arg(check_hot, liveness),
+            check_hot=check_hot,
             strict=False,  # the spec must break; whether it saw events is beside the point
             unknown_events=unknown_events,
             timeout=timeout,
@@ -178,7 +166,6 @@ def check_events(
     unknown_events: Optional[str] = None,
     timeout: Optional[float] = None,
     artifacts: Optional[str] = None,
-    liveness: Optional[bool] = None,
 ) -> None:
     """Check captured implementation events against P specs::
 
@@ -211,7 +198,7 @@ def check_events(
     rec = Recorder(
         specs,
         spec_files=spec_files,
-        check_hot=check_hot_arg(check_hot, liveness),
+        check_hot=check_hot,
         strict=strict,
         unknown_events=unknown_events,
         timeout=timeout,

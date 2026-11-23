@@ -26,6 +26,13 @@ use crate::checker::strategy::{OpInfo, Strategy};
 use crate::checker::time::{declares_time, Stamp, Time, TimeOptions};
 use crate::checker::value::{NamedTuple, Value};
 
+/// PObserve's exit statuses (`PObserveExitStatus`).
+pub const EXIT_SUCCESS: i32 = 0;
+pub const EXIT_CMDLINE_ERROR: i32 = 1;
+pub const EXIT_ASSERTION: i32 = 2;
+pub const EXIT_INTERNAL_ERROR: i32 = 3;
+pub const EXIT_PARSE_LOG_ERROR: i32 = 4;
+
 /// A point in time (`java.time.Instant`): seconds since the epoch plus nanoseconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Timestamp {
@@ -159,7 +166,11 @@ impl<'p> Spec<'p> {
     }
 
     pub fn from_decl(prog: &'p Program, decl: MachineId) -> Spec<'p> {
-        let config = Config { logging: false, max_work_per_step: 0, ..Config::default() };
+        let config = Config {
+            logging: false,
+            limits: crate::checker::runtime::RunLimits { max_work_per_step: 0, ..Default::default() },
+            ..Config::default()
+        };
         let code = compile_program_with_probes(prog);
         let map = CodeMap::new(prog, &code.probes, &Scope::machine(prog, decl));
         Spec {
@@ -626,8 +637,8 @@ impl Report {
     /// violation, 2 any other error.
     pub fn snappea_exit_code(pobserve_status: i32) -> i32 {
         match pobserve_status {
-            0 => 0,
-            2 => 1,
+            EXIT_SUCCESS => 0,
+            EXIT_ASSERTION => 1,
             _ => 2,
         }
     }
@@ -635,18 +646,18 @@ impl Report {
     /// Status for a combined set of spec errors, using [`Self::exit_status`] priority.
     pub fn errors_exit_status(errors: &[ObserveError]) -> i32 {
         if errors.is_empty() {
-            0
+            EXIT_SUCCESS
         } else if errors
             .iter()
             .any(|e| matches!(e.kind, ErrorKind::Unknown | ErrorKind::OutOfOrder | ErrorKind::UnknownEvent))
         {
-            3
+            EXIT_INTERNAL_ERROR
         } else if errors.iter().any(|e| e.kind == ErrorKind::SpecViolation) {
-            2
+            EXIT_ASSERTION
         } else if errors.iter().any(|e| e.kind == ErrorKind::Validation) {
-            3
+            EXIT_INTERNAL_ERROR
         } else {
-            4
+            EXIT_PARSE_LOG_ERROR
         }
     }
 

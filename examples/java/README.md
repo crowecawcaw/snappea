@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Java service against a P spec in JUnit?"
+  - "How do I write a negative control for a spec in Java?"
+---
+
 # Java: inventory reservations
 
 Three JUnit test classes check one [inventory service](src/main/java/example/Inventory.java)
@@ -77,5 +85,5 @@ Delete the file before a fresh run.
 
 Copy `snappea.properties` and point `spec_files` and `specs` at your specs. Emit from the
 code that commits the change. Failed checks keep events, reports and replay logs
-under `target/snappea`. See the [Java guide](https://crowecawcaw.github.io/snappea/docs/java.html) for modes,
+under `target/snappea`. See the [Java guide](https://snappea.dev/docs/java.html) for modes,
 per-test options, other processes and production sinks.

@@ -12,7 +12,7 @@ impl<'a> Analyzer<'a> {
     // MachineChecker.Validate
     // ------------------------------------------------------------------
 
-    pub fn validate_machine(&mut self, mid: MachineId) -> Result<(), Fatal> {
+    pub(crate) fn validate_machine(&mut self, mid: MachineId) -> Result<(), Fatal> {
         let m = self.prog.machines[mid.idx()].clone();
         if !m.is_spec() {
             let start = self.find_start_state(mid)?;
@@ -52,7 +52,7 @@ impl<'a> Analyzer<'a> {
     }
 
     /// `Machine.AllStates()`: the start state first, then the others in declaration order.
-    pub fn all_states(&self, mid: MachineId) -> Vec<StateId> {
+    pub(crate) fn all_states(&self, mid: MachineId) -> Vec<StateId> {
         let m = &self.prog.machines[mid.idx()];
         let mut v = Vec::new();
         if let Some(s) = m.start_state {
@@ -190,7 +190,7 @@ impl<'a> Analyzer<'a> {
     }
 
     /// `MachineChecker.ValidateNoStaticHandlers`.
-    pub fn validate_no_static_handlers(&self, mid: MachineId) -> Result<(), Fatal> {
+    pub(crate) fn validate_no_static_handlers(&self, mid: MachineId) -> Result<(), Fatal> {
         let is_static = |f: FunId| {
             let fd = &self.prog.funs[f.idx()];
             fd.owner.is_none() || fd.is_foreign()
@@ -229,7 +229,7 @@ impl<'a> Analyzer<'a> {
     // FunctionValidator
     // ------------------------------------------------------------------
 
-    pub fn check_all_paths_return(&self, fun: FunId) -> Result<(), Fatal> {
+    pub(crate) fn check_all_paths_return(&self, fun: FunId) -> Result<(), Fatal> {
         let f = &self.prog.funs[fun.idx()];
         let Some(body) = &f.body else { return Ok(()) };
         if !f.ret.is_same_type_as(&PType::Null, &self.prog) && !self.surely_returns_block(body) {
@@ -242,7 +242,7 @@ impl<'a> Analyzer<'a> {
         b.stmts.iter().any(|s| self.surely_returns(s))
     }
 
-    pub fn surely_returns(&self, s: &Stmt) -> bool {
+    pub(crate) fn surely_returns(&self, s: &Stmt) -> bool {
         match &s.kind {
             StmtKind::Block(b) => self.surely_returns_block(b),
             StmtKind::If { then_branch, else_branch, .. } => {
@@ -263,7 +263,7 @@ impl<'a> Analyzer<'a> {
     // ControlFlowChecker
     // ------------------------------------------------------------------
 
-    pub fn check_control_flow(&self, fun: FunId) -> Result<(), Fatal> {
+    pub(crate) fn check_control_flow(&self, fun: FunId) -> Result<(), Fatal> {
         if let Some(b) = &self.prog.funs[fun.idx()].body {
             for s in &b.stmts {
                 self.check_cf_stmt(s)?;
@@ -295,7 +295,7 @@ impl<'a> Analyzer<'a> {
     // ------------------------------------------------------------------
 
     /// Propagates purity flags from callees to callers (`ApplyPropagations`).
-    pub fn propagate_flags(&mut self) {
+    pub(crate) fn propagate_flags(&mut self) {
         let n = self.prog.funs.len();
         // callers map
         let mut callers: Vec<Vec<FunId>> = vec![Vec::new(); n];
@@ -327,7 +327,7 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    pub fn check_capabilities(&self) -> Result<(), Fatal> {
+    pub(crate) fn check_capabilities(&self) -> Result<(), Fatal> {
         let n = self.prog.funs.len();
         for i in 0..n {
             let f = &self.prog.funs[i];
@@ -367,7 +367,7 @@ impl<'a> Analyzer<'a> {
     // InferMachineCreates
     // ------------------------------------------------------------------
 
-    pub fn infer_creates(&mut self, mid: MachineId) {
+    pub(crate) fn infer_creates(&mut self, mid: MachineId) {
         let methods = self.prog.machines[mid.idx()].methods.clone();
         let mut out: Vec<InterfaceId> = Vec::new();
         for f in methods {

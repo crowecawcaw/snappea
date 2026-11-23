@@ -306,13 +306,11 @@ fn workers_share_the_schedule_count() {
         style: Style::Snappea,
         workers: Some(4),
         iterations: 1003,
-        user_set_iterations: true,
         seed: Some(9),
         test_case_name: "tcCoins".into(),
-        ..CheckConfig::default()
+        ..CheckConfig::upstream()
     };
     cfg.input.pfiles = vec!["coins.p".into()];
-    check::finish_options(&mut cfg);
     check::resolve_sources(&mut h, &mut cfg).unwrap();
     let loaded = check::load(&mut h, &cfg).unwrap();
     check::set_output_directory(&mut h, &mut cfg).unwrap();
@@ -428,6 +426,7 @@ fn live_observe_rejects_incompatible_inputs_before_loading_project() {
         (&["observe", "--spec", "Inventory", "a.log", "--record", "r"], "apply to live input"),
         (&["observe", "--spec", "Inventory"], "no logs given"),
         (&["observe", "--spec", "A", "--all-specs", "a.log"], "cannot be combined"),
+        (&["observe", "--spec", "A", "--exclude-spec", "B", "a.log"], "'--exclude-spec' needs '--all-specs'"),
     ] {
         assert_eq!(snappea(&mut h, args), 2, "{:?}", args);
         assert!(h.stderr.contains(err), "{:?}: {}", args, h.stderr);
@@ -720,7 +719,7 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     assert_eq!(snappea(&mut h, &["check", "coverage.p", "--no-mutation", "--json-report", "r.json"]), 1);
     let json = read(&h, "r.json");
     let result: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(result["coverage_failed"], true);
+    assert_eq!(result["summary"]["coverage_failed"], true);
     assert_eq!(result["coverage"]["statements"], serde_json::json!({"covered": 1, "total": 2}));
     assert_eq!(result["coverage"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
     assert_eq!(result["coverage"]["required"]["handlers"], serde_json::json!({"covered": 0, "total": 1}));
@@ -801,7 +800,7 @@ fn check_requires_aggregate_coverage_and_supports_scoped_suppressions() {
     );
     assert_eq!(snappea(&mut h, &["check", "helper.p", "--no-mutation", "--json"]), 1);
     let result: serde_json::Value = serde_json::from_str(&h.stdout).unwrap();
-    assert_eq!(result["coverage_failed"], true);
+    assert_eq!(result["summary"]["coverage_failed"], true);
     assert!(result["coverage"]["uncovered_required"].as_array().unwrap().iter().any(|p| p["context"] == "Main.Helper"));
 
     h.add_file("coverage.p", "event ePing;\n// snappea-lint: allow coverage:nope -- typo\nmachine Main { start state S { } }\n// snappea-lint: allow no-model-machine -- single-machine fixture isolates coverage behavior\n\

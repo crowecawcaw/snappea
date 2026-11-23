@@ -78,15 +78,15 @@ fn progress(p: &snappea::driver::progress::Progress) {
 /// Runs one request (usable natively too, e.g. for tests).
 pub fn run(req: Request) -> Response {
     // Private browser protocol: parser-derived diagrams, without another parser in JS.
+    let cwd = req.cwd.unwrap_or_else(|| "/work".into());
     if req.args.first().map(String::as_str) == Some("playground-model") {
-        return match model::inspect(&req.files) {
+        return match model::inspect(&req.files, &cwd) {
             Ok(model) => {
                 Response { exit_code: 0, stdout: model.to_string(), stderr: String::new(), files: BTreeMap::new() }
             }
             Err(e) => invalid_request(&e),
         };
     }
-    let cwd = req.cwd.unwrap_or_else(|| "/work".into());
     let mut mem = MemHost::new(&cwd);
     mem.seed = req.seed.unwrap_or(0);
     #[cfg(target_arch = "wasm32")]

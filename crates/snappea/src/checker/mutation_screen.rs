@@ -55,7 +55,7 @@ impl MutationScreen {
         };
         let config = run_config(opts);
         // A shorter screen bound only stops sampling. It cannot become a detection.
-        let bound = match opts.max_fair_steps {
+        let bound = match opts.steps.fair {
             0 => 1000,
             max => max.min(1000),
         };
@@ -145,7 +145,11 @@ mod tests {
                 .find(|m| m.description == "removed `done = true;`")
                 .unwrap();
             let variant = mutation::apply(&prog, &mutant);
-            let opts = CheckerOptions { fail_on_max_steps: true, max_fair_steps: 5000, ..Default::default() };
+            let opts = CheckerOptions {
+                fail_on_max_steps: true,
+                steps: crate::checker::runtime::StepBounds::default().with_fair(5000),
+                ..Default::default()
+            };
             let mut screen = MutationScreen::new(&prog);
             assert_eq!(
                 screen.check(&prog, &variant, mutant.fun.unwrap(), 0, &tests[0], &opts, &|| false),

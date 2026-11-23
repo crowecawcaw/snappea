@@ -1,22 +1,23 @@
-"""Relative links in the repository's Markdown point at files and headings that exist."""
-import os
+"""Links in the repository's Markdown point at files, headings and site anchors that exist."""
+import subprocess
 from pathlib import Path
 import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP = {'target', 'node_modules', '.git', 'evals'}
 # [text](target), not images' remote URLs; the target ends at whitespace or ')'.
 LINK = re.compile(r'(?<!\!)\[[^\]]*\]\(([^)\s]+)\)')
 FENCE = re.compile(r'^(```|~~~).*?^\1', re.S | re.M)
+# The project site, under either of its hosts.
+SITE = re.compile(r'https://(?:snappea\.dev|crowecawcaw\.github\.io/snappea)/docs/([\w-]+)\.html#([\w-]+)')
+WEB = ROOT / 'web/src/site'
 
 
 def markdown_files():
-    for top, dirs, files in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in SKIP]
-        for name in files:
-            if name.endswith('.md'):
-                yield Path(top) / name
+    # tracked files only: agent worktrees and build output hold stale copies
+    out = subprocess.run(['git', 'ls-files', '-z', '--', '*.md', ':(exclude)evals'],
+                         cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    return [ROOT / p for p in out.split('\0') if p]
 
 
 def slug(heading):
@@ -58,9 +59,44 @@ def broken_links():
     return out
 
 
+def site_pages():
+    """Docs page name -> its .tsx source, from the PAGES table web/src/site/render.tsx renders."""
+    render = (WEB / 'render.tsx').read_text()
+    files = {m[1]: m[2] for m in re.finditer(r'import \{ (\w+) \} from "\./([^"]+)"', render)}
+    table = re.search(r'const PAGES = \{([^}]*)\}', render)[1]
+    pages = {}
+    for m in re.finditer(r'"?([\w-]+)"?: (\w+)', table):
+        pages[m[1]] = WEB / f'{files[m[2]]}.tsx'
+    return pages
+
+
+def broken_site_anchors():
+    out, pages, ids = [], site_pages(), {}
+    for path in markdown_files():
+        rel = path.relative_to(ROOT).as_posix()
+        for m in SITE.finditer(path.read_text(errors='replace')):
+            page, frag = m[1], m[2]
+            if page not in pages:
+                out.append(f'{rel}: {m[0]}: no such page')
+                continue
+            if page not in ids:
+                ids[page] = set(re.findall(r'\bid="([^"]+)"', pages[page].read_text()))
+            if frag not in ids[page]:
+                out.append(f'{rel}: {m[0]}: no id="{frag}" in {pages[page].relative_to(ROOT)}')
+    return out
+
+
 class LinkTests(unittest.TestCase):
     def test_relative_links_resolve(self):
         self.assertEqual(broken_links(), [])
+
+    def test_site_anchors_resolve(self):
+        self.assertEqual(broken_site_anchors(), [])
+
+    def test_site_pages_map_to_sources(self):
+        pages = site_pages()
+        self.assertEqual(pages['python'], WEB / 'docs/languages/Python.tsx')
+        self.assertTrue(all(p.exists() for p in pages.values()), pages)
 
     def test_anchors_follow_github(self):
         self.assertEqual(slug('Observed `monitor` coverage!'), 'observed-monitor-coverage')

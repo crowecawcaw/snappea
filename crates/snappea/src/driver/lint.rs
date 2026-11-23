@@ -1,19 +1,16 @@
 //! Model lint policy, shared by the standalone lint command, the pre-check gate and
 //! `snappea observe`.
 use crate::driver::check::Gate;
-use crate::host::{Color, Exit, Host, Stream};
-use crate::project::Sources;
-use crate::sema::diag::{render_coded, render_snippet, render_with_level};
+use crate::host::{Color, Host, Stream};
+use crate::sema::diag::{render_coded, render_with_level};
 use crate::sema::{Program, TestCase};
-use crate::syntax::{ParseError, SourceMap};
+use crate::syntax::SourceMap;
 use serde_json::{json, Value};
-use snappea_lint::{Finding, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
+use snappea_lint::{Finding, Linter, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
 
-/// Print all unsuppressed findings and return the blocking count. Does not execute models or write artifacts.
-pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usize, Exit> {
-    let sm = sources.source_map();
-    let findings = shown(findings(host, &sm, prog)?, false);
-    Ok(report(host, &sm, &findings, false))
+/// Parses sources that type-checked for linting.
+pub fn parse(sm: &SourceMap) -> Linter {
+    Linter::parse(sm).expect("sources that type-checked parse")
 }
 
 /// The findings a run reports: all of them with `strict`, else only the blocking ones.
@@ -28,25 +25,25 @@ pub fn shown(mut findings: Vec<Finding>, strict: bool) -> Vec<Finding> {
 /// The unsuppressed findings of the source rules and of the rules on the type-checked
 /// program `prog` ([`snappea_lint::PROGRAM_RULES`]) for every test, in source order, with
 /// an `unused-suppression` advisory for each lint suppression that matched nothing.
-pub fn findings(host: &mut dyn Host, sm: &SourceMap, prog: &Program) -> Result<Vec<Finding>, Exit> {
-    let intents = snappea_lint::test_intents(sm).unwrap_or_default();
-    let (mut findings, used) =
-        collect(sm, prog, &prog.test_cases(), &intents, false).map_err(|e| syntax_error(host, sm, e))?;
-    findings.extend(unused_suppressions(sm, &findings, &used));
+pub fn findings(sm: &SourceMap, linter: &Linter, prog: &Program) -> Vec<Finding> {
+    let intents = linter.test_intents(sm);
+    let (mut findings, used) = collect(sm, linter, prog, &prog.test_cases(), &intents, false);
+    findings.extend(unused_suppressions(sm, linter, &findings, &used));
     sort(&mut findings);
-    Ok(findings)
+    findings
 }
 
 /// The findings for `tests`, and the suppressions that removed one. With `selected_only`,
 /// source findings inside the declarations of other tests are left out.
 fn collect(
     sm: &SourceMap,
+    linter: &Linter,
     prog: &Program,
     tests: &[TestCase],
     intents: &[TestIntent],
     selected_only: bool,
-) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
-    let (mut findings, mut used) = source_findings(sm, prog, tests)?;
+) -> (Vec<Finding>, Vec<SuppressionUse>) {
+    let (mut findings, mut used) = source_findings(sm, linter, prog, tests);
     if selected_only {
         findings.retain(|f| {
             !prog.tests.iter().enumerate().any(|(i, t)| {
@@ -57,26 +54,18 @@ fn collect(
             })
         });
     }
-    let marked = snappea_lint::driver_machines(sm).unwrap_or_default();
-    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
+    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, linter);
     let positive: Vec<_> =
         tests.iter().filter(|tc| intent(prog, tc, intents).is_none_or(|i| i.expected_bug.is_none())).cloned().collect();
     let mut program: Vec<Finding> =
         crate::checker::checked::lints_with_progress_tests(prog, tests, &positive, &drivers)
             .into_iter()
             .filter(|f| !f.span.is_dummy())
-            .map(|f| {
-                let finding = Finding::new(f.rule, f.span, f.message);
-                match f.help {
-                    Some(help) => finding.with_help(help),
-                    None => finding,
-                }
-            })
             .collect();
-    used.extend(snappea_lint::suppress_program_findings(sm, &mut program).unwrap_or_default());
+    used.extend(linter.suppress_program_findings(sm, &mut program));
     findings.extend(program);
     sort(&mut findings);
-    Ok((findings, used))
+    (findings, used)
 }
 
 fn sort(findings: &mut [Finding]) {
@@ -85,11 +74,12 @@ fn sort(findings: &mut [Finding]) {
 
 fn source_findings(
     sm: &SourceMap,
+    linter: &Linter,
     prog: &Program,
     tests: &[TestCase],
-) -> Result<(Vec<Finding>, Vec<SuppressionUse>), ParseError> {
+) -> (Vec<Finding>, Vec<SuppressionUse>) {
     if tests.is_empty() {
-        return snappea_lint::lint_usage(sm);
+        return linter.lint(sm, None);
     }
     let selections: Vec<_> = tests
         .iter()
@@ -108,16 +98,14 @@ fn source_findings(
             }
         })
         .collect();
-    snappea_lint::lint_with_spec_selections_usage(sm, &selections)
+    linter.lint(sm, Some(&selections))
 }
 
 /// An `unused-suppression` advisory for each lint suppression comment that removed no
 /// finding, and for `/* snappea-lint: ... */` block comments, which are not read.
 /// `findings` are the unsuppressed findings, to point at one the comment may be meant for.
-fn unused_suppressions(sm: &SourceMap, findings: &[Finding], used: &[SuppressionUse]) -> Vec<Finding> {
-    let Ok((suppressions, mut out)) = snappea_lint::lint_suppressions(sm) else {
-        return Vec::new();
-    };
+fn unused_suppressions(sm: &SourceMap, linter: &Linter, findings: &[Finding], used: &[SuppressionUse]) -> Vec<Finding> {
+    let (suppressions, mut out) = linter.lint_suppressions(sm);
     for s in suppressions {
         if used.iter().any(|u| u.comment == s.comment && u.rule == s.rule) {
             continue;
@@ -179,25 +167,12 @@ fn reported_at(rule: &str) -> &'static str {
     }
 }
 
-/// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and fail
-/// (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print as warnings
-/// and the check goes on. Returns how many findings there were.
-pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
-    gate_selected(host, sources, prog, gate, false, &prog.test_cases(), &[]).map_err(|e| {
-        e.print(host, &sources.source_map());
-        e.exit
-    })
-}
-
-/// Blocking lint findings fail a check, or the sources did not parse: the exit status,
-/// and the findings as JSON (see [`findings_json`]) for a machine-readable result.
-/// Blocking findings are not printed yet, so a check can report its bugs first; print
-/// them with [`LintFailed::print`].
+/// Blocking lint findings failed a check: the findings as JSON (see [`findings_json`])
+/// for a machine-readable result. They are not printed yet, so a check can report its
+/// bugs first; print them with [`LintFailed::print`].
 #[derive(Debug)]
 pub struct LintFailed {
-    pub exit: Exit,
-    /// `None` when the sources did not parse (that error is already printed).
-    pub findings: Option<Value>,
+    pub findings: Value,
     /// The line that ends the human-readable report.
     pub summary: String,
     /// The number of blocking findings.
@@ -212,10 +187,8 @@ pub struct LintFailed {
 impl LintFailed {
     /// Prints the findings with their source and fix, and the summary line, to stderr.
     pub fn print(&self, host: &mut dyn Host, sm: &SourceMap) {
-        if self.findings.is_some() {
-            report(host, sm, &self.pending, self.strict);
-            skipped_note(host, self.skipped);
-        }
+        report(host, sm, &self.pending, self.strict);
+        skipped_note(host, self.skipped);
     }
 }
 
@@ -235,41 +208,27 @@ fn skipped_note(host: &mut dyn Host, skipped: usize) {
 /// saying how many, and suppressions are not reported as unused.
 pub fn gate_selected(
     host: &mut dyn Host,
-    sources: &Sources,
-    prog: &Program,
+    loaded: &crate::driver::check::Loaded,
     gate: Gate,
     strict: bool,
     tests: &[TestCase],
     intents: &[TestIntent],
 ) -> Result<usize, Box<LintFailed>> {
-    let sm = sources.source_map();
-    let parse_failed = |host: &mut dyn Host, e| LintFailed {
-        exit: syntax_error(host, &sm, e),
-        findings: None,
-        summary: String::new(),
-        count: 0,
-        pending: Vec::new(),
-        strict,
-        skipped: 0,
-    };
+    let (sm, linter, prog) = (&loaded.sources.map, &loaded.linter, &loaded.analysis.program);
     let all = prog.test_cases();
     let partial = tests.len() < all.len();
-    let (mut findings, used) = match collect(&sm, prog, tests, intents, partial) {
-        Ok(c) => c,
-        Err(e) => return Err(Box::new(parse_failed(host, e))),
-    };
+    let (mut findings, used) = collect(sm, linter, prog, tests, intents, partial);
     let mut skipped = 0;
     if partial {
         // the blocking findings of the whole project that this selection does not have
-        if let Ok((every, _)) = collect(&sm, prog, &all, intents, false) {
-            skipped = every
-                .iter()
-                .filter(|f| !snappea_lint::is_advisory(f.rule))
-                .filter(|f| !findings.iter().any(|g| g.rule == f.rule && g.span == f.span))
-                .count();
-        }
+        let (every, _) = collect(sm, linter, prog, &all, intents, false);
+        skipped = every
+            .iter()
+            .filter(|f| !snappea_lint::is_advisory(f.rule))
+            .filter(|f| !findings.iter().any(|g| g.rule == f.rule && g.span == f.span))
+            .count();
     } else {
-        findings.extend(unused_suppressions(&sm, &findings, &used));
+        findings.extend(unused_suppressions(sm, linter, &findings, &used));
         sort(&mut findings);
     }
     let findings = shown(findings, strict);
@@ -277,8 +236,7 @@ pub fn gate_selected(
         let count = findings.len();
         if count > 0 {
             return Err(Box::new(LintFailed {
-                exit: Exit(2),
-                findings: Some(findings_json(&sm, &findings)),
+                findings: findings_json(sm, &findings),
                 summary: SUMMARY.into(),
                 count,
                 pending: findings,
@@ -288,7 +246,7 @@ pub fn gate_selected(
         }
     } else {
         for f in &findings {
-            let text = render_with_level(&sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f)));
+            let text = render_with_level(sm, "warning", Some(f.rule), Some(f.span), &f.message, Some(&help(f)));
             host.write(Stream::Err, &text, Some(Color::Yellow));
             host.write(Stream::Err, "\n", None);
         }
@@ -308,24 +266,16 @@ pub fn intent<'a>(prog: &Program, test: &TestCase, intents: &'a [TestIntent]) ->
     }
 }
 
-/// Like [`run`], with only the rules that apply when checking logs against specs
-/// ([`snappea_lint::OBSERVATION_RULES`]).
-pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> Result<usize, Exit> {
-    let findings = snappea_lint::lint_observation(sm).map_err(|e| syntax_error(host, sm, e))?;
-    Ok(report(host, sm, &findings, false))
-}
-
-fn syntax_error(host: &mut dyn Host, sm: &SourceMap, e: ParseError) -> Exit {
-    let before = &sm.file(e.span.file).text[..e.span.start as usize];
-    let (headline, help) = crate::project::syntax_error(&e.message, before);
-    let text = render_snippet(sm, Some(e.span), &headline, Some(&help));
-    host.write(Stream::Err, &text, None);
-    Exit(2)
+/// Prints the unsuppressed findings of the rules that apply when checking logs against
+/// specs ([`snappea_lint::OBSERVATION_RULES`]) and returns the blocking count.
+pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> usize {
+    let findings = parse(sm).lint_observation(sm);
+    report(host, sm, &findings, false)
 }
 
 /// The likely fix for finding `f`, then, for a rule that can be suppressed, how to
 /// suppress an intended one.
-pub fn help(f: &Finding) -> String {
+fn help(f: &Finding) -> String {
     let rule = f.rule;
     let general = match rule {
         // these are about the suppression comments themselves: fix them

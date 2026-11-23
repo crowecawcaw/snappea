@@ -139,21 +139,14 @@ impl ProbeSet {
 
 impl CoverageInfo {
     /// Adds the coverage of another worker's schedules (`CoverageInfo.Merge`).
-    pub fn merge(&mut self, other: CoverageInfo) {
-        for d in other.declared {
+    pub fn merge(&mut self, mut other: CoverageInfo) {
+        for d in std::mem::take(&mut other.declared) {
             if !self.declared.contains(&d) {
                 self.declared.push(d);
             }
         }
-        self.queue_policies.extend(other.queue_policies);
-        self.received.extend(other.received);
-        self.sent.extend(other.sent);
-        self.links.extend(other.links);
-        self.monitor_states.extend(other.monitor_states);
-        self.monitor_transitions.extend(other.monitor_transitions);
-        self.transition_pairs.extend(other.transition_pairs);
-        self.probes.union(&other.probes);
-        self.condition_edges.extend(other.condition_edges);
+        self.queue_policies.extend(std::mem::take(&mut other.queue_policies));
+        self.add_features(&other);
     }
 
     /// How many features guide the search and count as new behavior: every set but the

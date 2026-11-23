@@ -24,7 +24,7 @@ const MAX_WORK: u64 = 16_384;
 const SMALL_FRONTIER: usize = 256;
 const LOOKAHEAD_WORK: u64 = 4 * WINDOW;
 /// Distinct states at which a worker's exhaustive search hands off to sampling.
-pub const MAX_STATES: usize = 1_000_000;
+pub(super) const MAX_STATES: usize = 1_000_000;
 const MAX_ALTERNATIVES: usize = 1_000_000;
 
 pub(crate) struct AutoStrategy {
@@ -72,7 +72,7 @@ pub(crate) struct AutoStrategy {
 }
 impl AutoStrategy {
     /// `exhaustive` starts with exhaustive search, of this worker's part of the tree
-    /// when `split` is given.
+    /// when `split` is given. `frontier` turns on frontier guidance in the portfolio.
     pub(crate) fn new(
         seed: u32,
         unfair_steps: usize,
@@ -80,6 +80,7 @@ impl AutoStrategy {
         has_hot: bool,
         exhaustive: bool,
         split: Option<Split>,
+        frontier: bool,
     ) -> Self {
         let shared = split.as_ref().map(|s| s.shared_state());
         let workers = split.as_ref().map_or(1, |s| s.workers());
@@ -95,7 +96,7 @@ impl AutoStrategy {
                     None => dfs,
                 }
             }),
-            portfolio: Portfolio::new(seed, unfair_steps, fair_steps),
+            portfolio: Portfolio::new(seed, unfair_steps, fair_steps, frontier),
             path_observations: None,
             operations: 0,
             probing: false,
@@ -143,12 +144,6 @@ impl AutoStrategy {
             Some(dfs) => dfs,
             None => &self.portfolio,
         }
-    }
-    pub(crate) fn with_frontier_guidance(mut self, enabled: bool) -> Self {
-        if enabled {
-            self.portfolio = self.portfolio.with_frontier_guidance(true);
-        }
-        self
     }
     fn active_mut(&mut self) -> &mut dyn Strategy {
         match self.dfs.as_mut().filter(|_| !self.probing) {
@@ -529,7 +524,7 @@ mod tests {
 
     #[test]
     fn timed_search_starts_with_feedback_and_does_not_claim_exhaustion() {
-        let auto = AutoStrategy::new(7, 100, 100, false, false, None);
+        let auto = AutoStrategy::new(7, 100, 100, false, false, None, false);
         assert!(auto.is_fair());
         assert!(auto.wants_feedback());
         assert!(!auto.wants_minhash());
@@ -539,7 +534,7 @@ mod tests {
 
     #[test]
     fn shrinking_finite_frontier_keeps_exhausting_past_the_probe_window() {
-        let mut auto = AutoStrategy::new(7, 100, 100, false, true, None);
+        let mut auto = AutoStrategy::new(7, 100, 100, false, true, None, false);
         let mut schedules = 0;
         loop {
             for _ in 0..8 {
@@ -560,7 +555,7 @@ mod tests {
 
     #[test]
     fn slowly_shrinking_large_input_range_hands_off_instead_of_enumerating_thousands() {
-        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None);
+        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None, false);
         for _ in 0..WINDOW {
             auto.next_int(10_000);
             assert!(auto.prepare_next_iteration());
@@ -575,7 +570,7 @@ mod tests {
 
     #[test]
     fn oversized_choice_hands_off_between_schedules_and_releases_dfs() {
-        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None);
+        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None, false);
         assert!(!auto.is_fair());
         auto.next_int(MAX_ALTERNATIVES as i32 + 1);
         assert!(auto.diverged());
@@ -594,7 +589,7 @@ mod tests {
 
     #[test]
     fn ever_growing_input_tree_stalls_even_without_state_hashes_or_depth_bounds() {
-        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None);
+        let mut auto = AutoStrategy::new(7, 0, 100, false, true, None, false);
         for _ in 0..2 {
             for _ in 0..WINDOW {
                 auto.next_bool(2);

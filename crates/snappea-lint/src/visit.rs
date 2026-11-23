@@ -1,7 +1,7 @@
 //! Small shared AST walkers. Rules decide what expressions mean.
 use snappea_syntax::ast::*;
 
-pub fn expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
+pub(crate) fn expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
     f(e);
     match &e.kind {
         ExprKind::UnnamedTuple(es)
@@ -39,7 +39,7 @@ pub fn expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
     }
 }
 
-pub fn stmts(stmts: &[Stmt], statement: &mut impl FnMut(&Stmt), expression: &mut impl FnMut(&Expr)) {
+pub(crate) fn stmts(stmts: &[Stmt], statement: &mut impl FnMut(&Stmt), expression: &mut impl FnMut(&Expr)) {
     for s in stmts {
         statement(s);
         let mut ex = |e: &Expr| expr(e, expression);
@@ -111,7 +111,7 @@ pub fn stmts(stmts: &[Stmt], statement: &mut impl FnMut(&Stmt), expression: &mut
     }
 }
 
-pub fn handlers(m: &MachineDecl) -> impl Iterator<Item = &Handler> {
+pub(crate) fn handlers(m: &MachineDecl) -> impl Iterator<Item = &Handler> {
     m.states.iter().flat_map(|s| &s.items).filter_map(|i| match &i.kind {
         StateItemKind::Entry(h) | StateItemKind::Exit(h) | StateItemKind::OnDo { handler: h, .. } => Some(h),
         StateItemKind::OnGoto { with, .. } => with.as_ref(),
@@ -119,14 +119,14 @@ pub fn handlers(m: &MachineDecl) -> impl Iterator<Item = &Handler> {
     })
 }
 
-pub fn bodies(m: &MachineDecl) -> impl Iterator<Item = &FunBody> {
+pub(crate) fn bodies(m: &MachineDecl) -> impl Iterator<Item = &FunBody> {
     m.funs.iter().filter_map(|f| f.body.as_ref()).chain(handlers(m).filter_map(|h| match h {
         Handler::Anon(h) => Some(&h.body),
         _ => None,
     }))
 }
 
-pub fn path(e: &Expr) -> Option<String> {
+pub(crate) fn path(e: &Expr) -> Option<String> {
     match &e.kind {
         ExprKind::Name(n) => Some(n.name.clone()),
         ExprKind::NamedTupleAccess { base, field } => Some(format!("{}.{}", path(base)?, field.name)),

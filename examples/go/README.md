@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent"]
+questions:
+  - "How do I check a Go service against a P spec in go test?"
+  - "How do I write a negative control for a spec in Go?"
+---
+
 # Go: inventory reservations
 
 Four test packages check one [inventory service](inventory/inventory.go) against
@@ -77,7 +85,7 @@ runs it the production way, writing a log, and checks the log with `r.AddLog`.
 ## 5. Production logs with `snappea observe`
 
 [production.sh](production.sh) runs [cmd/inventory](cmd/inventory/main.go) as two
-"hosts", each writing its own log through `snappeaemit.SetSink(snappeaemit.File(...))`, the
+"hosts", each writing its own log through `snappeaemit.File(path)` and `snappeaemit.SetSink`, the
 same `snappeaemit.Emit` calls the tests above check. It then checks the logs with
 `snappea observe`, in batch (a log glob, `'.../*.jsonl'`) and live (`--stdin`), and confirms that a
 forged oversell is reported as a violation. CI runs it:

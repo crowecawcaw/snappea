@@ -98,7 +98,7 @@ fn step_cap(longest: Option<usize>, bound: usize) -> usize {
     longest.map_or(bound, |n| (n.max(1) * STEP_FACTOR).min(bound))
 }
 
-/// The work bound per step (see [`CheckerOptions::max_work_per_step`]; 0 is none) for the
+/// The work bound per step (see [`RunLimits::max_work_per_step`](crate::checker::runtime::RunLimits::max_work_per_step); 0 is none) for the
 /// mutants of a test case whose unchanged schedules did at most `peak` work in one step:
 /// [`STEP_FACTOR`] times that (at least 1000), but no more than `bound`. A mutant that
 /// loops inside one step, such as a `while` whose counter no longer moves, fails there
@@ -721,7 +721,7 @@ impl Report {
 /// Runs the passing test cases `passed` (each with the code it ran) against the mutants
 /// of the code they ran, for at most `time_limit` seconds. `suppressed` lists the code
 /// suppression comments exclude, with the ID each allows (see
-/// [`snappea_lint::mutation_suppression_details`]); `coverage_allowed`, the code `allow coverage`
+/// [`snappea_lint::Linter::mutation_suppressions`]); `coverage_allowed`, the code `allow coverage`
 /// comments say need not run, whose mutants are not reported as unreached. With `deepen`, once every mutant had its
 /// [`budget`], the undetected ones get more turns, up to [`SCHEDULES`], until the time
 /// limit: a deeper search for a CI gate, where a quick check stops at the budget.
@@ -872,15 +872,20 @@ pub fn run(
                 continue;
             }
             baseline[t] = out.hits as f64 / out.schedules as f64;
-            let fair = step_cap(out.longest, opts.max_fair_steps);
+            let fair = step_cap(out.longest, opts.steps.fair);
             // a liveness spec may stay hot for the same share of the shorter bound
-            let hot = opts.liveness_temperature_threshold.map(|n| n * fair / opts.max_fair_steps.max(1));
+            let hot = opts.liveness_temperature_threshold.map(|n| n * fair / opts.steps.fair.max(1));
             let capped = CheckerOptions {
-                max_work_per_step: work_cap(res.report.max_step_work, opts.max_work_per_step),
-                max_machines: res.report.max_machines.max(1) * STEP_FACTOR,
-                max_inbox: res.report.max_inbox.max(1) * STEP_FACTOR,
-                max_fair_steps: fair,
-                max_unfair_steps: step_cap(out.longest, opts.max_unfair_steps),
+                limits: crate::checker::runtime::RunLimits {
+                    max_work_per_step: work_cap(res.report.max_step_work, opts.limits.max_work_per_step),
+                    max_machines: res.report.max_machines.max(1) * STEP_FACTOR,
+                    max_inbox: res.report.max_inbox.max(1) * STEP_FACTOR,
+                },
+                steps: crate::checker::runtime::StepBounds {
+                    unfair: step_cap(out.longest, opts.steps.unfair),
+                    fair,
+                    ..opts.steps
+                },
                 liveness_temperature_threshold: hot,
                 ..opts.clone()
             };

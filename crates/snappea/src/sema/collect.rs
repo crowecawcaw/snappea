@@ -9,7 +9,7 @@ use crate::syntax::ast;
 use crate::syntax::Span;
 
 /// `int.TryParse(text, NumberStyles.None)`: digits only, must fit in a 32-bit int.
-pub fn parse_int_literal(text: &str) -> Option<i64> {
+pub(crate) fn parse_int_literal(text: &str) -> Option<i64> {
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
@@ -33,8 +33,8 @@ impl<'a> Analyzer<'a> {
     // Stub pass
     // ------------------------------------------------------------------
 
-    pub fn collect_stubs(&mut self, program: &'a ast::Program) -> Result<(), Fatal> {
-        let g = self.scopes.global();
+    pub(crate) fn collect_stubs(&mut self, program: &'a ast::Program) -> Result<(), Fatal> {
+        let g = crate::sema::scope::Scopes::GLOBAL;
         for d in &program.decls {
             match d {
                 ast::TopDecl::GlobalParam { names, .. } => {
@@ -306,7 +306,7 @@ impl<'a> Analyzer<'a> {
     // Type resolution
     // ------------------------------------------------------------------
 
-    pub fn resolve_type(&mut self, t: &ast::Type, scope: ScopeId) -> Result<PType, Fatal> {
+    pub(crate) fn resolve_type(&mut self, t: &ast::Type, scope: ScopeId) -> Result<PType, Fatal> {
         Ok(match &t.kind {
             ast::TypeKind::Seq(e) => PType::seq(self.resolve_type(e, scope)?),
             ast::TypeKind::Set(e) => PType::set(self.resolve_type(e, scope)?),
@@ -355,7 +355,7 @@ impl<'a> Analyzer<'a> {
                 let ty = match self.typedef_src[td.idx()] {
                     None => PType::Foreign(self.prog.typedefs[td.idx()].name.clone()),
                     Some(t) => {
-                        let r = self.resolve_type(t, self.scopes.global());
+                        let r = self.resolve_type(t, crate::sema::scope::Scopes::GLOBAL);
                         match r {
                             Ok(t) => t,
                             Err(e) => {
@@ -386,7 +386,7 @@ impl<'a> Analyzer<'a> {
         Err(self.e.missing_declaration(n.span, "enum, typedef, event set, machine, or interface", &n.name))
     }
 
-    pub fn resolve_opt_type(&mut self, t: &Option<ast::Type>, scope: ScopeId) -> Result<PType, Fatal> {
+    pub(crate) fn resolve_opt_type(&mut self, t: &Option<ast::Type>, scope: ScopeId) -> Result<PType, Fatal> {
         match t {
             None => Ok(PType::Null),
             Some(t) => self.resolve_type(t, scope),
@@ -406,7 +406,7 @@ impl<'a> Analyzer<'a> {
         Ok(self.sorted_event_set(v))
     }
 
-    pub fn sorted_event_set(&self, mut v: Vec<EventId>) -> Vec<EventId> {
+    pub(crate) fn sorted_event_set(&self, mut v: Vec<EventId>) -> Vec<EventId> {
         v.sort_by(|a, b| self.prog.events[a.idx()].name.cmp(&self.prog.events[b.idx()].name));
         v.dedup();
         v
@@ -416,13 +416,13 @@ impl<'a> Analyzer<'a> {
     // Declaration pass
     // ------------------------------------------------------------------
 
-    pub fn collect_declarations(
+    pub(crate) fn collect_declarations(
         &mut self,
         program: &'a ast::Program,
         machine_iter: &mut usize,
         fun_cursor: &mut FunCursor,
     ) -> Result<(), Fatal> {
-        let g = self.scopes.global();
+        let g = crate::sema::scope::Scopes::GLOBAL;
         // machine/function ids are assigned in stub order; walk the AST again in the same order
         for d in &program.decls {
             match d {
@@ -527,7 +527,7 @@ impl<'a> Analyzer<'a> {
         m: &'a ast::MachineDecl,
         cursor: &mut FunCursor,
     ) -> Result<(), Fatal> {
-        let g = self.scopes.global();
+        let g = crate::sema::scope::Scopes::GLOBAL;
         let ms = self.machine_scopes[mid.idx()];
         match m.kind {
             ast::MachineKind::Impl => {
@@ -738,7 +738,7 @@ impl<'a> Analyzer<'a> {
 
 /// Walks named functions in stub order so the declaration pass can find their ids.
 #[derive(Default)]
-pub struct FunCursor {
+pub(crate) struct FunCursor {
     pos: usize,
 }
 

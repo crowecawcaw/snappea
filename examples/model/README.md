@@ -1,3 +1,11 @@
+---
+diataxis: how-to
+personas: ["application-developer",  "coding-agent",  "p-user"]
+questions:
+  - "How do I model a service in P and check its design with snappea check?"
+  - "How do I run the model checks in CI?"
+---
+
 # P model: inventory reservations
 
 A P model of the inventory service that the [language examples](../README.md)
@@ -65,4 +73,4 @@ checks that every example's `specs/inventory.p` links here.
 [`github-workflow.yml`](github-workflow.yml) is a workflow you can copy: it installs the
 released `snappea` with the install script and checks this model on every pull request.
 This repository runs the same steps with its own build of `snappea` in
-[check-model.yml](../../.github/workflows/check-model.yml). See [GitHub Actions](https://crowecawcaw.github.io/snappea/docs/github-actions.html).
+[check-model.yml](../../.github/workflows/check-model.yml). See [GitHub Actions](https://snappea.dev/docs/github-actions.html).

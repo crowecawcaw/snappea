@@ -87,20 +87,17 @@ pub struct CheckConfig {
     pub output_path: String,
     /// Output directory with a trailing separator, as upstream builds it.
     pub output_directory: String,
+    /// Names the output folder. PEx's exhaustive search is set by `strategy`, as
+    /// `snappea-compat check --mode pex` does.
     pub mode: Mode,
     pub test_case_name: String,
-    pub list_test_cases: bool,
     pub strategy: StrategyKind,
     pub strategy_bound: usize,
     pub iterations: usize,
     /// Workers exploring schedules in parallel; `None` = one per CPU core. Upstream has
     /// one, so `p check` keeps the default of 1.
     pub workers: Option<usize>,
-    /// `--schedules` (or `--timeout`) was given.
-    pub user_set_iterations: bool,
     pub seed: Option<u32>,
-    /// Explicit seeds for repeated expected-bug checks; native CLI only.
-    pub expected_bug_seeds: Vec<u32>,
     /// Artifact subdirectory for a repeated expected-bug check.
     pub seed_artifact: Option<u32>,
     pub full_exploration: bool,
@@ -108,22 +105,18 @@ pub struct CheckConfig {
     /// [`CheckerOptions::max_bugs`]). [`Style::Snappea`] only: upstream's output stops at
     /// the first bug.
     pub max_bugs: usize,
-    pub max_unfair_steps: usize,
-    pub max_fair_steps: usize,
-    pub user_set_max_fair_steps: bool,
+    pub steps: crate::checker::runtime::StepBounds,
     pub fail_on_max_steps: bool,
-    pub liveness_threshold: usize,
+    /// Steps a spec may stay hot before it is a liveness bug; `None` is half of
+    /// `max_fair_steps`. A replay takes it from the schedule.
+    pub liveness_threshold: Option<usize>,
     /// Timeout in seconds; `None` disables it.
     pub timeout: Option<u32>,
     /// This test case's share of a time budget for all of them, in seconds. Replaces
     /// `timeout`, and the check stops sooner once coverage stops growing (see
     /// [`Plateau`]), leaving the rest of the budget to the test cases after it.
     pub time_share: Option<f64>,
-    /// Seconds all the selected test cases share (`snappea check` without `--timeout`):
-    /// each gets the rest divided by the test cases left, as [`CheckConfig::time_share`].
-    pub suite_budget: Option<f64>,
     pub verbose: bool,
-    pub list_suppressions: bool,
     /// `--xml-trace`: also write the buggy schedule's `.trace.xml`.
     pub xml_trace: bool,
     /// Include execution-time source and value captures for visual replay.
@@ -143,8 +136,37 @@ pub struct CheckConfig {
     /// Send progress snapshots to [`Host::progress`] while checking, for the test case at
     /// this position of the run (and during mutation testing). `None` sends none.
     pub progress: Option<Position>,
+}
+
+/// Distinct failures `snappea check` collects per test case without `--max-bugs`.
+pub const MAX_BUGS: usize = 3;
+
+/// Seconds the test cases of a `snappea check` share without `--timeout`.
+pub const SUITE_BUDGET: f64 = 10.0;
+
+/// How `snappea check` runs its test cases together, beyond how each one is checked.
+#[derive(Debug, Clone)]
+pub struct SuiteConfig {
     /// Whether lint findings, coverage gaps and undetected mutants fail the check.
     pub gates: Gates,
+    /// Seconds all the selected test cases share (`None` with `--timeout`): each gets the
+    /// rest divided by the test cases left, as [`CheckConfig::time_share`].
+    pub budget: Option<f64>,
+    /// Seeds to check an expected-bug test case with, each expected to fail.
+    pub expected_bug_seeds: Vec<u32>,
+    /// Report every lint suppression, used or not.
+    pub list_suppressions: bool,
+}
+
+impl Default for SuiteConfig {
+    fn default() -> SuiteConfig {
+        SuiteConfig {
+            gates: Gates::default(),
+            budget: Some(SUITE_BUDGET),
+            expected_bug_seeds: Vec::new(),
+            list_suppressions: false,
+        }
+    }
 }
 
 /// What a check does with what it finds.
@@ -200,7 +222,7 @@ impl Gates {
             "coverage" => self.coverage = gate,
             "mutation" => self.mutation = gate,
             "all" => (self.lint, self.coverage, self.mutation) = (gate, gate, gate),
-            _ => return Err(format!("unknown check '{}': use lint, coverage, mutation or all", name)),
+            _ => return Err(format!("unknown check '{}': use {} or all", name, Self::CHECKS.join(", "))),
         }
         if name == "mutation" || name == "all" {
             self.mutation_complete = gate == Gate::Deny;
@@ -209,8 +231,14 @@ impl Gates {
     }
 }
 
-impl Default for CheckConfig {
-    fn default() -> CheckConfig {
+impl CheckConfig {
+    /// Checks as `p check` does: upstream's output layout, one random schedule, one worker.
+    ///
+    /// ```
+    /// let cfg = snappea::driver::check::CheckConfig::upstream(); // bug traces go to PCheckerOutput/
+    /// assert_eq!(cfg.iterations, 1);
+    /// ```
+    pub fn upstream() -> CheckConfig {
         CheckConfig {
             style: Style::Upstream,
             input: Default::default(),
@@ -222,27 +250,20 @@ impl Default for CheckConfig {
             output_directory: String::new(),
             mode: Mode::BugFinding,
             test_case_name: String::new(),
-            list_test_cases: false,
             strategy: StrategyKind::Random,
             strategy_bound: 0,
             iterations: 1,
             workers: Some(1),
-            user_set_iterations: false,
             seed: None,
-            expected_bug_seeds: Vec::new(),
             seed_artifact: None,
             full_exploration: false,
             max_bugs: 1,
-            max_unfair_steps: 10000,
-            max_fair_steps: 100000,
-            user_set_max_fair_steps: false,
+            steps: Default::default(),
             fail_on_max_steps: false,
-            liveness_threshold: 0,
+            liveness_threshold: None,
             timeout: None,
             time_share: None,
-            suite_budget: None,
             verbose: false,
-            list_suppressions: false,
             xml_trace: false,
             inspection_trace: false,
             timeline: Default::default(),
@@ -253,8 +274,28 @@ impl Default for CheckConfig {
             code_coverage: false,
             driver_limits: false,
             progress: None,
-            gates: Gates::default(),
         }
+    }
+
+    /// Checks as `snappea check` does: its output layout, the automatic strategy until
+    /// coverage stops growing or [`SUITE_BUDGET`] seconds pass, coverage and driver
+    /// reports, up to [`MAX_BUGS`] failures, and `<IncludeProject>` paths resolved against
+    /// the including project file.
+    pub fn snappea() -> CheckConfig {
+        let mut cfg = CheckConfig {
+            style: Style::Snappea,
+            // the automatic strategy has no schedule limit: without one a bug-free model
+            // with unbounded state would check forever
+            timeout: Some(SUITE_BUDGET as u32),
+            code_coverage: true,
+            driver_limits: true,
+            strategy: StrategyKind::Auto,
+            iterations: 0,
+            max_bugs: MAX_BUGS,
+            ..CheckConfig::upstream()
+        };
+        cfg.input.includes = crate::project::pproj::Includes::FromProject;
+        cfg
     }
 }
 
@@ -265,24 +306,6 @@ pub fn resolve_sources(host: &mut dyn Host, cfg: &mut CheckConfig) -> Result<(),
     cfg.p_files = resolved.p_files;
     cfg.foreign_files = resolved.foreign_files;
     Ok(())
-}
-
-/// The strategy and limits implied by the mode and step bounds (`SanitizeConfiguration`).
-pub fn finish_options(cfg: &mut CheckConfig) {
-    // PEx mode searches exhaustively: `--sch-pex dfs` in order, otherwise (`random`, the
-    // default) trying the alternatives at each choice point in a random order, with no
-    // schedule limit unless one is given
-    if cfg.mode == Mode::PEx && cfg.strategy != StrategyKind::Replay {
-        if cfg.strategy != StrategyKind::Dfs {
-            cfg.strategy = StrategyKind::RandomDfs;
-        }
-        if !cfg.user_set_iterations {
-            cfg.iterations = 0;
-        }
-    }
-    if cfg.liveness_threshold == 0 && cfg.max_fair_steps > 0 {
-        cfg.liveness_threshold = cfg.max_fair_steps / 2;
-    }
 }
 
 /// Reads and parses a latency profile file (time tracking).
@@ -399,6 +422,7 @@ pub fn set_output_directory(host: &mut dyn Host, cfg: &mut CheckConfig) -> Resul
 pub struct Loaded {
     pub sources: Sources,
     pub analysis: crate::sema::Analysis,
+    pub linter: snappea_lint::Linter,
 }
 
 /// Reads and type-checks the project's sources (upstream: `TestingEngine.LoadAssembly`);
@@ -408,9 +432,8 @@ pub fn load(host: &mut dyn Host, cfg: &CheckConfig) -> Result<Loaded, Exit> {
         Ok(s) => s,
         Err(e) => return Err(report_and_exit(host, &e)),
     };
-    let sm = sources.source_map();
-    let r = crate::sema::compile(&sm, &crate::sema::Options::default());
-    if !project::report_result(host, &sources, &sm, &r, cfg.style == Style::Upstream) {
+    let r = crate::sema::compile(&sources.map, &crate::sema::Options::default());
+    if !project::report_result(host, &sources, &r, cfg.style == Style::Upstream) {
         return Err(Exit(1));
     }
     if cfg.style == Style::Upstream {
@@ -436,7 +459,8 @@ pub fn load(host: &mut dyn Host, cfg: &CheckConfig) -> Result<Loaded, Exit> {
         ));
     }
     let analysis = r.map_err(|_| Exit(1))?;
-    Ok(Loaded { sources, analysis })
+    let linter = crate::driver::lint::parse(&sources.map);
+    Ok(Loaded { sources, analysis, linter })
 }
 
 /// Reads a `.schedule` file.
@@ -480,7 +504,7 @@ pub fn replay(
     trace: ScheduleTrace,
 ) -> Result<Replayed, Exit> {
     if let Some(t) = trace.liveness_temperature_threshold {
-        cfg.liveness_threshold = t;
+        cfg.liveness_threshold = Some(t);
     }
     let mut opts = engine_options(cfg, 0);
     opts.replay = Some(trace);
@@ -547,10 +571,8 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         strategy: cfg.strategy,
         seed,
         iterations: cfg.iterations,
-        max_unfair_steps: cfg.max_unfair_steps,
-        max_fair_steps: cfg.max_fair_steps,
-        user_set_max_fair_steps: cfg.user_set_max_fair_steps,
-        liveness_temperature_threshold: Some(cfg.liveness_threshold),
+        steps: cfg.steps,
+        liveness_temperature_threshold: cfg.liveness_threshold,
         fail_on_max_steps: cfg.fail_on_max_steps,
         strategy_bound: cfg.strategy_bound,
         upstream_feedback: cfg.style == Style::Upstream,
@@ -630,7 +652,7 @@ impl MemoryGuard {
     const INTERVAL: f64 = 0.05;
 
     /// The memory use, when it has reached [`MEMORY_STOP_SHARE`] of the limit. Reads it
-    /// at most every [`Self::INTERVAL`]; `None` on a host that cannot tell.
+    /// at most every `Self::INTERVAL`; `None` on a host that cannot tell.
     pub fn check(&mut self, host: &dyn Host) -> Option<MemoryStop> {
         let now = host.now();
         if self.checked_at.is_some_and(|t| now >= t && now - t < Self::INTERVAL) {
@@ -1001,10 +1023,11 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
         opts.verbose_trace_schedules = VERBOSE_TRACE_SCHEDULES;
     }
     if cfg.driver_limits {
-        let sources = loaded.sources.source_map();
-        let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
-        opts.driver_machines =
-            Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources, &marked));
+        opts.driver_machines = Some(crate::checker::driver_facts::driver_machines(
+            &loaded.analysis.program,
+            &loaded.sources.map,
+            &loaded.linter,
+        ));
     }
     let engine_start = host.now();
     let deadline = match cfg.time_share {
@@ -1119,7 +1142,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     host.out_line(&res.report.text(&opts, "..."));
     if let Some(x) = &res.exhaustive {
         let schedules = res.report.explored_fair_schedules + res.report.explored_unfair_schedules;
-        host.out_line(&x.text(schedules, opts.max_unfair_steps, "....."));
+        host.out_line(&x.text(schedules, opts.steps.unfair, "....."));
     }
     if !snappea {
         let summary_path = path(format!("{}_pchecker_summary.txt", file), "summary.txt");

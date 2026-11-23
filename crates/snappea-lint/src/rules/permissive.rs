@@ -2,7 +2,7 @@ use crate::{Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::HashSet;
 
-pub struct PermissiveMonitor;
+pub(crate) struct PermissiveMonitor;
 
 impl Rule for PermissiveMonitor {
     fn id(&self) -> &'static str {

@@ -2,7 +2,7 @@ use crate::{Context, Finding, Rule};
 use snappea_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
 
-pub struct UnselectedSpec;
+pub(crate) struct UnselectedSpec;
 
 impl Rule for UnselectedSpec {
     fn id(&self) -> &'static str {

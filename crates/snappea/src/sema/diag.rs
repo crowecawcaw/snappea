@@ -120,8 +120,8 @@ fn text_offset(f: &crate::syntax::SourceFile, offset: u32) -> u32 {
     before.rfind('\n').map_or(before.len(), |i| before.len() - i - 1) as u32
 }
 
-/// Collects errors. In collecting mode (`continue_on_error`) reporting appends; in strict mode
-/// (`--strict-errors`) the first error is returned as `Err` so analysis aborts.
+/// Collects errors. In collecting mode (`continue_on_error`) reporting appends; otherwise
+/// the first error is returned as `Err` so analysis aborts.
 #[derive(Debug, Default)]
 pub(crate) struct Diagnostics {
     pub errors: Vec<Diagnostic>,
@@ -130,16 +130,16 @@ pub(crate) struct Diagnostics {
 }
 
 impl Diagnostics {
-    pub fn new(continue_on_error: bool) -> Diagnostics {
+    pub(crate) fn new(continue_on_error: bool) -> Diagnostics {
         Diagnostics { errors: Vec::new(), warnings: Vec::new(), continue_on_error }
     }
 
-    pub fn has_errors(&self) -> bool {
+    pub(crate) fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
 
     /// `handler.Diagnostics.Report(...)`: append, or abort when strict.
-    pub fn report(&mut self, d: Diagnostic) -> Result<(), Diagnostic> {
+    pub(crate) fn report(&mut self, d: Diagnostic) -> Result<(), Diagnostic> {
         if self.continue_on_error {
             self.errors.push(d);
             Ok(())
@@ -150,7 +150,7 @@ impl Diagnostics {
 
     /// Runs one tolerant step: an error thrown inside is recorded and analysis continues
     /// with the next item (`TolerantStep` upstream).
-    pub fn tolerant<T>(&mut self, r: Result<T, Diagnostic>) -> Result<Option<T>, Diagnostic> {
+    pub(crate) fn tolerant<T>(&mut self, r: Result<T, Diagnostic>) -> Result<Option<T>, Diagnostic> {
         match r {
             Ok(v) => Ok(Some(v)),
             Err(d) if self.continue_on_error => {
@@ -163,13 +163,13 @@ impl Diagnostics {
 
     /// An upstream warning, printed only by `snappea-compat`: give each a lint rule in
     /// `snappea-lint` too, so `snappea` fails on it unless it is suppressed.
-    pub fn warn(&mut self, msg: impl Into<String>) {
+    pub(crate) fn warn(&mut self, msg: impl Into<String>) {
         self.warnings.push(msg.into());
     }
 
     /// Errors sorted the way upstream prints them: by file name, line and column, with
     /// errors lacking a location last; insertion order breaks ties.
-    pub fn sorted_errors(&self, sm: &SourceMap) -> Vec<Diagnostic> {
+    pub(crate) fn sorted_errors(&self, sm: &SourceMap) -> Vec<Diagnostic> {
         let mut v: Vec<(usize, Diagnostic)> = self.errors.iter().cloned().enumerate().collect();
         v.sort_by(|(ia, a), (ib, b)| {
             let ka = sort_key(a, sm);

@@ -13,35 +13,19 @@ pub mod pproj;
 /// Project name used when no `.pproj` or `--projname` gives one (upstream's default).
 pub const DEFAULT_NAME: &str = "generatedOutput";
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct SourceFile {
-    /// Absolute path.
-    pub path: String,
-    /// Path relative to the current directory; upstream bakes this into assert messages
-    /// and diagnostics.
-    pub name: String,
-    pub text: String,
-}
-
-/// A project's name and sources.
-#[derive(Debug, Clone, PartialEq)]
+/// A project's name and sources. Files are named relative to the current directory, which
+/// upstream bakes into assert messages and diagnostics.
+#[derive(Debug, Clone)]
 pub struct Sources {
     pub project_name: String,
-    pub files: Vec<SourceFile>,
+    pub map: crate::syntax::SourceMap,
+    paths: Vec<String>,
 }
 
 impl Sources {
-    /// Absolute path of the file registered as `id` in [`Sources::source_map`].
+    /// Absolute path of the file registered as `id` in [`Sources::map`].
     pub fn full_path(&self, id: crate::syntax::FileId) -> &str {
-        &self.files[id.0 as usize].path
-    }
-
-    pub fn source_map(&self) -> crate::syntax::SourceMap {
-        let mut sm = crate::syntax::SourceMap::new();
-        for s in &self.files {
-            sm.add(s.name.clone(), s.text.clone());
-        }
-        sm
+        &self.paths[id.0 as usize]
     }
 }
 
@@ -132,13 +116,15 @@ pub fn resolve(host: &mut dyn Host, input: &Input) -> Result<Resolved, Exit> {
 
 /// Reads `files`, naming each relative to `root`.
 pub fn read(host: &dyn Host, project_name: &str, files: &[PathBuf], root: &Path) -> Result<Sources, String> {
-    let mut out = Vec::new();
+    let mut sources =
+        Sources { project_name: project_name.into(), map: crate::syntax::SourceMap::new(), paths: Vec::new() };
     for f in files {
         let full = full_path(&host.cwd(), f);
         let text = host.read_to_string(&full).map_err(|e| format!("{}: {}", full.display(), e))?;
-        out.push(SourceFile { path: full.to_string_lossy().to_string(), name: relative_path(root, &full), text });
+        sources.map.add(relative_path(root, &full), text);
+        sources.paths.push(full.to_string_lossy().to_string());
     }
-    Ok(Sources { project_name: project_name.into(), files: out })
+    Ok(sources)
 }
 
 fn write_error(host: &mut dyn Host, msg: &str) {
@@ -146,15 +132,15 @@ fn write_error(host: &mut dyn Host, msg: &str) {
 }
 
 /// Prints front-end diagnostics; returns true on success. With `upstream` they are printed
-/// as upstream's `Compiler.Compile` prints them, else as [`report_native`] does.
+/// as upstream's `Compiler.Compile` prints them, else as `report_native` does.
 pub fn report_result(
     host: &mut dyn Host,
     src: &Sources,
-    sm: &crate::syntax::SourceMap,
     r: &Result<crate::sema::Analysis, crate::sema::CompileError>,
     upstream: bool,
 ) -> bool {
     use crate::sema::CompileError;
+    let sm = &src.map;
     if !upstream {
         return report_native(host, sm, r);
     }

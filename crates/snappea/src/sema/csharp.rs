@@ -100,7 +100,7 @@ const RESERVED: &[&str] = &[
 const TEMP_PREFIX: &str = "PGEN_";
 
 /// Generated names, indexed by `MachineId` and `FunId`.
-pub struct CsNames {
+pub(crate) struct CsNames {
     pub machines: Vec<String>,
     /// Empty for functions that get no method (receive cases, foreign functions never called).
     pub funs: Vec<String>,
@@ -329,7 +329,7 @@ impl Walker<'_> {
 /// Follows the generator's walk: global parameters, event sets, global functions, then each
 /// machine in turn (class name, fields, methods in declaration order). Receive-case handlers
 /// are written inline in their enclosing function and get no name of their own.
-pub fn names(prog: &Program) -> CsNames {
+pub(crate) fn names(prog: &Program) -> CsNames {
     let mut w = Walker {
         prog,
         pool: Pool::default(),

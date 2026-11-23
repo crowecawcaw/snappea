@@ -1,1 +1,1 @@
-pub mod pobserve_parsers;
+pub(crate) mod pobserve_parsers;

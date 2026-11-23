@@ -104,7 +104,6 @@ const SHOWN_ERRORS: usize = 10;
 struct Command {
     input: Input,
     cfg: ObserveConfig,
-    record: Option<String>,
     verbose: bool,
 }
 
@@ -148,13 +147,6 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
     for l in log_args.iter().map(String::as_str).chain(a.all("logs")) {
         add_log_paths(&HostFiles(host), &cwd, l, &mut logs)?;
     }
-    let mut live: Vec<String> = Vec::new();
-    for l in a.all("live").into_iter().chain(a.has("stdin").then_some("-")) {
-        if l == "-" && live.iter().any(|x| x == "-") {
-            return Err("stdin can be read only once (--stdin is --live -)".into());
-        }
-        live.push(l.to_string());
-    }
     let mut cfg = ObserveConfig {
         specs: names(a, "spec"),
         all_specs: a.has("all-specs"),
@@ -168,10 +160,12 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         },
         input_kind: if a.has("p-trace") { InputKind::Json } else { InputKind::Text },
         sequence: a.get("sequence").map(str::to_string),
-        record: a.has("record"),
+        record: a.get("record").map(str::to_string),
         parser_configuration: a.get("parser-config").map(str::to_string),
         assume_sorted: a.has("sorted"),
         keys: unique(a.all("key")),
+        logs,
+        live: a.all("live").into_iter().chain(a.has("stdin").then_some("-")).map(str::to_string).collect(),
         ..ObserveConfig::default()
     };
     if let Some(n) = uint(a, "replay-window")? {
@@ -190,33 +184,8 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
             }
         }
     }
-    if cfg.specs.is_empty() && !cfg.all_specs {
-        return Err("name the specs to check with --spec, or use --all-specs".into());
-    }
-    if !cfg.specs.is_empty() && cfg.all_specs {
-        return Err("'--spec' and '--all-specs' cannot be combined".into());
-    }
-    if !cfg.exclude_specs.is_empty() && !cfg.all_specs {
-        return Err("'--exclude-spec' needs '--all-specs'".into());
-    }
-    if !live.is_empty() && !logs.is_empty() {
-        return Err("live input (--live, --stdin) cannot be combined with log files".into());
-    }
-    if !live.is_empty() && cfg.input_kind == InputKind::Json {
-        return Err("'--p-trace' cannot be combined with live input (--live, --stdin)".into());
-    }
-    if live.len() > 1 && cfg.sequence.is_none() {
-        return Err("several live inputs need --sequence to order their lines; name a whole-number field every line carries, e.g. `--sequence seq`".into());
-    }
-    if live.is_empty() && (cfg.sequence.is_some() || cfg.record) {
-        return Err("'--sequence' and '--record' apply to live input (--live, --stdin)".into());
-    }
-    if live.is_empty() && logs.is_empty() {
-        return Err("no logs given: name log files or folders, or use --live".into());
-    }
-    cfg.logs = logs;
-    cfg.live = live;
-    Ok(Command { input, cfg, record: a.get("record").map(str::to_string), verbose: a.has("verbose") })
+    cfg.validate().map_err(|e| e.to_string())?;
+    Ok(Command { input, cfg, verbose: a.has("verbose") })
 }
 
 fn fail(host: &mut dyn Host, msg: &str) -> Exit {
@@ -225,7 +194,7 @@ fn fail(host: &mut dyn Host, msg: &str) -> Exit {
 }
 
 fn run(host: &mut dyn Host, cmd: Command) -> Outcome {
-    let Command { input, cfg, record, verbose } = cmd;
+    let Command { input, cfg, verbose } = cmd;
     let cwd = host.cwd();
     let mut con = Quiet::new(host, !verbose);
     let resolved = project::resolve(&mut con, &input)?;
@@ -242,7 +211,7 @@ fn run(host: &mut dyn Host, cmd: Command) -> Outcome {
     let host = con.inner;
     let specs = observer.specs();
     let obs = observer.run(&cfg, host);
-    if let Some(path) = &record {
+    if let Some(path) = &cfg.record {
         write_output(host, path, &obs.recorded).map_err(|_| Exit(ERROR))?;
     }
     if let Some(why) = &obs.unreadable {

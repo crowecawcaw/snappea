@@ -22,7 +22,7 @@ fn frontier_feedback_reaches_repeated_data_and_delivery_stages_and_replays() {
                 strategy: StrategyKind::Feedback,
                 seed,
                 iterations: 200,
-                max_fair_steps: 1000,
+                steps: snappea::checker::runtime::StepBounds { fair: 1000, ..Default::default() },
                 ..Default::default()
             };
             let result = checker.check(&case, &options, &mut Quiet).unwrap();
@@ -200,7 +200,10 @@ fn dfs_reports_when_the_depth_bound_cut_the_search() {
                  }
                }
                test tcMain [main=Main]: { Main };";
-    let r = check(src, &CheckerOptions { max_unfair_steps: 50, ..opts(StrategyKind::Dfs, 0) });
+    let r = check(
+        src,
+        &CheckerOptions { steps: snappea::checker::runtime::StepBounds::from_unfair(50), ..opts(StrategyKind::Dfs, 0) },
+    );
     assert_eq!(r.report.num_bugs, 0);
     let x = r.exhaustive.unwrap();
     assert!(x.finished);
@@ -208,7 +211,7 @@ fn dfs_reports_when_the_depth_bound_cut_the_search() {
     // a counter no check reads does not make states new: the search closes the cycle
     let r = check(
         &src.replace("assert n > 0; ", ""),
-        &CheckerOptions { max_unfair_steps: 50, ..opts(StrategyKind::Dfs, 0) },
+        &CheckerOptions { steps: snappea::checker::runtime::StepBounds::from_unfair(50), ..opts(StrategyKind::Dfs, 0) },
     );
     let x = r.exhaustive.unwrap();
     assert_eq!(x.depth_bound_hits, 0);
@@ -255,8 +258,7 @@ fn native_feedback_uses_the_fair_bound_and_detects_hot_cycles() {
         test tcMain [main=Main]: assert Live in { Main };";
     for strategy in [StrategyKind::Feedback, StrategyKind::FeedbackPct, StrategyKind::FeedbackPos] {
         let options = CheckerOptions {
-            max_unfair_steps: 100,
-            max_fair_steps: 1000,
+            steps: snappea::checker::runtime::StepBounds { unfair: 100, fair: 1000, fair_explicit: false },
             liveness_temperature_threshold: Some(500),
             strategy_bound: 10,
             ..opts(strategy, 1)
@@ -632,7 +634,14 @@ fn auto_cancellation_interrupts_handlers_without_fabricating_completion_or_bugs(
     let analysis = snappea::sema::compile(&sm, &Default::default()).unwrap();
     let tc = analysis.program.test_cases().into_iter().next().unwrap();
     let result = Checker::new(&analysis.program)
-        .check(&tc, &CheckerOptions { max_work_per_step: 0, ..opts(StrategyKind::Auto, 0) }, &mut Cancel { polls: 0 })
+        .check(
+            &tc,
+            &CheckerOptions {
+                limits: snappea::checker::runtime::RunLimits { max_work_per_step: 0, ..Default::default() },
+                ..opts(StrategyKind::Auto, 0)
+            },
+            &mut Cancel { polls: 0 },
+        )
         .unwrap();
     assert!(result.cancelled);
     assert_eq!(result.report.num_bugs, 0);
@@ -755,7 +764,10 @@ fn discovery_identity_ignores_instances_but_preserves_distinct_event_names() {
 #[test]
 fn auto_depth_bound_hands_off_to_fair_feedback_and_replays_the_bug() {
     let src = "machine Main { start state S { entry { if ($) { if ($) { if ($) { assert false; } } } } } } test tcMain [main=Main]: { Main };";
-    let options = CheckerOptions { max_unfair_steps: 2, max_fair_steps: 100, ..opts(StrategyKind::Auto, 100) };
+    let options = CheckerOptions {
+        steps: snappea::checker::runtime::StepBounds { unfair: 2, fair: 100, fair_explicit: false },
+        ..opts(StrategyKind::Auto, 100)
+    };
     let result = check(src, &options);
     assert_eq!(result.report.num_bugs, 1);
     assert_eq!(result.report.explored_unfair_schedules, 1);
@@ -864,8 +876,7 @@ fn auto_handoff_uses_default_frontier_guidance_and_replays() {
     let options = CheckerOptions {
         strategy: StrategyKind::Auto,
         iterations: 200,
-        max_unfair_steps: 2,
-        max_fair_steps: 1000,
+        steps: snappea::checker::runtime::StepBounds { unfair: 2, fair: 1000, fair_explicit: false },
         ..Default::default()
     };
     let result = checker.check(&case, &options, &mut Quiet).unwrap();
@@ -896,8 +907,11 @@ fn auto_explores_long_actor_delays_and_replays_without_a_coverage_gradient() {
             // Samples find this bug, and with the background machine each runs to the step
             // bound: about 90 exhaustive schedules cost as much as one sample, and sampling
             // gets a quarter of the work, so the budget is in the hundreds of schedules.
-            let options =
-                CheckerOptions { seed, max_unfair_steps: 2000, max_fair_steps: 2000, ..opts(StrategyKind::Auto, 1024) };
+            let options = CheckerOptions {
+                seed,
+                steps: snappea::checker::runtime::StepBounds { unfair: 2000, fair: 2000, fair_explicit: false },
+                ..opts(StrategyKind::Auto, 1024)
+            };
             let result = check(&source, &options);
             assert_eq!(result.report.num_bugs, 1, "background={background} seed={seed}");
             assert!(result.report.bug_reports[0].contains("write still pending"));
@@ -925,8 +939,7 @@ fn auto_does_not_reward_revisited_phase_coverage_as_new() {
         source,
         &CheckerOptions {
             full_exploration: true,
-            max_fair_steps: 1000,
-            max_unfair_steps: 1000,
+            steps: snappea::checker::runtime::StepBounds { unfair: 1000, fair: 1000, fair_explicit: false },
             ..opts(StrategyKind::Auto, 2000)
         },
     );

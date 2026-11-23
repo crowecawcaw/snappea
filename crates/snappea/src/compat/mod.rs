@@ -7,7 +7,7 @@
 //!
 //! This module only parses upstream's command lines; the commands themselves are
 //! [`crate::driver`], shared with `snappea`. Nothing else in the crate depends on it. Known
-//! differences from upstream are listed in the repository README.
+//! differences from upstream are listed in `docs/compatibility.md`.
 
 mod argparse;
 mod check;

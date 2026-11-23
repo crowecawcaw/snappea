@@ -65,9 +65,6 @@ func New(t testing.TB, cfg Config) *Recorder {
 	if err != nil {
 		t.Fatalf("%v", &SetupError{Kind: "config", Message: err.Error()})
 	}
-	for _, msg := range s.deprecated {
-		t.Logf("snappeatest: %s", msg)
-	}
 	root := s.artifacts
 	if root == "" {
 		root = os.TempDir()

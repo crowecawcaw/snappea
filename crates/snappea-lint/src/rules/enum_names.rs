@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /// An enum value with the name of a machine, spec or scenario. P accepts it, but the
 /// name then means two things: in an expression it is the enum value, in a type or
 /// `new` the machine. A model that means one usually gets the other without an error.
-pub struct EnumValueShadowsMachine;
+pub(crate) struct EnumValueShadowsMachine;
 
 impl Rule for EnumValueShadowsMachine {
     fn id(&self) -> &'static str {

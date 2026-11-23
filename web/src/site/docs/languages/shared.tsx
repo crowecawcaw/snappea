@@ -3,8 +3,11 @@
 import type { ReactNode } from "react";
 import { Code } from "../Code";
 import inventorySpec from "../../../../../examples/python/specs/inventory.p?raw";
+import { LANGS } from "./outline";
 
-export type Lang = "python" | "rust" | "go" | "java";
+export { LANGS, SECTIONS } from "./outline";
+
+export type Lang = (typeof LANGS)[number];
 
 /** The spec every example checks (examples/<language>/specs/inventory.p). */
 export function InventorySpec() {

@@ -29,8 +29,7 @@ fn checker_benchmark_fixtures_compile_and_safe_controls_stay_safe() {
                     &CheckerOptions {
                         strategy: StrategyKind::Auto,
                         iterations: 256,
-                        max_fair_steps: 100,
-                        max_unfair_steps: 100,
+                        steps: snappea::checker::runtime::StepBounds { unfair: 100, fair: 100, fair_explicit: false },
                         ..Default::default()
                     },
                     &mut Quiet,

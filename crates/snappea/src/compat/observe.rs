@@ -9,12 +9,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::checker::javafmt;
-use crate::checker::observe::{ErrorKind, Metrics, ObserveError, Parser, Report, Spec, UnknownEvents};
+use crate::checker::observe::{ErrorKind, Metrics, ObserveError, Parser, Report, Spec};
 use crate::checker::observe_inputs::add_log_paths;
 use crate::checker::observe_json::civil_from_days;
 use crate::driver::check::Style;
 use crate::driver::observe::{
-    self as driver, InputKind, Lookup, ObserveConfig, SpecProgram, EXIT_CMDLINE_ERROR, EXIT_SUCCESS,
+    self as driver, ConfigError, InputKind, Lookup, ObserveConfig, SpecProgram, EXIT_CMDLINE_ERROR, EXIT_SUCCESS,
 };
 use crate::host::{full_path, write_output, Buffered, Color, Exit, Host, HostExt, HostFiles, Stream};
 use crate::project::{self, pproj};
@@ -31,12 +31,11 @@ pub fn run_with(args: &[String], host: &mut dyn Host, parsers: Vec<Box<dyn Parse
         }
         Err(m) => return cmdline_error(host, &m),
     };
-    let cfg = a.core();
     let loaded = match load_project(&a, host) {
         Ok(l) => l,
         Err(m) => return cmdline_error(host, &m),
     };
-    let observer = match driver::prepare(loaded.spec_program, &cfg, parsers) {
+    let observer = match driver::prepare(loaded.spec_program, &a.core, parsers) {
         Ok(o) => o,
         Err(m) => return cmdline_error(host, &m),
     };
@@ -50,7 +49,7 @@ pub fn run_with(args: &[String], host: &mut dyn Host, parsers: Vec<Box<dyn Parse
         return cmdline_error(host, &format!("Failed to create output directory ({}).", output_dir));
     }
     let parser = observer.parser();
-    let live = !a.live.is_empty();
+    let live = !a.core.live.is_empty();
     if live && parser.log_delimiter().replace("\\n", "\n") != "\n" {
         return cmdline_error(host, "--stdin requires a newline-delimited parser.");
     }
@@ -61,20 +60,20 @@ pub fn run_with(args: &[String], host: &mut dyn Host, parsers: Vec<Box<dyn Parse
     let mut c = String::from("PObserveConfig {\n");
     let mut line = |k: &str, v: &str| c.push_str(&format!("  {:<20} = {}\n", k, v));
     line("outputDir", &output_dir);
-    line("inputKind", input_kind_name(a.input_kind));
+    line("inputKind", input_kind_name(a.core.input_kind));
     line(loaded.source_option, &loaded.source_value);
-    line("parserName", a.parser.as_deref().unwrap_or("null"));
+    line("parserName", a.core.parser.as_deref().unwrap_or("null"));
     line("specificationName", &spec_names.join(", "));
-    line("replayWindowSize", &a.replay_window.to_string());
+    line("replayWindowSize", &a.core.replay_window.to_string());
     line("logDelimiter", &parser.log_delimiter().replace('\n', "\\n"));
     c.push('}');
     host.out_line(&c);
 
-    let obs = observer.run(&cfg, host);
+    let obs = observer.run(&a.core, host);
     if live && !obs.input_complete {
         host.out_line("Live observation stopped at the first error; reports cover the checked prefix.");
     }
-    if let Some(path) = &a.record {
+    if let Some(path) = &a.core.record {
         if let Err(Exit(c)) = write_output(host, path, &obs.recorded) {
             return c;
         }
@@ -168,7 +167,8 @@ const USAGE: &str = "Usage: p observe [options]
       Possible Values: [JSON, TEXT, SERIALIZEDEVENTS]
     --strict
       Require at least one successfully checked relevant event per selected spec.
-      Applied after key filtering, at EOF for live input; does not imply --check-hot.
+      Applied after key filtering, at EOF for live input; does not imply --check-hot
+      (snappea extension)
     --unknown-events
       Event names no P source declares: ignore, warn or error (snappea extension)
       Default: ignore
@@ -207,41 +207,20 @@ const USAGE: &str = "Usage: p observe [options]
 
 ";
 
-/// The validated command line (`PObserveConfig`).
+/// The validated command line (`PObserveConfig`): what to check, and the options only
+/// this front end has.
 #[derive(Debug, Clone)]
 struct PObserveConfig {
-    /// `--spec`: one name, as upstream, or several (a snappea extension).
-    pub specs: Vec<String>,
-    /// `--all-specs`: every spec machine (a snappea extension).
-    pub all_specs: bool,
-    /// `--exclude-specs`: specs `--all-specs` leaves out.
-    pub exclude_specs: Vec<String>,
+    /// What to check, with specs and parsers looked up as PObserve does.
+    core: ObserveConfig,
     /// `--json-report`: file to write the result to as JSON.
-    pub json_report: Option<String>,
-    /// `--check-hot`: report specs left in a hot state.
-    pub check_hot: bool,
-    pub strict: bool,
-    /// `--unknown-events`: event names no P source declares.
-    pub unknown_events: UnknownEvents,
-    /// `--live` (and `--stdin`, as `-`): live inputs, as given.
-    pub live: Vec<String>,
-    /// `--sequence`: the field ordering live lines.
-    pub sequence: Option<String>,
-    /// `--record`: file for the checked live lines.
-    pub record: Option<String>,
-    pub fail_fast: bool,
-    pub parser: Option<String>,
-    pub parser_configuration: Option<String>,
-    pub filters: Vec<String>,
-    pub log_files: Vec<PathBuf>,
-    pub input_kind: InputKind,
+    json_report: Option<String>,
+    fail_fast: bool,
+    filters: Vec<String>,
     /// `--outputDir` as given.
-    pub output_dir: Option<String>,
-    pub replay_window: usize,
-    pub assume_sorted: bool,
-    pub keys: Vec<String>,
-    pub pproj: Option<String>,
-    pub pfiles: Vec<String>,
+    output_dir: Option<String>,
+    pproj: Option<String>,
+    pfiles: Vec<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -315,30 +294,14 @@ fn validate_file_path(host: &dyn Host, name: &str, value: &str) -> Result<PathBu
 /// `Ok(None)` means help was requested.
 fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveConfig>, String> {
     let mut cfg = PObserveConfig {
-        specs: Vec::new(),
-        all_specs: false,
-        exclude_specs: Vec::new(),
+        core: ObserveConfig { lookup: Lookup::PObserve, ..ObserveConfig::default() },
         json_report: None,
-        check_hot: false,
-        strict: false,
-        unknown_events: UnknownEvents::Ignore,
-        live: Vec::new(),
-        sequence: None,
-        record: None,
         fail_fast: false,
-        parser: None,
-        parser_configuration: None,
         filters: Vec::new(),
-        log_files: Vec::new(),
-        input_kind: InputKind::Text,
         output_dir: None,
-        replay_window: 100,
-        assume_sorted: false,
-        keys: Vec::new(),
         pproj: None,
         pfiles: Vec::new(),
     };
-    let mut spec_given = false;
     let mut help = false;
     let mut socket_mode = false;
     let mut serialized = false;
@@ -385,45 +348,39 @@ fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveCon
                 "--help" => help = true,
                 "--spec" => {
                     validate_classname(tok, &v)?;
-                    if !cfg.specs.contains(&v) {
-                        cfg.specs.push(v);
+                    if !cfg.core.specs.contains(&v) {
+                        cfg.core.specs.push(v);
                     }
-                    spec_given = true;
                 }
-                "--all-specs" => cfg.all_specs = true,
-                "--stdin" | "--live" => {
-                    let v = if canon == "--stdin" { "-".to_string() } else { v };
-                    if v == "-" && cfg.live.iter().any(|l| l == "-") {
-                        return Err("stdin can be read only once (--stdin is --live -).".into());
-                    }
-                    cfg.live.push(v);
-                }
-                "--sequence" => cfg.sequence = Some(v),
-                "--record" => cfg.record = Some(v),
+                "--all-specs" => cfg.core.all_specs = true,
+                "--stdin" => cfg.core.live.push("-".into()),
+                "--live" => cfg.core.live.push(v),
+                "--sequence" => cfg.core.sequence = Some(v),
+                "--record" => cfg.core.record = Some(v),
                 "--fail-fast" => cfg.fail_fast = true,
                 "--exclude-specs" => {
                     validate_classname(tok, &v)?;
-                    cfg.exclude_specs.push(v);
+                    cfg.core.exclude_specs.push(v);
                 }
                 "--json-report" => cfg.json_report = Some(v),
-                "--check-hot" => cfg.check_hot = true,
-                "--strict" => cfg.strict = true,
-                "--unknown-events" => cfg.unknown_events = v.parse()?,
+                "--check-hot" => cfg.core.check_hot = true,
+                "--strict" => cfg.core.strict = true,
+                "--unknown-events" => cfg.core.unknown_events = v.parse()?,
                 "--parser" => {
                     validate_classname(tok, &v)?;
-                    cfg.parser = Some(v);
+                    cfg.core.parser = Some(v);
                 }
                 "--parserConfiguration" => {
                     if v.is_empty() {
                         return Err(format!("The specified {} () is invalid. (must not be empty)", strip_dashes(tok)));
                     }
-                    cfg.parser_configuration = Some(v);
+                    cfg.core.parser_configuration = Some(v);
                 }
                 "--filters" => {
                     validate_classname(tok, &v)?;
                     cfg.filters.push(v);
                 }
-                "--logs" => add_log_paths(&HostFiles(host), &host.cwd(), &v, &mut cfg.log_files)?,
+                "--logs" => add_log_paths(&HostFiles(host), &host.cwd(), &v, &mut cfg.core.logs)?,
                 "--socket-mode" => socket_mode = true,
                 "--port" => match v.parse::<i32>() {
                     Ok(n) if (1..=65535).contains(&n) => {}
@@ -436,8 +393,8 @@ fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveCon
                     }
                 }
                 "--inputkind" => match v.to_uppercase().as_str() {
-                    "TEXT" => cfg.input_kind = InputKind::Text,
-                    "JSON" => cfg.input_kind = InputKind::Json,
+                    "TEXT" => cfg.core.input_kind = InputKind::Text,
+                    "JSON" => cfg.core.input_kind = InputKind::Json,
                     "SERIALIZEDEVENTS" => serialized = true,
                     _ => return Err(format!("The specified input kind ({}) is not valid.", v)),
                 },
@@ -458,18 +415,18 @@ fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveCon
                         return Err(bad());
                     }
                     match v.parse::<i32>() {
-                        Ok(n) if n >= 1 => cfg.replay_window = n as usize,
+                        Ok(n) if n >= 1 => cfg.core.replay_window = n as usize,
                         _ => return Err(bad()),
                     }
                 }
-                "--assumeInputsAreSorted" => cfg.assume_sorted = true,
-                "--keys" => push_key(&mut cfg.keys, v),
+                "--assumeInputsAreSorted" => cfg.core.assume_sorted = true,
+                "--keys" => push_key(&mut cfg.core.keys, v),
                 "--keyListFile" => {
                     let p = validate_file_path(host, tok, &v)?;
                     match host.read_to_string(&p) {
                         Ok(text) => {
                             for l in text.lines() {
-                                push_key(&mut cfg.keys, l.trim().to_string());
+                                push_key(&mut cfg.core.keys, l.trim().to_string());
                             }
                         }
                         Err(e) => {
@@ -494,35 +451,22 @@ fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveCon
     if help {
         return Ok(None);
     }
-    if !spec_given && !cfg.all_specs {
-        return Err("The following option is required: [--spec]".into());
-    }
-    if spec_given && cfg.all_specs {
-        return Err("--spec and --all-specs cannot be combined.".into());
-    }
-    if !cfg.exclude_specs.is_empty() && !cfg.all_specs {
-        return Err("--exclude-specs needs --all-specs.".into());
+    let valid = cfg.core.validate();
+    // JCommander reports a missing required option before PObserveConfig's own checks;
+    // the other spec selection rules follow it, before the input mode
+    if let Err(e @ (ConfigError::NoSpecs | ConfigError::SpecsWithAllSpecs | ConfigError::ExcludeWithoutAllSpecs)) =
+        valid
+    {
+        return Err(message(e));
     }
     // PObserveConfig.validateAndLoadPObserveConfig
     if socket_mode {
         return Err("Socket mode (--socket-mode) is not supported by p observe.".into());
     }
-    let live = !cfg.live.is_empty();
-    if live != cfg.fail_fast {
+    if cfg.core.live.is_empty() == cfg.fail_fast {
         return Err("Live observation requires both --stdin and --fail-fast (or --live and --fail-fast).".into());
     }
-    if live && (!cfg.log_files.is_empty() || cfg.input_kind != InputKind::Text) {
-        return Err("Live input (--stdin, --live) requires TEXT input and cannot be combined with --logs.".into());
-    }
-    if cfg.live.len() > 1 && cfg.sequence.is_none() {
-        return Err("Several live inputs need --sequence to order their lines.".into());
-    }
-    if !live && (cfg.sequence.is_some() || cfg.record.is_some()) {
-        return Err("--sequence and --record apply to live input (--live or --stdin).".into());
-    }
-    if cfg.log_files.is_empty() && !live {
-        return Err("No log files specified. Please provide log file or directory with --logs parameter.".into());
-    }
+    valid.map_err(message)?;
     if serialized {
         return Err("Input kind SERIALIZEDEVENTS is not supported by p observe.".into());
     }
@@ -552,28 +496,22 @@ fn default_output_dir(host: &dyn Host) -> String {
     format!("PObserve-{:02}-{:02}-{:04}_{:02}:{:02}:{:02}", d, mo, y, s / 3600, s / 60 % 60, s % 60)
 }
 
-impl PObserveConfig {
-    /// What to check, for [`driver::prepare`] and [`driver::Observer::run`].
-    fn core(&self) -> ObserveConfig {
-        ObserveConfig {
-            specs: self.specs.clone(),
-            all_specs: self.all_specs,
-            exclude_specs: self.exclude_specs.clone(),
-            lookup: Lookup::PObserve,
-            check_hot: self.check_hot,
-            strict: self.strict,
-            unknown_events: self.unknown_events,
-            logs: self.log_files.clone(),
-            input_kind: self.input_kind,
-            live: self.live.clone(),
-            sequence: self.sequence.clone(),
-            record: self.record.is_some(),
-            parser: self.parser.clone(),
-            parser_configuration: self.parser_configuration.clone(),
-            replay_window: self.replay_window,
-            assume_sorted: self.assume_sorted,
-            keys: self.keys.clone(),
+/// `err` as PObserve words it; snappea's own rules (`--all-specs`, `--live`) print
+/// [`ConfigError`]'s text.
+fn message(err: ConfigError) -> String {
+    match err {
+        ConfigError::NoSpecs => "The following option is required: [--spec]".into(),
+        ConfigError::ExcludeWithoutAllSpecs => "--exclude-specs needs --all-specs.".into(),
+        ConfigError::LiveWithLogs | ConfigError::LiveWithJson => {
+            "Live input (--stdin, --live) requires TEXT input and cannot be combined with --logs.".into()
         }
+        ConfigError::NoInput => {
+            "No log files specified. Please provide log file or directory with --logs parameter.".into()
+        }
+        ConfigError::SpecsWithAllSpecs
+        | ConfigError::StdinTwice
+        | ConfigError::SeveralLiveWithoutSequence
+        | ConfigError::SequenceOrRecordWithoutLive => err.to_string(),
     }
 }
 
@@ -794,6 +732,21 @@ fn java_percent_f(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usage_lists_exactly_the_accepted_options() {
+        let listed: Vec<String> = USAGE
+            .lines()
+            .filter_map(|l| l.strip_prefix("    -").filter(|_| !l.starts_with("     ")))
+            .map(|l| format!("-{}", l.trim_end()))
+            .collect();
+        let accepted: Vec<String> = OPTIONS.iter().map(|(names, _)| names.join(", ")).collect();
+        let mut missing: Vec<_> = accepted.iter().filter(|o| !listed.contains(o)).collect();
+        let mut extra: Vec<_> = listed.iter().filter(|o| !accepted.contains(o)).collect();
+        missing.sort();
+        extra.sort();
+        assert!(missing.is_empty() && extra.is_empty(), "not in USAGE: {missing:?}; not accepted: {extra:?}");
+    }
 
     #[test]
     fn replay_names() {

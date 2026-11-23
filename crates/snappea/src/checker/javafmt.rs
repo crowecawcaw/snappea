@@ -82,7 +82,7 @@ fn objects_hash<'a>(it: impl Iterator<Item = &'a Value>) -> i32 {
 /// bucket (`(h ^ h >>> 16) & (capacity - 1)`), keeping insertion order within a bucket.
 /// `keys` must be in insertion order. The table is assumed never to have held more
 /// entries than it does now.
-pub fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> Vec<(&'a Value, T)> {
+pub(crate) fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> Vec<(&'a Value, T)> {
     let items: Vec<(&'a Value, T)> = items.into_iter().collect();
     let mut cap: usize = 16;
     while items.len() > cap * 3 / 4 {
@@ -101,12 +101,12 @@ pub fn hashmap_order<'a, T>(items: impl IntoIterator<Item = (&'a Value, T)>) -> 
 }
 
 /// The keys of a map in `HashMap` iteration order.
-pub fn map_keys_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
+pub(crate) fn map_keys_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
     hashmap_order(m.iter_insertion()).into_iter().map(|(k, _)| k.clone()).collect()
 }
 
 /// The values of a map in `HashMap` iteration order.
-pub fn map_values_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
+pub(crate) fn map_values_in_java_order(m: &crate::checker::value::SlotMap) -> Vec<Value> {
     hashmap_order(m.iter_insertion()).into_iter().map(|(_, v)| v.clone()).collect()
 }
 
@@ -150,7 +150,7 @@ fn abbreviate_tuple_name(name: &str) -> String {
 }
 
 /// The abbreviated class name of a named tuple type, before uniquification.
-pub fn tuple_class_name<'a>(names: impl Iterator<Item = &'a str>) -> String {
+pub(crate) fn tuple_class_name<'a>(names: impl Iterator<Item = &'a str>) -> String {
     let parts: Vec<String> = names.map(abbreviate_tuple_name).collect();
     format!("PTuple_{}", parts.join("_"))
 }
@@ -499,7 +499,7 @@ fn number_format_float(f: f32) -> String {
 
 /// `MessageFormat.format(pattern, args)` for P's `{N}` placeholders. `Err` carries the
 /// message of the `IllegalArgumentException` a malformed pattern throws.
-pub fn message_format(pattern: &str, args: &[String]) -> Result<String, String> {
+pub(crate) fn message_format(pattern: &str, args: &[String]) -> Result<String, String> {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
     let mut in_quote = false;
@@ -602,7 +602,7 @@ fn parse_java_int(s: &str) -> Option<i32> {
 // ---- Float.toString / Double.toString ----------------------------------------------------
 
 /// `Float.toString(f)`.
-pub fn float_to_string(f: f32) -> String {
+pub(crate) fn float_to_string(f: f32) -> String {
     if f.is_nan() {
         return "NaN".into();
     }
@@ -646,24 +646,10 @@ fn java_decimal(sci: &str, zero: bool, negative: bool, plain: bool) -> String {
 
 // ---- java.time.Instant -------------------------------------------------------------------
 
-/// Civil date of a day count since 1970-01-01 (proleptic Gregorian).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
 fn date_time(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
-    let (y, m, d) = civil_from_days(days);
+    let (y, m, d) = crate::checker::observe_json::civil_from_days(days);
     // `ISO_INSTANT` pads the year to four digits after its sign, and signs years past 9999
     let year = match y {
         ..0 => format!("-{:04}", y.unsigned_abs()),
@@ -674,12 +660,12 @@ fn date_time(secs: i64) -> String {
 }
 
 /// An instant with `DateTimeFormatter`'s `appendInstant(9)`: always nine fraction digits.
-pub fn instant_nanos9(secs: i64, nanos: u32) -> String {
+pub(crate) fn instant_nanos9(secs: i64, nanos: u32) -> String {
     format!("{}.{:09}Z", date_time(secs), nanos)
 }
 
 /// `Instant.toString()`: the fraction in groups of three digits, omitted when zero.
-pub fn instant_to_string(secs: i64, nanos: u32) -> String {
+pub(crate) fn instant_to_string(secs: i64, nanos: u32) -> String {
     let frac = if nanos == 0 {
         String::new()
     } else if nanos.is_multiple_of(1_000_000) {

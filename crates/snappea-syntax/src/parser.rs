@@ -14,6 +14,15 @@ pub struct ParseError {
     pub message: String,
 }
 
+impl std::fmt::Display for ParseError {
+    /// The message alone; [`crate::SourceMap::location`] gives the place of `span`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 type PResult<T> = Result<T, ParseError>;
 
 /// The deepest nesting of expressions, statements, types and module expressions
@@ -162,7 +171,7 @@ impl<'a> Parser<'a> {
         &self.text[t.span.start as usize..t.span.end as usize]
     }
 
-    fn err_at<R>(&self, tok: Token, message: String) -> PResult<R> {
+    fn err_at<R>(tok: Token, message: String) -> PResult<R> {
         Err(ParseError { span: tok.span, message })
     }
 
@@ -196,12 +205,12 @@ impl<'a> Parser<'a> {
         let t = self.peek();
         let set = Self::format_set(expected);
         if t.kind != T::Eof && expected.contains(&self.peek_at(1)) {
-            return self.err_at(t, format!("extraneous input '{}' expecting {}", self.offending(t), set));
+            return Self::err_at(t, format!("extraneous input '{}' expecting {}", self.offending(t), set));
         }
         if follow.contains(&t.kind) {
-            return self.err_at(t, format!("missing {} at '{}'", set, self.offending(t)));
+            return Self::err_at(t, format!("missing {} at '{}'", set, self.offending(t)));
         }
-        self.err_at(t, format!("mismatched input '{}' expecting {}", self.offending(t), set))
+        Self::err_at(t, format!("mismatched input '{}' expecting {}", self.offending(t), set))
     }
 
     fn expect(&mut self, k: TokenKind) -> PResult<Token> {
@@ -259,9 +268,9 @@ impl<'a> Parser<'a> {
         let t = self.peek();
         let msg = Self::format_set(&set);
         if !first || set.contains(&self.peek_at(1)) {
-            self.err_at(t, format!("extraneous input '{}' expecting {}", self.offending(t), msg))
+            Self::err_at(t, format!("extraneous input '{}' expecting {}", self.offending(t), msg))
         } else {
-            self.err_at(t, format!("mismatched input '{}' expecting {}", self.offending(t), msg))
+            Self::err_at(t, format!("mismatched input '{}' expecting {}", self.offending(t), msg))
         }
     }
 
@@ -273,7 +282,7 @@ impl<'a> Parser<'a> {
         if self.depth > MAX_NESTING {
             self.too_deep = true;
             let t = self.peek();
-            return self.err_at(t, format!("nesting is too deep (more than {MAX_NESTING} levels)"));
+            return Self::err_at(t, format!("nesting is too deep (more than {MAX_NESTING} levels)"));
         }
         Ok(())
     }
@@ -284,7 +293,7 @@ impl<'a> Parser<'a> {
 
     fn no_viable<R>(&self) -> PResult<R> {
         let t = self.peek();
-        self.err_at(t, format!("no viable alternative at input '{}'", self.offending(t)))
+        Self::err_at(t, format!("no viable alternative at input '{}'", self.offending(t)))
     }
 
     /// Turns an error raised while a multi-token decision starting at token
@@ -863,7 +872,7 @@ impl<'a> Parser<'a> {
             return Ok(decl);
         }
         let t = self.peek();
-        self.err_at(t, format!("mismatched input '{}' expecting {{';', '{{', 'creates'}}", self.offending(t)))
+        Self::err_at(t, format!("mismatched input '{}' expecting {{';', '{{', 'creates'}}", self.offending(t)))
     }
 
     fn requires_ensures(&mut self, decl: &mut FunDecl) -> PResult<()> {

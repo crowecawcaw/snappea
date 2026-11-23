@@ -16,7 +16,7 @@ use serde_json::{json, Value as Json};
 
 use crate::checker::value::Value;
 use crate::sema::{EventId, MachineId, MachineKind, PType, Program};
-use snappea_syntax::{SourceMap, Span};
+use snappea_syntax::SourceMap;
 
 /// Distinct payload values kept per field; more means the driver varies it.
 const VALUES: usize = 3;
@@ -27,9 +27,10 @@ const VALUES: usize = 3;
 const COUNT_LIMIT: u32 = 2;
 
 /// The machines that drive the model, by [`MachineId`]: those declared under a `PTst`
-/// folder or marked `// snappea: driver` (`marked`, their declaration spans). A test
-/// case's main machine is a driver too; the checker adds it.
-pub fn driver_machines(prog: &Program, sources: &SourceMap, marked: &[Span]) -> Vec<bool> {
+/// folder or marked `// snappea: driver`. A test case's main machine is a driver too;
+/// the checker adds it.
+pub fn driver_machines(prog: &Program, sources: &SourceMap, linter: &snappea_lint::Linter) -> Vec<bool> {
+    let marked = linter.driver_machines(sources);
     prog.machines
         .iter()
         .map(|m| {

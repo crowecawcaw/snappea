@@ -541,12 +541,10 @@ with `invalid-directive`.
 
 The `snappea-lint` crate has no I/O or scheduling dependency. Implement its `Rule`
 trait (`id`, `description`, and `check`), emit `Finding` values with source spans,
-and register the rule in `Registry::builtins`. Custom registries can register
-additional rules without changing the execution or suppression pipeline. Rule IDs
-must be unique. Diagnostics are sorted by source position and rule ID.
+and register the rule in `Registry::builtins`. Rule IDs must be unique. Diagnostics
+are sorted by source position and rule ID.
 
-The parser lives in `snappea-syntax`, re-exported as `snappea::syntax` for existing
-callers. Lint rules share the same parser and source positions as the checker.
+The parser lives in `snappea-syntax`, re-exported as `snappea::syntax`. Lint rules share the same parser and source positions as the checker.
 
 Run validation with:
 

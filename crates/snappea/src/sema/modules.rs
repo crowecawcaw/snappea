@@ -13,7 +13,7 @@ use crate::syntax::Span;
 
 /// A resolved module expression (names looked up, structure kept).
 #[derive(Debug, Clone)]
-pub enum RMod {
+pub(crate) enum RMod {
     Bind(Vec<(InterfaceId, MachineId)>, Span),
     /// `is_composition`: `compose` (true) or `union` (false).
     Combine(Vec<RMod>, bool, Span),
@@ -29,7 +29,7 @@ pub enum RMod {
 }
 
 impl RMod {
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         match self {
             RMod::Bind(_, s)
             | RMod::Combine(_, _, s)
@@ -79,8 +79,8 @@ impl<'a> Analyzer<'a> {
     // ModuleExprVisitor
     // ------------------------------------------------------------------
 
-    pub fn resolve_mod_expr(&mut self, e: &'a ast::ModExpr, depth: usize) -> Result<RMod, Fatal> {
-        let g = self.scopes.global();
+    pub(crate) fn resolve_mod_expr(&mut self, e: &'a ast::ModExpr, depth: usize) -> Result<RMod, Fatal> {
+        let g = crate::sema::scope::Scopes::GLOBAL;
         if depth > 256 {
             return Err(self
                 .e
@@ -197,7 +197,7 @@ impl<'a> Analyzer<'a> {
     // ModuleSystemTypeChecker.CheckWellFormedness
     // ------------------------------------------------------------------
 
-    pub fn module_info(&mut self, m: &RMod) -> Result<ModuleInfo, Fatal> {
+    pub(crate) fn module_info(&mut self, m: &RMod) -> Result<ModuleInfo, Fatal> {
         match m {
             RMod::Bind(bindings, span) => self.info_bind(bindings, *span),
             RMod::Combine(mods, is_comp, _) => self.info_combine(mods, *is_comp),
@@ -624,7 +624,7 @@ impl<'a> Analyzer<'a> {
             let msg = format!("machine {} does not exist in the test module", main.name);
             return Err(self.e.no_main(span, &msg));
         }
-        let g = self.scopes.global();
+        let g = crate::sema::scope::Scopes::GLOBAL;
         let mid = self.scopes.lookup_machine(g, &main.name).expect("main machine exists");
         if !self.prog.machines[mid.idx()].payload.equals(&PType::Null, &self.prog) {
             let msg = format!(
@@ -712,7 +712,7 @@ impl<'a> Analyzer<'a> {
             names.push(&b.name.name);
         }
         // EnumerateParamAssignments
-        let g = self.scopes.global();
+        let g = crate::sema::scope::Scopes::GLOBAL;
         let mut specs = Vec::new();
         for (b, (ty, values, span)) in params.iter().zip(parsed) {
             let var =
@@ -843,7 +843,7 @@ impl<'a> Analyzer<'a> {
     // ModuleSystemDeclarations.PopulateAllModuleExprs + Analyzer steps 9-10
     // ------------------------------------------------------------------
 
-    pub fn populate_module_system(&mut self) -> Result<(), Fatal> {
+    pub(crate) fn populate_module_system(&mut self) -> Result<(), Fatal> {
         // Step 8: resolve every module expression, in upstream order.
         let mut named: Vec<RMod> = Vec::new();
         for i in 0..self.module_src.len() {
@@ -860,7 +860,7 @@ impl<'a> Analyzer<'a> {
             };
             let assume = match &t.assume {
                 Some(a) => {
-                    let g = self.scopes.global();
+                    let g = crate::sema::scope::Scopes::GLOBAL;
                     let f = self.new_fun("assume", None, g, FunSrc::None, a.span);
                     Some(self.check_expr(Ctx { fun: f, machine: None, scope: g }, a)?)
                 }
@@ -906,7 +906,7 @@ impl<'a> Analyzer<'a> {
             }
         } else if self.test_src.is_empty() && self.prog.machines.iter().any(|m| m.name == "Main") {
             {
-                let g = self.scopes.global();
+                let g = crate::sema::scope::Scopes::GLOBAL;
                 let mut bindings = Vec::new();
                 for (mi, m) in self.prog.machines.iter().enumerate() {
                     if m.is_spec() {

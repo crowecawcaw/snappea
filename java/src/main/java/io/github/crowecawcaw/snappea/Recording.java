@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import org.opentest4j.AssertionFailedError;
 
 /**
  * One check: collects events while active, then checks them with {@code snappea observe}.
@@ -256,7 +257,8 @@ public final class Recording implements AutoCloseable {
 
     // ---- running snappea ---------------------------------------------------------------
 
-    private ObservationFailure run() {
+    /** A {@link SpecViolation} or {@link SetupError}, or null when the check passed. */
+    private AssertionFailedError run() {
         boolean children;
         try (var files = Files.list(eventsDir)) {
             children = files.findAny().isPresent();
@@ -311,11 +313,11 @@ public final class Recording implements AutoCloseable {
             return new SetupError(SetupError.CONFIG, "Cannot write " + reportPath + ": " + error, directory, null, error);
         }
         report = new ObservationReport(full);
-        ObservationFailure failure = Outcomes.of(report, Set.copyOf(ignored), directory);
+        AssertionFailedError failure = Outcomes.of(report, Set.copyOf(ignored), directory);
         if (coverage != null && coverage.enabled()) {
             try {
                 coverage.add(report);
-            } catch (ObservationFailure error) {
+            } catch (SetupError error) {
                 if (failure == null) return error;
                 failure.addSuppressed(error);
             }
@@ -469,7 +471,7 @@ public final class Recording implements AutoCloseable {
     static final class Outcomes {
         private Outcomes() {}
 
-        static ObservationFailure of(ObservationReport report, Set<String> ignored, Path directory) {
+        static AssertionFailedError of(ObservationReport report, Set<String> ignored, Path directory) {
             var input = new ArrayList<ObservationReport.Error>();
             var validation = new ArrayList<ObservationReport.Error>();
             var violations = new ArrayList<SpecViolation>();

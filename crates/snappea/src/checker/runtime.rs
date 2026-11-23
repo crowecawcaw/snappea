@@ -406,28 +406,43 @@ pub struct Monitor {
     pub goto_payload: Option<Value>,
 }
 
+/// How many steps a schedule may take (`--max-steps`, `--fair-max-steps`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StepBounds {
+    pub unfair: usize,
+    pub fair: usize,
+    /// `fair` was set on its own rather than derived from `unfair`; the report names it.
+    pub fair_explicit: bool,
+}
+
+impl StepBounds {
+    /// `unfair` steps, and ten times as many for a fair schedule, as upstream derives it.
+    pub fn from_unfair(unfair: usize) -> Self {
+        StepBounds { unfair, fair: unfair.saturating_mul(10), fair_explicit: false }
+    }
+
+    /// These bounds with an explicit fair bound.
+    pub fn with_fair(self, fair: usize) -> Self {
+        StepBounds { fair, fair_explicit: true, ..self }
+    }
+}
+
+impl Default for StepBounds {
+    fn default() -> Self {
+        StepBounds::from_unfair(10_000)
+    }
+}
+
 /// Configuration of one checking run (`CheckerConfiguration`).
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Capture source and variable snapshots during a logged browser replay.
     pub inspection_trace: bool,
-    pub max_unfair_steps: usize,
-    pub max_fair_steps: usize,
-    pub liveness_enabled: bool,
+    pub steps: StepBounds,
     pub liveness_temperature_threshold: usize,
     pub fail_on_max_steps: bool,
     pub strategy: StrategyKind,
-    /// Upper bound on the work (interpreted instructions, log lines weighted) an actor may do
-    /// without reaching a scheduling point; 0 = unbounded. Upstream has no such bound and
-    /// simply hangs on e.g. an endless raise/goto cycle.
-    pub max_work_per_step: u64,
-    /// Most machines a schedule may create; 0 = unbounded. Mutation testing sets it from
-    /// the unchanged model, so a change that creates machines without end fails quickly
-    /// rather than slowing every step down as they pile up.
-    pub max_machines: usize,
-    /// Most events queued for one machine at once; 0 = unbounded. Set like
-    /// [`Config::max_machines`], for a change that sends without end.
-    pub max_inbox: usize,
+    pub limits: RunLimits,
     /// Strategy description recorded in the JSON trace (overrides the running strategy's,
     /// used when a buggy schedule is replayed to produce its JSON trace).
     pub strategy_description: Option<String>,
@@ -452,15 +467,11 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             inspection_trace: false,
-            max_unfair_steps: 10000,
-            max_fair_steps: 100000,
-            liveness_enabled: true,
+            steps: StepBounds::default(),
             liveness_temperature_threshold: 0,
             fail_on_max_steps: false,
             strategy: StrategyKind::Random,
-            max_work_per_step: DEFAULT_MAX_WORK_PER_STEP,
-            max_machines: 0,
-            max_inbox: 0,
+            limits: RunLimits::default(),
             strategy_description: None,
             logging: true,
             assembly_name: "PImplementation".into(),
@@ -471,8 +482,27 @@ impl Default for Config {
     }
 }
 
-/// Default for [`Config::max_work_per_step`].
-pub const DEFAULT_MAX_WORK_PER_STEP: u64 = 20_000_000;
+/// Bounds that turn a runaway schedule into a bug report instead of a hang; 0 is unbounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunLimits {
+    /// Work (interpreted instructions, log lines weighted) an actor may do without reaching
+    /// a scheduling point. Upstream has no such bound and hangs on e.g. an endless
+    /// raise/goto cycle.
+    pub max_work_per_step: u64,
+    /// Machines a schedule may create. Mutation testing sets it from the unchanged model,
+    /// so a change that creates machines without end fails quickly rather than slowing
+    /// every step down as they pile up.
+    pub max_machines: usize,
+    /// Events queued for one machine at once. Set like `max_machines`, for a change that
+    /// sends without end.
+    pub max_inbox: usize,
+}
+
+impl Default for RunLimits {
+    fn default() -> Self {
+        RunLimits { max_work_per_step: 20_000_000, max_machines: 0, max_inbox: 0 }
+    }
+}
 
 /// Weight of one log line in the per-step work budget.
 pub const LOG_LINE_WORK: u64 = 20;
@@ -681,7 +711,7 @@ impl Prefix {
 
 pub struct Runtime<'p> {
     pub(super) touched: Vec<bool>,
-    /// What the running step did beyond its machine's own state (see [`Footprint`]).
+    /// What the running step did beyond its machine's own state (see [`Footprint`](crate::checker::strategy::Footprint)).
     pub(crate) footprint: crate::checker::strategy::Footprint,
     /// See [`Buffers::spare_prefixes`].
     spare_prefixes: Vec<Prefix>,
@@ -709,7 +739,7 @@ pub struct Runtime<'p> {
     /// The strategy cut the schedule short at an already explored state.
     pruned: bool,
     scheduled_steps: usize,
-    /// Work done since the last scheduling point (see [`Config::max_work_per_step`]).
+    /// Work done since the last scheduling point (see [`RunLimits::max_work_per_step`]).
     pub(crate) step_work: u64,
     /// Most work an earlier step of this schedule did.
     pub(crate) peak_step_work: u64,
@@ -1260,7 +1290,7 @@ impl<'p> Runtime<'p> {
     fn check_steps_bound(&mut self) -> Result<(), Stop> {
         if self.strategy.has_reached_max_steps() {
             self.bound_hit_at = Some(self.trace.steps.len());
-            let bound = if self.strategy.is_fair() { self.config.max_fair_steps } else { self.config.max_unfair_steps };
+            let bound = if self.strategy.is_fair() { self.config.steps.fair } else { self.config.steps.unfair };
             let msg = format!("Scheduling steps bound of {} reached.", bound);
             if self.config.fail_on_max_steps {
                 return Err(self.report_bug(msg));
@@ -1272,7 +1302,7 @@ impl<'p> Runtime<'p> {
     }
 
     fn check_liveness_temperatures(&mut self) -> Result<(), Stop> {
-        if !self.config.liveness_enabled || !self.strategy.is_fair() {
+        if !self.strategy.is_fair() {
             return Ok(());
         }
         let threshold = self.config.liveness_temperature_threshold;
@@ -1361,10 +1391,10 @@ impl<'p> Runtime<'p> {
             && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
     }
 
-    /// Whether liveness is checked and some liveness monitor is not in a cold state: a
+    /// Whether some liveness monitor is not in a cold state: a
     /// cycle through the current state could be a liveness bug.
     fn liveness_pending(&self) -> bool {
-        self.config.liveness_enabled && self.monitors.iter().any(|m| self.liveness_monitor(m))
+        self.monitors.iter().any(|m| self.liveness_monitor(m))
     }
 
     /// The transition since step `from` and the current state, for the fair-cycle
@@ -1378,9 +1408,6 @@ impl<'p> Runtime<'p> {
             enabled: infos.iter().filter(|o| o.enabled).map(|o| o.id).collect(),
             ..Default::default()
         };
-        if !self.config.liveness_enabled {
-            return facts;
-        }
         for (i, m) in self.monitors.iter().enumerate() {
             let decl = self.prog.machine(m.decl);
             if decl.is_scenario() || !decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot) {
@@ -1488,7 +1515,7 @@ impl<'p> Runtime<'p> {
         self.op_mut(cur).kind = kind;
         self.check_steps_bound()?;
         self.check_liveness_temperatures()?;
-        let limit = self.config.max_machines;
+        let limit = self.config.limits.max_machines;
         if limit > 0 && self.machines.len() > limit {
             let msg = format!(
                 "The schedule created more than {} machines, far more than the model creates without the change (possible endless creation).",
@@ -1496,7 +1523,7 @@ impl<'p> Runtime<'p> {
             );
             return Err(self.report_bug(msg));
         }
-        let limit = self.config.max_inbox;
+        let limit = self.config.limits.max_inbox;
         if limit > 0 && self.peak_inbox > limit {
             let msg = format!(
                 "The schedule queued more than {} events for one machine, far more than the model does without the change (possible endless sending).",

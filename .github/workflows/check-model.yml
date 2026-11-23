@@ -2,7 +2,7 @@
 # build of snappea: the model can use lint rules and features not yet released.
 # examples/model/github-workflow.yml is the copyable version, which installs the released
 # CLI; keep the two in step. See
-# https://crowecawcaw.github.io/snappea/docs/github-actions.html
+# https://snappea.dev/docs/github-actions.html
 
 name: Check the P model
 
