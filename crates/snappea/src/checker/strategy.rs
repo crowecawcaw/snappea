@@ -233,14 +233,14 @@ pub trait Strategy {
     fn wants_state_hash(&self) -> bool {
         false
     }
-    /// The program-state hash (see [`crate::checker::statehash`]) at the scheduling point about to
+    /// The program-state hash (see `checker::statehash`) at the scheduling point about to
     /// be decided by [`Strategy::next_operation`]. Returning `false` ends the schedule
     /// there, without a deadlock or liveness check (the state was explored before).
     fn observe_state(&mut self, _hash: u64) -> bool {
         true
     }
     /// Whether the search records the state graph for the fair-cycle analysis (see
-    /// [`crate::checker::fairness`]): the step at which this schedule reached the last
+    /// `checker::fairness`): the step at which this schedule reached the last
     /// state it recorded (0 when none). The runtime then describes the next observed
     /// state with [`Strategy::note_live_facts`] before [`Strategy::observe_state`].
     fn live_graph_step(&self) -> Option<usize> {
@@ -255,7 +255,7 @@ pub trait Strategy {
     }
     /// After [`Strategy::observe_state`] ended a schedule at a state where a liveness
     /// monitor was not cold: the cycle, if that state is one the schedule passed before
-    /// (see [`crate::checker::exhaustive::ExhaustiveStrategy::closed_cycle`]).
+    /// (see `ExhaustiveStrategy::closed_cycle`).
     fn closed_cycle(&mut self) -> Option<crate::checker::exhaustive::Cycle> {
         None
     }
@@ -275,8 +275,6 @@ pub trait Strategy {
     fn merges_values(&self) -> bool {
         false
     }
-    /// Enable native prefix guidance for guided scheduler arms.
-    fn enable_frontier_guidance(&mut self) {}
     /// Whether event-count frontier checkpoints are used during execution.
     fn wants_frontiers(&self) -> bool {
         false

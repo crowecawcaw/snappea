@@ -26,11 +26,11 @@ The `snappea` library is split into modules:
 | `snappea::syntax` | Lexer, parser and AST. |
 | `snappea::sema` | Name resolution and type checking; produces a typed program. |
 | `snappea::checker` | Interpreter, schedulers, PEx search, monitors, traces, foreign functions and log checking. |
-| `snappea::host` | The environment commands run in: console, file system, clock, threads. `MemHost` is in-memory (tests, wasm); `snappea::cli` has the native one. |
+| `snappea::host` | The environment commands run in: console, file system, clock, threads. `MemHost` is in-memory (tests, wasm); `NativeHost` is the real machine. |
 | `snappea::project` | Finding and reading P sources: `.pproj` files, `--pfiles`, the current folder; type-error reporting. |
 | `snappea::driver` | The commands on a host, shared by `snappea` and `snappea-compat`: `check` (checking test cases, replay, output folders, traces, coverage), `observe` (checking logs: `compile`, `prepare`, `Observer::run`, `json_report`) and `scenario` (scenario coverage reports). `check::Style` picks the output: `Upstream` (upstream's folder layout, history and file names) or `Snappea` (`<out>/<test>/bug.*`, replaced by each run). |
 | `snappea::compat` | Upstream's command line for `snappea-compat` (`p check` options and help, `p merge-scenario-coverage`, PObserve's options and report folder), on `snappea::driver`. Nothing else depends on it. |
-| `snappea::cli` | The `snappea` command line and the native host (hidden from the docs; used by the binaries and `snappea-wasm`). |
+| `snappea::cli` | The `snappea` command line (hidden from the docs; used by the binaries and `snappea-wasm`). |
 | `snappea::test` | In-process checks for Rust tests. |
 | `snappea::emit` | The event emitter for application code. |
 

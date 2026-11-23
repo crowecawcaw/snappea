@@ -65,4 +65,4 @@ checks that every example's `specs/inventory.p` links here.
 [`github-workflow.yml`](github-workflow.yml) is a workflow you can copy: it installs the
 released `snappea` with the install script and checks this model on every pull request.
 This repository runs the same steps with its own build of `snappea` in
-[check-model.yml](../../.github/workflows/check-model.yml). See [GitHub Actions](https://crowecawcaw.github.io/snappea/docs/github-actions.html).
+[check-model.yml](../../.github/workflows/check-model.yml). See [GitHub Actions](https://snappea.dev/docs/github-actions.html).

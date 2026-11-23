@@ -14,6 +14,15 @@ pub struct ParseError {
     pub message: String,
 }
 
+impl std::fmt::Display for ParseError {
+    /// The message alone; [`crate::SourceMap::location`] gives the place of `span`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 type PResult<T> = Result<T, ParseError>;
 
 /// The deepest nesting of expressions, statements, types and module expressions

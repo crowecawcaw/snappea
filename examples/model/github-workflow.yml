@@ -1,7 +1,7 @@
 # Checks the example P model the way a project using snappea would: install the released
 # CLI, then run the model's test cases. A copy of this file works in your own repository;
 # change the working directory and the test cases. See
-# https://crowecawcaw.github.io/snappea/docs/github-actions.html
+# https://snappea.dev/docs/github-actions.html
 #
 # This repository's CI runs the same steps with its own build of snappea, so that changes to
 # the model and to snappea land together: see .github/workflows/check-model.yml.

@@ -73,14 +73,14 @@ pub(crate) struct Portfolio {
     rng: RandomValueGenerator,
 }
 impl Portfolio {
-    pub(crate) fn new(seed: u32, unfair: usize, fair: usize) -> Self {
+    /// `frontier` turns on frontier guidance in the feedback-guided arms.
+    pub(crate) fn new(seed: u32, unfair: usize, fair: usize, frontier: bool) -> Self {
         let guided = |bound, scheduler| {
-            Box::new(
-                FeedbackGuidedStrategy::new(bound, seed, scheduler)
-                    .with_code_guidance(true)
-                    .with_fresh_exploration(25)
-                    .with_condition_prefixes(),
-            ) as Box<dyn Strategy>
+            let s = FeedbackGuidedStrategy::new(bound, seed, scheduler)
+                .with_code_guidance(true)
+                .with_fresh_exploration(25)
+                .with_condition_prefixes();
+            Box::new(if frontier { s.with_frontier_guidance() } else { s }) as Box<dyn Strategy>
         };
         let mut strategies = vec![
             guided(fair, Box::new(RandomScheduler::new(Source::Controlled(ControlledRandom::new(seed))))),
@@ -109,14 +109,6 @@ impl Portfolio {
             failures: Default::default(),
             rng: RandomValueGenerator::new(seed.wrapping_add(0x9e3779b9)),
         }
-    }
-    pub(crate) fn with_frontier_guidance(mut self, enabled: bool) -> Self {
-        if enabled {
-            for arm in &mut self.arms {
-                arm.strategy.enable_frontier_guidance();
-            }
-        }
-        self
     }
     /// A stable dependency signal: several senders can race at one receiver.
     /// Inspect metadata already provided to the scheduler; no program-state hashes.
@@ -349,7 +341,7 @@ mod tests {
     use crate::checker::runtime::SchedKind;
     #[test]
     fn blind_rewards_still_explore_every_scheduler_with_bounded_work() {
-        let mut p = Portfolio::new(7, 20, 20);
+        let mut p = Portfolio::new(7, 20, 20, false);
         let ops = [
             OpInfo { id: 1, enabled: true, kind: SchedKind::Default, receiver: None },
             OpInfo { id: 2, enabled: true, kind: SchedKind::Default, receiver: None },

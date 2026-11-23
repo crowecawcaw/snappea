@@ -4,7 +4,8 @@
 //! sources as arguments, automatic scheduling, durations with units, parallel workers,
 //! time tracking) and its own output: a line per test case, the bug's report and replay
 //! command, and a folder per test case ([`Style::Snappea`]). The upstream-style progress shows
-//! with `--verbose`. Its exit statuses are stated once, in `exit_status!`.
+//! with `--verbose`. The exit statuses of `snappea` and `snappea check` are stated once,
+//! in `exit_status!`.
 
 use std::path::Path;
 
@@ -29,8 +30,8 @@ macro_rules! exit_status {
     () => {
         "\
 Exit status: 0 nothing failed; 1 a bug, a required coverage gap, an undetected
-mutant or, with --strict, an untested one; 2 an error, or blocking lint findings
-with no bug.
+mutant or, with --strict or --deny mutation, an untested one; 2 an error, or
+blocking lint findings with no bug.
 "
     };
 }
@@ -136,9 +137,9 @@ Time (for models with timeouts or latency budgets):
 
 What fails the check:
       --warn <CHECK>        Report CHECK's findings as warnings and keep going: lint,
-                            coverage, mutation or all. Repeatable. Use it to explore,
-                            not to pass: fix or suppress findings before relying on
-                            the result.
+                            coverage, mutation or all (repeat it, or list several
+                            with commas). Use it to explore, not to pass: fix or
+                            suppress findings before relying on the result.
       --deny <CHECK>        Fail on CHECK's findings, as by default. --deny mutation
                             (or all) also fails on mutants left untested, e.g. at
                             the time limit: use it for a final check. When --warn
@@ -934,7 +935,7 @@ fn check(args: &[String], host: &mut dyn Host) -> i32 {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, Some("check")),
     };
-    let mutation = match mutation_timeout(&parsed) {
+    let mutation = match mutation_timeout(&parsed, MUTATION_TIMEOUT) {
         Ok(t) => t,
         Err(m) => return usage_error(host, &m, Some("check")),
     };
@@ -965,9 +966,8 @@ fn mutation(args: &[String], host: &mut dyn Host) -> i32 {
         Ok(p) => p,
         Err(m) => return usage_error(host, &m, CMD),
     };
-    let limit = match mutation_timeout(&parsed) {
-        Ok(Some(t)) if parsed.get("mutation-timeout").is_some() => t,
-        Ok(_) => MUTATION_ONLY_TIMEOUT,
+    let limit = match mutation_timeout(&parsed, MUTATION_ONLY_TIMEOUT) {
+        Ok(t) => t.expect("--no-mutation is rejected above"),
         Err(m) => return usage_error(host, &m, CMD),
     };
     with_output(host, &parsed, "check mutation", |host| {
@@ -984,12 +984,13 @@ enum Mutation {
     Only(u32),
 }
 
-/// The time limit for mutation testing in seconds, `None` to skip it.
-fn mutation_timeout(a: &Args) -> Result<Option<u32>, String> {
+/// The time limit for mutation testing in seconds (`default` without
+/// `--mutation-timeout`), `None` to skip it.
+fn mutation_timeout(a: &Args, default: u32) -> Result<Option<u32>, String> {
     match (a.has("no-mutation"), a.get("mutation-timeout")) {
         (true, Some(_)) => Err("use only one of '--no-mutation' and '--mutation-timeout'".into()),
         (true, None) => Ok(None),
-        (false, None) => Ok(Some(MUTATION_TIMEOUT)),
+        (false, None) => Ok(Some(default)),
         (false, Some(t)) => match parse_duration(t) {
             Some(t) => Ok(Some(t)),
             None => Err(format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t)),
@@ -1000,9 +1001,6 @@ fn mutation_timeout(a: &Args) -> Result<Option<u32>, String> {
 /// Fills `cfg` from the `check` options; returns the test patterns.
 fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> {
     let patterns = sources(&mut cfg.input, &a.positional)?;
-    cfg.strategy = StrategyKind::Auto;
-    cfg.iterations = 0;
-    cfg.user_set_iterations = false;
     if let Some(t) = a.get("timeout") {
         cfg.timeout =
             Some(parse_duration(t).ok_or_else(|| format!("bad duration '{}' (examples: 90, 90s, 5m, 1h)", t))?);
@@ -1062,10 +1060,8 @@ fn gates(a: &Args, gates: &mut check::Gates) -> Result<(), String> {
         let gate = if *option == "warn" { Gate::Warn } else { Gate::Deny };
         for name in value.split(',').map(str::trim) {
             if name != "all" && !check::Gates::CHECKS.contains(&name) {
-                return Err(format!(
-                    "unknown check '{}' for '--{}': use lint, coverage, mutation or all",
-                    name, option
-                ));
+                let known = check::Gates::CHECKS.join(", ");
+                return Err(format!("unknown check '{}' for '--{}': use {} or all", name, option, known));
             }
             gates.set(name, gate)?;
             if name == "mutation" || name == "all" {
@@ -1118,7 +1114,6 @@ fn snappea_config() -> CheckConfig {
         driver_limits: true,
         strategy: StrategyKind::Auto,
         iterations: 0,
-        timeout: Some(10),
         suite_budget: Some(SUITE_BUDGET),
         max_bugs: MAX_BUGS,
         ..CheckConfig::default()
@@ -1209,8 +1204,7 @@ fn run_check(
     // incomplete searches that did not settle either
     let mut unsettled = 0;
     let sources = loaded.sources.source_map();
-    let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
-    let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
+    let drivers = crate::checker::driver_facts::driver_machines(prog, &sources);
     let (mut negative_driver_scope, mut negative_hits, mut positive_design) =
         (Scope::default(), Hits::default(), Scope::default());
     for tc in &selected_tests {
@@ -1622,8 +1616,7 @@ fn run_check(
             let suppressed =
                 snappea_lint::mutation_suppression_details(&loaded.sources.source_map()).unwrap_or_default();
             let sources = loaded.sources.source_map();
-            let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
-            let drivers = crate::checker::driver_facts::driver_machines(prog, &sources, &marked);
+            let drivers = crate::checker::driver_facts::driver_machines(prog, &sources);
             let report = crate::driver::mutation::run(
                 &mut con,
                 prog,
@@ -1733,7 +1726,8 @@ fn run_check(
                 "expected_bug_failure_identity" => "expected-bug tests with differing failures",
                 "mutation_suppressions" => "mutation suppression advisories",
                 "mutation_untested" => "mutants not tested",
-                _ => "undetected mutants",
+                "mutation" => "undetected mutants",
+                other => other,
             })
             .collect();
         format!(", with warnings: {}", parts.join(", "))
@@ -2216,15 +2210,13 @@ fn longer_timeout(elapsed: f64) -> Option<&'static str> {
 }
 
 /// Whether a search's schedules mostly reach states it already explored: at least
-/// [`REVISITS`] schedules per distinct state. Independent steps run in many orders that
+/// 10 schedules per distinct state. Independent steps run in many orders that
 /// end in the same states, which a forwarder or a needless concurrent machine multiplies.
 fn mostly_revisits(case: &check::CaseOutcome) -> Option<usize> {
     const REVISITS: usize = 10;
     case.exhaustive_states.map(|(states, _)| states).filter(|&states| states > 0 && case.schedules >= REVISITS * states)
 }
 
-/// Where an average schedule branches: `31 scheduling points with a choice; ready at
-/// them: Network 25, Sender 20; choices made: Network 3`.
 /// The machines ready at the most scheduling points with a choice, e.g. `Replica, Writer`.
 fn busiest_machines(machines: &[crate::checker::branching::MachineBranching]) -> String {
     let mut ms: Vec<_> = machines.iter().filter(|m| m.ready > 0.0).collect();
@@ -2232,6 +2224,8 @@ fn busiest_machines(machines: &[crate::checker::branching::MachineBranching]) ->
     ms.iter().take(3).map(|m| m.machine.as_str()).collect::<Vec<_>>().join(", ")
 }
 
+/// Where an average schedule branches: `31 scheduling points with a choice; ready at
+/// them: Network 25, Sender 20; choices made: Network 3`.
 fn branching_text(points: f64, machines: &[crate::checker::branching::MachineBranching]) -> String {
     let n = |x: f64| if x >= 9.95 { format!("{:.0}", x) } else { format!("{:.1}", x) };
     let list = |count: fn(&crate::checker::branching::MachineBranching) -> f64| {
@@ -2657,7 +2651,6 @@ fn replay(args: &[String], host: &mut dyn Host) -> i32 {
         return OK;
     }
     let mut cfg = snappea_config();
-    cfg.timeout = None;
     let rest = match sources(&mut cfg.input, &a.positional) {
         Ok(r) => r,
         Err(m) => return usage_error(host, &m, Some("replay")),
@@ -2817,19 +2810,31 @@ fn coverage(args: &[String], host: &mut dyn Host) -> i32 {
 
 const MERGE_OBSERVE_OPTS: &[Opt] = &[flag("stdin", None)];
 
+const MERGE_OBSERVE_HELP: &str = "\
+Usage: snappea coverage merge-observe [REPORT.json ...] [--stdin]
+
+Merges the coverage of `snappea observe` JSON results (or of merged ones) without
+loading P sources. Use it to combine observations from several processes or test
+runs. --stdin reads a JSON array of them.
+
+Example:
+  snappea coverage merge-observe reports/*.json --json-report suite.json
+";
+
 /// Merge portable observed reports without loading or executing P sources.
 fn merge_observe(args: &[String], host: &mut dyn Host) -> i32 {
+    const CMD: Option<&str> = Some("coverage merge-observe");
     use crate::checker::observe_report::ObserveCoverageReport;
     let a = match parse_args(args, MERGE_OBSERVE_OPTS) {
         Ok(a) => a,
-        Err(e) => return usage_error(host, &e, Some("coverage")),
+        Err(e) => return usage_error(host, &e, CMD),
     };
     if a.help {
-        host.write(Stream::Out, &format!("Usage: snappea coverage merge-observe [REPORT.json ...] [--stdin]\n\nMerges the coverage of `snappea observe` JSON results (or of merged ones) without\nloading P sources. Use it to combine observations from several processes or test\nruns. --stdin reads a JSON array of them.\n\nExample:\n  snappea coverage merge-observe reports/*.json --json-report suite.json\n\n{}", OUTPUT_HELP), None);
+        host.write(Stream::Out, &format!("{}\n{}", MERGE_OBSERVE_HELP, OUTPUT_HELP), None);
         return OK;
     }
     if a.positional.is_empty() && !a.has("stdin") {
-        return usage_error(host, "provide report files or --stdin", Some("coverage"));
+        return usage_error(host, "provide report files or --stdin", CMD);
     }
     let merge = |host: &mut dyn Host| -> Result<ObserveCoverageReport, String> {
         let mut merged = ObserveCoverageReport::default();
@@ -3005,11 +3010,11 @@ mod tests {
     fn automatic_defaults_and_timeout() {
         let mut cfg = snappea_config();
         assert_eq!(cfg.strategy, StrategyKind::Auto);
-        assert_eq!(cfg.timeout, Some(10));
+        assert_eq!((cfg.timeout, cfg.suite_budget), (None, Some(SUITE_BUDGET)));
         assert_eq!(cfg.iterations, 0);
         let args = parse_args(&["--timeout".into(), "30s".into()], CHECK_OPTS).unwrap();
         check_config(&args, &mut cfg).unwrap();
-        assert_eq!(cfg.timeout, Some(30));
+        assert_eq!((cfg.timeout, cfg.suite_budget), (Some(30), None));
     }
 
     #[test]

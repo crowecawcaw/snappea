@@ -1,7 +1,7 @@
 # Java helpers
 
 Check the events your Java code emits against P specs, in tests and in production.
-Java 17+. The **[Java guide](https://crowecawcaw.github.io/snappea/docs/java.html)** covers install (Maven and Gradle),
+Java 17+. The **[Java guide](https://snappea.dev/docs/java.html)** covers install (Maven and Gradle),
 the JUnit 5 extension, explicit checks, emitting, other processes, failures and every
 setting; the API reference is on [javadoc.io](https://javadoc.io/doc/io.github.crowecawcaw/snappea).
 The helpers run the `snappea observe` CLI; the rules every language helper follows are in
@@ -32,7 +32,7 @@ class InventoryTest {
 }
 ```
 
-[Install snippets](https://crowecawcaw.github.io/snappea/docs/java.html#install) cover the `snappea` dependency and its
+[Install snippets](https://snappea.dev/docs/java.html#install) cover the `snappea` dependency and its
 natives jar.
 
 ## From this repository

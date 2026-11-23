@@ -141,6 +141,8 @@ impl Model {
             text.push_str(crate::driver::lint::SUMMARY);
             return Err(config(text));
         }
+        // the time declarations `snappea observe` checks
+        crate::checker::time::declares_time(&analysis.program).map_err(config)?;
         Ok(Model { program: Arc::new(analysis.program), options: Options::default() })
     }
 

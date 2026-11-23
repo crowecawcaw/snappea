@@ -146,7 +146,7 @@ fn write_error(host: &mut dyn Host, msg: &str) {
 }
 
 /// Prints front-end diagnostics; returns true on success. With `upstream` they are printed
-/// as upstream's `Compiler.Compile` prints them, else as [`report_native`] does.
+/// as upstream's `Compiler.Compile` prints them, else as `report_native` does.
 pub fn report_result(
     host: &mut dyn Host,
     src: &Sources,

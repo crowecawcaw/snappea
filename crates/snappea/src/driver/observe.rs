@@ -25,12 +25,9 @@ use crate::driver::check::Style;
 use crate::host::{full_path, relative_path, Host, LiveInput};
 use crate::project;
 
-/// `PObserveExitStatus`.
-pub const EXIT_SUCCESS: i32 = 0;
-pub const EXIT_CMDLINE_ERROR: i32 = 1;
-pub const EXIT_ASSERTION: i32 = 2;
-pub const EXIT_INTERNAL_ERROR: i32 = 3;
-pub const EXIT_PARSE_LOG_ERROR: i32 = 4;
+pub use crate::checker::observe::{
+    EXIT_ASSERTION, EXIT_CMDLINE_ERROR, EXIT_INTERNAL_ERROR, EXIT_PARSE_LOG_ERROR, EXIT_SUCCESS,
+};
 
 /// What the logs are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -139,7 +139,7 @@ internal or unknown-event error, 4 parser errors only).
 key's last events (`--replay-window`), the failing one last; parser errors have none,
 their `message` is the log entry and `cause` says why it could not be read.
 
-The [Python guide](https://crowecawcaw.github.io/snappea/docs/python.html) builds on these to check specs from pytest.
+The [Python guide](https://snappea.dev/docs/python.html) builds on these to check specs from pytest.
 
 ## Log formats
 

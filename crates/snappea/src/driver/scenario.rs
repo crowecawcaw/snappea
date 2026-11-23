@@ -271,8 +271,7 @@ fn in_history_dir(p: &Path) -> bool {
 /// merged report. For each test case the report in the current run's folder wins over those
 /// in rotated history folders; unreadable reports are skipped with a message. Upstream
 /// reads `*_scenario_coverage.json` files; `snappea_files` adds `snappea check`'s
-/// `scenario_coverage.json`.
-/// Prints the merge of the scenario artifacts under `dir`; returns them as JSON.
+/// `scenario_coverage.json`. Returns the merged reports as JSON.
 pub fn merge_dir(host: &mut dyn Host, dir: &Path, snappea_files: bool) -> Vec<serde_json::Value> {
     let mut files: Vec<PathBuf> = Vec::new();
     list_files(host, dir, None, &mut files);

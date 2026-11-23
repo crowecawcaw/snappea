@@ -249,7 +249,7 @@ emit_at(row.commit_time, "eReserved", sku, json!({"order": order, "units": units
           <li>
             <code>recording.emitter()</code>: a cloneable <code>snappea::emit::Emitter</code> to inject into application
             code or move into threads, as in the explicit check above. It panics if used after{" "}
-            <code>verify()</code>.
+            <code>verify()</code> or after the recording is dropped.
           </li>
           <li>
             The global <code>snappea::emit::emit</code>: a recording binds the thread that creates it. Bind the scoped

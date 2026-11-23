@@ -163,8 +163,8 @@ snappea observe specs/inventory.p app.log --spec InventoryCorrect \
 declare are ignored. Use a path such as `"attrs"` for a nested payload. Limits:
 
 - The event name must be a string field holding the P event name exactly. It cannot
-  be derived from a message text or several fields. Lines whose name the spec
-  doesn't declare are ignored, as in section 7.
+  be derived from a message text or several fields. A line whose name the spec
+  doesn't declare is an error by default; see section 7.
 - Every line must be a JSON object with the event field. A plain-text line or one
   without the field is a parser error (exit 2): filter first (`jq -c 'select(.msg)'`)
   or send P events to their own log.

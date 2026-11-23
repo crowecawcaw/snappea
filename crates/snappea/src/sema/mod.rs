@@ -29,8 +29,8 @@ use analyzer::Analyzer;
 /// Analysis options.
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// Collect every error (upstream default) instead of stopping at the first one
-    /// (`--strict-errors`).
+    /// Collect every error (the default, as upstream) instead of stopping at the first
+    /// one.
     pub continue_on_error: bool,
     /// Accept PVerifier-only syntax.
     pub verifier: bool,

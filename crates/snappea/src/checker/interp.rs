@@ -498,7 +498,7 @@ impl<'p> Runtime<'p> {
         }
     }
 
-    /// The bug reported when an action runs longer than `--max-work-per-step` allows.
+    /// The bug reported when an action runs longer than `max_work_per_step` allows.
     #[cold]
     #[inline(never)]
     fn work_bound_exceeded(&mut self, actor: Actor) -> Fault {
@@ -511,7 +511,7 @@ impl<'p> Runtime<'p> {
         self.report_bug(msg).into()
     }
 
-    /// Calls a foreign function through the embedder's [`ForeignFunctions`].
+    /// Calls a foreign function through the embedder's [`ForeignFunctions`](crate::checker::foreign::ForeignFunctions).
     fn call_foreign(&mut self, actor: Actor, fun: crate::sema::FunId, args: &[Value]) -> Result<Value, Fault> {
         let prog = self.prog;
         let decl = prog.fun(fun);

@@ -42,7 +42,7 @@ pub struct Code {
 }
 
 /// Values no check depends on (see [`crate::checker::checked`]), which the
-/// program-state hash ([`crate::checker::statehash`]) leaves out: they cannot change how
+/// program-state hash (`checker::statehash`) leaves out: they cannot change how
 /// the program continues, so two states that differ only in them have the same futures.
 /// Without this, a write-only counter would make every state new, so the exhaustive
 /// search could neither finish nor close the cycle of a liveness bug.

@@ -135,7 +135,7 @@ impl<'a> Errors<'a> {
     }
 
     /// A `receive` case whose parameter does not match its event's payload: the upstream
-    /// message reads "got <payload>, expected <parameter>".
+    /// message reads `got <payload>, expected <parameter>`.
     pub fn receive_case_payload(
         &self,
         span: Span,

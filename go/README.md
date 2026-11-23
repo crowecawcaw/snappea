@@ -9,7 +9,7 @@ standard-library-only packages:
   code, in the test process or in processes a test starts; in production, write them
   as a log for `snappea observe`.
 
-The **[Go guide](https://crowecawcaw.github.io/snappea/docs/go.html)** covers setup, recordings, emitting, other
+The **[Go guide](https://snappea.dev/docs/go.html)** covers setup, recordings, emitting, other
 processes, failures and every option; the API reference is on
 [pkg.go.dev](https://pkg.go.dev/github.com/crowecawcaw/snappea/go/snappeatest). Both packages
 follow the [language helper requirements](../docs/language-support.md), and the runnable

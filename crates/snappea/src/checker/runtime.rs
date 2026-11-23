@@ -413,7 +413,6 @@ pub struct Config {
     pub inspection_trace: bool,
     pub max_unfair_steps: usize,
     pub max_fair_steps: usize,
-    pub liveness_enabled: bool,
     pub liveness_temperature_threshold: usize,
     pub fail_on_max_steps: bool,
     pub strategy: StrategyKind,
@@ -454,7 +453,6 @@ impl Default for Config {
             inspection_trace: false,
             max_unfair_steps: 10000,
             max_fair_steps: 100000,
-            liveness_enabled: true,
             liveness_temperature_threshold: 0,
             fail_on_max_steps: false,
             strategy: StrategyKind::Random,
@@ -681,7 +679,7 @@ impl Prefix {
 
 pub struct Runtime<'p> {
     pub(super) touched: Vec<bool>,
-    /// What the running step did beyond its machine's own state (see [`Footprint`]).
+    /// What the running step did beyond its machine's own state (see [`Footprint`](crate::checker::strategy::Footprint)).
     pub(crate) footprint: crate::checker::strategy::Footprint,
     /// See [`Buffers::spare_prefixes`].
     spare_prefixes: Vec<Prefix>,
@@ -1272,7 +1270,7 @@ impl<'p> Runtime<'p> {
     }
 
     fn check_liveness_temperatures(&mut self) -> Result<(), Stop> {
-        if !self.config.liveness_enabled || !self.strategy.is_fair() {
+        if !self.strategy.is_fair() {
             return Ok(());
         }
         let threshold = self.config.liveness_temperature_threshold;
@@ -1361,10 +1359,10 @@ impl<'p> Runtime<'p> {
             && m.state.is_some_and(|s| self.prog.state(s).temperature != Temperature::Cold)
     }
 
-    /// Whether liveness is checked and some liveness monitor is not in a cold state: a
+    /// Whether some liveness monitor is not in a cold state: a
     /// cycle through the current state could be a liveness bug.
     fn liveness_pending(&self) -> bool {
-        self.config.liveness_enabled && self.monitors.iter().any(|m| self.liveness_monitor(m))
+        self.monitors.iter().any(|m| self.liveness_monitor(m))
     }
 
     /// The transition since step `from` and the current state, for the fair-cycle
@@ -1378,9 +1376,6 @@ impl<'p> Runtime<'p> {
             enabled: infos.iter().filter(|o| o.enabled).map(|o| o.id).collect(),
             ..Default::default()
         };
-        if !self.config.liveness_enabled {
-            return facts;
-        }
         for (i, m) in self.monitors.iter().enumerate() {
             let decl = self.prog.machine(m.decl);
             if decl.is_scenario() || !decl.states.iter().any(|s| self.prog.state(*s).temperature == Temperature::Hot) {

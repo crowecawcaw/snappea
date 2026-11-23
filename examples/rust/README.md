@@ -36,7 +36,7 @@ structured violation (`key`, `events`, ...) for further assertions. The last tes
 shows that code emitting through the global `snappea::emit::emit` is checked too: the
 recording binds the test's thread.
 
-**Gotcha:** join worker threads and finish cleanup before `check`, which consumes
+**Gotcha:** join worker threads and finish cleanup before `verify`, which consumes
 the recording. Nothing is checked in `Drop`.
 
 ## 2. A checked fixture for ordinary tests

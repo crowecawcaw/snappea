@@ -241,6 +241,27 @@ impl TestReport {
         self.scenarios.last_mut().unwrap()
     }
 
+    /// Records a bug, keeping `bug_reports`, `bug_identities` and `bug_hot_specs` aligned.
+    fn push_bug(
+        &mut self,
+        report: String,
+        identity: Option<super::runtime::BugIdentity>,
+        hot: Vec<super::runtime::HotSpec>,
+    ) {
+        self.num_bugs += 1;
+        self.bug_reports.push(report);
+        self.bug_identities.push(identity);
+        self.bug_hot_specs.push(hot);
+    }
+
+    /// Keeps only the first `n` bugs.
+    fn truncate_bugs(&mut self, n: usize) {
+        self.num_bugs = self.num_bugs.min(n);
+        self.bug_reports.truncate(n);
+        self.bug_identities.truncate(n);
+        self.bug_hot_specs.truncate(n);
+    }
+
     /// Adds the statistics of another worker's schedules.
     pub fn merge(&mut self, other: TestReport) {
         self.num_bugs += other.num_bugs;
@@ -447,7 +468,7 @@ pub trait Output {
     fn schedule_bounded(&mut self, _hit: bool, _steps: usize) {}
     /// Schedule `schedule` (numbered as for [`Output::schedule_finished`]) reached
     /// coverage no earlier schedule of the run did, in any worker or search phase (see
-    /// [`WorkerPool::adds_behavior`]). `snappea check` uses it to stop a
+    /// `WorkerPool::adds_behavior`). `snappea check` uses it to stop a
     /// test case whose coverage stopped growing.
     fn schedule_novel(&mut self, _schedule: usize) {}
     /// Polled before every schedule; returning true stops exploration (timeouts).
@@ -559,6 +580,8 @@ pub struct CheckResult {
     pub branching: Option<crate::checker::branching::Branching>,
 }
 
+const NO_REPLAY_SCHEDULE: &str = "replay strategy needs a schedule";
+
 fn build_strategy(
     opts: &CheckerOptions,
     rng: &SharedRandom,
@@ -592,8 +615,8 @@ fn build_strategy(
                 has_hot,
                 exhaustive,
                 split,
-            )
-            .with_frontier_guidance(opts.feedback_frontier_guidance && !opts.upstream_feedback);
+                opts.feedback_frontier_guidance && !opts.upstream_feedback,
+            );
             let auto = if opts.value_classes { auto.with_value_classes() } else { auto };
             Box::new(if local_steps { auto.with_local_steps() } else { auto })
         }
@@ -629,7 +652,7 @@ fn build_strategy(
                 }
                 Box::new(s)
             }
-            None => return Err("replay strategy needs a schedule".into()),
+            None => return Err(NO_REPLAY_SCHEDULE.into()),
         },
     })
 }
@@ -878,7 +901,7 @@ impl<'p> Checker<'p> {
                     ))
                 }
             },
-            None if opts.latency_profile.is_some() => return Err("--latency-profile needs --latency".into()),
+            None if opts.latency_profile.is_some() => return Err("a latency profile needs a latency file: set `latency` too (`--latency <file>:<profile>`)".into()),
             None => None,
         };
         self.check_profile(profile.as_ref())?;
@@ -978,15 +1001,8 @@ impl<'p> Checker<'p> {
         let main = main?;
         let mut config = run_config(opts);
         config.strategy_description = Some(result.strategy_description.clone());
-        let trace = ScheduleTrace {
-            is_fair: false,
-            liveness_temperature_threshold: Some(config.liveness_temperature_threshold),
-            test_name: opts.record_test_name.then(|| tc.name.clone()),
-            time: time.map(|t| t.schedule_header()),
-            latency: time.and_then(|t| t.profile.as_ref()).map(|p| p.entries()).unwrap_or_default(),
-            lasso: Some(lasso),
-            steps,
-        };
+        let mut trace = ScheduleTrace { lasso: Some(lasso), steps, ..Default::default() };
+        stamp_header(&mut trace, tc, opts, &config, time);
         let mut strategy = ReplayStrategy::new(trace.clone());
         let setup = Setup {
             assignment: self.prog.test_case_assignment(tc),
@@ -1044,9 +1060,10 @@ impl<'p> Checker<'p> {
             return Err(format!("test case '{}' has no main machine", tc.name));
         };
         let assignment = prog.test_case_assignment(tc);
-        // reports a replay without a schedule before anything else
-        build_strategy(opts, &Rc::new(RefCell::new(RandomValueGenerator::new(opts.seed))), false, false, None, false)?;
         let is_replay = opts.strategy == StrategyKind::Replay;
+        if is_replay && opts.replay.is_none() {
+            return Err(NO_REPLAY_SCHEDULE.into());
+        }
         // a replay takes its time settings from the schedule file
         let time = match opts.replay.as_ref().filter(|_| is_replay).and_then(|t| t.time.as_ref().map(|h| (h, t))) {
             Some((header, t)) => {
@@ -1073,17 +1090,6 @@ impl<'p> Checker<'p> {
     /// `opts` are the options of the whole run. Stops early when `out` is cancelled or
     /// another worker of `pool` finds a bug.
     pub fn explore(
-        &self,
-        tc: &TestCase,
-        opts: &CheckerOptions,
-        pool: &WorkerPool,
-        index: usize,
-        out: &mut dyn Output,
-    ) -> Result<Exploration, String> {
-        self.explore_inner(tc, opts, pool, index, out)
-    }
-
-    fn explore_inner(
         &self,
         tc: &TestCase,
         opts: &CheckerOptions,
@@ -1350,10 +1356,7 @@ impl<'p> Checker<'p> {
                     false => Some(0),
                 });
                 if let (Some(b), Some(_)) = (&rt.bug, admitted) {
-                    r.num_bugs += 1;
-                    r.bug_reports.push(b.clone());
-                    r.bug_identities.push(rt.bug_identity.clone());
-                    r.bug_hot_specs.push(rt.bug_hot_specs().to_vec());
+                    r.push_bug(b.clone(), rt.bug_identity.clone(), rt.bug_hot_specs().to_vec());
                 }
                 if fair {
                     r.explored_fair_schedules += 1;
@@ -1405,11 +1408,7 @@ impl<'p> Checker<'p> {
                     }
                     let mut trace = rt.trace.clone();
                     trace.is_fair = fair;
-                    trace.liveness_temperature_threshold = Some(config.liveness_temperature_threshold);
-                    trace.test_name = if opts.record_test_name { Some(tc.name.clone()) } else { None };
-                    trace.time = time.as_ref().map(|t| t.schedule_header());
-                    trace.latency =
-                        time.as_ref().and_then(|t| t.profile.as_ref()).map(|p| p.entries()).unwrap_or_default();
+                    stamp_header(&mut trace, tc, opts, &config, time.as_ref());
                     let found = BugSchedule {
                         trace,
                         bound_hit_at: rt.bound_hit_at,
@@ -1526,7 +1525,7 @@ impl<'p> Checker<'p> {
         opts: &CheckerOptions,
         out: &mut dyn Output,
     ) -> Result<CheckResult, String> {
-        let part = self.explore_inner(tc, opts, &WorkerPool::new(1), 0, out)?;
+        let part = self.explore(tc, opts, &WorkerPool::new(1), 0, out)?;
         Ok(self.finish_run(tc, opts, vec![part], false))
     }
 
@@ -1545,11 +1544,11 @@ impl<'p> Checker<'p> {
             let repeat =
                 collect && first_bug.iter().chain(more_bugs.iter().map(|(_, b)| b)).any(|b| b.signature() == signature);
             if !repeat {
-                let report = &mut result.report;
-                report.num_bugs += 1;
-                report.bug_reports.push(bug.bug.clone().unwrap_or_default());
-                report.bug_identities.push(bug.identity.clone());
-                report.bug_hot_specs.push(bug.hot_specs.clone());
+                result.report.push_bug(
+                    bug.bug.clone().unwrap_or_default(),
+                    bug.identity.clone(),
+                    bug.hot_specs.clone(),
+                );
                 bug.report_text = result.report.text(opts, "<StrategyLog>");
                 result.schedule_trace.get_or_insert_with(|| bug.trace.to_text());
                 match first_bug {
@@ -1595,9 +1594,7 @@ impl<'p> Checker<'p> {
         if several && !opts.full_exploration && !collect {
             // the run ends at the first bug; one another worker hit before it stopped is not
             // reported (the reporting worker's bug comes first)
-            result.report.num_bugs = result.report.num_bugs.min(1);
-            result.report.bug_reports.truncate(1);
-            result.report.bug_identities.truncate(1);
+            result.report.truncate_bugs(1);
         }
         let Some(mut bug) = first_bug else { return result };
         if several {
@@ -1649,13 +1646,27 @@ impl<'p> Checker<'p> {
     }
 }
 
+/// Writes the header a `.schedule` file replays with: liveness threshold, test name and
+/// time settings.
+fn stamp_header(
+    trace: &mut ScheduleTrace,
+    tc: &TestCase,
+    opts: &CheckerOptions,
+    config: &super::runtime::Config,
+    time: Option<&crate::checker::time::TimeOptions>,
+) {
+    trace.liveness_temperature_threshold = Some(config.liveness_temperature_threshold);
+    trace.test_name = opts.record_test_name.then(|| tc.name.clone());
+    trace.time = time.map(|t| t.schedule_header());
+    trace.latency = time.and_then(|t| t.profile.as_ref()).map(|p| p.entries()).unwrap_or_default();
+}
+
 /// The runtime configuration of a run with `opts`.
 pub(super) fn run_config(opts: &CheckerOptions) -> Config {
     Config {
         inspection_trace: opts.inspection_trace,
         max_unfair_steps: opts.max_unfair_steps,
         max_fair_steps: opts.max_fair_steps,
-        liveness_enabled: true,
         liveness_temperature_threshold: opts.effective_liveness_threshold(),
         fail_on_max_steps: opts.fail_on_max_steps,
         strategy: opts.strategy,

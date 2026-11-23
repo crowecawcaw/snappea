@@ -24,7 +24,8 @@
 //! snappea = { version = "0.2", default-features = false, features = ["test"] }
 //! ```
 //!
-//! The checker library is [`syntax`] (parser), [`sema`] (type checker), [`checker`]
+//! The checker library is [`syntax`] (parser), [`sema`] (type checker), [`lint`] (model
+//! lint rules), [`checker`]
 //! (systematic testing and log checking), [`project`] (`.pproj` files and P sources),
 //! [`driver`] (the check and observe commands, over a [`host`]) and [`compat`] (upstream
 //! P's command line on top of [`driver`]).
@@ -38,6 +39,9 @@ pub mod test;
 
 #[cfg(feature = "checker")]
 pub use snappea_syntax as syntax;
+
+#[cfg(feature = "checker")]
+pub use snappea_lint as lint;
 
 #[cfg(feature = "checker")]
 pub mod sema;

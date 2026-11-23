@@ -209,7 +209,7 @@ the rest of the test, so the deliberate violation is not reported twice.
 
 Match Python's format: the spec's message; the violating key's last events (up to 20)
 with `src` and a marker on the failing event (or "events ended here" for liveness); the
-P assert location; the artifacts path. Example in the [Python guide](https://crowecawcaw.github.io/snappea/docs/python.html#failures).
+P assert location; the artifacts path. Example in the [Python guide](https://snappea.dev/docs/python.html#failures).
 
 ### Event inputs
 

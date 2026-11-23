@@ -1,5 +1,5 @@
 # The Python package: `emit` for application code, `check_spec` for tests, a pytest
-# plugin, and the `snappea` binary itself. See https://crowecawcaw.github.io/snappea/docs/python.html.
+# plugin, and the `snappea` binary itself. See https://snappea.dev/docs/python.html.
 #
 #   pip install ./python          # builds the binary with cargo
 #   maturin build -m python/pyproject.toml --release   # a wheel
@@ -26,7 +26,7 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/crowecawcaw/snappea"
-Documentation = "https://crowecawcaw.github.io/snappea/docs/python.html"
+Documentation = "https://snappea.dev/docs/python.html"
 
 [project.entry-points.pytest11]
 snappea = "snappea.pytest_plugin"

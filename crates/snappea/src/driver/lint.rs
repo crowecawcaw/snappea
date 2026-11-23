@@ -9,13 +9,6 @@ use crate::syntax::{ParseError, SourceMap};
 use serde_json::{json, Value};
 use snappea_lint::{Finding, SuppressionUse, TestIntent, UNUSED_SUPPRESSION};
 
-/// Print all unsuppressed findings and return the blocking count. Does not execute models or write artifacts.
-pub fn run(host: &mut dyn Host, sources: &Sources, prog: &Program) -> Result<usize, Exit> {
-    let sm = sources.source_map();
-    let findings = shown(findings(host, &sm, prog)?, false);
-    Ok(report(host, &sm, &findings, false))
-}
-
 /// The findings a run reports: all of them with `strict`, else only the blocking ones.
 /// Advisory findings rarely change a model, so they are off unless asked for.
 pub fn shown(mut findings: Vec<Finding>, strict: bool) -> Vec<Finding> {
@@ -57,21 +50,13 @@ fn collect(
             })
         });
     }
-    let marked = snappea_lint::driver_machines(sm).unwrap_or_default();
-    let drivers = crate::checker::driver_facts::driver_machines(prog, sm, &marked);
+    let drivers = crate::checker::driver_facts::driver_machines(prog, sm);
     let positive: Vec<_> =
         tests.iter().filter(|tc| intent(prog, tc, intents).is_none_or(|i| i.expected_bug.is_none())).cloned().collect();
     let mut program: Vec<Finding> =
         crate::checker::checked::lints_with_progress_tests(prog, tests, &positive, &drivers)
             .into_iter()
             .filter(|f| !f.span.is_dummy())
-            .map(|f| {
-                let finding = Finding::new(f.rule, f.span, f.message);
-                match f.help {
-                    Some(help) => finding.with_help(help),
-                    None => finding,
-                }
-            })
             .collect();
     used.extend(snappea_lint::suppress_program_findings(sm, &mut program).unwrap_or_default());
     findings.extend(program);
@@ -177,16 +162,6 @@ fn reported_at(rule: &str) -> &'static str {
         "shared-spec-helper" => "the helper function declaration",
         _ => "the declaration or statement the finding points at",
     }
-}
-
-/// Lints `sources` before a check. With [`Gate::Deny`] findings print as errors and fail
-/// (exit status 2); advisory rules always warn. With [`Gate::Warn`] all print as warnings
-/// and the check goes on. Returns how many findings there were.
-pub fn gate(host: &mut dyn Host, sources: &Sources, prog: &Program, gate: Gate) -> Result<usize, Exit> {
-    gate_selected(host, sources, prog, gate, false, &prog.test_cases(), &[]).map_err(|e| {
-        e.print(host, &sources.source_map());
-        e.exit
-    })
 }
 
 /// Blocking lint findings fail a check, or the sources did not parse: the exit status,
@@ -308,8 +283,8 @@ pub fn intent<'a>(prog: &Program, test: &TestCase, intents: &'a [TestIntent]) ->
     }
 }
 
-/// Like [`run`], with only the rules that apply when checking logs against specs
-/// ([`snappea_lint::OBSERVATION_RULES`]).
+/// Prints the unsuppressed findings of the rules that apply when checking logs against
+/// specs ([`snappea_lint::OBSERVATION_RULES`]) and returns the blocking count.
 pub fn run_observation(host: &mut dyn Host, sm: &SourceMap) -> Result<usize, Exit> {
     let findings = snappea_lint::lint_observation(sm).map_err(|e| syntax_error(host, sm, e))?;
     Ok(report(host, sm, &findings, false))
@@ -325,7 +300,7 @@ fn syntax_error(host: &mut dyn Host, sm: &SourceMap, e: ParseError) -> Exit {
 
 /// The likely fix for finding `f`, then, for a rule that can be suppressed, how to
 /// suppress an intended one.
-pub fn help(f: &Finding) -> String {
+fn help(f: &Finding) -> String {
     let rule = f.rule;
     let general = match rule {
         // these are about the suppression comments themselves: fix them

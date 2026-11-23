@@ -279,8 +279,8 @@ these statistics does not change state hashing, scheduling choices, or search li
 ### What fails a check
 
 Exit status: 0 nothing failed; 1 a bug, a required coverage gap, an undetected
-mutant or, with --strict, an untested one; 2 an error, or blocking lint findings
-with no bug.
+mutant or, with --strict or --deny mutation, an untested one; 2 an error, or
+blocking lint findings with no bug.
 
 Besides bugs, `snappea check` reports three kinds of findings. Each one either fails
 the check or is reported as a warning:
@@ -700,7 +700,7 @@ Unified scenario coverage across 1 test case:
   state other than its start), summed over the test cases.
 - **satisfying timelines**: distinct timelines among those schedules, summed over the
   test cases. A timeline abstracts a schedule by the order in which each machine received
-  its events (`--timeline-repr`), so schedules that differ only in unrelated
+  its events, so schedules that differ only in unrelated
   interleavings count once.
 - **best progress anywhere N/M states**: the most distinct states of the scenario that
   one schedule entered, out of its M states.

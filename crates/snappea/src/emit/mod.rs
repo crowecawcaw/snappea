@@ -113,7 +113,7 @@ impl Event {
     /// An event stamped now (or at `at`) with the next sequence number, recording the
     /// caller as `src`. Times from the wall clock never decrease within a process.
     #[track_caller]
-    pub fn new(at: Option<Time>, event: &str, key: impl fmt::Display, payload: Value) -> Event {
+    pub(crate) fn new(at: Option<Time>, event: &str, key: impl fmt::Display, payload: Value) -> Event {
         let caller = std::panic::Location::caller();
         let (time, seq) = stamp(at);
         Event {
@@ -355,6 +355,7 @@ impl Inner {
     }
 
     /// Writes an already stamped event.
+    #[cfg(feature = "test")]
     fn send(&self, event: Event) {
         let mut sink = self.sink.lock().unwrap_or_else(|e| e.into_inner());
         Inner::deliver(&mut sink, &self.dropped, event);
@@ -498,6 +499,7 @@ pub fn close() {
 /// this process, else to the sink set with [`set_sink`], else nowhere.
 #[track_caller]
 pub fn emit(event: &str, key: impl fmt::Display, payload: impl serde::Serialize) {
+    #[cfg(feature = "test")]
     if test_hook::ROUTING.load(Ordering::Relaxed) {
         return test_hook::route(None, event, key, payload);
     }
@@ -509,6 +511,7 @@ pub fn emit(event: &str, key: impl fmt::Display, payload: impl serde::Serialize)
 /// [`emit`] at a given time instead of the wall clock.
 #[track_caller]
 pub fn emit_at(at: impl Into<Time>, event: &str, key: impl fmt::Display, payload: impl serde::Serialize) {
+    #[cfg(feature = "test")]
     if test_hook::ROUTING.load(Ordering::Relaxed) {
         return test_hook::route(Some(at.into()), event, key, payload);
     }
@@ -518,7 +521,9 @@ pub fn emit_at(at: impl Into<Time>, event: &str, key: impl fmt::Display, payload
 }
 
 /// Lets `snappea::test` recordings receive the events application code emits through the
-/// global [`emit`].
+/// global [`emit`]. Without the `test` feature nothing can open a recording, so [`emit`]
+/// does not check for one.
+#[cfg(feature = "test")]
 pub(crate) mod test_hook {
     use super::*;
 
@@ -532,7 +537,6 @@ pub(crate) mod test_hook {
 
     /// Installs `router` (the first call wins) and turns routing on or off. While off,
     /// [`emit`] costs one more atomic load.
-    #[cfg(feature = "test")]
     pub(crate) fn set_routing(router: Router, on: bool) {
         let _ = ROUTER.set(router);
         ROUTING.store(on, Ordering::Relaxed);

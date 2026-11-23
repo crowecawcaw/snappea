@@ -8,12 +8,18 @@ fn source(sm: &SourceMap, span: Span) -> Value {
     json!({"file": loc.file, "line": loc.line, "col": loc.col, "text": sm.text(span)})
 }
 
-pub fn inspect(files: &BTreeMap<String, String>) -> Result<Value, String> {
+/// The machines, events and tests of the `.p` files in `files`, named relative to `cwd`.
+pub fn inspect(files: &BTreeMap<String, String>, cwd: &str) -> Result<Value, String> {
     let mut sm = SourceMap::new();
     let mut programs = Vec::new();
+    let prefix = format!("{}/", cwd.trim_end_matches('/'));
     for (path, text) in files.iter().filter(|(p, _)| p.ends_with(".p")) {
-        let id = sm.add(path.trim_start_matches("/work/"), text);
-        programs.push(syntax::parse(id, text).map_err(|e| format!("{path}: {e:?}"))?);
+        let id = sm.add(path.strip_prefix(&prefix).unwrap_or(path), text);
+        let program = syntax::parse(id, text).map_err(|e| {
+            let at = sm.location(e.span);
+            format!("{}:{}:{}: {e}", at.file.unwrap_or_else(|| path.clone()), at.line, at.col)
+        })?;
+        programs.push(program);
     }
     let globals: Vec<&FunDecl> = programs
         .iter()
@@ -233,7 +239,7 @@ mod tests {
         } test tc [main=Main]: {Main};"#
                 .into(),
         )]);
-        let v = inspect(&files).unwrap();
+        let v = inspect(&files, "/work").unwrap();
         assert_eq!(v["machines"][0]["states"].as_array().unwrap().len(), 2);
         assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["state"], "Done");
         assert_eq!(v["machines"][0]["states"][0]["actions"][0]["targets"][0]["conditional"], true);
@@ -245,6 +251,7 @@ mod tests {
     }
     #[test]
     fn invalid_edits_do_not_produce_a_partial_diagram() {
-        assert!(inspect(&BTreeMap::from([("broken.p".into(), "machine Main {".into())])).is_err());
+        let e = inspect(&BTreeMap::from([("/work/broken.p".into(), "machine Main {".into())]), "/work").unwrap_err();
+        assert!(e.starts_with("broken.p:1:"), "{e}");
     }
 }

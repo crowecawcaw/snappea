@@ -45,8 +45,8 @@ pub struct SetupError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// Bad options or config, missing spec files, P compile errors, unknown spec name,
-    /// emitting into a recording that was already checked.
+    /// Bad options or config, missing spec files, P compile errors, unknown spec name, or
+    /// a global emit on an unbound thread while several recordings are open.
     Config,
     /// An event line or payload the core cannot read (including truncated lines).
     Parser,

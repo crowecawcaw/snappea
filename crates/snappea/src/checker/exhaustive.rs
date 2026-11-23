@@ -3,12 +3,12 @@
 //! The search is a depth-first search over the choice points the runtime already
 //! controls: which operation runs at a scheduling point, and every `$`/`choose` value.
 //! A schedule reaches the branch being explored by resuming from a saved prefix of the
-//! path when one matches ([`ExhaustiveStrategy::resume_initial_prefix`]), or else by re-running the
+//! path when one matches (`ExhaustiveStrategy::resume_initial_prefix`), or else by re-running the
 //! test from the start and replaying the path's choices; then it takes the next untried
 //! alternative there.
 //!
 //! Visited-state caching cuts the search down: at every scheduling point the program
-//! state is hashed ([`crate::checker::statehash`]) and a schedule stops when it reaches a state
+//! state is hashed (`checker::statehash`) and a schedule stops when it reaches a state
 //! that was already reached at the same or a smaller depth, since everything after it is
 //! (or is being) explored from the earlier visit. Remembering the smallest depth keeps the
 //! search complete under the depth bound.
@@ -20,10 +20,10 @@
 //!
 //! - A schedule that returns to a state on its own path closes a lasso, and the runtime
 //!   reports it as a liveness bug at once when a hot monitor stays out of cold states
-//!   through the cycle and the cycle alone is fair ([`ExhaustiveStrategy::closed_cycle`]).
+//!   through the cycle and the cycle alone is fair (`ExhaustiveStrategy::closed_cycle`).
 //!   This finds a simple livelock on the first schedule that closes it.
 //! - Every other cycle is pruned, so the verdict comes from the fair-cycle analysis
-//!   ([`crate::checker::fairness`]): with hot monitor states, the search records the graph
+//!   (`checker::fairness`): with hot monitor states, the search records the graph
 //!   of states where a liveness monitor is not cold (`ExhaustiveStrategy::with_live_graph`)
 //!   and, once it has explored every state, looks for a fair cycle in it that keeps a
 //!   monitor hot, possibly made of several loops. Pruning by the state cache loses no
@@ -74,9 +74,6 @@ pub struct SearchStats {
     pub distinct_states: usize,
     /// Schedules cut short at an already explored state.
     pub pruned_schedules: usize,
-    /// Alternatives the local-step reduction never tried: each would have led, a step
-    /// or more later, to a state the search reaches anyway.
-    pub skipped_alternatives: usize,
     /// Choice points at which the search had more than one alternative to try.
     pub branching_choices: usize,
     /// Prunes that return to a state on the current execution path, rather than
@@ -89,7 +86,7 @@ pub struct SearchStats {
     /// a bug ([`SearchStats::liveness_verified`]).
     pub live_cycle_prunes: usize,
     /// The fair-cycle analysis of the finished search found no fair cycle that keeps a
-    /// liveness monitor out of its cold states (see [`crate::checker::fairness`]).
+    /// liveness monitor out of its cold states (see `checker::fairness`).
     pub liveness_verified: bool,
     /// Why liveness was not verified, when the analysis could not decide.
     pub liveness_note: Option<String>,
@@ -398,7 +395,7 @@ impl ExhaustiveStrategy {
 
     /// Records the graph of states where a liveness monitor is not cold, up to `limit`
     /// states and transitions, for the fair-cycle analysis that decides liveness once the
-    /// search is over (see [`crate::checker::fairness`]).
+    /// search is over (see `checker::fairness`).
     pub(crate) fn with_live_graph(mut self, limit: usize) -> Self {
         self.graph = Some(LiveGraph::new(limit));
         self
@@ -628,7 +625,6 @@ impl Strategy for ExhaustiveStrategy {
             }
             let c = self.path.pop().unwrap();
             self.retained -= c.options.len();
-            self.stats.skipped_alternatives += c.withheld.len();
         }
         self.stats.finished = true;
         false
@@ -760,7 +756,6 @@ impl SearchStats {
         self.auto_handoffs.sort_by_key(|h| h.worker);
         self.distinct_states += other.distinct_states;
         self.pruned_schedules += other.pruned_schedules;
-        self.skipped_alternatives += other.skipped_alternatives;
         self.branching_choices += other.branching_choices;
         self.cycle_prunes += other.cycle_prunes;
         self.live_cycle_prunes += other.live_cycle_prunes;

@@ -112,7 +112,9 @@ pub struct CheckConfig {
     pub max_fair_steps: usize,
     pub user_set_max_fair_steps: bool,
     pub fail_on_max_steps: bool,
-    pub liveness_threshold: usize,
+    /// Steps a spec may stay hot before it is a liveness bug; `None` is half of
+    /// `max_fair_steps`. A replay takes it from the schedule.
+    pub liveness_threshold: Option<usize>,
     /// Timeout in seconds; `None` disables it.
     pub timeout: Option<u32>,
     /// This test case's share of a time budget for all of them, in seconds. Replaces
@@ -200,7 +202,7 @@ impl Gates {
             "coverage" => self.coverage = gate,
             "mutation" => self.mutation = gate,
             "all" => (self.lint, self.coverage, self.mutation) = (gate, gate, gate),
-            _ => return Err(format!("unknown check '{}': use lint, coverage, mutation or all", name)),
+            _ => return Err(format!("unknown check '{}': use {} or all", name, Self::CHECKS.join(", "))),
         }
         if name == "mutation" || name == "all" {
             self.mutation_complete = gate == Gate::Deny;
@@ -237,7 +239,7 @@ impl Default for CheckConfig {
             max_fair_steps: 100000,
             user_set_max_fair_steps: false,
             fail_on_max_steps: false,
-            liveness_threshold: 0,
+            liveness_threshold: None,
             timeout: None,
             time_share: None,
             suite_budget: None,
@@ -279,9 +281,6 @@ pub fn finish_options(cfg: &mut CheckConfig) {
         if !cfg.user_set_iterations {
             cfg.iterations = 0;
         }
-    }
-    if cfg.liveness_threshold == 0 && cfg.max_fair_steps > 0 {
-        cfg.liveness_threshold = cfg.max_fair_steps / 2;
     }
 }
 
@@ -480,7 +479,7 @@ pub fn replay(
     trace: ScheduleTrace,
 ) -> Result<Replayed, Exit> {
     if let Some(t) = trace.liveness_temperature_threshold {
-        cfg.liveness_threshold = t;
+        cfg.liveness_threshold = Some(t);
     }
     let mut opts = engine_options(cfg, 0);
     opts.replay = Some(trace);
@@ -550,7 +549,7 @@ pub(crate) fn engine_options(cfg: &CheckConfig, seed: u32) -> CheckerOptions {
         max_unfair_steps: cfg.max_unfair_steps,
         max_fair_steps: cfg.max_fair_steps,
         user_set_max_fair_steps: cfg.user_set_max_fair_steps,
-        liveness_temperature_threshold: Some(cfg.liveness_threshold),
+        liveness_temperature_threshold: cfg.liveness_threshold,
         fail_on_max_steps: cfg.fail_on_max_steps,
         strategy_bound: cfg.strategy_bound,
         upstream_feedback: cfg.style == Style::Upstream,
@@ -630,7 +629,7 @@ impl MemoryGuard {
     const INTERVAL: f64 = 0.05;
 
     /// The memory use, when it has reached [`MEMORY_STOP_SHARE`] of the limit. Reads it
-    /// at most every [`Self::INTERVAL`]; `None` on a host that cannot tell.
+    /// at most every `Self::INTERVAL`; `None` on a host that cannot tell.
     pub fn check(&mut self, host: &dyn Host) -> Option<MemoryStop> {
         let now = host.now();
         if self.checked_at.is_some_and(|t| now >= t && now - t < Self::INTERVAL) {
@@ -1002,9 +1001,7 @@ pub fn testing_process(host: &mut dyn Host, loaded: &Loaded, cfg: &CheckConfig) 
     }
     if cfg.driver_limits {
         let sources = loaded.sources.source_map();
-        let marked = snappea_lint::driver_machines(&sources).unwrap_or_default();
-        opts.driver_machines =
-            Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources, &marked));
+        opts.driver_machines = Some(crate::checker::driver_facts::driver_machines(&loaded.analysis.program, &sources));
     }
     let engine_start = host.now();
     let deadline = match cfg.time_share {

@@ -967,9 +967,6 @@ impl FeedbackGuidedStrategy {
 }
 
 impl Strategy for FeedbackGuidedStrategy {
-    fn enable_frontier_guidance(&mut self) {
-        self.frontiers = Some(Frontiers::default());
-    }
     fn wants_frontiers(&self) -> bool {
         self.frontiers.is_some()
     }

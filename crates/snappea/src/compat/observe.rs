@@ -168,7 +168,8 @@ const USAGE: &str = "Usage: p observe [options]
       Possible Values: [JSON, TEXT, SERIALIZEDEVENTS]
     --strict
       Require at least one successfully checked relevant event per selected spec.
-      Applied after key filtering, at EOF for live input; does not imply --check-hot.
+      Applied after key filtering, at EOF for live input; does not imply --check-hot
+      (snappea extension)
     --unknown-events
       Event names no P source declares: ignore, warn or error (snappea extension)
       Default: ignore
@@ -794,6 +795,21 @@ fn java_percent_f(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usage_lists_exactly_the_accepted_options() {
+        let listed: Vec<String> = USAGE
+            .lines()
+            .filter_map(|l| l.strip_prefix("    -").filter(|_| !l.starts_with("     ")))
+            .map(|l| format!("-{}", l.trim_end()))
+            .collect();
+        let accepted: Vec<String> = OPTIONS.iter().map(|(names, _)| names.join(", ")).collect();
+        let mut missing: Vec<_> = accepted.iter().filter(|o| !listed.contains(o)).collect();
+        let mut extra: Vec<_> = listed.iter().filter(|o| !accepted.contains(o)).collect();
+        missing.sort();
+        extra.sort();
+        assert!(missing.is_empty() && extra.is_empty(), "not in USAGE: {missing:?}; not accepted: {extra:?}");
+    }
 
     #[test]
     fn replay_names() {

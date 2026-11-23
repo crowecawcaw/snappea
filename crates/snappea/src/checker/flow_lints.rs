@@ -195,11 +195,7 @@ pub fn waiting_machines(
     out
 }
 
-/// See the module documentation.
-pub fn lints(prog: &Program, drivers: &[bool], out: &mut Vec<Finding>) {
-    lints_for_tests(prog, &prog.test_cases(), drivers, out);
-}
-
+/// The findings of the module documentation, for the test cases `tests`.
 pub fn lints_for_tests(prog: &Program, tests: &[crate::sema::TestCase], drivers: &[bool], out: &mut Vec<Finding>) {
     unplanned_driver_stage(prog, tests, drivers, out);
     unreachable_statements(prog, out);

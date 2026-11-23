@@ -120,8 +120,8 @@ fn text_offset(f: &crate::syntax::SourceFile, offset: u32) -> u32 {
     before.rfind('\n').map_or(before.len(), |i| before.len() - i - 1) as u32
 }
 
-/// Collects errors. In collecting mode (`continue_on_error`) reporting appends; in strict mode
-/// (`--strict-errors`) the first error is returned as `Err` so analysis aborts.
+/// Collects errors. In collecting mode (`continue_on_error`) reporting appends; otherwise
+/// the first error is returned as `Err` so analysis aborts.
 #[derive(Debug, Default)]
 pub(crate) struct Diagnostics {
     pub errors: Vec<Diagnostic>,
