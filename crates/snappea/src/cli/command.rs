@@ -853,7 +853,9 @@ mod tests {
     fn automatic_defaults_and_timeout() {
         let (mut cfg, mut suite) = (CheckConfig::snappea(), SuiteConfig::default());
         assert_eq!(cfg.strategy, StrategyKind::Auto);
-        assert_eq!((cfg.timeout, suite.budget), (None, Some(check::SUITE_BUDGET)));
+        // the preset alone stops (library callers); the suite budget overrides it
+        assert_eq!(cfg.timeout.map(f64::from), suite.budget);
+        assert_eq!(suite.budget, Some(check::SUITE_BUDGET));
         assert_eq!(cfg.iterations, 0);
         let args = parse_args(&["--timeout".into(), "30s".into()], CHECK_OPTS).unwrap();
         check_config(&args, &mut cfg, &mut suite).unwrap();

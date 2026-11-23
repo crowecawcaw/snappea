@@ -87,6 +87,8 @@ pub struct CheckConfig {
     pub output_path: String,
     /// Output directory with a trailing separator, as upstream builds it.
     pub output_directory: String,
+    /// Names the output folder. PEx's exhaustive search is set by `strategy`, as
+    /// `snappea-compat check --mode pex` does.
     pub mode: Mode,
     pub test_case_name: String,
     pub strategy: StrategyKind,
@@ -276,11 +278,15 @@ impl CheckConfig {
     }
 
     /// Checks as `snappea check` does: its output layout, the automatic strategy until
-    /// coverage stops growing, coverage and driver reports, up to [`MAX_BUGS`] failures,
-    /// and `<IncludeProject>` paths resolved against the including project file.
+    /// coverage stops growing or [`SUITE_BUDGET`] seconds pass, coverage and driver
+    /// reports, up to [`MAX_BUGS`] failures, and `<IncludeProject>` paths resolved against
+    /// the including project file.
     pub fn snappea() -> CheckConfig {
         let mut cfg = CheckConfig {
             style: Style::Snappea,
+            // the automatic strategy has no schedule limit: without one a bug-free model
+            // with unbounded state would check forever
+            timeout: Some(SUITE_BUDGET as u32),
             code_coverage: true,
             driver_limits: true,
             strategy: StrategyKind::Auto,

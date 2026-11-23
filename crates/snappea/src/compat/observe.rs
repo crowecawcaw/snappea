@@ -452,9 +452,12 @@ fn parse_args(args: &[String], host: &mut dyn Host) -> Result<Option<PObserveCon
         return Ok(None);
     }
     let valid = cfg.core.validate();
-    // JCommander reports a missing required option before PObserveConfig's own checks
-    if valid == Err(ConfigError::NoSpecs) {
-        return Err(message(ConfigError::NoSpecs));
+    // JCommander reports a missing required option before PObserveConfig's own checks;
+    // the other spec selection rules follow it, before the input mode
+    if let Err(e @ (ConfigError::NoSpecs | ConfigError::SpecsWithAllSpecs | ConfigError::ExcludeWithoutAllSpecs)) =
+        valid
+    {
+        return Err(message(e));
     }
     // PObserveConfig.validateAndLoadPObserveConfig
     if socket_mode {

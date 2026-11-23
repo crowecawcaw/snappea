@@ -422,6 +422,12 @@ fn spec_selection_errors() {
         (&["--spec", "MutualExclusion", "--all-specs"], "'--spec' and '--all-specs' cannot be combined"),
         (&["--spec", "MutualExclusion", "--exclude-specs", "X"], "--exclude-specs needs --all-specs."),
         (&["--all-specs", "--exclude-specs", "Nope"], "--exclude-specs: there is no spec named Nope."),
+        // spec selection is reported before the input mode
+        (&["--spec", "MutualExclusion", "--exclude-specs", "X", "--stdin"], "--exclude-specs needs --all-specs."),
+        (
+            &["--spec", "MutualExclusion", "--all-specs", "--socket-mode"],
+            "'--spec' and '--all-specs' cannot be combined",
+        ),
     ];
     for (args, msg) in cases {
         let args: Vec<&str> = args.iter().copied().chain(["-pf", "lock.p", "-l", "run.log"]).collect();
