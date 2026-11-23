@@ -739,17 +739,17 @@ fn unknown_command(c: &str) -> String {
     m
 }
 
-/// Splits positionals into the sources (`.pproj`, `.p`) and the rest.
-fn sources(cfg: &mut CheckConfig, positional: &[String]) -> Result<Vec<String>, String> {
+/// Splits positionals into the sources (`.pproj`, `.p`), which it adds to `input`, and the rest.
+pub(super) fn sources(input: &mut crate::project::Input, positional: &[String]) -> Result<Vec<String>, String> {
     let mut rest = Vec::new();
     for a in positional {
         if a.to_lowercase().ends_with(".pproj") {
-            if let Some(p) = &cfg.input.pproj {
+            if let Some(p) = &input.pproj {
                 return Err(format!("two project files given: '{}' and '{}'; pass one .pproj", p, a));
             }
-            cfg.input.pproj = Some(a.clone());
+            input.pproj = Some(a.clone());
         } else if is_source(a) {
-            cfg.input.pfiles.push(a.clone());
+            input.pfiles.push(a.clone());
         } else {
             rest.push(a.clone());
         }
@@ -757,28 +757,7 @@ fn sources(cfg: &mut CheckConfig, positional: &[String]) -> Result<Vec<String>, 
     Ok(rest)
 }
 
-/// Whether `name` matches the glob `pattern` (`*`: any characters, `?`: one).
-fn glob_match(pattern: &str, name: &str) -> bool {
-    let (p, n): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
-    let (mut pi, mut ni) = (0, 0);
-    let mut star: Option<(usize, usize)> = None;
-    while ni < n.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == n[ni]) {
-            pi += 1;
-            ni += 1;
-        } else if pi < p.len() && p[pi] == '*' {
-            star = Some((pi, ni));
-            pi += 1;
-        } else if let Some((sp, sn)) = star {
-            pi = sp + 1;
-            ni = sn + 1;
-            star = Some((sp, sn + 1));
-        } else {
-            return false;
-        }
-    }
-    p[pi..].iter().all(|&c| c == '*')
-}
+use crate::checker::observe_inputs::glob_match;
 
 /// The test cases matching `patterns` (all for none), in declaration order.
 fn select_tests(names: &[String], patterns: &[String]) -> Result<Vec<String>, String> {
@@ -847,7 +826,7 @@ fn lint(args: &[String], host: &mut dyn Host) -> i32 {
     let mut cfg = snappea_config();
     // nothing runs, so foreign code is not left out of a check
     cfg.ignore_foreign_files = true;
-    match sources(&mut cfg, &a.positional) {
+    match sources(&mut cfg.input, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
         Ok(rest) => {
             let m = format!(
@@ -1016,7 +995,7 @@ fn mutation_timeout(a: &Args) -> Result<Option<u32>, String> {
 
 /// Fills `cfg` from the `check` options; returns the test patterns.
 fn check_config(a: &Args, cfg: &mut CheckConfig) -> Result<Vec<String>, String> {
-    let patterns = sources(cfg, &a.positional)?;
+    let patterns = sources(&mut cfg.input, &a.positional)?;
     cfg.strategy = StrategyKind::Auto;
     cfg.iterations = 0;
     cfg.user_set_iterations = false;
@@ -2678,7 +2657,7 @@ fn replay(args: &[String], host: &mut dyn Host) -> i32 {
     }
     let mut cfg = snappea_config();
     cfg.timeout = None;
-    let rest = match sources(&mut cfg, &a.positional) {
+    let rest = match sources(&mut cfg.input, &a.positional) {
         Ok(r) => r,
         Err(m) => return usage_error(host, &m, Some("replay")),
     };
@@ -2763,7 +2742,7 @@ fn tests(args: &[String], host: &mut dyn Host) -> i32 {
     let mut cfg = snappea_config();
     // nothing runs, so foreign code is not left out of a check
     cfg.ignore_foreign_files = true;
-    match sources(&mut cfg, &a.positional) {
+    match sources(&mut cfg.input, &a.positional) {
         Ok(rest) if rest.is_empty() => {}
         Ok(rest) => {
             return usage_error(
@@ -2988,17 +2967,6 @@ mod tests {
         assert_eq!(unproved(1, 0), "1 test case not proved: 1 settled");
         assert_eq!(unproved(3, 1), "3 test cases not proved: 2 settled, 1 not settled");
         assert_eq!(capitalized("no bug"), "No bug");
-    }
-
-    #[test]
-    fn globs() {
-        assert!(glob_match("tc*", "tcA"));
-        assert!(glob_match("*B", "tcB"));
-        assert!(glob_match("t?A", "tcA"));
-        assert!(glob_match("tcA", "tcA"));
-        assert!(!glob_match("tc", "tcA"));
-        assert!(glob_match("*a*b*", "xxaYYbzz"));
-        assert!(!glob_match("*a*b", "xxaYYbzz"));
     }
 
     #[test]

@@ -151,13 +151,12 @@ fn walk(fs: &dyn LogFiles, dir: &Path, parts: &[String], depth: usize, out: &mut
             walk(fs, &child, rest, depth + 1, out);
         }
     } else {
-        let pattern: Vec<char> = part.chars().collect();
         for child in fs.read_dir(dir).unwrap_or_default() {
             let Some(name) = child.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
             if name.starts_with('.') && !part.starts_with('.') {
                 continue;
             }
-            if wildcard(&pattern, &name.chars().collect::<Vec<_>>()) {
+            if glob_match(part, &name) {
                 walk(fs, &child, rest, depth + 1, out);
             }
         }
@@ -168,18 +167,42 @@ fn hidden(p: &Path) -> bool {
     p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
 }
 
-/// Matches one path component against a pattern of `*`, `?` and `[...]`.
-fn wildcard(p: &[char], s: &[char]) -> bool {
-    match p.first() {
-        None => s.is_empty(),
-        Some('*') => (0..=s.len()).any(|i| wildcard(&p[1..], &s[i..])),
-        Some('?') => !s.is_empty() && wildcard(&p[1..], &s[1..]),
-        Some('[') => match class(&p[1..]) {
-            Some((matches, len)) => s.first().is_some_and(|&c| matches(c)) && wildcard(&p[1 + len..], &s[1..]),
-            None => s.first() == Some(&'[') && wildcard(&p[1..], &s[1..]),
-        },
-        Some(&c) => s.first() == Some(&c) && wildcard(&p[1..], &s[1..]),
+/// Whether `name` matches the glob `pattern`: `*` any characters, `?` one, `[...]` one
+/// of a class (`[a-c]`, `[!x]`). Matches one path component, or a test case name.
+pub(crate) fn glob_match(pattern: &str, name: &str) -> bool {
+    let (p, s): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
+    // every token but `*` matches one character: on a mismatch, the last `*` takes one more
+    let (mut pi, mut si) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while si < s.len() {
+        let step = match p.get(pi) {
+            Some('*') => {
+                star = Some((pi, si));
+                pi += 1;
+                continue;
+            }
+            Some('?') => Some(1),
+            Some('[') => match class(&p[pi + 1..]) {
+                Some((matches, len)) => matches(s[si]).then_some(1 + len),
+                None => (s[si] == '[').then_some(1),
+            },
+            Some(&c) => (s[si] == c).then_some(1),
+            None => None,
+        };
+        match (step, star) {
+            (Some(n), _) => {
+                pi += n;
+                si += 1;
+            }
+            (None, Some((sp, ss))) => {
+                pi = sp + 1;
+                si = ss + 1;
+                star = Some((sp, ss + 1));
+            }
+            (None, None) => return false,
+        }
     }
+    p[pi..].iter().all(|&c| c == '*')
 }
 
 /// A `[...]` class (after the `[`): its predicate and length including the `]`.
@@ -377,12 +400,9 @@ pub(crate) fn observe_live(
 mod tests {
     use super::*;
 
-    fn wc(p: &str, s: &str) -> bool {
-        wildcard(&p.chars().collect::<Vec<_>>(), &s.chars().collect::<Vec<_>>())
-    }
-
     #[test]
     fn wildcards() {
+        let wc = glob_match;
         assert!(wc("*.log", "a.log"));
         assert!(!wc("*.log", "a.log.1"));
         assert!(wc("a?c", "abc"));
@@ -391,6 +411,18 @@ mod tests {
         assert!(wc("[a-c][0-9]", "b7"));
         assert!(wc("[]]", "]"));
         assert!(wc("[x", "[x"));
+        assert!(wc("*[0-9]", "run12"));
+        assert!(!wc("*[0-9]", "run1x"));
+        assert!(wc("tc*", "tcA"));
+        assert!(wc("*B", "tcB"));
+        assert!(wc("t?A", "tcA"));
+        assert!(wc("tcA", "tcA"));
+        assert!(!wc("tc", "tcA"));
+        assert!(wc("*a*b*", "xxaYYbzz"));
+        assert!(!wc("*a*b", "xxaYYbzz"));
+        assert!(wc("", ""));
+        assert!(!wc("", "a"));
+        assert!(wc("**", ""));
     }
 
     #[test]

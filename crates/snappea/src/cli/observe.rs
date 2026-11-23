@@ -3,7 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use super::command::{
-    error, flag, parse_args, plural, uint, usage_error, value, with_output, Args, Opt, Outcome, ERROR, OK, OUTPUT_HELP,
+    error, flag, parse_args, plural, sources, uint, usage_error, value, with_output, Args, Opt, Outcome, ERROR, OK,
+    OUTPUT_HELP,
 };
 use crate::checker::code_coverage::uncovered_lines;
 use crate::checker::observe::{ErrorKind, ObserveError, Report, Spec, UnknownEvents};
@@ -124,10 +125,15 @@ pub(super) fn observe(args: &[String], host: &mut dyn Host) -> i32 {
 
 /// Names given to a repeatable option, also separated by commas.
 fn names(a: &Args, long: &str) -> Vec<String> {
+    unique(a.all(long).iter().flat_map(|v| v.split(',')).map(str::trim).filter(|n| !n.is_empty()))
+}
+
+/// `values`, each once, in order.
+fn unique<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for n in a.all(long).iter().flat_map(|v| v.split(',')).map(str::trim).filter(|n| !n.is_empty()) {
-        if !out.iter().any(|o| o == n) {
-            out.push(n.to_string());
+    for v in values {
+        if !out.iter().any(|o| o == v) {
+            out.push(v.to_string());
         }
     }
     out
@@ -137,18 +143,8 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
     let cwd = host.cwd();
     let mut input = Input { includes: Includes::FromProject, ..Input::default() };
     let mut logs: Vec<PathBuf> = Vec::new();
-    let log_args = a.positional.iter().map(String::as_str).filter(|p| !is_source_arg(p));
-    for p in a.positional.iter().filter(|p| is_source_arg(p)) {
-        if p.to_lowercase().ends_with(".pproj") {
-            if let Some(q) = &input.pproj {
-                return Err(format!("two project files given: '{}' and '{}'; pass one .pproj", q, p));
-            }
-            input.pproj = Some(p.clone());
-        } else {
-            input.pfiles.push(p.clone());
-        }
-    }
-    for l in log_args.chain(a.all("logs")) {
+    let log_args = sources(&mut input, &a.positional)?;
+    for l in log_args.iter().map(String::as_str).chain(a.all("logs")) {
         add_log_paths(&HostFiles(host), &cwd, l, &mut logs)?;
     }
     let mut live: Vec<String> = Vec::new();
@@ -174,7 +170,7 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
         record: a.has("record"),
         parser_configuration: a.get("parser-config").map(str::to_string),
         assume_sorted: a.has("sorted"),
-        keys: names_raw(a, "key"),
+        keys: unique(a.all("key")),
         ..ObserveConfig::default()
     };
     if let Some(n) = uint(a, "replay-window")? {
@@ -220,22 +216,6 @@ fn command(a: &Args, host: &mut dyn Host) -> Result<Command, String> {
     cfg.logs = logs;
     cfg.live = live;
     Ok(Command { input, cfg, record: a.get("record").map(str::to_string), verbose: a.has("verbose") })
-}
-
-/// Values of a repeatable option, each once.
-fn names_raw(a: &Args, long: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for v in a.all(long) {
-        if !out.iter().any(|o| o == v) {
-            out.push(v.to_string());
-        }
-    }
-    out
-}
-
-fn is_source_arg(arg: &str) -> bool {
-    let l = arg.to_lowercase();
-    l.ends_with(".pproj") || l.ends_with(".p")
 }
 
 fn fail(host: &mut dyn Host, msg: &str) -> Exit {
